@@ -21,6 +21,13 @@ and owns everything that is *not* browser code:
     loopback port distinguishes `NOT_LISTENING` (refused) from `TIMEOUT`
     (no answer inside the deadline) — two different remediations, two
     different words;
+  * the **vendored-component catalog** (#1497): project-scaffolding's
+    `.fleet.toml` `[components]` table, read once from the scaffold checkout
+    (`tomllib`, no cross-repo import) and turned into each web component's
+    root and part classes, which ride into the script's params so the
+    `inventory` section can tell a vendored control from a bespoke one. No
+    scaffold or no catalog → `componentsError`, and every control reads
+    `unknown`, never `bespoke`;
   * the **envelope**: `schema_version`, `rubric_version`, `target`, `commit`
     (target HEAD via `git_run.run_git`), `generated_at` (UTC ISO),
     `base_url`, `run_dir`, `devices`, `params` (the floors the script
@@ -38,11 +45,13 @@ import dataclasses
 import datetime as _dt
 import json
 import queue
+import re
 import socket
 import subprocess
 import sys
 import threading
 import time
+import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlsplit
@@ -141,11 +150,98 @@ def target_commit(target: Target) -> Optional[str]:
     return proc.stdout.strip() or None
 
 
-def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+VENDORED_PREFIX = "app/webapp/static/_vendored/"
+_CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
+_CSS_STRING_RE = re.compile(r"\"[^\"]*\"|'[^']*'")
+_CSS_ATTR_RE = re.compile(r"\[[^\]]*\]")
+_CSS_PARENS_RE = re.compile(r"\([^()]*\)")
+_CSS_CLASS_RE = re.compile(r"\.(-?[A-Za-z_][\w-]*)")
+
+
+def _css_class_uses(css: str) -> Dict[str, bool]:
+    """`{class: leads}` for every class that opens a compound selector in `css`.
+
+    `leads` is True when the class is the first class of some selector (a
+    leading `html[data-theme=dark]` or `:root` carries none, so it does not
+    count): the component's root. A class only ever nested under another
+    (`.toggle .knob`) is a part. A class chained after another in one compound
+    (`.toggle.on`) is a state, never a marker. Function arguments, attribute
+    values and strings are dropped first, so `:not(.x)` and `[href$=".css"]`
+    name nothing."""
+    uses: Dict[str, bool] = {}
+    text = _CSS_ATTR_RE.sub("", _CSS_STRING_RE.sub("", _CSS_COMMENT_RE.sub("", css)))
+    for prelude in re.findall(r"([^{};]*)\{", text):
+        prelude = prelude.strip()
+        if not prelude or prelude.startswith("@"):
+            continue
+        while True:
+            stripped = _CSS_PARENS_RE.sub("", prelude)
+            if stripped == prelude:
+                break
+            prelude = stripped
+        for selector in prelude.split(","):
+            leading = True
+            for compound in re.split(r"[\s>+~]+", selector.strip()):
+                first = _CSS_CLASS_RE.match(compound[compound.find("."):]) if "." in compound else None
+                if not first:
+                    continue
+                uses[first.group(1)] = uses.get(first.group(1), False) or leading
+                leading = False
+    return uses
+
+
+def vendored_components(scaffold_root: Optional[str]) -> Dict[str, object]:
+    """The scaffold's web components as `{"components": {name: {"roots": [..], "parts": [..]}}, "error": None}`.
+
+    Read from `<scaffold>/.fleet.toml`'s `[components]` table (the entries under
+    `_vendored/`) and each component's own stylesheets. A class used by several
+    components belongs to the one that leads a selector with it, else to the one
+    whose name prefixes it (`icon-button` styled inside `modal`), else to none
+    (`.icon`, `.app`): a class nobody owns marks no component. A component
+    with no classes (`base`, `icons`) is left out. `{"components": None, "error":
+    why}` when there is no scaffold checkout or no catalog to read."""
+    if not scaffold_root:
+        return {"components": None, "error": "no scaffold checkout"}
+    root = Path(scaffold_root)
+    try:
+        table = tomllib.loads((root / ".fleet.toml").read_text(encoding="utf-8")).get("components")
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return {"components": None, "error": f"no catalog at {root / '.fleet.toml'}: {exc}"}
+    if not isinstance(table, dict) or not table:
+        return {"components": None, "error": f"no [components] table in {root / '.fleet.toml'}"}
+    uses: Dict[str, Dict[str, bool]] = {}
+    for name in sorted(table):
+        src = table[name].get("src") if isinstance(table[name], dict) else None
+        if not isinstance(src, str) or not src.startswith(VENDORED_PREFIX):
+            continue
+        for css in sorted((root / src).glob("*.css")):
+            try:
+                text = css.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for cls, leads in _css_class_uses(text).items():
+                by = uses.setdefault(cls, {})
+                by[name] = by.get(name, False) or leads
+    out: Dict[str, Dict[str, List[str]]] = {}
+    for cls in sorted(uses):
+        by = uses[cls]
+        cands = [k for k, leads in by.items() if leads] or list(by)
+        owner = cands[0] if len(cands) == 1 else max(
+            (k for k in cands if cls == k or cls.startswith(k + "-")), key=len, default=None)
+        if owner:
+            out.setdefault(owner, {"roots": [], "parts": []})["roots" if by[owner] else "parts"].append(cls)
+    if not out:
+        return {"components": None, "error": f"no web components under {VENDORED_PREFIX} in {root / '.fleet.toml'}"}
+    return {"components": {k: out[k] for k in sorted(out)}, "error": None}
+
+
+def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[Dict[str, object]] = None,
+                  catalog: Optional[Dict[str, object]] = None) -> Dict[str, object]:
     """`{"script": <what the page script receives>, "resolved": <rubric params>}`.
 
     `review` is the target's `[design.review]` block: its `exclude_selectors` ride into the script's params,
-    so `metrics.json` records what a run left out of scoring (#1185)."""
+    so `metrics.json` records what a run left out of scoring (#1185). `catalog` is `vendored_components()`'s
+    result: its map rides in the same way, for the `inventory` section (#1497)."""
     resolved = resolve_params(rubric, spec_light)
     script = measure.default_params(
         hit_min=float(resolved.get("hit_min") or 44.0),
@@ -154,6 +250,8 @@ def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[D
         row_controls_max=int(sum(float(resolved.get(k) or 0) for k in
                                  ("row_leading_toggles", "row_extra_actions", "row_trailing_accessories"))),
         exclude_selectors=exclude_selectors(review or {}),
+        components=(catalog or {}).get("components"),
+        components_error=(catalog or {}).get("error"),
     )
     return {"script": script, "resolved": resolved}
 
@@ -292,7 +390,7 @@ def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], d
     stopped, and how it stopped is recorded under `synthetic.stop`.
     """
     run_dir = run_dir or run_dir_for(target.name)
-    params = script_params(rubric, spec_light, target.review)
+    params = script_params(rubric, spec_light, target.review, vendored_components(scaffold))
     doc = envelope(target, rubric, run_dir, devices, params, target_commit(target))
     if not synthetic:
         return _measure(doc, target, run_dir, devices, params, python_override, scaffold, walk_timeout, False)

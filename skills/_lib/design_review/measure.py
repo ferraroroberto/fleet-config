@@ -55,7 +55,12 @@ present on a successful run:
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
               DOM, open or not; walk coverage for the report, never a rule input (#1353)
-    glance    (tab screens only, added by walk.py from GLANCE_READ_JS, #1354) state (measured | no_card | not_idle |
+    inventory unmeasured (null, or why no component catalog was passed in), controls [{key, kind, component, role,
+              label, family, px, weight, n}] (one entry per distinct rendering, `n` elements, capped at INVENTORY_CAP),
+              controls_count, kinds {kind: n}, components {component: n}, text [{role, runs, variants [{family, px,
+              weight, runs}]}], text_count -- every visible control by kind and component and every text role by the
+              fonts it renders in; read only, never a rule input yet (#1497, for #1383's cross-app comparator)
+    glance   (tab screens only, added by walk.py from GLANCE_READ_JS, #1354) state (measured | no_card | not_idle |
               card_gone | stopped | unavailable | error), card, first_px, settled_px, grew_px, below,
               changes [{ms, from_px, to_px, sel}] (sample of GLANCE_CHANGE_CAP), change_count, idle, idle_ms, pending [path]
     headings  ["H2:Title@16px", ...]
@@ -1103,6 +1108,104 @@ _MEASURE_JS = r"""
     return { overlays: all.slice(0, CAP), overlay_count: all.length };
   });
 
+  // ---- inventory: every visible control by kind and component, every text role by the fonts it renders in (#1497).
+  // Read only, never a rule input yet: #1383's cross-app comparator reads it. A control is `vendored:<name>` when its own
+  // classes (read in order, so `icon-button action-row-kebab` is the icon-button), else its wrapping <label>'s, carry a
+  // catalog component's root class, or one of its part classes inside that component's root; else `bespoke`. With no
+  // catalog every control is `unknown`, never `bespoke`, and `unmeasured` says why. A text role comes from structure --
+  // tag, ARIA role, a part class (`*-title`, `*-meta`, `*-chip`, `*-overline`), the nearest one up from the run -- never
+  // from its size, because size is what is compared. Labels are masked (digit runs become `#`, so dates and times
+  // do too) and truncated: no captured text reaches a report. Entries are sorted and carry nothing positional or timed.
+  section('inventory', () => {
+    const INVENTORY_CAP = 200;
+    const cat = params.components || null;
+    const roots = new Map(), parts = new Map(), rootSel = {};
+    if (cat) Object.keys(cat).sort().forEach(name => { const c = cat[name] || {};
+      (c.roots || []).forEach(k => roots.set(k, name)); (c.parts || []).forEach(k => parts.set(k, name));
+      rootSel[name] = (c.roots || []).map(k => '.' + CSS.escape(k)).join(', '); });
+    const classes = (el) => (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean);
+    const marked = (el) => { for (const c of classes(el)) { if (roots.has(c)) return roots.get(c);
+      const p = parts.get(c); if (p && rootSel[p] && el.closest(rootSel[p])) return p; } return null; };
+    const componentOf = (el) => { if (!cat) return 'unknown';
+      const lab = el.closest('label'), name = marked(el) || (lab && lab !== el ? marked(lab) : null);
+      return name ? 'vendored:' + name : 'bespoke'; };
+    const typeOf = (el) => (el.getAttribute('type') || '').toLowerCase();
+    const kindOf = (el, comp) => { const role = (el.getAttribute('role') || '').toLowerCase(), tag = el.tagName;
+      if (role === 'switch' || comp === 'vendored:switch') return 'switch';
+      if (comp === 'vendored:range-tab') return 'range-tab';
+      if (comp === 'vendored:segmented') return 'segmented';
+      if (role === 'tab') return 'tab';
+      if (/^menuitem/.test(role)) return 'menuitem';
+      if (tag === 'SELECT') return 'select';
+      if (role === 'combobox' || (tag === 'INPUT' && el.hasAttribute('list'))) return 'combobox';
+      if (role === 'checkbox' || role === 'radio' || (tag === 'INPUT' && /^(checkbox|radio)$/.test(typeOf(el)))) return 'checkbox';
+      if (tag === 'TEXTAREA') return 'textarea';
+      if (tag === 'INPUT' && !/^(button|submit|reset|image)$/.test(typeOf(el))) return 'input';
+      if (role === 'link' || (tag === 'A' && !role)) return 'link';
+      // A button that renders no text of its own is an icon button, whatever its classes say.
+      return comp === 'vendored:icon-button' || !(el.innerText || '').trim() ? 'icon-button' : 'button'; };
+    const roleOf = (el) => { const r = el.getAttribute('role'); if (r) return r.toLowerCase(); const t = el.tagName;
+      if (t === 'BUTTON' || t === 'SUMMARY') return 'button';
+      if (t === 'A') return 'link';
+      if (t === 'SELECT') return el.multiple || el.size > 1 ? 'listbox' : 'combobox';
+      if (t === 'TEXTAREA') return 'textbox';
+      if (t === 'INPUT') return ({checkbox: 'checkbox', radio: 'radio', range: 'slider', search: 'searchbox', number: 'spinbutton',
+        button: 'button', submit: 'button', reset: 'button', image: 'button'})[typeOf(el)] || 'textbox';
+      return ''; };
+    const mask = (s) => (s || '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 40);
+    // The control's name, never a field's value: aria-label, its <label>, a placeholder or title, else (a button) its text.
+    const nameOf = (el) => mask(el.getAttribute('aria-label') || (el.labels && el.labels.length ? el.labels[0].innerText : '')
+      || el.getAttribute('placeholder') || el.getAttribute('title') || (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) ? '' : el.innerText));
+    const fontOf = (el) => { const s = getComputedStyle(el);
+      return {family: (s.fontFamily.split(',')[0] || '').trim().replace(/^["']|["']$/g, ''), px: r2(parseFloat(s.fontSize)), weight: String(s.fontWeight)}; };
+    const keyOf = (el) => { const tag = el.tagName.toLowerCase(); if (el.id) return tag + '#' + el.id;
+      const cls = classes(el)[0]; if (cls) return tag + '.' + cls;
+      const role = el.getAttribute('role'); return role ? tag + '[role=' + role + ']' : tag; };
+    const tally = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
+    const sortedObj = (obj) => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
+
+    const seen = new Map(), kinds = {}, comps = {};
+    let total = 0;
+    q(params.interactive + ', [role=link], [role=combobox], [role=radio], [role=menuitemcheckbox], [role=menuitemradio]').forEach(el => {
+      const component = componentOf(el), kind = kindOf(el, component), f = fontOf(el);
+      const entry = {key: keyOf(el), kind, component, role: roleOf(el), label: nameOf(el), family: f.family, px: f.px, weight: f.weight};
+      const id = JSON.stringify(entry), had = seen.get(id);
+      if (had) had.n++; else seen.set(id, Object.assign(entry, {n: 1}));
+      tally(kinds, kind); tally(comps, component); total++; });
+    const controls = [...seen.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(e => e[1]);
+
+    const has = (e, re) => classes(e).some(c => re.test(c));
+    const OVERLINE = /(^|-)(overline|eyebrow|kicker)$/, CHIP = /(^|-)(chip|badge|tag|pill)$/;
+    const SECONDARY = /(^|-)(meta|sub|subtitle|desc|description|hint|detail|secondary|muted)$/, TITLE = /(^|-)(title|name)$/;
+    const CONTROL = 'button, [role=button], [role=tab], [role=switch], [role=menuitem], summary, select, input, textarea';
+    const roleAt = (e) => { const t = e.tagName;
+      if (/^(CODE|PRE|KBD|SAMP)$/.test(t)) return 'code';
+      const h = /^H([1-4])$/.exec(t); if (h) return 'heading-' + h[1];
+      if (e.getAttribute('role') === 'heading') { const l = +(e.getAttribute('aria-level') || 2); return l >= 1 && l <= 4 ? 'heading-' + l : 'body'; }
+      if (has(e, OVERLINE)) return 'overline';
+      if (has(e, CHIP)) return 'caption';
+      if (has(e, SECONDARY)) return 'secondary';
+      if (has(e, TITLE)) return 'row-title';
+      if (e.matches(CONTROL)) return 'button-label';
+      if (/^(SMALL|FIGCAPTION|CAPTION)$/.test(t)) return 'caption';
+      return null; };
+    const textRole = (el) => { for (let e = el; e && e.nodeType === 1 && e !== document.body; e = e.parentElement) { const r = roleAt(e); if (r) return r; }
+      return 'body'; };
+    const byRole = {};
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const el = n.parentElement; if (!el || !n.textContent.trim() || !visible(el)) continue;
+      const role = textRole(el), f = fontOf(el), vk = JSON.stringify([f.family, f.px, f.weight]);
+      const r = byRole[role] = byRole[role] || {role, runs: 0, variants: {}};
+      r.runs++; const v = r.variants[vk] = r.variants[vk] || Object.assign(f, {runs: 0}); v.runs++; }
+    const cmpVariant = (a, b) => (a.family < b.family ? -1 : a.family > b.family ? 1 : a.px - b.px || (+a.weight || 0) - (+b.weight || 0));
+    const text = Object.keys(byRole).sort().map(k => ({role: k, runs: byRole[k].runs, variants: Object.values(byRole[k].variants).sort(cmpVariant)}));
+
+    return { unmeasured: cat ? null : (params.componentsError || 'no component catalog passed in'),
+      controls: controls.slice(0, INVENTORY_CAP), controls_count: total, kinds: sortedObj(kinds), components: sortedObj(comps),
+      text, text_count: text.length };
+  });
+
   if (EXCLUDE) section('excluded', () => ({ selectors: params.excludeSelectors, elements: scope.querySelectorAll(EXCLUDE).length }));
   section('headings', () => q('h1,h2,h3,h4').map(h => h.tagName+':'+h.textContent.trim().slice(0,30)+'@'+getComputedStyle(h).fontSize).slice(0, CAP));
   return out;
@@ -1300,9 +1403,14 @@ def default_params(
     segmented_max: int = 5,
     primary_selector: str = "[class*=primary], button[type=submit]",
     exclude_selectors: Sequence[str] = (),
+    components: Optional[Dict[str, object]] = None,
+    components_error: Optional[str] = None,
 ) -> Dict[str, object]:
     """The parameter object the script receives; recorded verbatim in
-    `metrics.json` so a consumer can see which floors a run measured with."""
+    `metrics.json` so a consumer can see which floors a run measured with.
+
+    `components` is `capture.vendored_components()`'s map (`{name: {roots, parts}}`);
+    `None` makes the `inventory` section `unmeasured`, with `components_error` as the reason."""
     return {
         "hitMin": float(hit_min),
         "hitTol": HIT_TOLERANCE_PX,
@@ -1320,6 +1428,8 @@ def default_params(
         "labelFitMax": LABEL_FIT_MAX_CHARS,
         "fitTol": FIT_TOLERANCE_PX,
         "excludeSelectors": [str(s) for s in exclude_selectors],
+        "components": components,
+        "componentsError": components_error,
     }
 
 
@@ -1382,6 +1492,7 @@ def metric_paths() -> List[str]:
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
         "coverage": ["overlays", "overlay_count"],
+        "inventory": ["unmeasured", "controls", "controls_count", "kinds", "components", "text", "text_count"],
         "glance": ["state", "card", "first_px", "settled_px", "grew_px", "below", "changes", "change_count", "idle", "idle_ms", "pending"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]
