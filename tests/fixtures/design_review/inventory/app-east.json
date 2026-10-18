@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "target": "app-east",
+  "screens": [
+    {"id": "desktop-light-home", "metrics": {"inventory": {
+      "unmeasured": null,
+      "controls": [
+        {"key": "button.danger", "kind": "button", "component": "bespoke", "role": "button", "label": "Delete", "family": "system-ui", "px": 14, "weight": "700", "n": 1},
+        {"key": "button.primary", "kind": "button", "component": "bespoke", "role": "button", "label": "Save", "family": "system-ui", "px": 14, "weight": "700", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Cancel", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.icon-button", "kind": "icon-button", "component": "vendored:icon-button", "role": "button", "label": "More actions", "family": "system-ui", "px": 16, "weight": "400", "n": 1},
+        {"key": "select.range", "kind": "select", "component": "vendored:select-native", "role": "combobox", "label": "Range", "family": "system-ui", "px": 14, "weight": "400", "n": 1, "options": 4},
+        {"key": "select.model", "kind": "select", "component": "vendored:select-native", "role": "combobox", "label": "Model", "family": "system-ui", "px": 14, "weight": "400", "n": 1}
+      ],
+      "controls_count": 6,
+      "kinds": {"button": 3, "icon-button": 1, "select": 2},
+      "components": {"bespoke": 2, "vendored:button": 1, "vendored:icon-button": 1, "vendored:select-native": 2},
+      "text": [
+        {"role": "body", "runs": 5, "variants": [{"family": "system-ui", "px": 16, "weight": "400", "runs": 5}]},
+        {"role": "caption", "runs": 2, "variants": [{"family": "system-ui", "px": 11, "weight": "600", "runs": 2}]},
+        {"role": "heading-2", "runs": 1, "variants": [{"family": "system-ui", "px": 24, "weight": "700", "runs": 1}]},
+        {"role": "row-title", "runs": 2, "variants": [{"family": "system-ui", "px": 16, "weight": "600", "runs": 2}]},
+        {"role": "secondary", "runs": 4, "variants": [{"family": "system-ui", "px": 13, "weight": "400", "runs": 4}]}
+      ],
+      "text_count": 5}}},
+    {"id": "desktop-dark-home", "metrics": {"inventory": {
+      "unmeasured": null,
+      "controls": [
+        {"key": "button.danger", "kind": "button", "component": "bespoke", "role": "button", "label": "Delete", "family": "system-ui", "px": 14, "weight": "700", "n": 1},
+        {"key": "button.primary", "kind": "button", "component": "bespoke", "role": "button", "label": "Save", "family": "system-ui", "px": 14, "weight": "700", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Cancel", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.icon-button", "kind": "icon-button", "component": "vendored:icon-button", "role": "button", "label": "More actions", "family": "system-ui", "px": 16, "weight": "400", "n": 1},
+        {"key": "select.range", "kind": "select", "component": "vendored:select-native", "role": "combobox", "label": "Range", "family": "system-ui", "px": 14, "weight": "400", "n": 1, "options": 4},
+        {"key": "select.model", "kind": "select", "component": "vendored:select-native", "role": "combobox", "label": "Model", "family": "system-ui", "px": 14, "weight": "400", "n": 1}
+      ],
+      "controls_count": 6,
+      "kinds": {"button": 3, "icon-button": 1, "select": 2},
+      "components": {"bespoke": 2, "vendored:button": 1, "vendored:icon-button": 1, "vendored:select-native": 2},
+      "text": [
+        {"role": "body", "runs": 5, "variants": [{"family": "system-ui", "px": 16, "weight": "400", "runs": 5}]},
+        {"role": "caption", "runs": 2, "variants": [{"family": "system-ui", "px": 11, "weight": "600", "runs": 2}]},
+        {"role": "heading-2", "runs": 1, "variants": [{"family": "system-ui", "px": 24, "weight": "700", "runs": 1}]},
+        {"role": "row-title", "runs": 2, "variants": [{"family": "system-ui", "px": 16, "weight": "600", "runs": 2}]},
+        {"role": "secondary", "runs": 4, "variants": [{"family": "system-ui", "px": 13, "weight": "400", "runs": 4}]}
+      ],
+      "text_count": 5}}}
+  ]
+}

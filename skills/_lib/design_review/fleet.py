@@ -21,7 +21,8 @@ The digest, under `<hooks state>/design-review/_fleet/<UTC stamp>/`:
        "spec":      [{"id", "severity", "owner", "title", "standard", "apps": [target]}],   # deduped by id
        "scaffold":  [{... same, "promoted": bool}],                                       # incl. promoted app rules
        "promoted":  [id],       # app-owned rules failing in two or more apps
-       "filing":    {"mode": "dry-run" | "filed", "issues": {repo: url | body path}}}
+       "filing":    {"mode": "dry-run" | "filed", "issues": {repo: url | body path}},
+       "inventory": {...}}      # only when some app has an inventory: inventory.py's cross-app comparison
     fleet-digest.html   the same, as one self-contained page (report CSS)
     issue-<repo>.md     each would-be body on a dry run
 
@@ -32,6 +33,13 @@ scaffold-owned rules are deduped by id with the failing apps listed.
 `[[design.accepted]]` (`rule` + `reason`) in an app's `.fleet.toml`
 removes that app from a rule everywhere, so an accepted rule failing in
 one other app is not promoted.
+
+Inventory (fleet-config#1500): after the walks, the newest `inventory`
+per app is compared across apps (`inventory.compare`). A divergence only
+one app has is filed on that app's issue beside its rules. A cross-app
+divergence goes in the digest's `inventory` section and on fleet-config's
+issue. With no inventory anywhere the digest has no `inventory` key, and
+every body is what it was before.
 
 Filing is opt-in (`--file`): the app issues through `filing.file_body` and
 the two digest issues (fleet-config's `design-review` issue carries the
@@ -54,7 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fleet_repo_scan  # noqa: E402
 import hooks_state  # noqa: E402
 
-from . import capture, evaluate as evaluate_mod, filing, ledger, plan, report  # noqa: E402
+from . import capture, evaluate as evaluate_mod, filing, inventory, ledger, plan, report  # noqa: E402
 from .report import SEVERITY_ORDER  # noqa: E402
 from .rubric import Rubric  # noqa: E402
 
@@ -237,6 +245,7 @@ def render_digest(dig: dict) -> str:
         report._section("apps", "Apps", apps_table, "one app at a time; an app not listening is unmeasured, never restarted"),
         report._section("spec", f"Spec-owned — {SPEC_HOME}", lst(dig.get("spec") or [], "No spec-owned rule fails in any measured app.")),
         report._section("scaffold", f"Scaffold-owned and promoted — {SCAFFOLD_HOME}", lst(dig.get("scaffold") or [], "No scaffold-owned rule fails and nothing was promoted.")),
+        *([inventory.render_section(dig["inventory"])] if dig.get("inventory") else []),
         report._section("filing", f"Filing ({_esc(filing_info.get('mode'))})", f"<ul>{fil}</ul>"),
         f'<footer>/design-review fleet &middot; rubric v{_esc(dig.get("rubric_version"))} &middot; {_esc(dig.get("generated_at"))}</footer>',
     ]
@@ -249,13 +258,27 @@ def render_digest(dig: dict) -> str:
 # ---- the run ---------------------------------------------------------------------
 
 Reviewer = Callable[[str, dict], dict]
+InventoryLoader = Callable[[str], Optional[dict]]
+
+
+def compare_inventories(targets: List[str], specs: Dict[str, Dict[str, str]], loader: Optional[InventoryLoader] = None,
+                        catalog: Optional[dict] = None, scaffold: object = None) -> Optional[dict]:
+    """The digest's `inventory` section, or None when no target has an inventory (the digest then stays as it was)."""
+    found = [a for a in ((loader or inventory.newest_inventory)(t) for t in targets) if a]
+    if not found:
+        return None
+    cat = catalog if catalog is not None else capture.vendored_components(str(scaffold or capture.DEFAULT_SCAFFOLD))
+    names = sorted(cat["components"]) if cat.get("components") else None
+    return inventory.compare(found, inventory.type_reference(specs.get("light") or {}), names, cat.get("error"), targets)
 
 
 def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], projects_toml: Optional[Path] = None,
               file_issues: bool = False, out_dir: Optional[Path] = None, reviewer: Optional[Reviewer] = None,
               fetch: Optional[filing.Fetch] = None, upsert: Optional[filing.Upsert] = None,
-              today: Optional[str] = None, **review_kw: object) -> dict:
-    """The whole sweep. `reviewer` (tests) replaces `review_app`; `fetch` / `upsert` replace the `gh` legs."""
+              today: Optional[str] = None, inventory_loader: Optional[InventoryLoader] = None,
+              catalog: Optional[dict] = None, **review_kw: object) -> dict:
+    """The whole sweep. `reviewer` (tests) replaces `review_app`; `fetch` / `upsert` replace the `gh` legs;
+    `inventory_loader` / `catalog` replace the state-dir read and the scaffold catalog for the inventory comparison."""
     out_dir = out_dir or fleet_dir()
     stamp = out_dir.name
     targets = fleet_targets(projects_toml)
@@ -272,6 +295,9 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
     for a in dig["apps"]:
         a["problems"] = problems_by_target.get(a["target"], [])
     dig["filing"]["mode"] = "filed" if file_issues else "dry-run"
+    inv = compare_inventories([r["row"]["target"] for r in reviews], specs, inventory_loader, catalog, review_kw.get("scaffold"))
+    if inv:
+        dig["inventory"] = inv
 
     tables = dict(fleet_repo_scan.fleet_repo_tables(projects_toml))
     fetch = fetch or filing.audit_issue.get_managed
@@ -295,9 +321,12 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
             continue  # nothing measured: no finding to file, no line to carry
         repo = filing.repo_slug(r.get("root"))
         existing = fetch(repo, filing.KIND) if repo else {"number": None, "body": ""}
-        fb = filing.file_body(r["doc"], row["run_id"], r.get("root"), str(existing.get("body") or ""), today,
+        body = str(existing.get("body") or "")
+        fb = filing.file_body(r["doc"], row["run_id"], r.get("root"), body, today,
                               accepted=accepted_by_target.get(row["target"], {}),
-                              problems=problems_by_target.get(row["target"], []), promoted=promoted)
+                              problems=problems_by_target.get(row["target"], []), promoted=promoted,
+                              extra=inventory.summaries(inv, "app", row["target"]),
+                              extra_statuses=inventory.carry_statuses(body, inv, row["target"]))
         row["issue"] = existing.get("number")
         row["changed"] = fb["changed"]
         land(repo, row["target"], fb["body"])
@@ -308,7 +337,12 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
         root = Path(str(tables.get(home, {}).get("cwd_prefix", ""))) if tables.get(home) else None
         repo = filing.repo_slug(root if root and root.is_dir() else None)
         existing = fetch(repo, filing.KIND) if repo else {"number": None, "body": ""}
-        land(repo, home, digest_body(str(existing.get("body") or ""), findings, home, dig, statuses, today))
+        body = str(existing.get("body") or "")
+        home_statuses = statuses
+        if home == SPEC_HOME:  # cross-app inventory findings are filed on fleet-config's issue
+            findings = findings + inventory.summaries(inv, "fleet")
+            home_statuses = {**statuses, **inventory.carry_statuses(body, inv)}
+        land(repo, home, digest_body(body, findings, home, dig, home_statuses, today))
 
     (out_dir / DIGEST_JSON).write_text(json.dumps(dig, indent=2, ensure_ascii=True), encoding="utf-8")
     (out_dir / DIGEST_HTML).write_text(render_digest(dig), encoding="utf-8")

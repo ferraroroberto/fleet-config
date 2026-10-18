@@ -14,6 +14,8 @@ severity, owner, title, the screen count and the worst screen id, and the
 
 An uncatalogued judgment finding (status `ok` only) carries its question
 id, severity, owner and title, keyed by `question` + normalised title.
+In fleet mode an inventory finding (`INV-0N-<group>`, `inventory.py`) is
+merged the same way, its detail the renderings, counts and example screen ids.
 Never a screenshot path, captured page text, an `evidence.items` label, or
 a judge's `note` / `detail`.
 
@@ -203,6 +205,8 @@ def uncatalogued_of(doc: dict) -> List[dict]:
 
 
 def _detail(s: dict) -> str:
+    if s.get("detail"):
+        return str(s["detail"])  # an inventory finding brings its own counts and example screens (inventory.py)
     apps = list(s.get("apps") or [])
     if s.get("promoted") or len(apps) > 1:
         return f"fails in {len(apps)} apps: {', '.join(apps)}" if apps else "fails in several apps"
@@ -413,8 +417,12 @@ Upsert = Callable[[str, str, str, str, Optional[str]], str]
 
 def file_body(doc: dict, run_id: str, root: Optional[Path], existing: str, today: Optional[str] = None,
               accepted: Optional[Dict[str, dict]] = None, problems: Optional[List[str]] = None,
-              promoted: Optional[set] = None) -> dict:
-    """Pure: the merged body for one evaluate document. `{body, routed, uncatalogued, problems, changed}`."""
+              promoted: Optional[set] = None, extra: Optional[List[dict]] = None,
+              extra_statuses: Optional[Dict[str, str]] = None) -> dict:
+    """Pure: the merged body for one evaluate document. `{body, routed, uncatalogued, problems, changed}`.
+
+    `extra` = further finding summaries filed beside the rules (fleet mode's single-app inventory
+    findings, `inventory.summaries`); `extra_statuses` = statuses for their ids already on the body."""
     if accepted is None:
         accepted, problems = load_accepted_rules(root)
     routed = route(doc, accepted, promoted)
@@ -424,9 +432,10 @@ def file_body(doc: dict, run_id: str, root: Optional[Path], existing: str, today
         statuses[s["id"]] = "accepted"
     for s in routed["promoted"]:
         statuses[s["id"]] = "promoted"
+    statuses.update(extra_statuses or {})
     today = today or _dt.date.today().isoformat()
     stamp = f"{today} @ {str(doc.get('commit') or 'none')[:7]}"
-    findings = sorted(routed["app"] + routed["adopt"], key=lambda s: (SEVERITY_ORDER.get(s["severity"], 9), s["id"]))
+    findings = sorted(routed["app"] + routed["adopt"] + list(extra or []), key=lambda s: (SEVERITY_ORDER.get(s["severity"], 9), s["id"]))
     line = log_line(doc, run_id, today, routed, len(findings))
     body = merge_body(existing, findings, unc, routed["suppressed"], statuses, line,
                       intro(doc.get("rubric_version"), doc.get("target")), stamp, doc.get("rubric_version"))

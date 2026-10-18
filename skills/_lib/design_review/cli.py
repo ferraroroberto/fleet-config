@@ -83,7 +83,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fleet_repo_scan  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from . import capture, evaluate, filing, fleet, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
+from . import capture, evaluate, filing, fleet, inventory, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -453,6 +453,9 @@ def cmd_fleet(args: argparse.Namespace) -> int:
     print(f"SPEC={','.join(s['id'] for s in dig['spec']) or 'none'}")
     print(f"SCAFFOLD={','.join(s['id'] for s in dig['scaffold'] if not s.get('promoted')) or 'none'}")
     print(f"PROMOTED={','.join(dig['promoted']) or 'none'}")
+    if dig.get("inventory"):
+        counts = dig["inventory"]["counts"]
+        print("INVENTORY=" + " ".join(f"{k}:{counts[k]}" for k in (*inventory.CLASSES, "app", "fleet")))
     print("JUDGMENT=skipped")
     print(f"FILING={dig['filing']['mode']}")
     for repo, where in dig["filing"]["issues"].items():
