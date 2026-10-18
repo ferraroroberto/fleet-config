@@ -284,6 +284,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "with no live launcher or `gh` call required (fleet-config#445); the "
      "same file covers `steer_delivery.py`, the say --verify classifier "
      "(fleet-config#680)"),
+    ("chief_sweep", "test_chief_sweep.py",
+     "the chief's worktree sweep -- every class (finished incl. a "
+     "squash-merged branch, in-use, has-work incl. a dirty tree, "
+     "orphan-empty, unknown) against throwaway worktrees, --apply removing "
+     "only finished and orphan-empty and reporting a folder that stays, an "
+     "unreadable board degrading removable verdicts to unknown, and the "
+     "idle-finished session list (fleet-config#1496)"),
     ("audit_quote", "test_audit_quote.py",
      "/codebase-audit's quote check -- a finding's verbatim quote matched "
      "whitespace- and CRLF-tolerantly against the named file, MISMATCH, "

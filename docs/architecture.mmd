@@ -152,7 +152,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
   AUDITFLEET -.->|reports design-drift bucket count| DESIGNSWEEP
   CLEANUPFLEET -->|fans out fixes for| OTHERGLOBAL
   CLEANUPFLEET --> ISSUEEXTRA
-  CHIEF -->|chief_ops.py · chief_managed.py · chief_plan.py| LIB
+  CHIEF -->|chief_ops.py · chief_managed.py · chief_plan.py · chief_sweep.py| LIB
 
   subgraph fworkflows[".claude/workflows/ — Workflow-tool scripts, no Bash/filesystem access"]
     CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute -> teardown per issue,\nSERIAL lanes (one bucket, one repo at a time),\ndeterministic retry/escalate gate (max 2 rounds),\nhalts the run on teardown residue (#518),\nreports-without-halting stale index.lock / behind-origin /\nzombie-pinned empty shells (#534)"]

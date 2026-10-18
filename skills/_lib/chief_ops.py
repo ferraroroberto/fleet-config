@@ -212,6 +212,20 @@ Subcommands
       same false pass) so a caller can gate on the exit code, not just parse
       text. UNKNOWN is never reported as DIRTY (fleet-config#570).
 
+  sweep [--apply] [--root DIR]
+      The chief's worktree sweep (fleet-config#1496): one line per
+      `<repo>-wt-<N>` folder with its class and evidence -- `finished`
+      (clean, nothing beyond the default branch or all of it in a merged PR),
+      `in-use` (a live session's cwd or a live active-issue marker),
+      `has-work` (dirty or unmerged -- the only class the chief asks about),
+      `orphan-empty` (empty non-git folder) or `unknown` (not established) --
+      then a SUMMARY line and one `SESSION` line per chief-managed
+      `idle-finished` session with its issue state (`stoppable` when CLOSED,
+      for `stop`). Read-only by default; `--apply` removes `finished` via
+      `worktree_claim.remove_worktree` and `orphan-empty` via `rmdir`, and a
+      folder that will not go stays and is reported (exit 1). Never kills a
+      process. The logic lives in `skills/_lib/chief_sweep.py`.
+
   plan <show|lane|drop-lane|add|set|move|remove|wait|ask|unwait|clear> ...
       The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the
       Board's "Chief's plan" card renders (fleet-config#1034,
@@ -255,13 +269,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import active_issue  # noqa: E402
 import chief_managed  # noqa: E402
 import chief_plan  # noqa: E402
+import chief_sweep  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+import worktree_claim  # noqa: E402
 # `say --verify`'s delivery classifier is its own subsystem, in its own module
 # (fleet-config#680) -- this file keeps the CLI and the I/O that feeds it.
 # Imported by name, and deliberately only the names this CLI actually calls: a
@@ -1802,6 +1819,35 @@ def _print_verify(status: str, branch: str, reason: Optional[str]) -> int:
     return 0 if status == "CLEAN" else 1
 
 
+def cmd_sweep(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else chief_sweep.default_root()
+    cards: Optional[List[Dict[str, Any]]] = None
+    try:
+        cards = chief_sweep.board_cards(_request(args.base_url, "/api/board"))
+    except (OSError, ValueError) as exc:
+        # An unreadable board is an unestablished fact, not an empty one: every
+        # removable verdict degrades to `unknown` (fleet-config#1496).
+        print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
+    markers = active_issue.read_rows()
+    findings = chief_sweep.scan(
+        root,
+        dirs=None if cards is None else chief_sweep.live_dirs(cards),
+        markers=markers,
+        session_ids=None if cards is None else chief_sweep.live_session_ids(cards),
+        pr_lookup=chief_sweep.github_pr_lookup,
+    )
+    stuck = 0
+    if args.apply:
+        stuck = chief_sweep.apply_findings(
+            findings, lambda wt: worktree_claim.remove_worktree(wt),
+        )
+    sessions = chief_sweep.stale_sessions(
+        cards or [], active_issue.read_rows(chief_managed.state_file()), fetch_issue_state,
+    )
+    print("\n".join(chief_sweep.format_report(findings, sessions, applied=args.apply)))
+    return 1 if stuck else 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="chief_ops", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1906,6 +1952,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     v.add_argument("--branch", default=None)
     v.add_argument("--default-branch", default=None)
     v.set_defaults(func=cmd_verify)
+
+    sw = sub.add_parser("sweep", help="classify (and with --apply remove) finished lane worktrees (fleet-config#1496)")
+    chief_sweep.add_cli(sw)
+    sw.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    sw.set_defaults(func=cmd_sweep)
 
     pl = sub.add_parser("plan", help="write the Board's structured plan (fleet-config#1034)")
     chief_plan.add_cli(pl)
