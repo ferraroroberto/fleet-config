@@ -56,7 +56,10 @@ present on a successful run:
     coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
               DOM, open or not; walk coverage for the report, never a rule input (#1353)
     inventory unmeasured (null, or why no component catalog was passed in), controls [{key, kind, component, role,
-              label, family, px, weight, n}] (one entry per distinct rendering, `n` elements, capped at INVENTORY_CAP),
+              label, family, px, weight, n, options?, group?}] (one entry per distinct rendering, `n` elements, capped at
+              INVENTORY_CAP; `options` on a select or combobox is its option count -- a <select>'s, a datalist's or an
+              aria-controls listbox's, absent when the DOM does not say; `group` on a segmented or range-tab control is the
+              key of its parent, `~N` in document order when several share one, #1505),
               controls_count, kinds {kind: n}, components {component: n}, text [{role, runs, variants [{family, px,
               weight, runs}]}], text_count -- every visible control by kind and component and every text role by the
               fonts it renders in; read only, never a rule input yet (#1497, for #1383's cross-app comparator)
@@ -1164,11 +1167,27 @@ _MEASURE_JS = r"""
     const tally = (obj, k) => { obj[k] = (obj[k] || 0) + 1; };
     const sortedObj = (obj) => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
 
+    // A select or combobox carries its option count (#1505), so the comparator can place it in a bucket: a <select>'s own
+    // options, a datalist's, or the listbox an aria-controls names when that is in the DOM; else none, never a guess.
+    const optionsOf = (el) => {
+      if (el.tagName === 'SELECT') return el.options.length;
+      if (el.tagName === 'INPUT' && el.list) return el.list.options.length;
+      const id = el.getAttribute('aria-controls'), list = id && document.getElementById(id);
+      return list ? list.querySelectorAll('[role=option]').length || null : null; };
+    // A segmented or range-tab control carries the key of the group it sits in (#1505), so two groups on one screen stay
+    // two: the parent's key, numbered in document order when several share one.
+    const groupKeys = new Map(), groupSeen = {};
+    const groupOf = (el) => { const g = el.parentElement; if (!g) return '';
+      if (!groupKeys.has(g)) { const k = keyOf(g), i = groupSeen[k] = (groupSeen[k] || 0) + 1; groupKeys.set(g, i > 1 ? k + '~' + i : k); }
+      return groupKeys.get(g); };
+
     const seen = new Map(), kinds = {}, comps = {};
     let total = 0;
     q(params.interactive + ', [role=link], [role=combobox], [role=radio], [role=menuitemcheckbox], [role=menuitemradio]').forEach(el => {
       const component = componentOf(el), kind = kindOf(el, component), f = fontOf(el);
       const entry = {key: keyOf(el), kind, component, role: roleOf(el), label: nameOf(el), family: f.family, px: f.px, weight: f.weight};
+      if (kind === 'select' || kind === 'combobox') { const o = optionsOf(el); if (o !== null) entry.options = o; }
+      if (kind === 'segmented' || kind === 'range-tab') entry.group = groupOf(el);
       const id = JSON.stringify(entry), had = seen.get(id);
       if (had) had.n++; else seen.set(id, Object.assign(entry, {n: 1}));
       tally(kinds, kind); tally(comps, component); total++; });

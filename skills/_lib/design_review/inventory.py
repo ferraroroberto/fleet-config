@@ -25,8 +25,9 @@ a short masked label against a fixed vocabulary (`ACTION_VOCAB`, `CHOICE_VOCAB`)
 `ACTION_LABEL_MAX_WORDS` is a whole-row tap whose label is the row's own text (#1500's note on #1497), so it
 is never matched. A control whose component is `unknown` (an inventory taken with no catalog) is compared
 for nothing but its choice kind. A select or combobox counts its options only when the entry carries
-`options`, which Step 1's inventory does not record yet. A segmented or range-tab group's option count is
-its entries on that screen, one group per component per screen. Whatever the DOM cannot decide is listed
+`options` (#1505); an inventory taken before that lists it as unclassified. A segmented or range-tab
+group's option count is its entries on that screen, one group per component and `group` key per screen
+(#1505; an inventory with no `group` merges them into one group per component, as before). Whatever the DOM cannot decide is listed
 under `unclassified` for Step 6's per-app readers. This module never guesses.
 
 **Filing-safe.** A filing line carries finding ids, counts, app names, renderings (family, px, weight,
@@ -326,13 +327,13 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
             for tr in inv.get("text") or []:
                 for v in tr.get("variants") or []:
                     _note(text, str(tr.get("role")), _variant(v.get("family"), v.get("px"), v.get("weight")), t, sid)
-            groups: Dict[Tuple[str, str], dict] = {}
+            groups: Dict[Tuple[str, str, str], dict] = {}
             for c in inv.get("controls") or []:
                 kind, comp, n = str(c.get("kind")), str(c.get("component")), int(c.get("n") or 1)
                 if comp.startswith("vendored:"):
                     observed_vendored.add(comp.split(":", 1)[1])
                 if kind in GROUP_CHOICE_KINDS:
-                    g = groups.setdefault((kind, comp), {"labels": [], "n": 0, "options": None})
+                    g = groups.setdefault((kind, comp, str(c.get("group") or "")), {"labels": [], "n": 0, "options": None})
                     g["labels"].append(str(c.get("label") or ""))
                     g["n"] += n
                     if isinstance(c.get("options"), int):
@@ -354,7 +355,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
                         unclass(t, sid, c, str(why), n)
                     else:
                         _note(actions, action + (" in menu" if kind == "menuitem" else ""), _rendering(c), t, sid)
-            for (kind, _comp), g in sorted(groups.items()):
+            for (kind, _comp, _group), g in sorted(groups.items()):
                 options = g["options"] if g["options"] is not None else g["n"]
                 _note(choices, f"{choice_of(sorted(g['labels']))}|{_bucket(options)}", kind, t, sid)
         app_rows.append({"target": t, "run": app.get("run"), "source": app.get("source"),
