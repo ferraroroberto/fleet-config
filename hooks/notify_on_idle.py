@@ -320,6 +320,20 @@ def chief_needs_input(payload: dict, text: str, default_agent: str = "claude") -
     return True
 
 
+def chief_pending_text(payload: dict, fallback: str) -> str:
+    """The chief-mailbox line for a Claude permission gate: the pending tool call (fleet-config#1510).
+
+    Replaces `classify()`'s fixed text for the chief only -- the human ping
+    keeps it. A lookup that raises degrades to `fallback`, never fails the hook.
+    """
+    try:
+        import chief_inbox  # deferred like chief_needs_input's: only a managed worker pays
+        return chief_inbox.pending_call_line(payload, fallback)
+    except Exception as exc:  # noqa: BLE001 -- advisory
+        logger.warning("chief_pending_text: pending-call lookup failed (%s) -- pending call: unknown", exc)
+        return f"pending call: unknown (default text: {fallback})"
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     payload = _lib.read_stdin_json()
@@ -380,7 +394,7 @@ def main() -> None:
             )
         if managed:
             _icon, text = classify(payload)
-            if chief_needs_input(payload, text):
+            if chief_needs_input(payload, chief_pending_text(payload, text)):
                 _lib.allow()  # in the chief's mailbox -- no human ping for this one
 
     # A "come look, I'm blocked" prompt is action-needed → the attention chat.

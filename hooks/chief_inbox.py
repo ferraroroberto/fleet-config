@@ -69,6 +69,17 @@ NEEDS_INPUT_EXCERPT_CHARS = 300
 # A transcript tail read on the worker's Stop stays bounded however long the
 # session ran; an assistant record larger than this is reported unavailable.
 TRANSCRIPT_TAIL_BYTES = 256 * 1024
+# A needs-input line naming the pending call (fleet-config#1510): the tool name
+# and its detail are capped so the whole line fits NEEDS_INPUT_EXCERPT_CHARS.
+PENDING_TOOL_CHARS = 40
+PENDING_DETAIL_CHARS = 200
+# Only sub-agents active this recently can hold the gate; a lane runs a few at once.
+SUBAGENT_RECENT_SECONDS = 600
+MAX_SUBAGENT_READS = 8
+# A delegation call stays pending for as long as its sub-agent runs, so on the
+# parent it is never the call the gate is on.
+_DELEGATION_TOOLS = ("Agent", "Task")
+_CALL_DETAIL_KEYS = ("command", "file_path", "path", "notebook_path", "url", "pattern", "query")
 
 
 def inbox_dir() -> Path:
@@ -120,6 +131,118 @@ def _transcript_excerpt(path: str) -> Tuple[Optional[str], str]:
         if text:
             return text, ""
     return None, f"no assistant reply in the transcript's last {TRANSCRIPT_TAIL_BYTES // 1024} KiB"
+
+
+def _tail_lines(path: Path) -> Optional[list]:
+    """The last ``TRANSCRIPT_TAIL_BYTES`` of ``path`` as text lines, or ``None`` if unreadable."""
+    try:
+        with open(path, "rb") as handle:
+            size = handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
+            tail = handle.read()
+    except OSError:
+        return None
+    return tail.decode("utf-8", errors="replace").splitlines()
+
+
+def _call_detail(tool_input: Any) -> str:
+    """One bounded line naming what a tool call acts on: its command, path or question."""
+    if not isinstance(tool_input, dict):
+        return ""
+    value: Any = None
+    for key in _CALL_DETAIL_KEYS:
+        value = tool_input.get(key)
+        if value:
+            break
+    if not value:
+        questions = tool_input.get("questions")
+        first = questions[0] if isinstance(questions, list) and questions else None
+        value = first.get("question") if isinstance(first, dict) else None
+    if not value:
+        value = json.dumps(tool_input, ensure_ascii=False, default=str)
+    return " ".join(str(value).split())[:PENDING_DETAIL_CHARS]
+
+
+def _pending_calls(path: Path, who: str, skip_tools: Tuple[str, ...] = ()) -> list:
+    """``[(timestamp, who, tool, detail)]`` for each ``tool_use`` in ``path``'s tail with no ``tool_result``.
+
+    A call and its result are written in that order, so a call inside the
+    window has its result inside it too: "no result here" means pending.
+    ``skip_tools`` drops delegation calls whose result only arrives once a
+    sub-agent ends -- pending, but not the call the gate is on.
+    """
+    lines = _tail_lines(path)
+    if lines is None:
+        return []
+    calls: Dict[str, tuple] = {}
+    answered = set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # the window's cut first line, or junk
+        message = entry.get("message") if isinstance(entry, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                tool = str(block.get("name") or "?")[:PENDING_TOOL_CHARS]
+                if tool not in skip_tools:
+                    calls[block["id"]] = (str(entry.get("timestamp") or ""), who, tool,
+                                          _call_detail(block.get("input")))
+            elif block.get("type") == "tool_result":
+                answered.add(block.get("tool_use_id"))
+    return [call for call_id, call in calls.items() if call_id not in answered]
+
+
+def pending_call_line(payload: Dict[str, Any], fallback: str) -> str:
+    """The needs-input excerpt line naming the tool call a permission gate is on (fleet-config#1510).
+
+    The newest pending ``tool_use`` across the parent transcript and the
+    sub-agent transcripts under ``<session_id>/subagents/`` touched in the last
+    ``SUBAGENT_RECENT_SECONDS``: ``permission: <Tool> <detail> (parent)`` or
+    ``(sub-agent <id8>)``. Nothing found is its own state, ``pending call:
+    unknown``, followed by the best text the hook has and the source it came
+    from (the payload's ``message``, else ``fallback``) -- never a bare idle
+    line. Bounded tail reads only; the lookup is logged without the command
+    text. Worker-derived text: for the chief mailbox only, never a terminal.
+    """
+    candidates: list = []
+    reads = 0
+    transcript = payload.get("transcript_path")
+    if isinstance(transcript, str) and transcript:
+        parent = Path(transcript)
+        reads += 1
+        candidates += _pending_calls(parent, "parent", skip_tools=_DELEGATION_TOOLS)
+        session = payload.get("session_id")
+        sub_dir = parent.parent / (session if isinstance(session, str) and session else parent.stem) / "subagents"
+        now = datetime.now(timezone.utc).timestamp()
+        try:
+            recent = sorted(((p.stat().st_mtime, p) for p in sub_dir.glob("*.jsonl")), reverse=True)
+        except OSError:
+            recent = []
+        for mtime, sub in recent[:MAX_SUBAGENT_READS]:
+            if now - mtime > SUBAGENT_RECENT_SECONDS:
+                break
+            reads += 1
+            agent_id = sub.stem[len("agent-"):] if sub.stem.startswith("agent-") else sub.stem
+            candidates += _pending_calls(sub, f"sub-agent {agent_id[:8]}")
+    if candidates:
+        _ts, who, tool, detail = max(candidates, key=lambda call: call[0])
+        logger.info("ℹ️ chief_inbox: pending call found: %s in %s (%d candidates, %d transcripts read)",
+                    tool, who, len(candidates), reads)
+        return f"permission: {' '.join(part for part in (tool, detail) if part)} ({who})"
+    message = payload.get("message")
+    if isinstance(message, str) and message.strip():
+        known = f"payload message: {' '.join(message.split())[:PENDING_DETAIL_CHARS]}"
+    else:
+        known = f"default text: {fallback}"
+    logger.info("ℹ️ chief_inbox: no pending call found (%d transcripts read) -- using the %s",
+                reads, known.split(":", 1)[0])
+    return f"pending call: unknown ({known})"
 
 
 def excerpt_fields(payload: Dict[str, Any]) -> Dict[str, Any]:

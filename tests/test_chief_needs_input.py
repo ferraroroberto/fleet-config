@@ -46,6 +46,7 @@ check = _h.check
 WORKER_SID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
 DISPATCH_ID = "d" * 32
 OLD_PREFIX = "chief-managed worker needs input"
+UNKNOWN_EXCERPT = "pending call: unknown (payload message: Claude needs your permission to use Bash)"
 
 tmp = Path(tempfile.mkdtemp(prefix="chief_needs_input_"))
 project_dir = tmp / "probe-project"
@@ -102,10 +103,10 @@ def lookups() -> list:
     return [argv for argv in spawns if argv and argv[-1] == "chief-sid"]
 
 
-def claude_prompt() -> int:
+def claude_prompt(**extra) -> int:
     payload = {"hook_event_name": "Notification", "notification_type": "permission_prompt",
                "message": "Claude needs your permission to use Bash",
-               "session_id": "transcript-uuid", "cwd": str(project_dir)}
+               "session_id": "transcript-uuid", "cwd": str(project_dir), **extra}
     old_stdin = sys.stdin
     sys.stdin = io.StringIO(json.dumps(payload))
     try:
@@ -149,15 +150,84 @@ try:
           and event.get("launcher_sid") == WORKER_SID and event.get("dispatch_id") == DISPATCH_ID
           and event.get("agent") == "claude",
           "claude: the event is kind=needs-input for the dispatched issue")
-    check(event.get("excerpt") == "Claude Code awaits your input"
+    check(event.get("excerpt") == UNKNOWN_EXCERPT
           and event.get("excerpt_source") == "prompt",
-          "claude: the excerpt carries the classified prompt text")
+          "claude: no transcript -> `pending call: unknown` naming the payload message as its source")
     check(said() == [],
           "claude: nothing is typed into the chief (no say spawn)")
     check(telegram == [],
           "claude: no Telegram ping when the mailbox took it")
     check(OLD_PREFIX not in json.dumps(written, ensure_ascii=False),
           "claude: no worker text carries the old typed prefix")
+
+    # ---- Claude: the excerpt names the pending call (fleet-config#1510) ----
+    def tool_use(call_id: str, name: str, tool_input: dict, ts: str) -> dict:
+        return {"type": "assistant", "timestamp": ts, "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]}}
+
+    def tool_result(call_id: str, ts: str) -> dict:
+        return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": call_id, "content": "ok"}]}}
+
+    def write_transcript(path: Path, *entries: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+
+    def excerpt_for(name: str, parent_entries: list, subagents: dict = None, **extra) -> str:
+        """Run one permission_prompt over a synthetic transcript tree; the event's excerpt."""
+        state = fresh_state(name)
+        use_state(state, "claude")
+        root = tmp / f"transcripts-{name}"
+        session = f"sess-{name}"
+        parent = root / f"{session}.jsonl"
+        write_transcript(parent, *parent_entries)
+        for agent, entries in (subagents or {}).items():
+            write_transcript(root / session / "subagents" / f"agent-{agent}.jsonl", *entries)
+        claude_prompt(**{"transcript_path": str(parent), "session_id": session, **extra})
+        got = events(state)
+        check(len(got) == 1 and said() == [] and telegram == [],
+              f"{name}: one event in the mailbox, nothing typed, no Telegram")
+        return str(got[0].get("excerpt")) if got else ""
+
+    line = excerpt_for("pending-parent", [
+        tool_use("t1", "Read", {"file_path": "a.txt"}, "2026-10-19T10:00:00Z"),
+        tool_result("t1", "2026-10-19T10:00:01Z"),
+        tool_use("t2", "Bash", {"command": "rm -rf build && make"}, "2026-10-19T10:00:02Z")])
+    check(line == "permission: Bash rm -rf build && make (parent)",
+          "pending parent Bash call -> names the tool, the command head and (parent)")
+
+    line = excerpt_for("pending-sub", [
+        tool_use("p1", "Agent", {"prompt": "go"}, "2026-10-19T10:00:00Z")],
+        {"a0428d80ffff1234": [
+            tool_use("s1", "Bash", {"command": "cat > ../x"}, "2026-10-19T10:01:00Z")]})
+    check(line == "permission: Bash cat > ../x (sub-agent a0428d80)",
+          "pending sub-agent call -> (sub-agent <id8>); the parent's own pending Agent call is not the gate")
+
+    line = excerpt_for("pending-newest", [
+        tool_use("p1", "Edit", {"file_path": "old.py"}, "2026-10-19T10:00:00Z")],
+        {"b1b1b1b1x": [tool_use("s1", "Write", {"file_path": "new.py"}, "2026-10-19T10:05:00Z")]})
+    check(line == "permission: Write new.py (sub-agent b1b1b1b1)",
+          "pending calls in several transcripts -> the newest one wins")
+
+    line = excerpt_for("pending-answered", [
+        tool_use("t1", "Bash", {"command": "ls"}, "2026-10-19T10:00:00Z"),
+        tool_result("t1", "2026-10-19T10:00:01Z")])
+    check(line == UNKNOWN_EXCERPT,
+          "every call answered -> `pending call: unknown`, not the idle text")
+
+    line = excerpt_for("pending-no-message", [], message="")
+    check(line == "pending call: unknown (default text: Claude Code awaits your input)",
+          "nothing found and no payload message -> unknown, naming the default text as the source")
+
+    line = excerpt_for("pending-long", [
+        tool_use("t1", "Bash", {"command": "echo 1\n" + "x" * 900}, "2026-10-19T10:00:00Z")])
+    check("\n" not in line and line.startswith("permission: Bash echo 1 xxx") and line.endswith("(parent)")
+          and len(line) < 290,
+          "a multi-line, oversized command stays one bounded line that keeps its (parent) tag")
+
+    line = excerpt_for("pending-unreadable", [], transcript_path=str(tmp / "no" / "such.jsonl"))
+    check(line == UNKNOWN_EXCERPT,
+          "unreadable transcript -> `pending call: unknown`, hook still delivers")
 
     # ---- Claude: no live chief -> Telegram exactly as before ----
     claude_none = fresh_state("claude-none")
@@ -256,8 +326,8 @@ try:
           and lines[1].startswith(f"- fleet-config#1456: needs input (claude) sid={WORKER_SID[:8]} age=")
           and lines[1].endswith(" kind=needs-input"),
           "wait-event: the event line names the issue, says needs input, and tags the kind")
-    check(lines[2:4] == ["  excerpt (prompt, 29 chars):", "  | Claude Code awaits your input"],
-          "wait-event: the classified prompt text follows as an indented excerpt")
+    check(lines[2:4] == [f"  excerpt (prompt, {len(UNKNOWN_EXCERPT)} chars):", f"  | {UNKNOWN_EXCERPT}"],
+          "wait-event: the pending-call line follows as an indented excerpt")
     check(lines[-1:] == ["Next: `exchange <sid>` for each, `verify` any completion claim, "
                          "then absorb or escalate."],
           "wait-event: the closing Next: line is unchanged")
