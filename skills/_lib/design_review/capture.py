@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as _dt
+import hashlib
 import json
 import os
 import queue
@@ -71,6 +72,7 @@ import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import measure  # noqa: E402
+from .evaluate import theme_mismatches  # noqa: E402
 from .plan import (  # noqa: E402
     E2E_HOOK, THEMES, PlanError, Target, e2e_block, exclude_selectors, screen_id, synthetic_block,
 )
@@ -627,6 +629,62 @@ def run_e2e_suite(python: str, root: Path, command: List[str], capture_dir: Path
     return {"returncode": proc.returncode, "timed_out": timed_out, "tail": (output or "")[-2000:]}
 
 
+def _tree_state(root: Path) -> "tuple[Optional[Path], Dict[str, tuple], str]":
+    """`(toplevel, {path: (porcelain XY, content hash)}, error)` for the git tree holding `root`.
+
+    `toplevel` is None, with `error` saying why, when the tree's state cannot be read (no git, not a checkout): the
+    caller reports that as unchecked, never as clean. Paths are relative to the toplevel; a path git lists that is
+    not a file now (a deletion) hashes to ""."""
+    top = git_run.run_git(["-C", str(root), "rev-parse", "--show-toplevel"])
+    if top.returncode != 0:
+        return None, {}, f"git rev-parse --show-toplevel exit {top.returncode}: {(top.stderr or '').strip()[-200:]}"
+    toplevel = Path(top.stdout.strip())
+    proc = git_run.run_git(["-C", str(toplevel), "status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    if proc.returncode != 0:
+        return None, {}, f"git status exit {proc.returncode}: {(proc.stderr or '').strip()[-200:]}"
+    state: Dict[str, tuple] = {}
+    entries = iter(proc.stdout.split("\0"))
+    for entry in entries:
+        if len(entry) < 4:
+            continue
+        xy, path = entry[:2], entry[3:]
+        if xy[0] in "RC":
+            next(entries, None)  # a rename or copy carries its source as the next field
+        file = toplevel / path
+        state[path] = (xy, hashlib.sha1(file.read_bytes()).hexdigest() if file.is_file() else "")
+    return toplevel, state, ""
+
+
+def restore_tree(toplevel: Path, before: Dict[str, tuple]) -> Dict[str, object]:
+    """Put the target tree back as `before` found it: `{state, restored, unrestored, detail}`.
+
+    The suite rewrites tracked files (its gallery screenshots) and leaves new ones. A path clean before the run is
+    restored from HEAD (tracked) or removed (untracked); a path already dirty before the run that the run changed
+    cannot be told from the user's own edit and is never touched. `state` is `clean` (the run changed nothing),
+    `restored`, or `restore_failed` (the tree still differs from `before`: `unrestored` names the paths).
+    """
+    _, after, error = _tree_state(toplevel)
+    if error:
+        return {"state": "restore_failed", "restored": [], "unrestored": [], "detail": f"the tree was not re-read: {error}"}
+    restored: List[str] = []
+    for path in sorted(set(after) - set(before)):
+        if after[path][0] == "??":
+            try:
+                (toplevel / path).unlink()
+                restored.append(path)
+            except OSError:
+                pass  # the re-read below names it
+        elif git_run.run_git(["-C", str(toplevel), "restore", "--source=HEAD", "--staged", "--worktree", "--", path]).returncode == 0:
+            restored.append(path)
+    _, now, error = _tree_state(toplevel)
+    unrestored = sorted(p for p in set(now) | set(before) if now.get(p) != before.get(p))
+    if error or unrestored:
+        detail = error or (f"{len(unrestored)} path(s) differ from the tree before the run (dirty before it, or git could not "
+                           f"restore them): {', '.join(unrestored[:8])}")
+        return {"state": "restore_failed", "restored": restored, "unrestored": unrestored, "detail": detail}
+    return {"state": "restored" if restored else "clean", "restored": restored, "unrestored": [], "detail": ""}
+
+
 def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold: str) -> Dict[str, object]:
     """Run the target's e2e suite in capture mode and append its screens to `doc["screens"]`; return the `e2e` record.
 
@@ -635,10 +693,16 @@ def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold:
     vendored `tests/e2e/_surface.py`), `E2E_SCRIPT_FAILED` (the page script could not be emitted), `E2E_TIMEOUT` /
     `E2E_FAILED` (past the timeout / a non-zero exit, before any capture) and `E2E_NO_SURFACES` (it ran and captured
     nothing). A suite that fails or times out after capturing keeps its screens, with a `note`, as the walk does.
+
+    Two more states ride beside that outcome, neither folded into it (#1507): `warning` (`E2E_THEME_MISMATCH`, with
+    `theme_mismatch` listing the screens whose page kept another theme than the hook asked for) and `tree`, what
+    `restore_tree` did to the target's working tree after the suite (`clean` / `restored` / `restore_failed` /
+    `unchecked` when git could not be read).
     """
     rec: Dict[str, object] = {"command": None, "timeout_s": None, "capture_dir": None, "log": None, "geometry": None,
                               "returncode": None, "timed_out": False, "surfaces": [], "screens": 0,
-                              "duplicates": [], "unreadable": [], "unmeasured": None, "note": None}
+                              "duplicates": [], "unreadable": [], "unmeasured": None, "note": None,
+                              "warning": None, "theme_mismatch": [], "tree": None}
 
     def unmeasured(reason: str, detail: str) -> Dict[str, object]:
         rec["unmeasured"] = {"reason": reason, "detail": detail}
@@ -664,9 +728,15 @@ def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold:
         return unmeasured("E2E_SCRIPT_FAILED", str(prep["error"]))
     log_path = run_dir / E2E_LOG
     rec["log"] = str(log_path)
+    toplevel, before, tree_error = _tree_state(Path(target.root))
     run = run_e2e_suite(python, Path(target.root), list(block["command"]), Path(str(prep["dir"])), log_path,  # type: ignore[arg-type]
                         float(block["timeout_s"]))  # type: ignore[arg-type]
     rec["returncode"], rec["timed_out"] = run["returncode"], run["timed_out"]
+    if toplevel is None:
+        rec["tree"] = {"state": "unchecked", "restored": [], "unrestored": [],
+                       "detail": f"the target tree's state was not read before the run, so nothing was restored: {tree_error}"}
+    else:
+        rec["tree"] = restore_tree(toplevel, before)
     got = e2e_screens(Path(str(prep["dir"])), run_dir / "shots")
     screens = got["screens"]
     rec["surfaces"] = sorted({str(s["surface"]) for s in screens})
@@ -682,6 +752,14 @@ def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold:
                               f"calls surface(page, name){unread}")
         return unmeasured("E2E_FAILED", f"exit {rc} before any capture{unread}: {str(run['tail'])[-500:]}")
     doc["screens"].extend(screens)  # type: ignore[union-attr]
+    mismatched = theme_mismatches(screens)
+    if mismatched:
+        shown = ", ".join(f"{m['id']} (asked {m['requested']}, rendered {m['rendered'] or 'another theme'})" for m in mismatched[:4])
+        rec["theme_mismatch"] = mismatched
+        rec["warning"] = {"reason": "E2E_THEME_MISMATCH",
+                          "detail": f"{len(mismatched)} of {len(screens)} e2e screens did not render the requested theme: {shown}"
+                                    f"{' ...' if len(mismatched) > 4 else ''}. An app that stamps data-theme at load needs "
+                                    "[design.review] theme_storage_key in its .fleet.toml, or every dark capture is light"}
     if run["timed_out"]:
         rec["note"] = f"the suite exceeded {timeout:g}s after capturing and was killed; its captures are kept, see {E2E_LOG}"
     elif rc != 0:

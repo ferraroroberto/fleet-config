@@ -27,7 +27,8 @@ skill can read the result back without parsing JSON:
 
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
     measure       TARGET= MODE=live|synthetic BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> ABSENT=<n> UNMEASURED=<reason>|none
-                  with --e2e also: E2E=ok|E2E_<reason> E2E_SURFACES=<n> E2E_SCREENS=<n> [E2E_DETAIL=] [E2E_NOTE=]
+                  with --e2e also: E2E=ok|E2E_<reason> (E2E_THEME_MISMATCH: captured, but a page kept another theme) E2E_SURFACES=<n> E2E_SCREENS=<n>
+                  [E2E_DETAIL=] [E2E_NOTE=] E2E_TREE=clean|restored|restore_failed|unchecked [E2E_TREE_DETAIL=]  (restore_failed exits 1)
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
     judge-merge   JUDGMENT=ok|partial|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n> DROPPED=<n>  [DROPPED_DETAIL=<why>] [NORMALIZED=<id>:<from>-><to>]
                   [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
@@ -118,7 +119,10 @@ def cmd_measure(args: argparse.Namespace) -> int:
         return 2
     try:
         # A synthetic run's URL comes from the target's own launcher (#995), so no port lookup is needed.
-        url = args.url or (plan.SYNTHETIC_URL if args.synthetic else None)
+        # `--e2e` without `--url` measures the disposable instance too (#1507): its walk never touches the live port,
+        # and a target with no synthetic launcher is unmeasured (SYNTHETIC_UNDECLARED), never walked live.
+        synthetic = args.synthetic or (args.e2e and not args.url)
+        url = args.url or (plan.SYNTHETIC_URL if synthetic else None)
         target = plan.resolve_target(args.repo, Path(args.projects_toml) if args.projects_toml else None, url)
         devices = plan.device_list([d for d in (args.devices or "").split(",") if d])
     except plan.PlanError as exc:
@@ -130,7 +134,7 @@ def cmd_measure(args: argparse.Namespace) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
     doc = capture.measure_target(target, rb, specs["light"], devices, python_override=args.python,
                                  scaffold=args.scaffold, run_dir=run_dir, walk_timeout=args.walk_timeout,
-                                 synthetic=args.synthetic, e2e=args.e2e)
+                                 synthetic=synthetic, e2e=args.e2e)
     screens = doc.get("screens") or []
     ok = sum(1 for s in screens if s.get("status") == "ok")
     print(f"TARGET={doc['target']}")
@@ -148,14 +152,22 @@ def cmd_measure(args: argparse.Namespace) -> int:
         print(f"UNMEASURED_DETAIL={unm['detail']}")
     e2e = doc.get("e2e")
     if isinstance(e2e, dict):
-        e_unm = e2e.get("unmeasured")
-        print(f"E2E={e_unm['reason'] if e_unm else 'ok'}")
+        e_unm, e_warn = e2e.get("unmeasured"), e2e.get("warning")
+        print(f"E2E={e_unm['reason'] if e_unm else e_warn['reason'] if e_warn else 'ok'}")
         print(f"E2E_SURFACES={len(e2e.get('surfaces') or [])}")
         print(f"E2E_SCREENS={e2e.get('screens') or 0}")
-        if e_unm and e_unm.get("detail"):
-            print(f"E2E_DETAIL={e_unm['detail']}")
+        for note in (e_unm, e_warn):
+            if note and note.get("detail"):
+                print(f"E2E_DETAIL={note['detail']}")
         if e2e.get("note"):
             print(f"E2E_NOTE={e2e['note']}")
+        tree = e2e.get("tree")
+        if isinstance(tree, dict):
+            print(f"E2E_TREE={tree['state']}")
+            if tree.get("detail"):
+                print(f"E2E_TREE_DETAIL={tree['detail']}")
+            if tree["state"] == "restore_failed":
+                return 1  # the target's working tree is left changed: loud, though the measurement itself stands
     return 0
 
 
@@ -501,7 +513,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="boot the target's [design.review.synthetic] launcher and walk that throwaway instance, not the live app")
     m.add_argument("--e2e", action="store_true",
                    help="after the walk, run the target's e2e suite with its surface() hook armed and add every captured "
-                        "surface as a screen ([design.review.e2e], default `-m pytest tests/e2e`)")
+                        "surface as a screen ([design.review.e2e], default `-m pytest tests/e2e`). Without --url it implies "
+                        "--synthetic (the walk never touches the live app), and the target's working tree is restored afterwards")
     m.set_defaults(fn=cmd_measure)
 
     e = sub.add_parser("evaluate", help="rule results + category grades from a metrics.json, as JSON")
