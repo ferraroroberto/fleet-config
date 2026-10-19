@@ -1255,6 +1255,28 @@ else:
               f"inventory with no catalog: unmeasured says why and every control reads unknown, never bespoke -- "
               f"{_inv_none.get('unmeasured')} {_inv_none.get('components')} ({_inv_out['none_err']})")
 
+    # option counts and group keys (#1505), over a fixture and a hand-made catalog (no scaffold needed)
+    _ch_params = STATE / "inv-choices-params.json"
+    _ch_params.write_text(json.dumps(measure.default_params(components={"segmented": {"roots": ["segmented"], "parts": ["segmented-item"]}})), encoding="utf-8")
+    _ch_out = []
+    for _i in range(2):
+        _ch_proc = _walk_run([str(interp), str(FIX / "inventory_driver.py"), (FIX / "inventory_choices.html").as_uri(), str(_ch_params)],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        _ch_out.append(_ch_proc.stdout if _ch_proc.returncode == 0 else "")
+    _ch = json.loads(_ch_out[0]) if _ch_out[0] else {}
+    _ch_ctl = _ch.get("controls", [])
+    _ch_opts = {c["key"]: c.get("options") for c in _ch_ctl if c["kind"] in ("select", "combobox")}
+    _ch_groups = {}
+    for _c in _ch_ctl:
+        if _c["kind"] == "segmented":
+            _ch_groups[_c["group"]] = _ch_groups.get(_c["group"], 0) + _c["n"]
+    check(_ch_opts == {"select#model": 6, "input#city": 2, "input#tag": 3, "input#gone": None},
+          f"inventory: a select, a datalist input and an aria-controls listbox carry their option count; a listbox not in the DOM carries none -- {_ch_opts}")
+    check(_ch_groups == {"div.segmented": 3, "div.segmented~2": 2, "div#scope": 2},
+          f"inventory: segmented controls carry their group key, numbered in document order when several share one -- {_ch_groups}")
+    check(bool(_ch_out[0]) and _ch_out[0] == _ch_out[1],
+          f"inventory: two runs over the choices page are byte-identical ({len(_ch_out[0])} vs {len(_ch_out[1])} bytes)")
+
     # measure --e2e (#1498): a throwaway copy of the fixture target, project-scaffolding's vendored surface() hook
     # copied in as an adopter vendors it; its own pytest suite captures two surfaces (one on a Pixel 7 context).
     _e2e_hook = scaffold / "tests" / "e2e" / "_surface.py"

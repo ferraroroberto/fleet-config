@@ -274,4 +274,40 @@ a, b = ev.evaluate(base, rubric, vspecs), ev.evaluate(with_inv, rubric, vspecs)
 check([(r["id"], r["status"]) for r in a["rules"]] == [(r["id"], r["status"]) for r in b["rules"]] and a["overall"] == b["overall"],
       "rule results and the overall score are identical with and without an inventory on every screen")
 
+# ---- option counts and group keys (fleet-config#1505) ---------------------------------------------------------------------
+
+
+def _ctl(kind: str, comp: str, label: str, **extra) -> dict:
+    return {"key": f"{kind}.x", "kind": kind, "component": comp, "role": "", "label": label, "family": "system-ui", "px": 14,
+            "weight": "400", "n": 1, **extra}
+
+
+def _one_screen(target: str, controls: list) -> dict:
+    return {"target": target, "run": "r", "source": "s", "screens": [{"id": "desktop-light-home", "inventory": {"unmeasured": None, "controls": controls, "text": []}}]}
+
+
+# Two segmented groups on one screen: a 3-way time range and a 2-way sort. Merged they read as one 5-way group; apart they are two.
+_two = _one_screen("app-two", [_ctl("segmented", "vendored:segmented", "Day", group="div#range"), _ctl("segmented", "vendored:segmented", "Week", group="div#range"),
+                               _ctl("segmented", "vendored:segmented", "Month", group="div#range"),
+                               _ctl("segmented", "vendored:segmented", "Sort by name", group="div#order"), _ctl("segmented", "vendored:segmented", "Sort by date", group="div#order")])
+_merged = _one_screen("app-two", [{k: v for k, v in c.items() if k != "group"} for c in _two["screens"][0]["inventory"]["controls"]])
+_sel = _one_screen("app-sel", [_ctl("select", "vendored:select-native", "Range", options=3)])
+_keyed = inv.compare([_two, _sel], REF, CATALOG)
+check(_keyed["unclassified"] == [], f"a select with an option count is placed in its bucket, not unclassified -- {_keyed['unclassified']}")
+_by = {f["id"]: f for f in _keyed["findings"]}
+check(_by["INV-04-time-range-2-5"]["counts"] == {} and {r["rendering"]: r["apps"] for r in _by["INV-04-time-range-2-5"]["renderings"]}
+      == {"segmented": ["app-two"], "select": ["app-sel"]} and _by["INV-04-time-range-2-5"]["divergent"] == ["app-sel"]
+      and "INV-04-sort-2-5" not in _by and "INV-04-other-2-5" not in _by,
+      f"INV-04: two groups on one screen stay distinct (the 3-way range, the 2-way sort), each in the 2-5 bucket -- {_by.get('INV-04-time-range-2-5')}")
+_merged_ids = {f["id"] for f in inv.compare([_merged, _sel], REF, CATALOG)["findings"]}
+check("INV-04-time-range-2-5" in _merged_ids,
+      "an inventory with no `group` key still compares, as one group per component per screen (the pre-#1505 reading)")
+_six = inv.compare([_one_screen("app-six", [_ctl("segmented", "vendored:segmented", f"Opt {i}", group="div#a") for i in range(4)]
+                                + [_ctl("segmented", "vendored:segmented", f"Opt {i}", group="div#b") for i in range(4)])], REF, CATALOG)
+_merged_six = inv.compare([_one_screen("app-six", [_ctl("segmented", "vendored:segmented", f"Opt {i}") for i in range(8)])], REF, CATALOG)
+check(_six["findings"] == [] and [f["id"] for f in _merged_six["findings"]] == ["INV-04-other-6-plus"],
+      "two 4-way groups are two 2-5 groups (design.md's segmented, no finding); the same eight merged would read as one 6+ group on a segmented control")
+check(json.dumps(_keyed, sort_keys=True) == json.dumps(inv.compare([_sel, _two], REF, CATALOG), sort_keys=True),
+      "option counts and group keys keep the output deterministic, whatever the input order")
+
 _h.report_and_exit("test_design_inventory", skip_code=SKIP_EXIT)

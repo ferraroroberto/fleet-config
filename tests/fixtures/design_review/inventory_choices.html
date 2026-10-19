@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choice controls</title>
+<style>
+  body { font: 14px system-ui; margin: 16px; }
+  .segmented { display: inline-flex; gap: 2px; }
+  .segmented-item { font: inherit; min-height: 44px; padding: 0 12px; }
+</style>
+</head>
+<body>
+<!-- Two segmented groups with the same class and no id (numbered in document order), one with an id; a select, a datalist input and a
+     combobox whose listbox is in the DOM, a combobox whose listbox is not. -->
+<div class="segmented" role="group" aria-label="Period">
+  <button type="button" class="segmented-item" aria-pressed="true">Day</button>
+  <button type="button" class="segmented-item" aria-pressed="false">Week</button>
+  <button type="button" class="segmented-item" aria-pressed="false">Month</button>
+</div>
+<div class="segmented" role="group" aria-label="Sort">
+  <button type="button" class="segmented-item" aria-pressed="true">Name</button>
+  <button type="button" class="segmented-item" aria-pressed="false">Date</button>
+</div>
+<div class="segmented" id="scope" role="group" aria-label="Scope">
+  <button type="button" class="segmented-item" aria-pressed="true">Mine</button>
+  <button type="button" class="segmented-item" aria-pressed="false">All</button>
+</div>
+<select id="model" aria-label="Model">
+  <option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option>
+</select>
+<input id="city" list="cities" aria-label="City">
+<datalist id="cities"><option value="Rome"><option value="Oslo"></datalist>
+<input id="tag" role="combobox" aria-controls="tag-list" aria-label="Tag">
+<ul id="tag-list" role="listbox"><li role="option">x</li><li role="option">y</li><li role="option">z</li></ul>
+<input id="gone" role="combobox" aria-controls="not-in-the-dom" aria-label="Gone">
+</body>
+</html>
