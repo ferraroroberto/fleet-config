@@ -1266,9 +1266,9 @@ else:
         shutil.copytree(FIX / "e2e_target", _e2e_root)
         shutil.copy(_e2e_hook, _e2e_root / "tests" / "e2e" / "_surface.py")
 
-        def _measure_e2e(run_name: str, *extra: str):
-            p = _walk_run([sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(_e2e_root),
-                           "--url", (_e2e_root / "page.html").as_uri(), "--devices", "desktop", "--python", str(interp),
+        def _measure_e2e(run_name: str, *extra: str, root: Path = _e2e_root):
+            p = _walk_run([sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(root),
+                           "--url", (root / "page.html").as_uri(), "--devices", "desktop", "--python", str(interp),
                            "--scaffold", str(scaffold), "--run-dir", str(STATE / run_name), "--rubric", str(RUBRIC),
                            "--spec", str(FIX / "spec_compliant.md"), *extra],
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
@@ -1310,5 +1310,24 @@ else:
         check(_le2.get("E2E") == "ok" and set(_e2e_by2) == set(_e2e_by)
               and all(_e2e_by2[k]["metrics"]["inventory"] == _e2e_by[k]["metrics"]["inventory"] for k in _e2e_by),
               "a second --e2e run over the same tree gives an identical inventory for every e2e screen")
+
+        # #1507: a page that stamps data-theme="light" at load keeps it through the hook's dark flip unless the app
+        # declares [design.review] theme_storage_key, so every dark capture is light: its own state, not "ok".
+        _stamp_root = STATE / "e2e-target-stamped"
+        shutil.copytree(_e2e_root, _stamp_root)
+        _stamp_page = _stamp_root / "page.html"
+        _stamp_page.write_text(_stamp_page.read_text(encoding="utf-8").replace(
+            "</body>", '<script>document.documentElement.setAttribute("data-theme", "light");</script>\n</body>'), encoding="utf-8")
+        _ps, _ls, _ds = _measure_e2e("e2e-run-stamped", "--e2e", root=_stamp_root)
+        _stamp_dark = sorted(s["id"] for s in _ds.get("screens", []) if s.get("source") == "e2e" and s["theme"] == "dark")
+        check(_ps.returncode == 0 and _ls.get("E2E") == "E2E_THEME_MISMATCH" and _ls.get("E2E_SCREENS") == "4"
+              and sorted(m["id"] for m in _ds["e2e"]["theme_mismatch"]) == _stamp_dark and len(_stamp_dark) == 2
+              and _ls.get("E2E_TREE") == "unchecked",
+              f"a load-time data-theme and no theme_storage_key: the dark captures are reported E2E_THEME_MISMATCH, not ok (#1507) -- {_ps.stdout[-600:]}")
+        with open(_stamp_root / ".fleet.toml", "a", encoding="utf-8") as _f:
+            _f.write('\n[design.review]\ntheme_storage_key = "fixture.theme"\n')
+        _pk, _lk, _dk = _measure_e2e("e2e-run-keyed", "--e2e", root=_stamp_root)
+        check(_pk.returncode == 0 and _lk.get("E2E") == "ok" and _dk["e2e"]["theme_mismatch"] == [] and _dk["e2e"]["warning"] is None,
+              f"with theme_storage_key declared the same page raises no mismatch (#1507) -- {_pk.stdout[-600:]}")
 
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)

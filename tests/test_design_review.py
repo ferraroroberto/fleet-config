@@ -1625,6 +1625,138 @@ check(capture.e2e_theme("dark", {"attr": None, "dark": False}) == (False, {"attr
       and capture.e2e_theme("light", {"attr": "dark", "dark": False})[0] is False and capture.e2e_theme("light", None) == (None, None),
       "an e2e screen whose page kept the other theme is theme_applied false; nothing recorded is unknown")
 
+# ---- #1507: a theme mismatch is its own state, the target tree is left as found, --e2e never walks the live app ----
+
+# Like _E2E_WRITES, but the page stamped `data-theme="light"` at load and kept it: every dark capture is light.
+_E2E_STAMPED = _E2E_WRITES.replace("'attr': None", "'attr': 'light'")
+_, _e_stamped, _ = _e2e_run(["-c", _E2E_STAMPED, "0"], run_name="e2e-run-stamped")
+_e_warn = _e_stamped["warning"] or {}
+check(_e_stamped["unmeasured"] is None and _e_warn.get("reason") == "E2E_THEME_MISMATCH" and "theme_storage_key" in _e_warn.get("detail", "")
+      and _e_stamped["theme_mismatch"] == [{"id": "iphone-dark-e2e-jobs-sort-sheet", "requested": "dark", "rendered": "light"}]
+      and _e_stamped["screens"] == 2 and _e_ok["warning"] is None and _e_ok["theme_mismatch"] == [],
+      f"a dark capture the page kept light is a distinct warning beside a measured suite, never folded into success (#1507) -- {_e_stamped['warning']}")
+
+def _e2e_git_target(command, name="e2e-git-target", dirty_before=False):
+    """A git checkout (clean unless `dirty_before`) with one tracked gallery PNG, ready for `measure_e2e`."""
+    target = _e2e_target({"e2e": {"command": command, "timeout_s": 60}}, name=name)
+    (target.root / "docs").mkdir()
+    (target.root / "docs" / "shot.png").write_bytes(b"original")
+
+    def git(*a):
+        capture.git_run.run_git(["-C", str(target.root), "-c", "user.name=t", "-c", "user.email=t@t", "-c", f"core.hooksPath={STATE / 'no-hooks'}", *a], check=True)
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init")
+    if dirty_before:
+        (target.root / "docs" / "shot.png").write_bytes(b"my own edit")
+    run = STATE / (name + "-run")
+    run.mkdir(parents=True, exist_ok=True)
+    doc = {"interpreter": sys.executable, "unmeasured": None, "screens": [], "params": {"script": measure.default_params()}}
+    return target, run, doc
+
+
+def _porcelain(root):
+    return capture.git_run.run_git(["-C", str(root), "status", "--porcelain", "--untracked-files=all"]).stdout
+
+
+# The suite rewrites a tracked gallery PNG and leaves a new one in the tree, as a screenshot-writing e2e suite does.
+_E2E_DIRTIES = ("import pathlib\npathlib.Path('docs/shot.png').write_bytes(b'rewritten')\n"
+                "pathlib.Path('docs/new.png').write_bytes(b'new')\n" + _E2E_WRITES)
+_g_target, _g_run, _g_doc = _e2e_git_target(["-c", _E2E_DIRTIES, "0"])
+_g_before = _porcelain(_g_target.root)
+_g_rec = capture.measure_e2e(_g_doc, _g_target, _g_run, str(STATE / "no-scaffold"))
+check(_g_rec["tree"]["state"] == "restored" and _g_rec["tree"]["restored"] == ["docs/new.png", "docs/shot.png"]
+      and _porcelain(_g_target.root) == _g_before == "" and (_g_target.root / "docs" / "shot.png").read_bytes() == b"original"
+      and not (_g_target.root / "docs" / "new.png").exists() and _g_rec["screens"] == 2,
+      f"after a run the target's tree is exactly as found: the rewritten PNG restored, the new one removed (#1507) -- {_g_rec['tree']}")
+_c_target, _c_run, _c_doc = _e2e_git_target(["-c", _E2E_WRITES, "0"], name="e2e-clean-target")
+check(capture.measure_e2e(_c_doc, _c_target, _c_run, str(STATE / "no-scaffold"))["tree"]["state"] == "clean",
+      "a suite that changes nothing in the tree reports it clean, not restored")
+_d_target, _d_run, _d_doc = _e2e_git_target(["-c", _E2E_DIRTIES, "0"], name="e2e-dirty-target", dirty_before=True)
+_d_before = _porcelain(_d_target.root)
+_d_rec = capture.measure_e2e(_d_doc, _d_target, _d_run, str(STATE / "no-scaffold"))
+check(_d_rec["tree"]["state"] == "restore_failed" and _d_rec["tree"]["unrestored"] == ["docs/shot.png"]
+      and "docs/shot.png" in _d_rec["tree"]["detail"] and not (_d_target.root / "docs" / "new.png").exists()
+      and (_d_target.root / "docs" / "shot.png").read_bytes() == b"rewritten" and _d_rec["screens"] == 2 and _porcelain(_d_target.root) == _d_before,
+      f"a path the user had already edited that the run rewrote is reported restore_failed, never silently overwritten or swallowed -- {_d_rec['tree']}")
+check((_e_ok["tree"] or {}).get("state") == "unchecked" and "not read" in _e_ok["tree"]["detail"],
+      f"a target that is no git checkout is unchecked (nothing confirmed), not clean -- {_e_ok['tree']}")
+
+import contextlib  # noqa: E402
+import io  # noqa: E402
+from design_review import cli as _cli  # noqa: E402
+
+
+def _cli_measure(*argv):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = _cli.main(["measure", *argv])
+    return rc, dict(l.split("=", 1) for l in out.getvalue().splitlines() if "=" in l)
+
+
+_real_probe, _real_spawn, _real_target = capture.probe_listening, capture.spawn_walk, capture.measure_target
+_real_interp = capture.resolve_interpreter
+_probed, _walked = [], []
+
+
+def _spy_probe(url, *a, **k):
+    _probed.append(url)
+    return _real_probe(url, *a, **k)
+
+
+def _spy_spawn(python, target, *a, **k):
+    _walked.append(target.base_url)
+    return {"returncode": 1, "stderr_tail": "fake walk", "timed_out": False}
+
+
+capture.probe_listening, capture.spawn_walk = _spy_probe, _spy_spawn
+capture.resolve_interpreter = lambda *a, **k: {"status": "ok", "python": sys.executable, "detail": ""}  # no browser needed: the walk is spied
+try:
+    _live_root = STATE / "e2e-live-target"
+    _live_root.mkdir(parents=True, exist_ok=True)
+    (_live_root / ".fleet.toml").write_text('port = ":1"\n', encoding="utf-8")
+    _rc_u, _out_u = _cli_measure(str(_live_root), "--e2e", "--run-dir", str(STATE / "e2e-cli-undeclared"))
+    check(not _probed and not _walked and _out_u.get("MODE") == "synthetic" and _out_u.get("UNMEASURED") == "SYNTHETIC_UNDECLARED"
+          and _out_u.get("E2E") == "E2E_SKIPPED",
+          f"--e2e without --url on a target with no synthetic launcher is unmeasured, and never probes or walks the live port (#1507) -- "
+          f"{_out_u} probed {_probed}")
+    (_live_root / "synthetic_launcher.py").write_bytes((FIX / "synthetic_launcher.py").read_bytes())
+    (_live_root / "fixture.html").write_bytes((FIX / "fixture.html").read_bytes())
+    (_live_root / ".fleet.toml").write_text('port = ":1"\n[design.review.synthetic]\ncommand = ["synthetic_launcher.py"]\n', encoding="utf-8")
+    _rc_s, _out_s2 = _cli_measure(str(_live_root), "--e2e", "--run-dir", str(STATE / "e2e-cli-synthetic"))
+    check(_out_s2.get("MODE") == "synthetic" and _walked and all(u.startswith("http://127.0.0.1:") and not u.startswith("http://127.0.0.1:1/")
+                                                                  for u in _probed + _walked),
+          f"--e2e without --url walks the target's own disposable instance, not its declared live port -- probed {_probed} walked {_walked}")
+    _probed.clear()
+    _rc_p, _out_p = _cli_measure(str(_live_root), "--e2e", "--url", "http://127.0.0.1:1", "--run-dir", str(STATE / "e2e-cli-url"))
+    check(_out_p.get("MODE") == "live" and _probed == ["http://127.0.0.1:1"],
+          f"an explicit --url still wins: --e2e does not override a URL the caller named -- {_out_p} {_probed}")
+
+    def _fake_measure(tree):
+        def run(target, *a, **k):
+            return {"target": "t", "base_url": "u", "run_dir": str(STATE), "screens": [], "unmeasured": None,
+                    "e2e": {"unmeasured": None, "warning": None, "surfaces": [], "screens": 0, "note": None, "tree": tree}}
+        return run
+
+    capture.measure_target = _fake_measure({"state": "restore_failed", "restored": [], "unrestored": ["docs/shot.png"], "detail": "1 path(s) differ"})
+    _rc_f, _out_f = _cli_measure(str(_live_root), "--e2e", "--url", "http://127.0.0.1:1")
+    check(_rc_f == 1 and _out_f.get("E2E_TREE") == "restore_failed" and "differ" in _out_f.get("E2E_TREE_DETAIL", ""),
+          f"a tree the run could not restore exits non-zero and prints its own state line -- rc {_rc_f} {_out_f}")
+    capture.measure_target = _fake_measure({"state": "restored", "restored": ["a"], "unrestored": [], "detail": ""})
+    _rc_k, _out_k = _cli_measure(str(_live_root), "--e2e", "--url", "http://127.0.0.1:1")
+    check(_rc_k == 0 and _out_k.get("E2E_TREE") == "restored" and _out_k.get("E2E") == "ok" and "E2E_TREE_DETAIL" not in _out_k,
+          "a restored tree exits 0 and says so")
+    _warned = _fake_measure({"state": "clean", "restored": [], "unrestored": [], "detail": ""})(None)
+    _warned["e2e"]["warning"] = {"reason": "E2E_THEME_MISMATCH", "detail": "1 of 2 e2e screens kept light"}
+    capture.measure_target = lambda *a, **k: _warned
+    _rc_w, _out_w = _cli_measure(str(_live_root), "--e2e", "--url", "http://127.0.0.1:1")
+    check(_rc_w == 0 and _out_w.get("E2E") == "E2E_THEME_MISMATCH" and "kept light" in _out_w.get("E2E_DETAIL", ""),
+          f"measure prints a theme mismatch as its own E2E state, not ok -- {_out_w}")
+finally:
+    capture.probe_listening, capture.spawn_walk, capture.measure_target = _real_probe, _real_spawn, _real_target
+    capture.resolve_interpreter = _real_interp
+
 _cov_screens = [{"id": "w", "status": "ok", "metrics": {"coverage": {"overlays": [{"key": "aside#sheet", "open": False}]}}},
                 {"id": "e", "status": "ok", "source": "e2e", "metrics": {"coverage": {"overlays": [{"key": "aside#sheet", "open": True}]}}}]
 check(ev.overlay_coverage(_cov_screens)["not_walked_count"] == 0 and ev.overlay_coverage(_cov_screens[:1])["not_walked_count"] == 1,
