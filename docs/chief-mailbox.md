@@ -53,7 +53,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
-| `excerpt` | The last 1,500 characters of the worker's final reply. For `needs-input`, the hook's one-line classified prompt instead (at most 300 characters, e.g. `Codex in fleet-config awaits approval to edit files`). It is never an empty string: no readable reply means `null`. |
+| `excerpt` | The last 1,500 characters of the worker's final reply. For `needs-input`, the hook's one-line prompt instead (at most 300 characters). Claude names the pending tool call, found in the tail of the parent transcript and of recently active sub-agent transcripts: `permission: Bash <command head> (parent)` or `(sub-agent <id8>)`; no pending call found reads `pending call: unknown (payload message: ...)` or `(default text: ...)`, never a bare idle line (#1510). Codex: `Codex in fleet-config awaits approval to edit files`. It is never an empty string: no readable reply means `null`. |
 | `excerpt_source` | `payload` (the harness's own last-assistant field), `transcript` (the tail of `transcript_path`), `prompt` (a `needs-input` event's classified prompt), or `null`. |
 | `excerpt_unavailable` | Why `excerpt` is `null`. Present only then. |
 
@@ -136,4 +136,4 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/probe_claim_race.py` (opt-in, not in the gate): the real two-claimer race, 60 events × 400 iterations, for both reader pairs. Before #1465 it lost events on Windows.
 - `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
 - `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
-- `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
+- `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
