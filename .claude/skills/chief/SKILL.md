@@ -83,12 +83,14 @@ switch) and act on its line:
 
 - `WAKE=doorbell doorbell=on` — arm nothing. While you are idle with events
   pending and nothing typed in your input line, the launcher types one fixed
-  line into your terminal, and repeats it every few seconds until the
-  mailbox is empty.
+  line into your terminal within a few seconds, and rings again about a
+  minute later while the mailbox still holds events.
 - `WAKE=waiter doorbell=off`, or `WAKE=waiter doorbell=unknown reason=…` —
   make sure exactly one `wait-event` waiter (below) is running; if one is
   already in flight, don't start a second. An unknown switch always means
-  arm the waiter: never end a turn with no wake path.
+  arm the waiter: never end a turn with no wake path. If you drained with
+  `inbox` earlier, run `inbox` once more first: `wait-event` never reads a
+  claim left unacked in `.claimed/`.
 
 Roberto may flip the switch from the phone at any time, including as a kill
 switch. You learn of it at your next turn's `wake`; with both a waiter and
