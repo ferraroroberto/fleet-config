@@ -47,8 +47,8 @@ with, adapted to its wording but never dropped:
    turn waiting to be resumed.** Nothing wakes a top-level worker session.
    This is already in the global `CLAUDE.md` for sub-agents, but a
    chief-dispatched top-level worker needs it stated explicitly too. It is a
-   worker rule, not yours — your own periodic polling follows the inverse
-   ("Polling on a cadence" in `SKILL.md`), for the same underlying reason.
+   worker rule, not yours — your own wake follows the inverse ("Waking" in
+   `SKILL.md`), for the same underlying reason.
 2. **Suspect buffering before a hang.** "Zero output for 20 minutes" is
    usually stdout block-buffered under capture, not a stuck process — re-run
    in the foreground with `PYTHONUTF8=1`/`PYTHONUNBUFFERED=1` before

@@ -1223,6 +1223,25 @@ def fetch_chief_settings(base_url: str) -> Tuple[Optional[Dict[str, Any]], str]:
     return (result, "") if isinstance(result, dict) else (None, "chief-settings reply was not an object")
 
 
+def resolve_wake_mode(
+    config: Optional[Dict[str, Any]], unread_reason: str = "launcher unreachable",
+) -> Tuple[str, bool]:
+    """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch (fleet-config#1457).
+
+    Only a confirmed `true` lets the chief drop its `wait-event` waiter: an
+    unread or non-boolean setting is `unknown` and still says arm the waiter,
+    so a chief never ends a turn with no wake path at all.
+    """
+    if config is None:
+        return f"WAKE=waiter doorbell=unknown reason={unread_reason}", False
+    value = config.get("chief_doorbell")
+    if value is True:
+        return "WAKE=doorbell doorbell=on", True
+    if value is False:
+        return "WAKE=waiter doorbell=off", True
+    return "WAKE=waiter doorbell=unknown reason=launcher config has no boolean chief_doorbell", False
+
+
 # ---- thin I/O wrappers ------------------------------------------------------
 
 def _ssl_context() -> ssl.SSLContext:
@@ -1438,6 +1457,23 @@ def cmd_ack(args: argparse.Namespace) -> int:
     for event_id in missing:
         print(f"ACK_MISSING={event_id}")
     return 1 if missing else 0
+
+
+def cmd_wake(args: argparse.Namespace) -> int:
+    """How the chief wakes next: the launcher's doorbell, or its own waiter. Exit 1 when unknown."""
+    config: Optional[Dict[str, Any]] = None
+    reason = "launcher unreachable"
+    try:
+        result = _request(args.base_url, "/api/config")
+        config = result if isinstance(result, dict) else None
+        reason = "launcher config reply was not an object"
+    except urllib.error.HTTPError as exc:
+        reason = f"launcher config unreadable (HTTP {exc.code})"
+    except (urllib.error.URLError, ValueError):
+        pass
+    line, known = resolve_wake_mode(config, reason)
+    print(line)
+    return 0 if known else 1
 
 
 def cmd_context(args: argparse.Namespace) -> int:
@@ -1901,6 +1937,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ak = sub.add_parser("ack", help="mailbox v2: retire handled events by id (fleet-config#1455)")
     ak.add_argument("ids", nargs="+")
     ak.set_defaults(func=cmd_ack)
+
+    wk = sub.add_parser("wake", help="doorbell or waiter: read the launcher's chief_doorbell switch (fleet-config#1457)")
+    wk.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    wk.set_defaults(func=cmd_wake)
 
     ctx = sub.add_parser("context", help="a session's context-window use (default: the chief)")
     ctx.add_argument("sid", nargs="?", default=None)

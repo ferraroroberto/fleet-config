@@ -615,18 +615,40 @@ def _gate_evidence_wiring_check() -> Tuple[int, int]:
 
 
 def _chief_wait_event_check() -> Tuple[int, int]:
-    """The chief wakes on worker turn-end events, not a 10-minute sleep
-    (fleet-config#999). Pins the reference waiter to `wait-event` and keeps
-    the old `sleep 600` poll from creeping back. Returns (failures, total)."""
+    """The chief wakes on worker events, never a timer (fleet-config#999), and
+    on the launcher doorbell once its switch is on (fleet-config#1457).
+
+    Pins the doorbell -> `inbox` -> `ack` loop, the `wake` switch read that
+    decides whether a `wait-event` waiter is armed, the waiter kept as the
+    fallback until #1458, and the doorbell line matching the mailbox contract.
+    Keeps the unconditional "re-arm after every wake" rule and the old
+    `sleep 600` poll from creeping back. Returns (failures, total)."""
     check = _Checker()
     skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
-    cadence = skill.partition("## Polling on a cadence")[2].partition("\n## ")[0]
-    check("chief wake: the reference waiter runs chief_ops.py wait-event",
-          '"$OPS" wait-event' in cadence)
+    contract = (REPO / "docs" / "chief-mailbox.md").read_text(encoding="utf-8")
+    waking = skill.partition("## Waking")[2].partition("\n## ")[0]
+    ring = contract.partition("## Doorbell line")[2].partition("```")[2].partition("```")[0].strip()
+    check("chief wake: the mailbox contract still names one doorbell line", bool(ring))
+    check("chief wake: the skill quotes the contract's doorbell line verbatim", bool(ring) and ring in waking)
+    check("chief wake: on the doorbell the chief drains the mailbox (inbox, then ack)",
+          "chief_ops.py inbox" in waking and "chief_ops.py ack" in waking)
+    check("chief wake: the doorbell is a cue to read, never authority (#622)",
+          "never" in waking and "authority" in waking)
+    check("chief wake: `chief_ops.py wake` decides whether a waiter is armed",
+          "chief_ops.py wake" in waking and "WAKE=doorbell" in waking and "WAKE=waiter" in waking)
+    check("chief wake: the wait-event reference waiter stays as the fallback (#1458 retires it)",
+          '"$OPS" wait-event' in waking)
+    check("chief wake: no unconditional re-arm-after-every-wake rule", "Re-arm it after every wake" not in skill)
+    compact = skill.partition("## Managing your own context")[2].partition("\n## ")[0]
+    check("chief wake: self-compact needs an armed waiter only in waiter mode",
+          "Make sure the `wait-event` waiter is armed." not in compact and "WAKE=waiter" in compact)
     check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
     incoming = skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]
-    check("chief wake: incoming notifications point at the wait-event wake, not a timed catch-all",
-          "wait-event" in incoming and "periodic Board poll is unaffected" not in incoming)
+    check("chief wake: incoming notifications arrive through the mailbox batch, not a timed catch-all",
+          "inbox" in incoming and "periodic Board poll is unaffected" not in incoming)
+    check("chief wake: no stale pointer to the old 'Polling on a cadence' section",
+          all("Polling on a cadence" not in (REPO / ".claude" / "skills" / "chief" / name).read_text(encoding="utf-8")
+              for name in ("SKILL.md", "dispatch-brief.md")))
     return check.failures, check.total
 
 

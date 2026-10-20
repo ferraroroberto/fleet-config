@@ -1724,6 +1724,58 @@ finally:
     shutil.rmtree(_inbox_tmp, ignore_errors=True)
 
 
+# ---- wake: doorbell or waiter, from the launcher's switch (fleet-config#1457) ----
+# Only a confirmed `true` drops the waiter; anything unread arms it, never leaving
+# the chief with no wake path. `_request` is stubbed: no real launcher is read.
+
+import urllib.error as _wake_urlerr  # noqa: E402
+
+check(co.resolve_wake_mode({"chief_doorbell": True}) == ("WAKE=doorbell doorbell=on", True),
+      "resolve_wake_mode: the switch on means the doorbell wakes the chief")
+check(co.resolve_wake_mode({"chief_doorbell": False}) == ("WAKE=waiter doorbell=off", True),
+      "resolve_wake_mode: the switch off means arm the wait-event waiter")
+for _bad in ({}, {"chief_doorbell": "true"}, {"chief_doorbell": 1}, {"chief_doorbell": None}):
+    _line, _known = co.resolve_wake_mode(_bad)
+    check(_line.startswith("WAKE=waiter doorbell=unknown reason=") and _known is False,
+          f"resolve_wake_mode: a missing or non-boolean setting is unknown, and arms the waiter ({_bad!r})")
+_line, _known = co.resolve_wake_mode(None, "launcher unreachable")
+check(_line == "WAKE=waiter doorbell=unknown reason=launcher unreachable" and _known is False,
+      "resolve_wake_mode: an unread launcher is unknown, and arms the waiter")
+
+
+def _run_wake(reply):
+    calls: list = []
+
+    def fake_request(base, path):
+        calls.append(path)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+    old_request = co._request
+    co._request = fake_request
+    try:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = co.main(["wake"])
+    finally:
+        co._request = old_request
+    return code, out.getvalue().strip(), calls
+
+
+_code, _out, _calls = _run_wake({"chief_doorbell": True, "port": 8445})
+check(_code == 0 and _out == "WAKE=doorbell doorbell=on" and _calls == ["/api/config"],
+      "wake CLI: reads the launcher's /api/config and reports the doorbell")
+_code, _out, _calls = _run_wake({"chief_doorbell": False})
+check(_code == 0 and _out == "WAKE=waiter doorbell=off", "wake CLI: switch off -> waiter, exit 0")
+_code, _out, _calls = _run_wake(_wake_urlerr.URLError("refused"))
+check(_code == 1 and _out == "WAKE=waiter doorbell=unknown reason=launcher unreachable",
+      "wake CLI: an unreachable launcher is unknown (exit 1) and says arm the waiter")
+_code, _out, _calls = _run_wake(_wake_urlerr.HTTPError("u", 404, "nf", None, None))
+check(_code == 1 and _out == "WAKE=waiter doorbell=unknown reason=launcher config unreadable (HTTP 404)",
+      "wake CLI: an HTTP error is unknown, named apart from unreachable")
+
+
 # ---- context + self-compact (fleet-config#1052): launcher always stubbed ----
 # No test here reaches a real launcher or compacts a real session: `_request`,
 # the caller id and the state dir are all replaced for the block's duration.

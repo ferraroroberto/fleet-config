@@ -97,7 +97,7 @@ Edge cases, decided:
 
 ## Reading (the chief)
 
-Two readers coexist until the doorbell switch-over (#1457). After that, `wait-event` is retired (#1458).
+Two readers coexist. Since #1457 the chief reads with `inbox` / `ack` when the doorbell rings, and arms `wait-event` only while `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown. `wait-event` is retired after a soak (#1458).
 
 **v2: `chief_ops.py inbox`, then `chief_ops.py ack <id…>`** (at-least-once):
 
@@ -122,7 +122,7 @@ Each of these paths logs a line to stderr. Stdout is unchanged.
 
 ## Doorbell line
 
-When it ships (#1645), the doorbell types this fixed line, which carries no count and no data:
+While the launcher's `chief_doorbell` switch (Settings > Chief > Doorbell) is on, the chief is idle with an empty input line, and pending is above zero, the doorbell (app-launcher#1645) types this fixed line, which carries no count and no data, and repeats it on later ticks until pending reaches zero:
 
 ```
 ⟳ chief-inbox: pending — run chief_ops.py inbox
