@@ -488,6 +488,21 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
     'check 2 does not re-flag the registered foreign worktree as a leftover directory')
 }
 
+// --- Case 13b: check 3 takes the branch report from the helper, report-only (#1516) ---
+{
+  const { sink, agentImpl } = promptSpy(l => reply(l, {}))
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  await makeRunner(agentImpl, sink)
+  const p1 = sink.prompts['documentation:teardown:alpha#1']
+  check(/branch_residue\.py branches E:\/automation\/alpha/.test(p1),
+    'check 3 runs the branch report on the lane\'s repo')
+  check(!/gh pr list --repo/.test(p1), 'the hand-run per-branch gh lookups are gone from check 3')
+  check(/branch report not established/.test(p1) && /never an empty field that reads as clean/.test(p1),
+    'a report that could not run is stated, not folded into an empty foreignBranches')
+  check(/do \*\*not\*\* delete any branch/.test(p1) && !/branch_residue\.py[^\n]*--delete/.test(p1),
+    'check 3 stays report-only: no delete flag is ever offered')
+}
+
 // --- Case 14: SKILL.md carries the #1077 rules too ------------------------
 {
   const skill = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
