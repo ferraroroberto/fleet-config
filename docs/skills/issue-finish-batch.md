@@ -1,0 +1,3 @@
+# `/issue-finish-batch`
+
+- **`/issue-finish-batch <branches>`** — the parallel-finish step after `/cleanup-fleet` or `/issue-batch` build-and-stop. Given a set of already-reviewed branches, it fans out **one background Sonnet finisher per branch** (all at once — Sonnet is exempt from the Opus cap), each running the full `/issue-finish` flow one-shot (push, PR, CI-advisory, merge, delete branch, tray restart) and reporting back **only** on a genuine blocker a human must resolve. User-triggered, never automatic; per-branch `✅ Done` pings are kept and a single `🏁 Finished batch` roll-up closes the run. Manual `/issue-finish` per branch stays the always-available fallback.

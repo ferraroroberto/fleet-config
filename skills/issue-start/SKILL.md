@@ -82,7 +82,7 @@ or for `fleet-config` the `hooks/`+`skills/` junction into every live
 session.
 
 A human running this skill in their own terminal has no such variable and keeps
-the default claim-or-worktree behaviour (docs/skills.md "Concurrent same-repo work").
+the default claim-or-worktree behaviour (docs/skills/concurrent-same-repo-work.md).
 
 Read the printed `MODE=`:
 - **`MODE=primary`** — you are the first session here. Work **in place** on the
@@ -95,7 +95,7 @@ This is the single concurrency primitive — `/issue-yolo`, `/issue-add now`,
 `/issue-batch` in-place, and `/cleanup-fleet` inherit it by pointing here,
 never by paraphrasing these steps (#894). The claim is released by
 `/issue-finish` (or auto-expires after 8h if a session crashes). See
-`skills/_lib/worktree_claim.py` and docs/skills.md "Concurrent same-repo work".
+`skills/_lib/worktree_claim.py` and docs/skills/concurrent-same-repo-work.md.
 
 ### 1. Pre-flight
 

@@ -54,6 +54,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _installer_symmetry_check,
     _manual_compact_never_gated_check,
     _readme_layout_check,
+    _docs_links_check,
     _unattended_worktree_mandate_check,
     _settings_sync_split_check,
     _settings_template_sync_check,
@@ -327,6 +328,9 @@ def main() -> int:
 
     # ---- README Layout tree is an exhaustive inventory (fleet-config#565) ----
     run_unit(_readme_layout_check)
+
+    # ---- relative docs/ markdown links resolve (fleet-config#1515) ----
+    run_unit(_docs_links_check)
 
     # ---- Codex hook wiring: direct Python commands with bounded timeouts ----
     run_unit(_codex_hooks_config_check)
