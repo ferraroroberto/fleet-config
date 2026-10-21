@@ -499,8 +499,31 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
   check(!/gh pr list --repo/.test(p1), 'the hand-run per-branch gh lookups are gone from check 3')
   check(/branch report not established/.test(p1) && /never an empty field that reads as clean/.test(p1),
     'a report that could not run is stated, not folded into an empty foreignBranches')
-  check(/do \*\*not\*\* delete any branch/.test(p1) && !/branch_residue\.py[^\n]*--delete/.test(p1),
+  check(/teardown does not delete any branch but your own/.test(p1) && !/branch_residue\.py[^\n]*--(delete|remote)\b/.test(p1) && !/delete with:/.test(p1),
     'check 3 stays report-only: no delete flag is ever offered')
+}
+
+// --- Case 13c: no teardown or scheduled path passes the helper's --delete (#1528) ---
+// The delete path is the owner's (or the chief's after a Board yes). The docs may name it
+// as the "delete with:" hint; no command a skill runs may carry it.
+{
+  const files = [
+    ['.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'],
+    ['skills', 'issue-finish', 'SKILL.md'],
+    ['docs', 'skills', 'cleanup-fleet-all.md'],
+  ]
+  for (const rel of files) {
+    const txt = readFileSync(join(REPO, ...rel), 'utf8').replace(/\r\n/g, '\n')
+    // Hints wrap across lines in issue-finish, so judge each paragraph, not each line.
+    const offenders = txt.split(/\n\s*\n/).filter(par => /branch_residue\.py[^\n]*--delete/.test(par.replace(/\n\s*/g, ' ')) && !/delete with:/.test(par.replace(/\n\s*/g, ' ')))
+    check(offenders.length === 0, `${rel.join('/')}: --delete appears only in the "delete with:" owner hint (${offenders.length} offending paragraphs)`)
+    const fenced = [...txt.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].filter(m => /branch_residue\.py[^\n]*--(delete|remote)/.test(m[1]))
+    check(fenced.length === 0, `${rel.join('/')}: no fenced command carries --delete or --remote`)
+  }
+  check(/delete with:/.test(readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')),
+    'SKILL.md documents the explicit delete path for the owner')
+  check(!/branch_residue\.py[^\n]*--(delete|remote)\b/.test(SRC) && !/delete with:/.test(SRC),
+    'the workflow script itself never hands the branch helper a delete flag')
 }
 
 // --- Case 14: SKILL.md carries the #1077 rules too ------------------------
