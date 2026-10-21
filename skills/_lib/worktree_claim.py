@@ -255,21 +255,20 @@ from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # tests address as `worktree_claim.<name>`. Import only what has a caller
 # (fleet-config#929).
 from worktree_config import (  # noqa: E402
-    WT_PORT_BASE,
-    WT_PORT_SPAN,
-    blank_machine_bound_config,
+    WT_PORT_BASE as WT_PORT_BASE,
+    WT_PORT_SPAN as WT_PORT_SPAN,
     check_provisioned_configs,
     copy_env_file,
     copy_root_config,
     copy_runtime_config,
     port_registry_state,
     release_ports,
-    remove_secret_config,
+    remove_secret_config as remove_secret_config,
     worktree_blank_config_keys,
-    worktree_port,
+    worktree_port as worktree_port,
     worktree_primary_instance_ok,
     worktree_read_safe_config_keys,
-    worktree_secret_config_keys,
+    worktree_secret_config_keys as worktree_secret_config_keys,
 )
 
 ensure_utf8_stdio()

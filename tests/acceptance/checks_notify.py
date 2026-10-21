@@ -29,7 +29,6 @@ from acceptance.shared import (
     REPO,
     _Checker,
     hook_env,
-    run,
 )
 
 # Every function below inserts its own sys.path entry (HOOKS or skills/_lib)

@@ -16,15 +16,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
+from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner, doc as _doc, specs as _specs  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
@@ -34,19 +33,8 @@ from design_review import evaluate as ev, mockups, report, rubric as rb  # noqa:
 _h = CheckHarness()
 check = _h.check
 
-FIX = REPO / "tests" / "fixtures" / "design_review"
-RUBRIC = REPO / "design.rubric.toml"
 STATE = Path(throwaway_dir("design-report-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
-PKG = REPO / "skills" / "_lib" / "design_review"
-
-
-def _specs(name: str) -> dict:
-    return rb.load_specs(FIX / f"spec_{name}.md", FIX / f"spec_{name}.md")
-
-
-def _doc(name: str) -> dict:
-    return json.loads((FIX / f"metrics_{name}.json").read_text(encoding="utf-8"))
 
 
 rubric = rb.load_rubric(RUBRIC)
@@ -226,20 +214,10 @@ check(summ["grade"] == "F" and summ["failed"] == len(rubric.rules) and summ["tot
       and set(summ["mockups"]) == set(mockups.MOCKUP_IDS), f"summary: grade, counts and the drawn mock-up set ({summ})")
 
 tmp = Path(throwaway_dir("design-report-cli-"))
-PY = sys.executable
-common = ["--rubric", str(RUBRIC), "--spec", str(FIX / "spec_violating.md"), "--spec-dark", str(FIX / "spec_violating.md")]
-env = {**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)}
+_run, _kv = cli_runner(STATE)
 
 
-def _run(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([PY, str(PKG), *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, env=env)
-
-
-def _kv(proc: subprocess.CompletedProcess) -> dict:
-    return dict(l.split("=", 1) for l in proc.stdout.splitlines() if "=" in l)
-
-
-p1 = _run("evaluate", str(FIX / "metrics_violating.json"), "--out", str(tmp / "evaluate.json"), *common)
+p1 = _run("evaluate", str(FIX / "metrics_violating.json"), "--out", str(tmp / "evaluate.json"), *SPEC_ARGS)
 k1 = _kv(p1)
 check(p1.returncode == 0 and (tmp / "evaluate.json").is_file() and k1.get("GRADE") == "F" and k1.get("RUBRIC") == "1.42.0"
       and k1.get("FAILED") == f"{len(rubric.rules)}/{len(rubric.rules)}", f"evaluate --out writes the document and prints summary lines ({p1.stdout[-200:]}{p1.stderr[-200:]})")
@@ -254,7 +232,7 @@ tmp2 = tmp / "from-metrics"
 tmp2.mkdir()
 metrics_copy = tmp2 / "metrics.json"
 metrics_copy.write_text((FIX / "metrics_violating.json").read_text(encoding="utf-8"), encoding="utf-8")
-p3 = _run("render", str(metrics_copy), "--out", str(tmp2 / "custom.html"), *common)
+p3 = _run("render", str(metrics_copy), "--out", str(tmp2 / "custom.html"), *SPEC_ARGS)
 k3 = _kv(p3)
 check(p3.returncode == 0 and k3.get("REPORT") == str(tmp2 / "custom.html") and (tmp2 / "custom.html").is_file()
       and k3.get("EVALUATE") == str(tmp2 / "evaluate.json") and (tmp2 / "evaluate.json").is_file(),

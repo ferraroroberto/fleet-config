@@ -46,7 +46,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 from delivery_fixtures import (  # noqa: E402
-    FakeGitHub, characterize, comment, ledger_issue, load_module,
+    characterize, comment, ledger_issue, load_module,
 )
 
 sys.path.insert(0, str(REPO / "skills" / "_lib"))

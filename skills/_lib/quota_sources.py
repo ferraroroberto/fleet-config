@@ -14,7 +14,7 @@ from typing import Any, Iterator, Optional
 
 from codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from no_window import NO_WINDOW
-from quota_snapshot import (account_key, empty_source, identifier, iso_utc, observation,
+from quota_snapshot import (account_key, empty_source, identifier, observation,
                             parse_time, publish, read_snapshot, refresh_states, utc_now, window)
 
 LOGGER = logging.getLogger(__name__)

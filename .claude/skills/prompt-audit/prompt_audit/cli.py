@@ -17,7 +17,7 @@ from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO
 from .sources import diff_source
 from .evals import fold as fold_evals, latest_two
 from .leads import LeadsError, load_leads, mark as mark_lead, resolve as resolve_leads, suggestions_comment
-from .coverage import (cache_page, coverage, coverage_comment, known_items, page_sections,
+from .coverage import (cache_page, coverage, coverage_comment, known_items,
                        page_text, section_text)
 from .inventory import Entry, _read, inventory, kind_of, sections
 from .rules import parse_rules

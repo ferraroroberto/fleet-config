@@ -17,13 +17,12 @@ Same shape of defect, same static-AST answer, hence the same module.
 """
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Tuple
 
-from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
+from acceptance.shared import HOOKS, REPO, _Checker
 
 # Directories whose Python is *runtime* code — it spawns executables under a
 # console-less parent (a scheduled `claude -p` job, a tray, a hook). `tests/` is

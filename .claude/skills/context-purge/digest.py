@@ -727,7 +727,6 @@ def render_chat(run: dict, link: Optional[str] = None,
 
 def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
     h = headline(run)
-    md_rows = render_markdown(run)
     esc = _html.escape
     partial = run.get("status") == "partial"
 
