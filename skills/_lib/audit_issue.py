@@ -14,7 +14,7 @@ It does **not** decide *content* — the skill builds the (merged) body and hand
 here. This helper only answers "which issue is THE one for (repo, kind)?" and
 writes to it, collapsing any strays.
 
-Two subcommands:
+Subcommands (plus `gate` and `ledger-write`, documented on their functions):
 
   get    --repo OWNER/NAME --kind KIND
          -> prints JSON {"number": N|null, "body": "...", "duplicates": [n,...]}
@@ -31,6 +31,20 @@ Two subcommands:
          and the marker-stamped body after `BODY:`, and writes nothing.
          `--verify-quotes` refuses the whole write when any finding's verbatim
          quote is not in its file (`audit_quote.py`, fleet-config#960).
+
+         A snapshot-column bucket kind is also stamped with its recurrence
+         block (fleet-config#1513, see `recurrence`).
+
+  recurrence --repo OWNER/NAME [--json]
+         Per bucket, whether the last two `<!-- audit-snapshot -->` ledger
+         comments were both non-zero: `RECURRENCE=ok|unknown` then one
+         `BUCKET=<kind> STATE=recurring|not-recurring|unknown` line each.
+         Exit 0 ok, 2 unknown.
+
+  structural-gate --repo-path P --base REF --issue-body-file F
+         For a recurring bucket's cleanup branch: `STRUCTURAL=pass|fail|n/a|
+         unknown` from the `Structural-check:` line(s) in the branch's
+         commit bodies. Exit 0 pass/n/a, 1 fail, 2 unknown.
 
   close  --repo OWNER/NAME --kind KIND --comment TEXT
          Closes the open managed issue for that kind with the comment, so an
@@ -121,6 +135,29 @@ BUCKET_KINDS = (
     "bug",
     "documentation",
 )
+
+# `<!-- audit-snapshot -->` column -> managed bucket kind (fleet-config#1513).
+# `sec` and `total` are deliberately absent: security is self-healed and closed
+# on merge, never a cleanup bucket, and `total` is a sum. Bucket kinds with no
+# column (`security`, and non-audit cleanup kinds) have no recurrence to report.
+SNAPSHOT_COLUMNS = {
+    "dup": "duplication",
+    "stale": "stale",
+    "drift": "claude-md-drift",
+    "maint": "maintainability",
+    "slop": "slop",
+    "bug": "bug",
+    "doc": "documentation",
+}
+
+_SNAPSHOT_MARKER = "<!-- audit-snapshot -->"
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_RECURRENCE_BLOCK_RE = re.compile(
+    r"^[ \t]*<!--[ \t]*audit-recurrence:[^\n]*-->[ \t]*(?:\n>[^\n]*)*\n*", re.MULTILINE
+)
+_RECURRENCE_STATE_RE = re.compile(r"<!--[ \t]*audit-recurrence:[ \t]*state=([\w-]+)")
+# A `not encodable` reason shorter than this is a shrug, not a reason.
+MIN_NOT_ENCODABLE_WORDS = 8
 
 _LEDGER_MARKER = "<!-- audit-ledger -->"
 # The marker an agent hand-authoring a ledger actually tends to write: an OPEN
@@ -315,6 +352,196 @@ def normalize_ledger_body(body: str) -> str:
     return render_ledger_body(
         parsed["sha"], parsed["at"] or datetime.date.today().isoformat(), parsed["rubric"]
     )
+
+
+# ---- bucket recurrence (fleet-config#1513) ---------------------------------
+# A bucket that is non-zero in two consecutive audit snapshots keeps regrowing,
+# so its cleanup must ship a structural check (lint rule, static test, ratchet)
+# or say why it can't. Snapshots are counts only, so recurrence is per bucket,
+# never per finding. `unknown` is its own state and is never folded into
+# `not-recurring` — a window we couldn't read is not a clean bill.
+
+def is_snapshot(body: str) -> bool:
+    """True only when the snapshot marker is the first line (top-anchored, like `has_marker`)."""
+    return (body or "").replace("\r\n", "\n").lstrip().startswith(_SNAPSHOT_MARKER)
+
+
+def _table_cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def parse_snapshot(body: str) -> Optional[dict]:
+    """`{"run", "sha", "counts": {kind: int}}` from a snapshot comment, or None if malformed.
+
+    Cells map by header name, not position, so a reordered table still reads.
+    Valid only when `run` is an ISO date and every bucket column is a
+    non-negative integer; anything else is None — never a guessed zero.
+    """
+    if not is_snapshot(body):
+        return None
+    lines = [ln for ln in (body or "").replace("\r\n", "\n").split("\n") if ln.strip().startswith("|")]
+    if len(lines) < 3:
+        return None
+    header = _table_cells(lines[0])
+    data = _table_cells(lines[2])
+    if len(header) != len(data):
+        return None
+    row = dict(zip(header, data))
+    run = row.get("run", "")
+    if not _ISO_DATE_RE.match(run):
+        return None
+    counts: dict[str, int] = {}
+    for col, kind in SNAPSHOT_COLUMNS.items():
+        cell = row.get(col)
+        if cell is None or not cell.isdigit():
+            return None
+        counts[kind] = int(cell)
+    return {"run": run, "sha": row.get("sha", ""), "counts": counts}
+
+
+def snapshot_rows(comments: list[dict]) -> list[Optional[dict]]:
+    """The ledger's snapshot rows, oldest first; a malformed row stays in place as None.
+
+    Ordered by (run date, comment `created_at`) so two audits on one day still
+    count as two rows. A malformed row has no run date and sorts by its post date.
+    """
+    keyed = []
+    for c in comments:
+        body = c.get("body") or ""
+        if not is_snapshot(body):
+            continue
+        created = c.get("created_at") or ""
+        row = parse_snapshot(body)
+        keyed.append(((row["run"] if row else created[:10]), created, row))
+    keyed.sort(key=lambda k: (k[0], k[1]))
+    return [row for _run, _created, row in keyed]
+
+
+def _unknown(reason: str) -> dict:
+    return {
+        "state": "unknown",
+        "reason": reason,
+        "buckets": {kind: {"state": "unknown"} for kind in SNAPSHOT_COLUMNS.values()},
+    }
+
+
+def bucket_recurrence(rows: list[Optional[dict]]) -> dict:
+    """Recurrence per bucket over the last two snapshot rows.
+
+    Never skips back past a malformed row to an older valid one: that would
+    compare two runs that weren't consecutive.
+    """
+    if len(rows) < 2:
+        return _unknown("insufficient-history")
+    previous, latest = rows[-2], rows[-1]
+    if previous is None or latest is None:
+        return _unknown("malformed-row")
+    buckets = {}
+    for kind in SNAPSHOT_COLUMNS.values():
+        a, b = previous["counts"][kind], latest["counts"][kind]
+        buckets[kind] = {"state": "recurring" if a > 0 and b > 0 else "not-recurring", "counts": [a, b]}
+    return {
+        "state": "ok",
+        "rows": len(rows),
+        "latest": f"{latest['run']}@{latest['sha']}",
+        "previous": f"{previous['run']}@{previous['sha']}",
+        "buckets": buckets,
+    }
+
+
+def recurrence_at_upsert(rows: list[Optional[dict]], kind: str) -> dict:
+    """The recurrence state for a bucket issue being upserted by `/codebase-audit` step 8.
+
+    Step 8 upserts *before* step 9 posts this run's snapshot, and a bucket is
+    only upserted when it is non-empty this run. So the window is (latest
+    posted snapshot, this run), and once step 9 posts, it is exactly the last
+    two rows `bucket_recurrence` reads — the stamp and the subcommand agree.
+    """
+    if not rows:
+        return {"state": "unknown", "reason": "insufficient-history"}
+    latest = rows[-1]
+    if latest is None:
+        return {"state": "unknown", "reason": "malformed-row"}
+    if latest["counts"][kind] > 0:
+        return {"state": "recurring", "since": latest["run"]}
+    return {"state": "not-recurring"}
+
+
+def render_recurrence_block(rec: dict) -> Optional[str]:
+    """The one managed recurrence block, or None when the bucket isn't recurring."""
+    if rec["state"] == "recurring":
+        return (
+            f"<!-- audit-recurrence: state=recurring since={rec['since']} -->\n"
+            "> **Recurring: structural check required.** This bucket had findings in two "
+            "consecutive audits. A cleanup PR must also ship one structural check that would "
+            "have caught this class, or record `not encodable: <why>`."
+        )
+    if rec["state"] == "unknown":
+        return (
+            f"<!-- audit-recurrence: state=unknown reason={rec['reason']} -->\n"
+            f"> **Recurrence unknown.** Recurrence could not be established "
+            f"({rec['reason']}), so no structural check is required yet."
+        )
+    return None
+
+
+def apply_recurrence_block(body: str, block: Optional[str]) -> str:
+    """Replace the recurrence block idempotently; `ensure_marker` later puts the identity marker above it.
+
+    Any old block is removed wherever it sits, and the new one (if any) leads
+    the body, so the identity marker stays on line 1 and `has_marker` still matches.
+    """
+    rest = _RECURRENCE_BLOCK_RE.sub("", _MARKER_RE.sub("", body or "")).lstrip("\n")
+    if block is None:
+        return rest
+    return f"{block}\n\n{rest}" if rest else f"{block}\n"
+
+
+def recurrence_state_of(body: str) -> Optional[str]:
+    """The stamped recurrence state, read only from the top of a managed body (after the identity marker)."""
+    rest = _MARKER_RE.sub("", (body or "").replace("\r\n", "\n"), count=1).lstrip()
+    m = _RECURRENCE_STATE_RE.match(rest)
+    return m.group(1) if m else None
+
+
+_DECLARATION_RE = re.compile(r"^[ \t]*Structural-check:[ \t]*(.*?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
+_NOT_ENCODABLE_RE = re.compile(r"^not[ \t]+encodable[ \t]*:?[ \t]*(.*)$", re.IGNORECASE)
+
+
+def _normalize_decl_path(raw: str) -> str:
+    p = raw.strip().strip("`").strip().replace("\\", "/")
+    return p[2:] if p.startswith("./") else p
+
+
+def structural_verdict(recurrence: Optional[str], commit_messages: str, changed_paths: list[str]) -> dict:
+    """The deterministic structural-gate verdict from already-read inputs.
+
+    Pass on any one valid `Structural-check:` declaration in the branch's
+    commit bodies: a path present in the branch diff, or `not encodable:` with
+    a reason of at least `MIN_NOT_ENCODABLE_WORDS` words. An `unknown`
+    recurrence stays `unknown`, never `n/a`.
+    """
+    if recurrence is None or recurrence == "not-recurring":
+        return {"state": "n/a"}
+    if recurrence != "recurring":
+        return {"state": "unknown", "reason": "recurrence-unknown"}
+    decls = [m.group(1) for m in _DECLARATION_RE.finditer(commit_messages or "")]
+    if not decls:
+        return {"state": "fail", "reason": "no-declaration"}
+    changed = {_normalize_decl_path(p) for p in changed_paths}
+    first_failure = None
+    for decl in decls:
+        ne = _NOT_ENCODABLE_RE.match(decl.strip())
+        if ne:
+            if len(ne.group(1).split()) >= MIN_NOT_ENCODABLE_WORDS:
+                return {"state": "pass", "kind": "not-encodable"}
+            first_failure = first_failure or "empty-reason"
+            continue
+        path = _normalize_decl_path(decl)
+        if path and path in changed:
+            return {"state": "pass", "kind": "check", "path": path}
+        first_failure = first_failure or "path-not-in-diff"
+    return {"state": "fail", "reason": first_failure}
 
 
 # A ledger the gate cannot read is not "this repo changed" — it is a broken
@@ -730,10 +957,83 @@ def cmd_upsert(
             for v in bad:
                 print(f"{v.status} {v.path}:{v.line}", file=sys.stderr)
             sys.exit(f"QUOTES=unverified count={len(bad)}: remove or fix these findings; nothing was written")
+    if kind in SNAPSHOT_COLUMNS.values():
+        # Stamped in the tool, not the skill prose (same principle as
+        # `render_ledger_body`): every bucket upsert carries its recurrence.
+        rec = upsert_recurrence(repo, kind)
+        body = apply_recurrence_block(body, render_recurrence_block(rec))
     if dry_run:
         print("\n".join(dry_run_lines(repo, kind, title, body)))
         return
     print(_upsert_issue(repo, kind, title, body, label, reopen))
+
+
+def _fetch_snapshot_rows(repo: str) -> tuple[Optional[list[Optional[dict]]], Optional[str]]:
+    """`(rows, None)` from the repo's ledger comments, or `(None, reason)` when they can't be read."""
+    try:
+        keep, _dupes = plan(_list_open(repo), "ledger")
+        if keep is None:
+            return None, "no-ledger"
+        out = gh([
+            "api", f"repos/{repo}/issues/{keep}/comments", "--paginate",
+            "--jq", ".[] | {created_at, body}",
+        ])
+    except SystemExit:
+        return None, "gh-error"
+    comments = [json.loads(line) for line in out.splitlines() if line.strip()]
+    return snapshot_rows(comments), None
+
+
+def upsert_recurrence(repo: str, kind: str) -> dict:
+    rows, reason = _fetch_snapshot_rows(repo)
+    if rows is None:
+        return {"state": "unknown", "reason": reason}
+    return recurrence_at_upsert(rows, kind)
+
+
+def recurrence_lines(result: dict) -> list[str]:
+    """The `recurrence` subcommand's line output — all seven buckets, every time."""
+    if result["state"] != "ok":
+        head = f"RECURRENCE=unknown REASON={result['reason']}"
+    else:
+        head = (f"RECURRENCE=ok ROWS={result['rows']} LATEST={result['latest']} "
+                f"PREVIOUS={result['previous']}")
+    lines = [head]
+    for kind, b in result["buckets"].items():
+        line = f"BUCKET={kind} STATE={b['state']}"
+        if "counts" in b:
+            line += f" COUNTS={b['counts'][0]},{b['counts'][1]}"
+        lines.append(line)
+    return lines
+
+
+def cmd_recurrence(repo: str, as_json: bool) -> int:
+    rows, reason = _fetch_snapshot_rows(repo)
+    result = _unknown(reason) if rows is None else bucket_recurrence(rows)
+    print(json.dumps(result) if as_json else "\n".join(recurrence_lines(result)))
+    return 0 if result["state"] == "ok" else 2
+
+
+def structural_gate(repo_path: str, base: str, issue_body: str) -> dict:
+    recurrence = recurrence_state_of(issue_body)
+    if recurrence is None or recurrence == "not-recurring":
+        return {"state": "n/a"}
+    log = git_run.run_git(["-C", repo_path, "log", "--format=%B", f"{base}..HEAD"])
+    diff = git_run.run_git(["-C", repo_path, "diff", "--name-only", f"{base}...HEAD"])
+    if log.returncode != 0 or diff.returncode != 0:
+        return {"state": "unknown", "reason": "git-error"}
+    return structural_verdict(recurrence, log.stdout or "", (diff.stdout or "").splitlines())
+
+
+def cmd_structural_gate(repo_path: str, base: str, issue_body: str) -> int:
+    v = structural_gate(repo_path, base, issue_body)
+    line = f"STRUCTURAL={v['state']}"
+    if v["state"] == "pass":
+        line += f" KIND={v['kind']}" + (f" PATH={v['path']}" if "path" in v else "")
+    elif "reason" in v:
+        line += f" REASON={v['reason']}"
+    print(line)
+    return {"pass": 0, "n/a": 0, "fail": 1}.get(v["state"], 2)
 
 
 def dry_run_lines(repo: str, kind: str, title: str, body: str) -> list[str]:
@@ -969,6 +1269,15 @@ def main(argv: list[str] | None = None) -> None:
     lw.add_argument("--repo", required=True)
     lw.add_argument("--repo-path", required=True)
 
+    rc = sub.add_parser("recurrence")
+    rc.add_argument("--repo", required=True)
+    rc.add_argument("--json", action="store_true")
+
+    sg = sub.add_parser("structural-gate")
+    sg.add_argument("--repo-path", required=True)
+    sg.add_argument("--base", required=True, help="e.g. origin/main")
+    sg.add_argument("--issue-body-file", required=True)
+
     args = ap.parse_args(argv)
     if args.cmd == "get":
         cmd_get(args.repo, args.kind)
@@ -983,6 +1292,12 @@ def main(argv: list[str] | None = None) -> None:
         cmd_gate(args.repo, args.repo_path)
     elif args.cmd == "ledger-write":
         cmd_ledger_write(args.repo, args.repo_path)
+    elif args.cmd == "recurrence":
+        sys.exit(cmd_recurrence(args.repo, args.json))
+    elif args.cmd == "structural-gate":
+        with open(args.issue_body_file, encoding="utf-8") as fh:
+            body = fh.read()
+        sys.exit(cmd_structural_gate(args.repo_path, args.base, body))
 
 
 if __name__ == "__main__":
