@@ -109,6 +109,29 @@ gate's hot path, which only reads the ledger *body*:
   note `snapshot: skipped (<reason>)` and carry on — the ledger body upsert
   above is what the gate depends on; the snapshot is telemetry on top.
 
+## Step 8 — bucket recurrence (fleet-config#1513)
+
+A bucket with findings in two consecutive audits keeps regrowing, so its
+cleanup must fix the class at the strongest layer that can catch it, not just
+the instances. Recurrence is read from the snapshot rows above, by bucket only
+(snapshots stay counts-only; no finding detail is added for this):
+
+- `audit_issue.py recurrence --repo <OWNER/REPO>` reports, for the last two
+  snapshot rows, `BUCKET=<kind> STATE=recurring|not-recurring|unknown` for all
+  seven buckets (`recurring` = both counts above zero). Fewer than two rows, a
+  malformed latest/previous row, no ledger, or a `gh` failure is `unknown` with
+  its `REASON=`, never `not-recurring`; it never skips back past a malformed row.
+- `upsert` stamps the bucket issue itself, right after the identity marker:
+  `<!-- audit-recurrence: state=recurring since=<date> -->` plus a visible
+  "structural check required" line, `state=unknown` with a "could not be
+  established" line, or no block when not recurring. Step 8 runs before step 9
+  posts this run's row, so the upsert-time window is (latest posted row, this
+  non-empty run) — the same two rows the subcommand reads once step 9 posts.
+- The cleanup PR declares, in a commit body, `Structural-check: <repo-relative
+  path of the test/lint/ratchet>` or `Structural-check: not encodable: <why, at
+  least 8 words>`. `audit_issue.py structural-gate --repo-path <tree> --base
+  origin/<default> --issue-body-file <f>` checks it: `STRUCTURAL=pass|fail|n/a|unknown`.
+
 ## Step 10 — final report shape
 
 Print one summary table and stop. Exact shape:

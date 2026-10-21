@@ -524,7 +524,12 @@ except SystemExit:
 # put an unreadable ledger on GitHub.
 _seen: list[str] = []
 _orig_upsert = ai._upsert_issue
+_orig_fetch_rows = ai._fetch_snapshot_rows
 try:
+    # A not-recurring history, so bucket upserts stay offline and add no block
+    # (recurrence stamping has its own checks, fleet-config#1513).
+    _zero_row = {"run": "2026-01-01", "sha": "0", "counts": {k: 0 for k in ai.SNAPSHOT_COLUMNS.values()}}
+    ai._fetch_snapshot_rows = lambda repo: ([_zero_row], None)
     ai._upsert_issue = lambda repo, kind, title, body, label, reopen=False: (
         _seen.append(body), "url"
     )[1]
@@ -562,6 +567,7 @@ try:
                       "upsert --verify-quotes: an absent quote refuses the write, nothing is written")
 finally:
     ai._upsert_issue = _orig_upsert
+    ai._fetch_snapshot_rows = _orig_fetch_rows
 
 # ---- cleanup-deferred: open/closed state carries the signal (fleet-config#642) ----
 # A tracking issue left open saying "nothing deferred" is a zombie, so an empty
@@ -746,6 +752,195 @@ _probe = ai._write_tmp("x")
 check(os.path.exists(_probe),
       "_write_tmp still produces a real file — the cleanup is the caller's job, not a no-op writer")
 os.unlink(_probe)
+
+
+# ---- bucket recurrence from audit snapshots (fleet-config#1513) -------------
+
+_SNAP_HDR = ("| run | sha | dup | stale | drift | maint | slop | bug | doc | total | sec |\n"
+             "|-----|-----|-----|-------|-------|-------|------|-----|-----|-------|-----|\n")
+
+
+def _snap(run, dup, stale=0, drift=0, maint=0, slop=0, bug=0, doc=0, blank=False):
+    total = dup + stale + drift + maint + slop + bug + doc
+    gap = "\n" if blank else ""
+    return (f"<!-- audit-snapshot -->\n{gap}{_SNAP_HDR}"
+            f"| {run} | abc1234 | {dup} | {stale} | {drift} | {maint} | {slop} | {bug} | {doc} | {total} | 0 |\n")
+
+
+_p = ai.parse_snapshot(_snap("2026-10-07", 4, stale=4, maint=2, doc=3))
+check(_p is not None and _p["run"] == "2026-10-07" and _p["counts"]["duplication"] == 4
+      and _p["counts"]["documentation"] == 3, "parse_snapshot: canonical table maps columns to kinds")
+check(ai.parse_snapshot(_snap("2026-10-07", 1, blank=True)) is not None,
+      "parse_snapshot: a blank line between marker and table still parses")
+check(ai.parse_snapshot(_snap("2026-10-07", 1).replace("\n", "\r\n")) is not None,
+      "parse_snapshot: CRLF body parses")
+_reordered = ("<!-- audit-snapshot -->\n| sha | run | doc | bug | slop | maint | drift | stale | dup | total | sec |\n"
+              "|-|-|-|-|-|-|-|-|-|-|-|\n| abc | 2026-10-07 | 9 | 0 | 0 | 0 | 0 | 0 | 5 | 14 | 0 |\n")
+_pr2 = ai.parse_snapshot(_reordered)
+check(_pr2 is not None and _pr2["counts"]["duplication"] == 5 and _pr2["counts"]["documentation"] == 9,
+      "parse_snapshot: cells map by header name, not position")
+check(ai.parse_snapshot(_snap("2026-10-07", 1).replace("| 1 |", "| x |", 1)) is None,
+      "parse_snapshot: a non-integer bucket cell is malformed (None), never a guessed zero")
+check(ai.parse_snapshot(_snap("2026-10-07", 1).replace("| doc ", "| docs ")) is None,
+      "parse_snapshot: a missing bucket column is malformed")
+check(ai.parse_snapshot(_snap("last week", 1)) is None, "parse_snapshot: a non-ISO run date is malformed")
+check(not ai.is_snapshot("As noted, `<!-- audit-snapshot -->` comments carry counts.\n" + _SNAP_HDR),
+      "is_snapshot: a comment that only quotes the marker is ignored")
+
+
+def _c(body, created):
+    return {"body": body, "created_at": created}
+
+
+_rows = ai.snapshot_rows([
+    _c(_snap("2026-10-15", 7, stale=4, maint=1, slop=2, bug=1, doc=2), "2026-10-15T09:00:00Z"),
+    _c("unrelated self-fix comment", "2026-10-10T00:00:00Z"),
+    _c(_snap("2026-10-07", 4, stale=4, maint=2, doc=3), "2026-10-07T04:00:00Z"),
+])
+check(len(_rows) == 2 and _rows[0]["run"] == "2026-10-07", "snapshot_rows: filters non-snapshots, orders by run")
+_r = ai.bucket_recurrence(_rows)
+check(_r["state"] == "ok" and _r["buckets"]["duplication"] == {"state": "recurring", "counts": [4, 7]},
+      "bucket_recurrence: non-zero twice is recurring")
+check(_r["buckets"]["stale"]["state"] == "recurring" and _r["buckets"]["documentation"]["state"] == "recurring",
+      "bucket_recurrence: steady and shrinking non-zero counts still recur")
+check(_r["buckets"]["slop"]["state"] == "not-recurring" and _r["buckets"]["claude-md-drift"]["state"] == "not-recurring",
+      "bucket_recurrence: 0->2 and 0->0 are not recurring")
+_r20 = ai.bucket_recurrence(ai.snapshot_rows([_c(_snap("2026-10-01", 2), "a"), _c(_snap("2026-10-08", 0), "b")]))
+check(_r20["buckets"]["duplication"]["state"] == "not-recurring", "bucket_recurrence: 2->0 is not recurring")
+check(set(_r["buckets"]) == set(ai.SNAPSHOT_COLUMNS.values()) and "security" not in _r["buckets"],
+      "bucket_recurrence: reports all seven snapshot buckets, never security")
+
+_one = ai.bucket_recurrence(ai.snapshot_rows([_c(_snap("2026-10-07", 4), "a")]))
+check(_one["state"] == "unknown" and _one["reason"] == "insufficient-history"
+      and all(b["state"] == "unknown" for b in _one["buckets"].values()),
+      "bucket_recurrence: fewer than two rows is unknown, never not-recurring")
+_bad = ai.bucket_recurrence(ai.snapshot_rows([
+    _c(_snap("2026-10-01", 3), "2026-10-01T00:00:00Z"),
+    _c(_snap("2026-10-07", 4), "2026-10-07T00:00:00Z"),
+    _c(_snap("2026-10-15", 7).replace("| 7 |", "| ? |", 1), "2026-10-15T00:00:00Z"),
+]))
+check(_bad["state"] == "unknown" and _bad["reason"] == "malformed-row",
+      "bucket_recurrence: a malformed latest row is unknown, with no fallback to older valid rows")
+_same_day = ai.snapshot_rows([
+    _c(_snap("2026-10-15", 0), "2026-10-15T12:00:00Z"),
+    _c(_snap("2026-10-15", 5), "2026-10-15T08:00:00Z"),
+])
+check([r["counts"]["duplication"] for r in _same_day] == [5, 0],
+      "snapshot_rows: same-day rows order by created_at")
+
+_lines = ai.recurrence_lines(_r)
+check(_lines[0] == "RECURRENCE=ok ROWS=2 LATEST=2026-10-15@abc1234 PREVIOUS=2026-10-07@abc1234"
+      and "BUCKET=duplication STATE=recurring COUNTS=4,7" in _lines and len(_lines) == 8,
+      "recurrence_lines: header plus all seven buckets")
+_ul = ai.recurrence_lines(_one)
+check(_ul[0] == "RECURRENCE=unknown REASON=insufficient-history" and "BUCKET=bug STATE=unknown" in _ul,
+      "recurrence_lines: unknown window prints every bucket as unknown")
+
+# ---- upsert stamping ----
+
+check(ai.recurrence_at_upsert(_rows, "duplication") == {"state": "recurring", "since": "2026-10-15"},
+      "recurrence_at_upsert: latest posted row non-zero + this run non-empty -> recurring")
+check(ai.recurrence_at_upsert(_rows, "claude-md-drift") == {"state": "not-recurring"},
+      "recurrence_at_upsert: latest posted row zero -> not-recurring")
+check(ai.recurrence_at_upsert([], "bug")["state"] == "unknown", "recurrence_at_upsert: no history -> unknown")
+check(ai.recurrence_at_upsert([None], "bug") == {"state": "unknown", "reason": "malformed-row"},
+      "recurrence_at_upsert: malformed latest row -> unknown")
+
+_blk = ai.render_recurrence_block({"state": "recurring", "since": "2026-10-15"})
+_stamped = ai.ensure_marker(ai.apply_recurrence_block("## Findings\n- [ ] x", _blk), "duplication")
+check(_stamped.startswith("<!-- audit-managed: kind=duplication -->\n\n<!-- audit-recurrence: state=recurring"),
+      "recurrence block sits right after the identity marker")
+check(ai.has_marker(_stamped, "duplication"), "recurrence block keeps has_marker matching")
+_again = ai.ensure_marker(ai.apply_recurrence_block(_stamped, _blk), "duplication")
+check(_again == _stamped, "apply_recurrence_block is idempotent")
+check(ai.recurrence_state_of(_stamped) == "recurring", "recurrence_state_of reads the stamped state")
+_cleared = ai.ensure_marker(ai.apply_recurrence_block(_stamped, None), "duplication")
+check("audit-recurrence" not in _cleared and "## Findings" in _cleared and ai.recurrence_state_of(_cleared) is None,
+      "not-recurring removes the block and keeps the body")
+_unk = ai.render_recurrence_block({"state": "unknown", "reason": "gh-error"})
+check(ai.recurrence_state_of(ai.ensure_marker(ai.apply_recurrence_block(_stamped, _unk), "duplication")) == "unknown"
+      and "could not be established" in _unk, "unknown writes a visible state=unknown block")
+_quoted = ai.ensure_marker("Prose first.\n\n<!-- audit-recurrence: state=recurring since=x -->", "bug")
+check(ai.recurrence_state_of(_quoted) is None, "recurrence_state_of ignores a block that is not at the top")
+check(ai.recurrence_state_of(_stamped.replace("\n", "\r\n")) == "recurring", "recurrence_state_of: CRLF body")
+_bq = ai.ensure_marker(ai.apply_recurrence_block("> a user blockquote\n\nmore", _blk), "bug")
+check("> a user blockquote" in ai.apply_recurrence_block(_bq, None),
+      "apply_recurrence_block keeps a body blockquote separated by a blank line")
+
+
+def _dry_upsert(kind, rows_or_reason) -> str:
+    _orig = (ai._fetch_snapshot_rows, ai._list_open)
+    ai._fetch_snapshot_rows = (lambda repo: (None, rows_or_reason)) if isinstance(rows_or_reason, str) \
+        else (lambda repo: (rows_or_reason, None))
+    ai._list_open = lambda repo: []
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            ai.cmd_upsert("o/r", kind, f"audit: {kind} findings", "## Findings\n", None, dry_run=True)
+    finally:
+        ai._fetch_snapshot_rows, ai._list_open = _orig
+    return buf.getvalue()
+
+
+check("state=recurring since=2026-10-15" in _dry_upsert("duplication", _rows),
+      "upsert --dry-run: a recurring bucket shows the block in BODY")
+check("audit-recurrence" not in _dry_upsert("claude-md-drift", _rows),
+      "upsert --dry-run: a not-recurring bucket carries no block")
+check("state=unknown reason=gh-error" in _dry_upsert("bug", "gh-error"),
+      "upsert --dry-run: an unreadable ledger stamps unknown, never silently clean")
+check("audit-recurrence" not in _dry_upsert("security", _rows),
+      "upsert --dry-run: security (no snapshot column) is never stamped")
+
+# ---- structural-gate ----
+
+_LONG = "the class is runtime-only behaviour that no static scan can see"
+check(ai.structural_verdict(None, "", []) == {"state": "n/a"}, "structural_verdict: no block -> n/a")
+check(ai.structural_verdict("unknown", "", [])["state"] == "unknown",
+      "structural_verdict: unknown recurrence stays unknown")
+check(ai.structural_verdict("recurring", "fix: x\n", ["a.py"]) == {"state": "fail", "reason": "no-declaration"},
+      "structural_verdict: no declaration fails")
+check(ai.structural_verdict("recurring", "Structural-check: not encodable: too hard", [])
+      == {"state": "fail", "reason": "empty-reason"}, "structural_verdict: a short reason fails")
+
+_sg = Path(tempfile.mkdtemp(prefix="test_audit_issue_1513_"))
+try:
+    _sup, _swork = make_upstream_and_clone(_sg, check)
+
+    def _sgit(*a):
+        return run_git(_swork, *a, check=check)
+
+    _sgit("checkout", "-q", "-b", "fix/1-dup")
+    (_swork / "tests").mkdir(exist_ok=True)
+    (_swork / "tests" / "test_no_dup.py").write_text("x = 1\n", encoding="utf-8")
+    _sgit("add", "tests/test_no_dup.py")
+    _sgit("commit", "-q", "-m", "fix: dedupe\n\nStructural-check: `tests\\test_no_dup.py`")
+    _rec_body = _stamped
+
+    def _gate(body=_rec_body):
+        return ai.structural_gate(str(_swork), "origin/main", body)
+
+    check(_gate() == {"state": "pass", "kind": "check", "path": "tests/test_no_dup.py"},
+          f"structural-gate: a declared path in the branch diff passes ({_gate()})")
+    check(_gate(_cleared) == {"state": "n/a"}, "structural-gate: a non-recurring body is n/a")
+    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe\n\nStructural-check: tests/missing.py")
+    check(_gate() == {"state": "fail", "reason": "path-not-in-diff"},
+          "structural-gate: a declared path outside the diff fails")
+    _sgit("commit", "-q", "--amend", "-m", f"fix: dedupe\n\nStructural-check: not encodable: {_LONG}")
+    check(_gate() == {"state": "pass", "kind": "not-encodable"}, "structural-gate: a real reason passes")
+    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe\n\nStructural-check: not encodable:")
+    check(_gate() == {"state": "fail", "reason": "empty-reason"}, "structural-gate: an empty reason fails")
+    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe")
+    check(_gate() == {"state": "fail", "reason": "no-declaration"}, "structural-gate: no declaration fails")
+    check(ai.structural_gate(str(_swork), "origin/no-such-branch", _rec_body)
+          == {"state": "unknown", "reason": "git-error"}, "structural-gate: a git failure is unknown, not fail")
+    _bf = _sg / "body.md"
+    _bf.write_text(_rec_body, encoding="utf-8")
+    with contextlib.redirect_stdout(io.StringIO()) as _o:
+        _code = ai.cmd_structural_gate(str(_swork), "origin/main", _rec_body)
+    check(_code == 1 and _o.getvalue().strip() == "STRUCTURAL=fail REASON=no-declaration",
+          "cmd_structural_gate: fail prints its line and exits 1")
+finally:
+    shutil.rmtree(_sg, ignore_errors=True)
 
 
 _h.report_and_exit("test_audit_issue")

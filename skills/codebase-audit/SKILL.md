@@ -329,8 +329,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 and refuses the whole write (`QUOTES=unverified`, nothing written) if an
 unverified finding is still in the body.
 
-The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
-the label, prints the canonical issue URL. **Titles are stable** — no `(N
+The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker and the
+bucket's recurrence block (from the ledger's snapshot rows; [reference.md](reference.md),
+step 8 recurrence), applies the label, prints the canonical issue URL. **Titles are stable** — no `(N
 items)` count (lives in the body), so the title never changes run to run.
 
 **Body shape** for a fresh issue and the stable title style (`audit: <bucket>
@@ -377,7 +378,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Capture the ledger issue URL it prints. A non-zero exit → leave the ledger
 unchanged and say so in the run report. Then post the counts-only
-`<!-- audit-snapshot -->` comment to that URL (a post failure is non-fatal). Why
+`<!-- audit-snapshot -->` comment to that URL (a post failure is non-fatal);
+these rows feed bucket recurrence (`audit_issue.py recurrence`). Why
 hand-authoring and recording the checkout tip each broke real audits, and the
 snapshot table's exact shape: [reference.md](reference.md), step 9.
 
