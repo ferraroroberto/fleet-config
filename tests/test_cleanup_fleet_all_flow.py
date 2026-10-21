@@ -24,6 +24,11 @@ from no_window import NO_WINDOW  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent / "acceptance"))
 from shared import SKIP_EXIT  # noqa: E402
 
+# The harness's output carries non-ASCII glyphs; echoing it through the locale
+# codec (cp1252 under capture) raises unless stdout is pinned to UTF-8.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 HARNESS = Path(__file__).resolve().parent / "cleanup_fleet_all_flow.mjs"
 
 
@@ -42,7 +47,8 @@ def main() -> int:
 
     res = subprocess.run(
         [node, str(HARNESS)],
-        capture_output=True, text=True, creationflags=NO_WINDOW,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        creationflags=NO_WINDOW,
     )
     sys.stdout.write(res.stdout)
     if res.returncode != 0:
