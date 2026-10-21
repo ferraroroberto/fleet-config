@@ -339,9 +339,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "teardown's branch report -- `landed` only on a closed issue plus a "
      "proven-merged tip plus no open PR, `unknown` as its own state, "
      "checked-out/default/no-issue/open-issue never landed, and orphan "
-     "`<repo>-wt-*` folders reported without touching them -- is testable "
+     "`<repo>-wt-*` folders reported without touching them, plus the explicit "
+     "`--delete`/`--remote` path (landed-only, re-derived, lease-pinned) -- "
+     "is testable "
      "on its own against real throwaway git repos with injected `gh` "
-     "lookups (fleet-config#1516)"),
+     "lookups (fleet-config#1516, #1528)"),
     ("stall_probe", "test_stall_probe.py",
      "the host stall probe -- a late sleep, a slow loopback GET and a slow "
      "per-volume disk read logged as UTC stall records, evidence captured "

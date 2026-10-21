@@ -369,9 +369,12 @@ Decision below is driven by the project's `## CI expectations` block
   no open PR; `unknown` is its own state (a fact was not established), never folded
   into a count of landed or kept branches. If the helper could not run, or printed
   `VERDICT=unknown`/`partial`, say `branch residue: not established` — never `0`.
-  **This only reports.** Do not delete any branch or folder it names: the branch
-  this finish just merged was already deleted above, and every other ref belongs to
-  someone else (the foreign-branch rule in `/cleanup-fleet-all`, fleet-config#572).
+  **This only reports.** Do not delete any branch or folder it names, and never
+  pass the helper's `--delete`: the branch this finish just merged was already
+  deleted above, and every other ref belongs to someone else (the foreign-branch
+  rule in `/cleanup-fleet-all`, fleet-config#572). Removing a `landed` branch is an
+  explicit act by the owner, or the chief after a Board yes (delete with:
+  `branch_residue.py branches <repo> --delete --branch <name>`, fleet-config#1528).
   The landed check that gates your own branch's `-D` (the `git diff --quiet` test
   above) is unchanged.
 
