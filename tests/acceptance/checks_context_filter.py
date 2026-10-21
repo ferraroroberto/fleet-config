@@ -619,6 +619,10 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
                 ],
                 capture_output=True,
                 text=True,
+                # The wrapper re-emits the emoji as UTF-8; the locale codec would
+                # misdecode (or raise on) its bytes.
+                encoding="utf-8",
+                errors="replace",
                 # FLEET_CONTEXT_FILTER_DIR: keep test rows out of the machine's
                 # real telemetry — the launcher stats panel reads it now (#541).
                 env={**os.environ, "PYTHONUTF8": "0", "FLEET_CONTEXT_FILTER_DIR": tmp},
