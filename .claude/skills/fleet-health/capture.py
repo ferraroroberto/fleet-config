@@ -156,7 +156,6 @@ def classify(machine: dict) -> tuple[str, str, Optional[str]]:
     not-covered status carrying a human reason. Every machine gets a verdict —
     silence is never an option (fleet-config#397 acceptance).
     """
-    mid = str(machine.get("id") or "?")
     if machine.get("dormant"):
         return "dormant", "machine is dormant — not powered for scheduled capture", None
 

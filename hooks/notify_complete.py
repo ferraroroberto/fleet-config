@@ -75,7 +75,6 @@ distilled · horizon grade) so the phone push links straight to the full log.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import re

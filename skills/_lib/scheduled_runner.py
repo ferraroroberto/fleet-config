@@ -21,18 +21,18 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, Optional, TextIO
+from typing import Any, NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 from process_scope import ProcessScope, PipeReader, DRAIN_TIMEOUT_SECONDS, TERMINATE_TIMEOUT_SECONDS  # noqa: E402
 from rate_gate import STALL_TIMEOUT_ENV, UNATTENDED_ENV  # noqa: E402
 from runner_adapters import (  # noqa: E402
-    RESERVED_FLAGS,
+    RESERVED_FLAGS as RESERVED_FLAGS,
     ClaudeAdapter,
     CodexAdapter,
     ProgressEvent,
-    normalize_skill_prompt,
+    normalize_skill_prompt as normalize_skill_prompt,
 )
 
 MAX_SUMMARY_CHARS = 180

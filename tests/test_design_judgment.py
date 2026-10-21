@@ -18,15 +18,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
+from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
@@ -36,11 +35,8 @@ from design_review import evaluate as ev, judgment as jm, report, rubric as rb  
 _h = CheckHarness()
 check = _h.check
 
-FIX = REPO / "tests" / "fixtures" / "design_review"
-RUBRIC = REPO / "design.rubric.toml"
 STATE = Path(throwaway_dir("design-judgment-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
-PKG = REPO / "skills" / "_lib" / "design_review"
 
 rubric = rb.load_rubric(RUBRIC)
 metrics = json.loads((FIX / "metrics_violating.json").read_text(encoding="utf-8"))
@@ -310,17 +306,7 @@ check("status: not_confirmed" in page_n and 'class="answer-not-confirmed">not co
 
 # ---- CLI: judge-prompt / judge-merge / render --------------------------------
 
-PY = sys.executable
-common = ["--rubric", str(RUBRIC), "--spec", str(FIX / "spec_violating.md"), "--spec-dark", str(FIX / "spec_violating.md")]
-env = {**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)}
-
-
-def _run(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([PY, str(PKG), *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, env=env)
-
-
-def _kv(proc: subprocess.CompletedProcess) -> dict:
-    return dict(l.split("=", 1) for l in proc.stdout.splitlines() if "=" in l)
+_run, _kv = cli_runner(STATE)
 
 
 p1 = _run("judge-prompt", str(run_dir), "--rubric", str(RUBRIC))
@@ -328,7 +314,7 @@ k1 = _kv(p1)
 check(p1.returncode == 0 and k1.get("PROMPT") == str(run_dir / "judge-prompt.md") and k1.get("SCREENS") == "2" and k1.get("QUESTIONS") == "10"
       and (run_dir / "judge-prompt.md").read_text(encoding="utf-8") == prompt,
       f"judge-prompt writes <run_dir>/judge-prompt.md and prints PROMPT/SCREENS/QUESTIONS ({p1.stdout[-200:]}{p1.stderr[-200:]})")
-p0 = _run("evaluate", str(run_dir / "metrics.json"), "--out", str(run_dir / "evaluate.json"), *common)
+p0 = _run("evaluate", str(run_dir / "metrics.json"), "--out", str(run_dir / "evaluate.json"), *SPEC_ARGS)
 check(p0.returncode == 0, f"evaluate --out into the run dir ({p0.stderr[-200:]})")
 ev_before = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 p2 = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
@@ -388,7 +374,7 @@ check(p8.returncode == 2 and p8.stdout.startswith("ERROR="), "judge-prompt on a 
 fresh = run_dir.parent / "fresh"
 fresh.mkdir()
 (fresh / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
-p9 = _run("judge-merge", str(fresh), str(FIX / "judge_answers_ok.json"), *common)
+p9 = _run("judge-merge", str(fresh), str(FIX / "judge_answers_ok.json"), *SPEC_ARGS)
 check(p9.returncode == 0 and (fresh / "evaluate.json").is_file() and json.loads((fresh / "evaluate.json").read_text(encoding="utf-8"))["judgment"]["status"] == "ok",
       "judge-merge evaluates metrics.json first when evaluate.json is absent")
 

@@ -15,11 +15,10 @@ import io
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
+from acceptance.shared import REPO, _Checker
 
 
 # A card row is a markdown table row whose FIRST cell names the project, in

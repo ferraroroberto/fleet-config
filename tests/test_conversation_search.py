@@ -28,7 +28,6 @@ import shutil
 import sqlite3
 import sys
 import tempfile
-from datetime import date
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent

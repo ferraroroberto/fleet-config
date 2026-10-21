@@ -24,18 +24,16 @@ from __future__ import annotations
 import contextlib
 import io
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import worktree_residue as wr  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from residue_fixtures import make_origin_and_primary  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -88,36 +86,7 @@ check(wr.overall_verdict([wr.UNKNOWN, wr.OWN]) == wr.VERDICT_RESIDUE, "verdict: 
 
 # ---- real git fixtures --------------------------------------------------
 
-_no_hooks = Path(tempfile.mkdtemp(prefix="wr-nohooks-"))
-
-
-def git(cwd: Path, *args: str) -> str:
-    # `core.hooksPath` -> an empty dir: this machine carries a global commit
-    # hook that rejects non-allowlisted author emails.
-    res = subprocess.run(
-        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", f"core.hooksPath={_no_hooks}", *args],
-        cwd=str(cwd), capture_output=True, text=True, creationflags=NO_WINDOW,
-    )
-    if res.returncode != 0:
-        raise AssertionError(f"fixture git {' '.join(args)} failed: {res.stderr.strip()}")
-    return res.stdout.strip()
-
-
-def commit(cwd: Path, name: str, text: str, msg: str) -> None:
-    (cwd / name).write_text(text, encoding="utf-8")
-    git(cwd, "add", name)
-    git(cwd, "commit", "-q", "-m", msg)
-
-
-base = Path(tempfile.mkdtemp(prefix="wr-fixture-")).resolve()
-origin = base / "origin.git"
-git(base, "init", "-q", "--bare", "-b", "main", str(origin))
-primary = base / "alpha"
-git(base, "clone", "-q", str(origin), str(primary))
-git(primary, "checkout", "-q", "-b", "main")
-commit(primary, "a.txt", "one\n", "base")
-git(primary, "push", "-q", "-u", "origin", "main")
-git(primary, "remote", "set-head", "origin", "main")
+base, origin, primary, git, commit = make_origin_and_primary("wr")
 
 
 def add_worktree(name: str, branch: str, start: str = "main") -> Path:

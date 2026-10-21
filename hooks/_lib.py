@@ -315,16 +315,15 @@ def repair_mojibake(text: Optional[str]) -> Optional[str]:
 # globals the emitters read live there, not here.
 
 from harness_wire import (  # noqa: E402
-    AGENT_HINT_KEY,
-    SHELL_AMBIGUOUS_KEY,
-    allow,
-    block,
-    normalize_payload,
-    payload_agent,
-    read_stdin_json,
-    rewrite_command,
-    shell_is_ambiguous,
-    warn,
+    AGENT_HINT_KEY as AGENT_HINT_KEY,
+    allow as allow,
+    block as block,
+    normalize_payload as normalize_payload,
+    payload_agent as payload_agent,
+    read_stdin_json as read_stdin_json,
+    rewrite_command as rewrite_command,
+    shell_is_ambiguous as shell_is_ambiguous,
+    warn as warn,
 )
 
 
@@ -770,7 +769,11 @@ def file_path(payload: Dict[str, Any]) -> Optional[Path]:
 # makes this reverse import safe despite `_lib` not having finished loading
 # yet at the point it reaches this line.
 
-from edit_events import EditEvent, EditTarget, edit_event  # noqa: E402
+from edit_events import (  # noqa: E402
+    EditEvent as EditEvent,
+    EditTarget as EditTarget,
+    edit_event as edit_event,
+)
 
 
 # ----------------------------------------------------------- projects.toml
@@ -783,19 +786,17 @@ from edit_events import EditEvent, EditTarget, edit_event  # noqa: E402
 # ordering hazard.
 
 from registry import (  # noqa: E402
-    BOARD_URL_ENV_VAR,
-    DOTENV_PATH_ENV_VAR,
-    HOOKS_DIR,
-    NOTIFY_CATEGORY_KEYS,
-    PROJECTS_TOML,
-    PROJECTS_TOML_ENV_VAR,
-    GlobalConfig,
-    ProjectConfig,
-    Registry,
-    detect_project,
-    load_registry,
-    resolve_board_url,
-    resolve_notify_target,
+    BOARD_URL_ENV_VAR as BOARD_URL_ENV_VAR,
+    DOTENV_PATH_ENV_VAR as DOTENV_PATH_ENV_VAR,
+    PROJECTS_TOML as PROJECTS_TOML,
+    PROJECTS_TOML_ENV_VAR as PROJECTS_TOML_ENV_VAR,
+    GlobalConfig as GlobalConfig,
+    ProjectConfig as ProjectConfig,
+    Registry as Registry,
+    detect_project as detect_project,
+    load_registry as load_registry,
+    resolve_board_url as resolve_board_url,
+    resolve_notify_target as resolve_notify_target,
 )
 
 

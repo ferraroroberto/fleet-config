@@ -127,20 +127,20 @@ independently, so it only went one way):
                 Everything above is wired together here; none of the actual
                 selection/snapshot/retention logic lives in this file.
 
-Every name below is imported and re-exported so existing callers and tests
-keep addressing this engine as `backup.<name>` / `backup_private.py`'s own
-former flat namespace, unchanged (fleet-config#731 review).
+The names below are imported and listed in `__all__` so existing callers and
+tests keep addressing this engine as `backup.<name>` / `backup_private.py`'s own
+former flat namespace.
 """
 
 from __future__ import annotations
 
 import logging
-import shutil
+import shutil as shutil  # tests patch `backup.shutil.rmtree`
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import _lib  # noqa: E402
+import _lib as _lib  # noqa: E402  # tests read `backup._lib.NO_WINDOW`
 
 from .config import (  # noqa: E402
     ARCHIVE_MANIFEST_NAME,
@@ -169,9 +169,6 @@ from .config import (  # noqa: E402
     SESSION_ARCHIVE_DIR,
     BackupConfig,
     RepoOverrides,
-    _FRESHNESS_EXIT,
-    _SEVERITY,
-    _projects_toml_path,
     _read_toml,
     load_backup_config,
     load_repo_overrides,
@@ -181,7 +178,6 @@ from .select import (  # noqa: E402
     _apply_bulk_guard,
     _dedupe_by_rel,
     _denied,
-    _forced_include,
     _matches_any,
     git_ignored_entries,
     is_reparse_point,
@@ -203,12 +199,8 @@ from .snapshot import (  # noqa: E402
 )
 from .retention import (  # noqa: E402
     RESTORE_NOTE_NAME,
-    _RESTORE_NOTE,
-    _WHAT_IGNORED,
-    _WHAT_RUNTIME_DATA,
     _index_manifest,
     _previous_snapshot,
-    _prune_empty_dirs,
     audit_session_archive,
     clear_run_marker,
     dated_snapshots,
@@ -224,7 +216,7 @@ from .retention import (  # noqa: E402
     write_restore_note,
     write_run_marker,
 )
-from .report import _leg_duration_seconds, _mb, _notify, _notify_summary, report  # noqa: E402
+from .report import _notify_summary, report  # noqa: E402
 from .cli import (  # noqa: E402
     _preflight,
     _same_volume,
@@ -258,4 +250,8 @@ __all__ = [
     "plan_retention", "prune", "freshness",
     "collect_repos", "run_leg", "run", "main",
     "report", "logger",
+    # Private helpers tests/test_fleet_private_backup.py reaches as `backup.<name>`.
+    "_apply_bulk_guard", "_dedupe_by_rel", "_denied", "_index_manifest", "_matches_any",
+    "_notify_summary", "_preflight", "_previous_snapshot", "_read_toml", "_same_volume",
+    "_worst",
 ]
