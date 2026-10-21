@@ -89,6 +89,8 @@ const VALIDATE_RESULT_SCHEMA = {
     pass: { type: 'boolean' },
     feedback: { type: 'string' },
     verification: { type: 'string', enum: ['PASS', 'FAIL'] },
+    // structural-gate's verbatim `STRUCTURAL=` line, recurring issues only.
+    structural: { type: 'string' },
   },
 }
 
@@ -107,6 +109,23 @@ function inconsistentBuild(build) {
 
 function inconsistentValidate(verdict) {
   return verdict.pass && verdict.verification !== 'PASS'
+}
+
+// fleet-config#1520: a recurring bucket's cleanup must also ship a structural
+// check, judged by `audit_issue.py structural-gate`. Recurrence is read here
+// from the issue body's stamp, the same way `recurrence_state_of` reads it, so
+// the model never decides whether the gate applies. This matches the stamp
+// anywhere in the body, wider than the helper's top-of-body read, so a
+// mismatch can only make the validator run a gate that answers `n/a`, never
+// skip one that would fail. `unknown` never gates; it is reported instead.
+function recurrenceOf(issue) {
+  const m = /<!--[ \t]*audit-recurrence:[ \t]*state=([\w-]+)/.exec(issue.body || '')
+  if (!m || m[1] === 'not-recurring') return 'not-recurring'
+  return m[1] === 'recurring' ? 'recurring' : 'unknown'
+}
+
+function structuralBlocked(issue, verdict) {
+  return recurrenceOf(issue) === 'recurring' && !/^STRUCTURAL=(pass|n\/a)(\s|$)/.test((verdict.structural || '').trim())
 }
 
 const EXECUTE_RESULT_SCHEMA = {
@@ -163,6 +182,9 @@ function buildPrompt(issue, priorFeedback) {
   const retryNote = priorFeedback
     ? `\n\nThis is a retry on the same branch, in the same worktree. Your previous attempt was rejected:\n"${priorFeedback}"\nFix this specific problem — do not start over from scratch.`
     : ''
+  const structuralNote = recurrenceOf(issue) === 'recurring'
+    ? `\n\nThis issue's audit bucket is **recurring** (findings in two consecutive audits), so fixing the findings is not enough: also ship one structural check that would have caught this class of finding (a lint rule, a static test, a ratchet), and declare it on its own line in a commit body on the branch: \`Structural-check: <repo-relative path of that check>\`. Prove it fails on the pre-fix code if you can. If no check can encode the class, write \`Structural-check: not encodable: <why, at least 8 words>\` instead. The validator runs \`audit_issue.py structural-gate\` on the branch, and a missing or invalid declaration rejects it (fleet-config#1520).`
+    : ''
   return `You are building GitHub issue #${issue.number} in the ${issue.repo} repo, then STOPPING before shipping it. Repo root: E:\\automation\\${issue.repo}. You are the only agent touching this repo right now.
 
 ${ISOLATION_RULES}
@@ -174,7 +196,7 @@ ${ISOLATION_RULES}
 4. Run the project's verification gate per its CLAUDE.md (e.g. \`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1\`). It must exit 0. If the project has no checker, say so explicitly in your report and treat verification as SKIPPED, not PASS.
 5. If your change untracks a file — \`git rm --cached\`, a rename to \`.sample\`, or a \`.gitignore\` line over a tracked path — name each path in \`summary\`. Every checkout that pulls it would lose its live copy; the ship step preserves them and the PR body must say so (fleet-config#1086).
 6. Commit your work on the branch — \`git add\` the files you changed and \`git commit\` them (conventional \`type: subject\` message, no AI-attribution trailer). Your handoff artefact is a **committed branch**, not a dirty working tree: uncommitted work has no SHA, so an escalation or a crash between here and the next agent loses it outright instead of parking it recoverably in the reflog (fleet-config#641). If you genuinely changed nothing, commit nothing and say so — a clean tree with no new commits is a valid report, a dirty tree never is.
-7. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships. "Do not ship" does not mean "do not commit": step 6 is required, and only the four actions named here are forbidden.${retryNote}
+7. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships. "Do not ship" does not mean "do not commit": step 6 is required, and only the four actions named here are forbidden.${structuralNote}${retryNote}
 
 Issue #${issue.number}: ${issue.title}
 The full issue text is already read by /issue-start. If needed, fetch the current text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\`.
@@ -192,6 +214,15 @@ function preservationStep(bucket) {
 7. This is a \`prompt-drift\` lane, so it also carries a preservation gate that the leniency rule below does not soften. From the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>\`. Any \`FAIL\` line or exit code other than 0 (exit 3 is UNKNOWN: the diff could not be taken) → \`pass: false\`, quoting the failing lines as feedback. Then, for each instruction file the diff edited, list the directives in its old text (every rule, prohibition, path, command, threshold and quoted trigger) and confirm the new text still discharges each; an undischarged directive → \`pass: false\` naming it.`
 }
 
+// fleet-config#1520: the script, not this agent, decides whether the line
+// gates (`structuralBlocked`); the agent only runs the helper and reports.
+function structuralStep(issue, bucket) {
+  if (recurrenceOf(issue) !== 'recurring') return ''
+  const n = bucket === 'prompt-drift' ? 8 : 7
+  return `
+${n}. This issue's bucket is **recurring**, so it also carries a structural gate that the leniency rule below does not soften. Write the current issue body to a file outside the worktree (\`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo} --json body --jq .body\` into a file under your temp directory), then from the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py structural-gate --repo-path . --base origin/<default-branch> --issue-body-file <that file>\`. Copy its one \`STRUCTURAL=\` line verbatim into \`structural\`. \`STRUCTURAL=fail\` or \`STRUCTURAL=unknown\` → \`pass: false\`, quoting the line and telling the builder to add a \`Structural-check:\` line to a commit body (a path in the diff, or \`not encodable: <why, at least 8 words>\`). Leniently, also check that a declared check would fail on the pre-fix code; mention it in feedback if not, but do not fail on that alone.`
+}
+
 function validatePrompt(issue, build, bucket) {
   return `You are independently validating GitHub issue #${issue.number} in the ${issue.repo} repo. It was built in the worktree ${build.worktree || `E:\\automation\\${issue.repo}-wt-${issue.number}`}, on branch ${build.branch}. You did NOT write this change — you have no memory of building it, review it fresh and adversarially, but leniently.
 
@@ -202,7 +233,7 @@ ${ISOLATION_RULES}
 3. Fetch the current issue text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\` and use it as the acceptance-criteria source.
 4. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
 5. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
-6. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.${preservationStep(bucket)}
+6. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.${preservationStep(bucket)}${structuralStep(issue, bucket)}
 
 Issue #${issue.number}: ${issue.title}
 
@@ -211,13 +242,16 @@ Be LENIENT — this is a sanity check that a human reviewer would rubber-stamp, 
 Report via the required schema. Always fill in \`feedback\` — briefly even on a pass — since a rejection's feedback is fed verbatim to the next build attempt.`
 }
 
-function executePrompt(issue, build) {
+function executePrompt(issue, build, verdict) {
+  const structuralSection = recurrenceOf(issue) === 'recurring'
+    ? `\n   The PR body must carry a \`## Structural check\` section: the branch's \`Structural-check:\` commit line(s), copied verbatim, and the validator's gate line \`${verdict.structural}\` (fleet-config#1520).`
+    : ''
   return `You are shipping an already-built, already-validated GitHub issue #${issue.number} in the ${issue.repo} repo, on branch ${build.branch}, in the worktree ${build.worktree || `E:\\automation\\${issue.repo}-wt-${issue.number}`}. You are the only agent touching this repo right now.
 
 ${ISOLATION_RULES}
 
 1. \`cd\` into that worktree, confirm you're on branch ${build.branch}.
-2. Run the /issue-finish flow for this branch as an unattended finish (its step-1 acceptance audit runs \`tally --unattended\`; ACCEPTANCE=blocked is a FAILED ship, report it): push, gh pr create, CI-advisory wait (unless the diff is provably CI-unrelated per /issue-yolo's rule), then merge + land per /issue-finish step 5's WORKTREE branch — you are in a worktree, so \`gh pr merge <PR> --squash\` with NO --delete-branch (it fails its local half) and NO \`git checkout main\`; then remove-worktree, then \`worktree_claim.py land-primary <repo> ${issue.number}\`, then delete the branch refs explicitly. Report its PRIMARY=live/PRIMARY=stale line — a merged PR that never reached the primary is not live. If land-primary also printed \`RESTORED_UNTRACKED=\` or \`KEPT_ASIDE=\` lines (live files the merge untracked, kept through the fast-forward — fleet-config#1086), copy them verbatim into \`restoredUntracked\`; a \`KEPT_ASIDE\` file is only in its stash dir and needs a human. Tray restart per the repo's CLAUDE.md. /issue-finish owns the worktree teardown for a successful ship — let it run its own teardown rather than hand-rolling one.
+2. Run the /issue-finish flow for this branch as an unattended finish (its step-1 acceptance audit runs \`tally --unattended\`; ACCEPTANCE=blocked is a FAILED ship, report it): push, gh pr create, CI-advisory wait (unless the diff is provably CI-unrelated per /issue-yolo's rule), then merge + land per /issue-finish step 5's WORKTREE branch — you are in a worktree, so \`gh pr merge <PR> --squash\` with NO --delete-branch (it fails its local half) and NO \`git checkout main\`; then remove-worktree, then \`worktree_claim.py land-primary <repo> ${issue.number}\`, then delete the branch refs explicitly. Report its PRIMARY=live/PRIMARY=stale line — a merged PR that never reached the primary is not live. If land-primary also printed \`RESTORED_UNTRACKED=\` or \`KEPT_ASIDE=\` lines (live files the merge untracked, kept through the fast-forward — fleet-config#1086), copy them verbatim into \`restoredUntracked\`; a \`KEPT_ASIDE\` file is only in its stash dir and needs a human. Tray restart per the repo's CLAUDE.md. /issue-finish owns the worktree teardown for a successful ship — let it run its own teardown rather than hand-rolling one.${structuralSection}
 3. Fire the /issue-finish completion ping via notify_complete.py --kind finish — do NOT use any MCP chat tool to pick a channel yourself, the helper resolves it from projects.toml.
 
 If anything fails, do not force it through — leave the branch and PR (if any) as-is and report FAILED with the reason. Never guess-fix a shipping failure. A dedicated teardown agent runs after you either way.
@@ -316,6 +350,7 @@ async function processIssue(bucket, issue) {
   let lane = {
     bucket, issue, status: 'escalated', round: MAX_ROUNDS,
     branch: null, worktree: null, reason: 'exhausted retries', alreadyClosed: false,
+    recurrence: recurrenceOf(issue), structural: undefined,
   }
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -361,8 +396,16 @@ async function processIssue(bucket, issue) {
       verdict.feedback = verdict.feedback || 'validator requires a consistent pass/verification verdict'
     }
 
+    // fleet-config#1520: on a recurring bucket, a gate line other than
+    // pass/n/a (fail, unknown, or none reported) is never trusted as a pass.
+    if (verdict) lane.structural = verdict.structural
+    if (verdict && verdict.pass && structuralBlocked(issue, verdict)) {
+      verdict.pass = false
+      verdict.feedback = `structural gate did not pass (${verdict.structural || 'no STRUCTURAL= line reported'}): this bucket is recurring, so add a Structural-check: line to a commit body naming a check in the diff, or "not encodable: <why, at least 8 words>"`
+    }
+
     if (verdict && verdict.pass) {
-      const shipped = await agent(executePrompt(issue, build), {
+      const shipped = await agent(executePrompt(issue, build, verdict), {
         phase: 'Execute',
         label: `${bucket}:execute:${issue.repo}#${issue.number}`,
         schema: EXECUTE_RESULT_SCHEMA,
@@ -487,6 +530,8 @@ for (const bucket of bucketNames) {
     if (r.foreignBranches) log(`  foreign branches (not residue): ${r.foreignBranches}`)
     if (r.restoredUntracked) log(`  live files kept through the fast-forward (fleet-config#1086): ${r.restoredUntracked}`)
     if (r.alreadyClosed) log(`  already closed mid-run (fleet-config#623) — no teardown comment posted`)
+    if (r.recurrence === 'unknown') log(`  ❓ recurrence unknown — structural check not required (fleet-config#1520)`)
+    else if (r.recurrence === 'recurring') log(`  structural gate: ${r.structural || 'no STRUCTURAL= line reported'}`)
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the
     // whole run — serial lanes mean exactly one repo is affected, and starting

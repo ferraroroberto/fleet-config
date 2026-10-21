@@ -562,5 +562,90 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
   check(r.status === 'escalated', 'the inconsistent verdict escalates instead of shipping')
 }
 
+// --- Case 17: a recurring bucket must ship a structural check (#1520) -----
+// The validator runs audit_issue.py structural-gate and reports its line; the
+// script, not the model, decides from the issue body's recurrence stamp
+// whether that line gates. A `pass: true` verdict never overrides a gate fail.
+const RECURRING = '<!-- audit-managed: kind=bug -->\n<!-- audit-recurrence: state=recurring since=2026-10-14 -->\n> **Recurring: structural check required.**\n\n- [ ] item'
+const UNKNOWN = '<!-- audit-managed: kind=bug -->\n<!-- audit-recurrence: state=unknown reason=unreadable-ledger -->\n> **Recurrence unknown.**\n\n- [ ] item'
+const PLAIN = '<!-- audit-managed: kind=bug -->\n\n- [ ] item'
+const structuralRun = (body, structural) => {
+  const { sink, agentImpl } = promptSpy(l => {
+    if (l.includes(':validate:')) return { pass: true, feedback: 'looks fine', verification: 'PASS', ...(structural === undefined ? {} : { structural }) }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: { bug: [{ repo: 'charlie', number: 3, title: 'c', body }] } }
+  return makeRunner(agentImpl, sink).then(res => ({ res, sink, r: res.buckets[0].results[0] }))
+}
+{
+  const { sink, r } = await structuralRun(RECURRING, 'STRUCTURAL=fail REASON=no-declaration')
+  check(!sink.order.includes('bug:execute:charlie#3'), 'a recurring branch whose gate line is fail never ships, even on pass: true (#1520)')
+  check(r.status === 'escalated' && r.round === 2, 'a structural fail retries once, then escalates')
+  check(/STRUCTURAL=fail REASON=no-declaration/.test(r.reason || ''), 'the escalation reason quotes the gate line')
+  check(sink.order.includes('bug:teardown:charlie#3'), 'a structurally blocked lane still tears down')
+}
+{
+  const { sink, r } = await structuralRun(RECURRING, undefined)
+  check(!sink.order.includes('bug:execute:charlie#3') && r.status === 'escalated',
+    'a recurring lane whose validator reported no gate line never ships')
+}
+{
+  const { sink, r } = await structuralRun(RECURRING, 'STRUCTURAL=unknown REASON=git-error')
+  check(!sink.order.includes('bug:execute:charlie#3') && r.status === 'escalated',
+    'a recurring lane whose gate could not read git never ships')
+}
+{
+  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py'
+  const { sink, r } = await structuralRun(RECURRING, LINE)
+  check(r.status === 'merged', 'a recurring branch whose gate line is pass ships')
+  check(r.recurrence === 'recurring' && r.structural === LINE, 'the lane result carries the recurrence and the gate line')
+  const b = sink.prompts['bug:build:charlie#3']
+  check(/Structural-check: <repo-relative path/.test(b) && /Structural-check: not encodable: /.test(b),
+    'the build brief asks a recurring lane for a declared check or a not-encodable reason')
+  const v = sink.prompts['bug:validate:charlie#3']
+  check(/audit_issue\.py structural-gate --repo-path \. --base origin\//.test(v) && /--issue-body-file/.test(v),
+    'the validator runs structural-gate on the issue body')
+  check(v.includes('structural gate that the leniency rule below does not soften'),
+    'the structural gate is exempt from the lenient default')
+  check(/fail on the pre-fix code/.test(v), 'the validator asks, leniently, for the check to fail pre-fix')
+  const e = sink.prompts['bug:execute:charlie#3']
+  check(e.includes('## Structural check') && e.includes(LINE), 'the PR body carries a ## Structural check section with the gate line')
+}
+{
+  const LINE = 'STRUCTURAL=n/a'
+  const { r } = await structuralRun(RECURRING, LINE)
+  check(r.status === 'merged', 'a gate line of n/a (stamp gone since dispatch) ships')
+}
+{
+  const { sink, r, res } = await structuralRun(PLAIN, undefined)
+  check(r.status === 'merged' && res.halted === null, 'a non-recurring issue ships exactly as before')
+  check(r.recurrence === 'not-recurring', 'a non-recurring lane says so')
+  const all = Object.values(sink.prompts).join('\n')
+  check(!/structural-gate/.test(all) && !/Structural-check:/.test(all) && !/## Structural check/.test(all),
+    'no brief mentions the structural gate for a non-recurring issue')
+}
+{
+  // Issues with no body at all (older callers) are non-recurring, never a crash.
+  const { sink, agentImpl } = tracker(l => reply(l, {}))
+  sink.args = { issuesByBucket: { bug: ISSUES.bug } }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.buckets[0].results[0].status === 'merged', 'an issue with no body is treated as non-recurring')
+}
+{
+  const { sink, r } = await structuralRun(UNKNOWN, undefined)
+  check(r.status === 'merged', 'an unknown recurrence never blocks a lane')
+  check(r.recurrence === 'unknown', 'an unknown recurrence is reported as unknown, never folded into not-recurring')
+  check(/❓ recurrence unknown/.test(sink.logs.join('\n')), 'the run log shows ❓ recurrence unknown')
+}
+{
+  for (const rel of [['.claude', 'skills', 'cleanup-fleet', 'SKILL.md'], ['.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md']]) {
+    const txt = readFileSync(join(REPO, ...rel), 'utf8').replace(/\s+/g, ' ')
+    check(/structural-gate/.test(txt) && /Structural-check: not encodable: /.test(txt) && /fleet-config#1520/.test(txt),
+      `${rel[2]} SKILL.md states the structural-check rule and its not-encodable escape`)
+  }
+  const all = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
+  check(/❓ recurrence unknown/.test(all), 'cleanup-fleet-all SKILL.md renders unknown recurrence in the final summary')
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)
