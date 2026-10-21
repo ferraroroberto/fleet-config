@@ -401,14 +401,92 @@ try:
     _old.commit()
     _old.close()
     _c = cs.connect(cs.db_path(cfg))
-    check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "digest", "body"],
-          "title rank: a pre-title index gains the title column in place")
+    check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "topic", "digest", "body"],
+          "title rank: a pre-title index gains the title (and topic) column in place")
     _c.close()
     check([h["file"] for h in cs.search(cfg, "legacy")] == ["legacy.md"],
           "title rank: the upgraded index still answers before any re-sync")
     check(cs.sync(cfg) == 10 and cs.search(cfg, WORD)[0]["file"] == titled,
           "title rank: the next sync settles the upgraded index, title first")
     check(not cs.search(cfg, "legacy"), "title rank: the upgrade's stale row is pruned by sync")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+# ---- a visible-title hit outranks every digest/body hit, whatever the length (#1521) ----
+# FTS5 bm25() saturates term frequency inside one column and normalises by the whole
+# row's length, so a title hit on a long capture lost to short rows that merely mention
+# the word. The title tier must hold regardless of capture length.
+WORD = "osprey"
+tmp = Path(tempfile.mkdtemp(prefix="conv_tier_"))
+try:
+    root = tmp / "life-os"
+    cdir = root / ".claude" / "skills" / "journal-daily" / "conversations"
+    cdir.mkdir(parents=True)
+    filler = " ".join(f"filler{i % 97}" for i in range(20_000))
+    owner_titled = "2026-09-01-0900-journal-daily-owner0001.md"
+    topic_titled = "2026-09-02-0900-journal-daily-topic0001.md"
+    summary_only = [f"2026-08-{d:02d}-0900-journal-daily-digest{d:03d}.md" for d in range(1, 6)]
+    body_only = [f"2026-07-{d:02d}-0900-journal-daily-bodyon{d:03d}.md" for d in range(1, 6)]
+    idx_entries, titles_map = {}, {owner_titled: f"{WORD} notes"}
+    for name in [owner_titled, topic_titled, *summary_only, *body_only]:
+        long_capture = name in (owner_titled, topic_titled)
+        text = (f"we looked at the {WORD} once. {filler}" if long_capture else
+                (f"{WORD} {WORD} {WORD} chat" if name in body_only else "a short chat"))
+        (cdir / name).write_text(cc.render_markdown("d", [("user", text)]), encoding="utf-8")
+        if name == owner_titled:
+            digest = "- **Topic:** errands\n- **Summary:** a long unrelated afternoon"
+        elif name == topic_titled:
+            digest = f"- **Topic:** {WORD} sighting\n- **Summary:** a long unrelated afternoon"
+        elif name in summary_only:
+            digest = f"- **Topic:** errands\n- **Summary:** {WORD} {WORD} {WORD} came up, {WORD} again"
+        else:
+            digest = "- **Topic:** errands\n- **Summary:** nothing of note"
+        idx_entries[name] = ci.Entry(file=name, mtime=(cdir / name).stat().st_mtime,
+                                     turns=2, body=digest, sid="", agent="claude")
+    (cdir / "index.md").write_text(ci.render_index("journal-daily", idx_entries), encoding="utf-8")
+    (cdir / ci.TITLES_NAME).write_text(json.dumps(titles_map), encoding="utf-8")
+    cfg = cc.CaptureConfig(root=root, routing="skills", conversations_dir="conversations",
+                           skills_dir=".claude/skills", active_marker=".active-skill")
+    check(cs.sync(cfg) == 12, "visible-title tier: synced the fixture conversations")
+    order = [h["file"] for h in cs.search(cfg, WORD)]
+    check(len(order) == 12, f"visible-title tier: every match is returned (got {len(order)})")
+    check(order[0] == owner_titled,
+          "visible-title tier: an owner-title hit on a long capture ranks first")
+    check(order[1] == topic_titled,
+          "visible-title tier: an untitled conversation's topic hit ranks next, still on a long capture")
+    check(set(order[2:7]) == set(summary_only) and set(order[7:]) == set(body_only),
+          "visible-title tier: then digest-only hits, then body-only hits")
+    check([h["file"] for h in cs.search(cfg, WORD[:-2])][:2] == [owner_titled, topic_titled],
+          "visible-title tier: holds for the still-typing prefix too")
+    check(cs.search(cfg, f'"{WORD}" OR zzzabsent')[0]["file"] == owner_titled,
+          "visible-title tier: holds for a raw FTS5 operator query")
+
+    # A db whose conv_fts predates the topic column upgrades in place, idempotently,
+    # keeps answering before any re-sync, and the next sync settles it.
+    cs.db_path(cfg).unlink()
+    _old = sqlite3.connect(str(cs.db_path(cfg)))
+    _old.executescript(
+        "CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT NOT NULL, file TEXT NOT NULL,"
+        " path TEXT NOT NULL UNIQUE, date TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '',"
+        " sid TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',"
+        " topic TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',"
+        " decisions TEXT NOT NULL DEFAULT '', open_loops TEXT NOT NULL DEFAULT '',"
+        " turns INTEGER NOT NULL DEFAULT 0, mtime REAL NOT NULL DEFAULT 0);"
+        "CREATE VIRTUAL TABLE conv_fts USING fts5(title, digest, body);"
+        "INSERT INTO conversations (id, skill, file, path, mtime) VALUES (1, 'journal-daily', 'old.md', 'old-path', 1);"
+        f"INSERT INTO conv_fts (rowid, title, digest, body) VALUES (1, '', '{WORD} errands', 'old body');")
+    _old.commit()
+    _old.close()
+    for _ in range(2):
+        _c = cs.connect(cs.db_path(cfg))
+        check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "topic", "digest", "body"],
+              "visible-title tier: a pre-topic index gains the topic column in place (idempotent)")
+        _c.close()
+    check([h["file"] for h in cs.search(cfg, WORD)] == ["old.md"],
+          "visible-title tier: the upgraded index still answers before any re-sync")
+    check(cs.sync(cfg) == 12 and cs.search(cfg, WORD)[0]["file"] == owner_titled
+          and not [h for h in cs.search(cfg, WORD) if h["file"] == "old.md"],
+          "visible-title tier: the next sync settles the upgraded index, title first")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
