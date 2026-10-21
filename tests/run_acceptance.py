@@ -12,8 +12,8 @@ concern the pre-split 3287-line file used to mix together — the hook-payload
 acceptance matrix + foreign-harness parity (`hook_matrix`), architecture/
 fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
 scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
-(`tree_boundary`), and the standalone pure-logic test-file dispatch layer
-(`standalone_dispatch`).
+(`tree_boundary`), the duplicate/unused-code ratchet (`static_ratchet_gate`),
+and the standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
 The substantive per-hook unit-check functions are the `checks_*` modules, one
 per domain (fleet-config#680, finishing the #502 split that left them piled in
@@ -124,6 +124,7 @@ from acceptance.spawn_scanner import (  # noqa: E402
     _no_window_unit_check,
 )
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
+from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 
@@ -355,6 +356,11 @@ def main() -> int:
 
     # ---- every runtime `git` spawn routes through run_git (#667 / #677) ----
     run_unit(_git_wrapper_unit_check)
+
+    # ---- no new duplicate block / unused import vs the baseline (#1514) ----
+    # run_unit, not run_unit3: exit 3 (a detector could not run) is a failure
+    # here, never a skip -- see static_ratchet_gate's docstring.
+    run_unit(_static_ratchet_check)
 
     # ---- hooks/ never imports across into skills/_lib (fleet-config#564) ----
     run_unit(_hooks_tree_boundary_check)

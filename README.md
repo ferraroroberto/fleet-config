@@ -161,7 +161,9 @@ fleet-config/
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
+├── scripts/static_ratchet.py       # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `static_ratchet`) — the baseline-and-ratchet duplicate/unused-code stage `tests/run_acceptance.py` runs; findings already present live in `.static-ratchet-baseline.json` (fleet-config#1514)
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs (fleet-config#1076)
+├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 ├── codex/                          # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
@@ -204,10 +206,11 @@ For interstitial-free browser inspection, add `FLEET_BROWSER_HOST` to the live `
 
 ### Python interpreter — this repo's own `.venv`
 
-Every hook, skill helper, test, and doc example in this repo invokes Python by the **absolute path to this repo's project `.venv`** — `E:/automation/fleet-config/.venv/Scripts/python.exe` (fleet-config#350). Absolute because these files run from *any* repo's cwd (the hooks/skills are junctioned into every agent's home), so an absolute interpreter path resolves identically regardless of caller; a project-owned `.venv` is preferred over depending on a specific machine-wide Python install path. It is **stdlib-only** — no third-party dependencies — so setup is one line and installs nothing:
+Every hook, skill helper, test, and doc example in this repo invokes Python by the **absolute path to this repo's project `.venv`** — `E:/automation/fleet-config/.venv/Scripts/python.exe` (fleet-config#350). Absolute because these files run from *any* repo's cwd (the hooks/skills are junctioned into every agent's home), so an absolute interpreter path resolves identically regardless of caller; a project-owned `.venv` is preferred over depending on a specific machine-wide Python install path. The runtime is **stdlib-only** — no third-party dependencies for the hooks or skills. `ruff` is a *dev tool*, pinned in `requirements.txt`, because the acceptance run's static-analysis ratchet (`scripts/static_ratchet.py`) calls it; that stage also needs Node (`npx`, which fetches the pinned `jscpd` on first use). A missing detector fails the gate as NOT CONFIRMED rather than passing:
 
 ```powershell
 py -m venv .venv     # any Python >=3.12; run once from the repo root
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt   # ruff, for the ratchet stage
 ```
 
 Codex safety hooks treat the `Bash` tool label as an unknown execution shell and apply both PowerShell and Bash safety checks. Refusals state that uncertainty; the trusted `~/.codex/hooks/` invocation path identifies the harness without consulting inherited launcher variables. See [the shell contract](docs/adding-a-coding-harness.md#step-3--hooks-and-the-payload-contract).
