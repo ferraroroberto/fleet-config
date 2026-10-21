@@ -1,0 +1,3 @@
+# `/perf-review`
+
+- **`/perf-review <repo> [file]`** — how fast a running fleet web app loads **on a phone** (fleet-config#1121): a Playwright phone-profile load (iPhone WebKit cold, reported only; Android Chromium cold + warm, CDP-throttled to `budgets.toml`'s phone profile) and GET-only endpoint timing at the app's own poll spacing, scored against versioned budgets, mapped to the patterns in `skills/perf-review/playbook.md` (each with its app-launcher evidence and rough LOC), ranked by gain per line of code. Read-only: never starts, restarts or kills the app; a dead port is `unmeasured`. `file` upserts the one managed `perf-review: phone-load findings` issue (numbers and paths only; its `## Fixes` checklist is kept verbatim across runs). On demand, not scheduled.

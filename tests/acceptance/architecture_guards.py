@@ -1007,6 +1007,93 @@ def _readme_layout_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+_MD_LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _dead_docs_links(rel: str, text: str, exists) -> list[str]:
+    """Relative markdown link targets in `text` that land under `docs/` but do not exist.
+
+    `rel` is the repo-relative path of the file `text` came from, so a link is
+    resolved against that file's own directory (`docs/skills.md` linking
+    `skills/x.md`, a `docs/skills/x.md` linking `../y.md`, README linking
+    `docs/z.md`). Fenced code is skipped, as are absolute URLs and bare
+    `#anchor`s. Only the file part of a target is checked, not its anchor.
+    """
+    dead: list[str] = []
+    base = Path(rel).parent
+    in_fence = False
+    for line in text.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for target in _MD_LINK_RE.findall(line):
+            path = target.split("#", 1)[0]
+            if not path or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", path) or not path.endswith(".md"):
+                continue
+            resolved = (base / path).as_posix()
+            parts: list[str] = []
+            for seg in resolved.split("/"):
+                if seg == "..":
+                    if parts:
+                        parts.pop()
+                elif seg not in ("", "."):
+                    parts.append(seg)
+            norm = "/".join(parts)
+            if norm.startswith("docs/") and not exists(norm):
+                dead.append(f"{rel}: {target}")
+    return dead
+
+
+def _docs_links_check() -> Tuple[int, int]:
+    """Every relative `docs/...md` link in tracked markdown resolves (fleet-config#1515).
+
+    Splitting `docs/skills.md` into `docs/skills/<topic>.md` moved text that other
+    files link to by path, and a moved or renamed doc otherwise leaves a dead
+    link nobody notices until a reader follows it. Scans every tracked `*.md`
+    (via `_dead_docs_links`); returns (failures, total).
+    """
+    check = _Checker()
+
+    tracked = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    ).stdout.split()
+    existing = {f for f in tracked}.__contains__
+    dead: list[str] = []
+    for rel in tracked:
+        path = REPO / rel
+        if not path.is_file():
+            continue
+        dead += _dead_docs_links(rel, path.read_text(encoding="utf-8", errors="replace"), existing)
+    check(
+        f"docs_links: every relative docs/ markdown link in tracked .md resolves "
+        f"(dead: {dead[:5]})",
+        not dead,
+    )
+
+    # The scan itself must be able to fail, or a green here proves nothing.
+    sample = "\n".join([
+        "[ok](docs/a.md#x) [gone](docs/gone.md) [web](https://x.test/docs/q.md)",
+        "```",
+        "[fenced](docs/nope.md)",
+        "```",
+    ])
+    check(
+        "docs_links: a dead docs/ link is reported, a live, external or fenced one is not",
+        _dead_docs_links("README.md", sample, {"docs/a.md"}.__contains__) == ["README.md: docs/gone.md"],
+    )
+    check(
+        "docs_links: a link inside docs/skills/ resolves against its own directory",
+        _dead_docs_links("docs/skills/x.md", "[m](../model-tiers.md) [n](../nope.md)", {"docs/model-tiers.md"}.__contains__)
+        == ["docs/skills/x.md: ../nope.md"],
+    )
+
+    return check.failures, check.total
+
+
 def _settings_sync_split(
     missing: list[tuple[str, str]], live_hooks: Path
 ) -> Tuple[list[tuple[str, str]], list[tuple[str, str]]]:

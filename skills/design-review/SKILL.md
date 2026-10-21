@@ -451,7 +451,7 @@ write-back) live there.
   merge — spawns nothing), `ledger` (entry, previous, diff), `filing`
   (accepted rules, routing, body merge, upsert), `fleet` (the serial sweep,
   promotion, digest), `mockups`, `report`, `cli`. Reference:
-  `docs/skills.md` "Design review core".
+  `docs/skills/design-review-core.md`.
 - Rubric: `design.rubric.toml` at the repo root, versioned on its own; a
   rule's `mockup` id must exist in the library and a question's `maps_to`
   ids must be rules (validation refuses otherwise). Bump `[meta].version`

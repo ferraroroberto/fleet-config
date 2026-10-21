@@ -223,7 +223,10 @@ def _chief_steer_convention_unit_checks() -> Tuple[int, int]:
     skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
     brief = (REPO / ".claude" / "skills" / "chief" / "dispatch-brief.md").read_text(encoding="utf-8")
     ops = (REPO / "skills" / "_lib" / "chief_ops.py").read_text(encoding="utf-8")
-    docs = (REPO / "docs" / "skills.md").read_text(encoding="utf-8")
+    # docs/skills.md is an index since the per-skill split (#1515): the skill
+    # prose lives in docs/skills/*.md, so the index and every part are read together.
+    docs_parts = [REPO / "docs" / "skills.md", *sorted((REPO / "docs" / "skills").glob("*.md"))]
+    docs = "\n".join(p.read_text(encoding="utf-8") for p in docs_parts)
     # The dispatch brief is a markdown blockquote, so strip the leading `> `
     # of every line before collapsing -- otherwise a sentence that wraps across
     # two quoted lines flattens with a stray `>` in the middle and no phrase
