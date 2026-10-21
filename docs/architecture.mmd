@@ -209,7 +209,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
 
   subgraph tests["tests/ — run_acceptance.py (thin dispatcher) + acceptance/ package (fleet-config#502)"]
     TESTS["run_acceptance.py\nsums + prints the summary line"]
-    ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner ·\ntree_boundary · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers"]
+    ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner ·\ntree_boundary · static_ratchet_gate (vendored scripts/static_ratchet.py vs .static-ratchet-baseline.json; exit 3 = NOT CONFIRMED, fails) · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers"]
     TESTS --> ACCPKG
   end
   ACCPKG --> HOOKFILES
