@@ -311,6 +311,43 @@ nothing off, and a repo that declares it alongside `blank_config_keys` gets
 both. A repo that declares neither copies exactly as before. It applies to the
 copied `config/*.json` and gitignored root `*.json` files, not to `.env`.
 
+### Optional per-repo `[verify]` table (fleet-config#1522)
+
+A web app declares its machine-readable launch recipe here. `project-scaffolding`'s
+`scripts/gen_verify_skill.py` reads it to write the app's own `verify-<app>` skill
+(its Launch section) and to decide whether that skill's maintain mode
+(`--check`) can run. Procedure and limits live in the scaffold's
+`docs/verify-skill.md`; this section owns the schema.
+
+```toml
+[verify]
+boot           = "tests/e2e/conftest.py::boot_instance"   # a callable the e2e suite boots, or an argv list
+live_optin_env = "FS_E2E_LIVE"                            # the opt-in Launch must never set
+ready_path     = "/healthz"                               # optional, default /healthz
+data_dir_env   = "FS_DATA_DIR"                            # optional, default <APP>_DATA_DIR
+```
+
+| Field | Required | Default | Meaning |
+|---|---|---|---|
+| `boot` | ✓ | none | how a disposable instance is started: a string `path::callable` the e2e suite already boots (the generated Drive nodes use it), or an argv list run from the repo root |
+| `live_optin_env` | ✓ | none | the environment variable that points the e2e suite at the live app; the generated Launch states it is never set |
+| `ready_path` | | `/healthz` | the path whose `GET` returning 200 means the instance is ready; `--check --live-url` probes it |
+| `data_dir_env` | | `<APP>_DATA_DIR` | the variable that points the app at an empty scratch data dir (`<APP>` is the upper-cased repo slug) |
+
+**A missing key is never guessed.** The table itself is optional: a repo with
+no `[verify]`, or one missing `boot` or `live_optin_env`, gets a visible
+`FILL:` line in the generated `SKILL.md` and `--check` reports `blocked` until
+it is filled. That is the generator's state, not a map-build error, and the
+two optional keys fall back to their defaults silently.
+
+**Costs nothing on the map-build path.** Same silent-if-unrecognized parsing as
+`[vendored]`/`[cert]`/`[worktree]` above: `card_from_toml` reads only its own
+named keys. Checked with a string `boot`, an argv-list `boot` and an empty
+`[verify]` table: each returns the card of the same file without the table, and
+`build_data.py` against the live fleet (app-launcher carries a `[verify]`
+table) leaves its card unchanged. No schema check rejects an unknown table, so
+adopting `[verify]` adds no required key to any existing repo.
+
 ### Local specs — kept out of git 🔒
 
 The committed `DATA.compute` (and the committed `system-map.png`) show **placeholder** hardware specs. Real GPU/CPU/RAM are personal detail, so they live in **`system-map.local.js`** (gitignored via `*.local.*`). `system-map.html` loads it with a plain `<script>` tag — works under `file://`, no CORS — and merges `window.LOCAL` over the placeholders. Missing on a fresh checkout → harmless 404, placeholders stay.
