@@ -6,17 +6,24 @@ answer *"what happened recently"* for one skill. This answers the other
 question — *"which conversation was the one about X, out of everything, across
 every skill"* — and hands back the identity needed to reopen it.
 
-Three layers are searched at different weights, because they fail differently:
+Four layers are searched in strict tiers, because they fail differently:
 
   * the owner's **title** — the strongest statement of what a conversation is
     about, and short, so it is its own column rather than a phrase lost inside
-    a long digest (fleet-config#1419); weighted highest.
-  * the **digest** (slug, topic / summary — decisions / open loops on older
+    a long digest (fleet-config#1419); tier 0.
+  * the digest **topic** — the launcher shows it as the title when the owner
+    set none, so it is the visible title and shares tier 0 then; otherwise
+    tier 1 (fleet-config#1521).
+  * the rest of the **digest** (slug, summary — decisions / open loops on older
     entries) — dense and abstracted, so a match here is usually the
-    conversation you meant; weighted high.
+    conversation you meant; tier 2.
   * the **full capture text** — verbatim, so it finds the offhand detail no
-    digest would ever mention ("the ferry booking reference"); weighted low so
-    it ranks below a digest hit rather than drowning it.
+    digest would ever mention ("the ferry booking reference"); tier 3, so it
+    ranks below a digest hit rather than drowning it.
+
+Tiers, not bm25 column weights: FTS5 ``bm25()`` saturates term frequency within
+a column and normalises by the whole row's length, so a title hit on a long
+capture lost to short rows that merely mentioned the word (#1521).
 
 Storage is a single SQLite **FTS5** database (stdlib, no dependency) for the
 whole project, so one query spans every skill. It is a pure derivative of the
@@ -113,7 +120,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     turns      INTEGER NOT NULL DEFAULT 0,
     mtime      REAL NOT NULL DEFAULT 0
 );
-CREATE VIRTUAL TABLE IF NOT EXISTS conv_fts USING fts5(title, digest, body);
+CREATE VIRTUAL TABLE IF NOT EXISTS conv_fts USING fts5(title, topic, digest, body);
 """
 
 
@@ -137,6 +144,7 @@ def connect(path: Path) -> sqlite3.Connection:
     if "summary" not in columns:
         conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
     _migrate_fts_title(conn)
+    _migrate_fts_topic(conn)
     return conn
 
 
@@ -168,6 +176,38 @@ def _migrate_fts_title(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE conv_fts_new RENAME TO conv_fts")
             conn.execute("UPDATE conversations SET mtime = 0")
             logger.info("ℹ️ search index upgraded in place: owner title is now its own column")
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+
+
+def _migrate_fts_topic(conn: sqlite3.Connection) -> None:
+    """Upgrade a ``conv_fts(title, digest, body)`` index to ``(title, topic, digest, body)``.
+
+    fleet-config#1521 gave the digest topic its own column so it can rank as the
+    visible title. Same shape as :func:`_migrate_fts_title`: rows are copied
+    across with an empty topic (the topic text still sits in their digest, so
+    queries keep working at once), and every ``mtime`` is zeroed so the next
+    ``sync`` rewrites each row in the new shape.
+    """
+    def has_topic() -> bool:
+        return "topic" in {row[1] for row in conn.execute("PRAGMA table_info(conv_fts)")}
+
+    if has_topic():
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not has_topic():
+            conn.execute("CREATE VIRTUAL TABLE conv_fts_new USING fts5(title, topic, digest, body)")
+            conn.execute(
+                "INSERT INTO conv_fts_new (rowid, title, topic, digest, body) "
+                "SELECT rowid, title, '', digest, body FROM conv_fts"
+            )
+            conn.execute("DROP TABLE conv_fts")
+            conn.execute("ALTER TABLE conv_fts_new RENAME TO conv_fts")
+            conn.execute("UPDATE conversations SET mtime = 0")
+            logger.info("ℹ️ search index upgraded in place: digest topic is now its own column")
         conn.commit()
     except sqlite3.Error:
         conn.rollback()
@@ -276,8 +316,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "mtime": mtime,
                 }
                 digest_text = " ".join(
-                    v for v in (slug, row["topic"], row["summary"], row["decisions"],
-                              row["open_loops"]) if v
+                    v for v in (slug, row["summary"], row["decisions"], row["open_loops"]) if v
                 )
                 body_text = strip_capture_header(text)[:MAX_BODY_CHARS]
                 _upsert(conn, row, digest_text, body_text)
@@ -318,16 +357,36 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
         row,
     )
     conn.execute(
-        "INSERT INTO conv_fts (rowid, title, digest, body) VALUES (?, ?, ?, ?)",
-        (cur.lastrowid, row["title"], digest_text, body_text),
+        "INSERT INTO conv_fts (rowid, title, topic, digest, body) VALUES (?, ?, ?, ?, ?)",
+        (cur.lastrowid, row["title"], row["topic"], digest_text, body_text),
     )
 
 
 # ------------------------------------------------------------------ query
 
-# Title outranks digest, digest outranks body — see the module docstring. Column
-# order matches the ``conv_fts`` schema: title, digest, body.
-_BM25 = "bm25(conv_fts, 100.0, 10.0, 1.0)"
+# Ranking is tiers first, a linear column blend second — see the module docstring.
+# ``bm25()`` with every other column weighted 0 is a per-column score: negative when
+# that column holds a query term, exactly 0 when it does not. Column order matches
+# the ``conv_fts`` schema: title, topic, digest, body.
+_COL_SCORE = {
+    "title": "bm25(conv_fts, 1.0, 0.0, 0.0, 0.0)",
+    "topic": "bm25(conv_fts, 0.0, 1.0, 0.0, 0.0)",
+    "digest": "bm25(conv_fts, 0.0, 0.0, 1.0, 0.0)",
+    "body": "bm25(conv_fts, 0.0, 0.0, 0.0, 1.0)",
+}
+# The visible title is the owner's title, else the digest topic (what the launcher
+# shows), so a topic hit is top tier only when no owner title is set.
+_TIER = (
+    f"CASE WHEN {_COL_SCORE['title']} < 0 OR (c.title = '' AND {_COL_SCORE['topic']} < 0) THEN 0 "
+    f"WHEN {_COL_SCORE['topic']} < 0 THEN 1 "
+    f"WHEN {_COL_SCORE['digest']} < 0 THEN 2 ELSE 3 END"
+)
+# Within a tier, a linear blend (unlike bm25's own weights, which saturate) orders
+# rows; lower is better, like bm25 itself. It is also the ``rank`` the CLI reports.
+_BLEND = (
+    f"(100.0 * {_COL_SCORE['title']} + 30.0 * {_COL_SCORE['topic']} "
+    f"+ 10.0 * {_COL_SCORE['digest']} + {_COL_SCORE['body']})"
+)
 
 
 # Syntax FTS5 acts on. The operators are matched **uppercase only, and that is
@@ -418,9 +477,9 @@ def search(
     sql = (
         "SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, "
         "       c.title, c.topic, c.summary, c.decisions, c.open_loops, c.turns, "
-        f"      {_BM25} AS rank "
+        f"      {_BLEND} AS rank "
         "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
-        f"WHERE {' AND '.join(where)} ORDER BY rank LIMIT ?"
+        f"WHERE {' AND '.join(where)} ORDER BY {_TIER}, rank LIMIT ?"
     )
     try:
         try:
