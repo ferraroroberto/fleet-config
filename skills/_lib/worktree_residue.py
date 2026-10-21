@@ -104,7 +104,12 @@ class WorktreeEntry(NamedTuple):
 
 
 def parse_worktree_porcelain(porcelain: str) -> List[WorktreeEntry]:
-    """Every worktree past the primary, from `git worktree list --porcelain`.
+    """Every worktree past the primary, from `git worktree list --porcelain`."""
+    return parse_all_worktrees(porcelain)[1:]
+
+
+def parse_all_worktrees(porcelain: str) -> List[WorktreeEntry]:
+    """Every worktree, primary first, from `git worktree list --porcelain`.
 
     Records are blank-line separated; the first is always the primary.
     """
@@ -124,7 +129,7 @@ def parse_worktree_porcelain(porcelain: str) -> List[WorktreeEntry]:
                 prunable = True
         if path:
             entries.append(WorktreeEntry(path, head, branch, prunable))
-    return entries[1:]
+    return entries
 
 
 def normalize_path(p: str) -> str:

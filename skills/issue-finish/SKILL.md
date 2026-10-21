@@ -356,6 +356,24 @@ Decision below is driven by the project's `## CI expectations` block
   the finish early — a failed finish is still in flight and must remain marked.
   The remove is idempotent (`ACTIVE_ISSUE=absent` is success), but a helper
   error is not: retry once and stop if it still cannot update the shared file.
+- **Report the repo's leftover branches and orphan folders** (fleet-config#1516),
+  from the primary repo path, after the landing above — one call, read-only,
+  non-blocking:
+  ```
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches <repo>
+  ```
+  Put one summary line in the step-7 summary from its `SUMMARY landed=… unlanded=…
+  keep=… unknown=…` line: `branch residue: N landed, M unlanded, K unknown`, plus
+  each `ORPHAN=` line (a `<repo>-wt-*` folder git no longer registers). Take every
+  `CLASS` as given: `landed` means a closed issue **and** a tip proven merged **and**
+  no open PR; `unknown` is its own state (a fact was not established), never folded
+  into a count of landed or kept branches. If the helper could not run, or printed
+  `VERDICT=unknown`/`partial`, say `branch residue: not established` — never `0`.
+  **This only reports.** Do not delete any branch or folder it names: the branch
+  this finish just merged was already deleted above, and every other ref belongs to
+  someone else (the foreign-branch rule in `/cleanup-fleet-all`, fleet-config#572).
+  The landed check that gates your own branch's `-D` (the `git diff --quiet` test
+  above) is unchanged.
 
 ### 6. Restart the tray (only if the project runs one)
 
