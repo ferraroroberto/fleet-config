@@ -74,6 +74,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 - **No hardcoded paths or credentials.**
 - Implement only what was asked. No nice-to-haves.
 - Three similar lines beats a premature abstraction — add a helper on the third caller, not the second; don't wrap framework scaffolds on day one.
+- **Comments state the present-tense *why*.** Decision history and issue-number narratives live in the issue and `git log`, never in comments; a magic constant still gets its why-comment. Enforcement: `project-scaffolding`'s `docs/comment-ratchet.md`.
 
 ## Workflow defaults
 
