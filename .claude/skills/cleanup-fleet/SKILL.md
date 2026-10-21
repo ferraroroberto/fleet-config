@@ -196,6 +196,15 @@ HARD RULES — both are live-incident scars, never work around them:
    discharged by the new. A FAIL, an UNKNOWN (exit 3) or an undischarged
    directive is a Phase 3 failure, never a warning. Quote check.py's
    PASS/FAIL lines in the PR body's Validation section.
+   Recurring issues only (body carries `<!-- audit-recurrence:
+   state=recurring`): Phase 2 also ships one structural check and declares it
+   in a commit body, per the Hard rules' structural-check rule. Phase 3 runs,
+   from the worktree root, with the issue body saved to a file outside the
+   worktree:
+     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py structural-gate --repo-path . --base origin/<default-branch> --issue-body-file <file>
+   and quotes its STRUCTURAL= line in the PR body's Validation section.
+   STRUCTURAL=fail or STRUCTURAL=unknown is a Phase 3 failure. A body stamped
+   `state=unknown` is not gated: say `❓ recurrence unknown` in Validation.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, and
    report the failure. YOLO means "no plan gate", not "no safety". Then clean
    up after yourself — the open issue is the durable record, the branch is not
@@ -246,6 +255,13 @@ HARD RULES — both are live-incident scars, never work around them:
    directive inventory, exactly as prompt 8a states; a FAIL or UNKNOWN is
    Verification: FAIL.
      E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>
+   Recurring issues only (body carries `<!-- audit-recurrence:
+   state=recurring`): ship one structural check and declare it in the commit
+   body (step 5), per the Hard rules' structural-check rule, then before STOP
+   run the structural-gate exactly as prompt 8a states and quote its
+   STRUCTURAL= line in your summary. STRUCTURAL=fail or STRUCTURAL=unknown is
+   Verification: FAIL. A `state=unknown` body is not gated: say
+   `❓ recurrence unknown`.
 5. Commit your work on the branch — git add the files you changed and git
    commit them (conventional `type: subject` message, no AI-attribution
    trailer). Your handoff artefact is a committed branch, not a dirty working
@@ -355,6 +371,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 - Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10) — only corrects the reported status, never blocks/auto-commits/auto-fixes.
 - Keep per-issue pings. Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
 - Degrade, don't block. A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
+- **Recurring buckets ship a structural check (fleet-config#1520).** An issue whose body is stamped `<!-- audit-recurrence: state=recurring ... -->` (findings in two consecutive audits, fleet-config#1513) must also ship one structural check that would have caught the class — a lint rule, a static test, a ratchet — declared on its own line in a branch commit body as `Structural-check: <repo-relative path>`, or, when no check can encode it, `Structural-check: not encodable: <why, at least 8 words>`. `skills/_lib/audit_issue.py structural-gate` judges the declaration (`STRUCTURAL=pass|fail|n/a|unknown`); prompts 8a and 8b run it. A `state=unknown` stamp never gates and is reported as `❓ recurrence unknown`, never as fine.
 - No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 
 ## Notes
