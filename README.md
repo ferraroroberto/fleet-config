@@ -33,6 +33,10 @@ work in this repo doesn't cost the whole catalogue:
 - **[`docs/install.md`](docs/install.md)** — the link table `install.ps1`
   creates, the other surfaces this repo ships (`tray/`, `stream-deck/`), and
   the migration recipes for an agent home that already holds real files.
+- **[`docs/fleet-scope.md`](docs/fleet-scope.md)** — which repos fleet-wide
+  runs reach: the machine-local `hooks/projects.toml` and its tracked example,
+  the `architecture_ignore` switch, the `fleet_status.py` writer, and every
+  enumeration route's treatment.
 - **[`docs/fleet-private-backup.md`](docs/fleet-private-backup.md)** — the
   daily backup of everything git ignores, native Claude/Codex sessions, and
   the relocated runtime-data root (`C:/sqlite`), including explicit-deletion-
@@ -102,7 +106,7 @@ fleet-config/
 │   ├── harness_wire.py             # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound (split from _lib.py, fleet-config#931)
 │   ├── registry.py                 # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing (split from _lib.py, fleet-config#819)
 │   ├── edit_events.py              # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
-│   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
+│   ├── projects.toml.example       # tracked template of the machine-local, gitignored projects.toml: per-project nuance (ports, gate triggers, never-kill ports) + the fleet-scope switch (docs/fleet-scope.md)
 │   ├── run-hook.ps1                # Claude Code shim — settings.template.json routes hooks through this
 │   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it (fleet-config#1274)
 │   ├── pre_commit_no_ai_trailer.py

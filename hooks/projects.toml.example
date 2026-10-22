@@ -1,0 +1,327 @@
+# Fleet registry: one table per repo, read by the hooks and the fleet skills.
+#
+# hooks/projects.toml is machine-local and gitignored; this tracked
+# projects.toml.example is its template. install.ps1 seeds the local file from
+# it on a fresh clone. A new repo or a new key goes into BOTH files in the same
+# PR (the acceptance run fails when their repo tables differ). Switching a repo
+# in or out of fleet runs edits only the local file (see [global] below).
+#
+# Hook code stays generic; anything project-specific lives here. A hook picks
+# the project whose `cwd_prefix` is the longest prefix of the session's cwd.
+# Paths use forward slashes (cross-shell safe on Windows). No secrets: the
+# Telegram bot token and real hostnames live in the ignored .env or the
+# agent's env, never here.
+#
+# ---- Optional per-project keys ---------------------------------------------
+#
+#   webapp_port = 8445 + browser_scheme = "https"
+#     Every table with a webapp_port declares its scheme. Agent-owned
+#     Playwright sessions open <scheme>://127.0.0.1:<port> and bypass
+#     certificate errors for that loopback origin only. A normal browser opens
+#     https://$FLEET_BROWSER_HOST:<port> so the Tailscale certificate matches;
+#     FLEET_BROWSER_HOST is a hostname kept in the agent's env.
+#
+#   restart_cmd = '...'
+#     The webapp restart restart_and_verify_webapp.py prefers over "kill the
+#     port PID and relaunch tray_cmd". Tray-owned apps need it: an idempotent
+#     tray.bat no-ops while the tray lives, while the one-liner below spawns a
+#     fresh uvicorn the tray adopts and never touches the :8446 session-host.
+#
+#   telegram_chat / telegram_chat_attention / telegram_chat_log = "-100..."
+#     Where pings go. A ping is "attention" (come look: blocked, awaiting
+#     input, ready to validate) or "log" (filed, shipped, merged, digests);
+#     an unset category chat falls back to telegram_chat. Per project or in
+#     [global]; with neither set, pings are silent. Use a supergroup or
+#     channel (-100...): Telegram rewrites a basic group's id when it upgrades
+#     it, and every send to the old id fails.
+#
+#   board_url = "https://<pc>.<tailnet>.ts.net:8445"
+#     Adds an "Open on the Board" deep link to needs-you pings. Set the real
+#     URL through the FLEET_BOARD_URL env var instead: this repo is public.
+#
+#   chief_handover = true
+#     This project hosts the standing fleet chief; its run log is handed back
+#     on SessionStart.
+#
+#   telegram_file_guard = true
+#     A Telegram reply carrying files goes only to the private chat of the
+#     person whose message triggered the turn.
+#
+#   backup = false | backup_exclude | backup_include | backup_always_include |
+#   backup_include_globs
+#     Per-repo overrides of the daily backup; see [backup] at the end.
+
+# ---- Projects with a running service -----------------------------------------
+
+[app-launcher]
+cwd_prefix          = "E:/automation/app-launcher"
+webapp_port         = 8445
+browser_scheme      = "https"
+session_host_port   = 8446
+gate_trigger_globs  = ["app/webapp/**", "src/launcher.py", "src/session_host*.py"]
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[photo-ocr]
+cwd_prefix          = "E:/automation/photo-ocr"
+webapp_port         = 8444
+browser_scheme      = "https"
+gate_trigger_globs  = ["app/webapp/**"]
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[voice-transcriber]
+cwd_prefix          = "E:/automation/voice-transcriber"
+webapp_port         = 8443
+browser_scheme      = "https"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[home-automation]
+cwd_prefix          = "E:/automation/home-automation"
+# _local/ mixes hand-written notes with a multi-GB VM tree and UPS captures;
+# dropping the two generated subtrees keeps the notes under the bulk-dir guard.
+backup_exclude      = ["_local/vm/**", "_local/nut/**"]
+# The automation event history is security-relevant, so it is exempt from the
+# size cap, and its two logs from the *.log deny-glob.
+backup_always_include = ["webapp/telemetry.sqlite3"]
+backup_include_globs  = ["webapp.log", "watchdog.log"]
+webapp_port         = 8447
+browser_scheme      = "https"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[local-llm-hub]
+cwd_prefix          = "E:/automation/local-llm-hub"
+webapp_port         = 8000
+browser_scheme      = "http"
+whisper_port        = 8090
+# The hub answers its build identity under /admin/.
+api_version_path    = "/admin/api/version"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+# This repo owns the agent-CLI subprocess wrapper, so hub_bypass_warn stays quiet here.
+is_hub              = true
+
+# ---- Remaining projects --------------------------------------------------------
+
+[accounting-quarterly]
+cwd_prefix = "E:/automation/accounting-quarterly"
+
+[algo-trading]
+cwd_prefix = "E:/automation/algo-trading"
+
+[app-launcher-lite]
+cwd_prefix = "E:/automation/app-launcher-lite"
+
+[arboldelossuenos]
+cwd_prefix = "E:/automation/arboldelossuenos"
+
+[automation]
+cwd_prefix = "E:/automation/automation"
+
+[fleet-config]
+cwd_prefix = "E:/automation/fleet-config"
+chief_handover = true
+
+[fleet-config-lite]
+cwd_prefix = "E:/automation/fleet-config-lite"
+
+[closed-company-accounting]
+cwd_prefix = "E:/automation/closed-company-accounting"
+
+[content-management]
+cwd_prefix = "E:/automation/content-management"
+
+[copilot-studio-transcripts]
+cwd_prefix = "E:/automation/copilot-studio-transcripts"
+
+[email-archiver]
+cwd_prefix = "E:/automation/email-archiver"
+
+[externalrisk]
+cwd_prefix = "E:/automation/externalrisk"
+
+[facilitation-shuffle]
+cwd_prefix = "E:/automation/facilitation-shuffle"
+
+[facilitation-suite]
+cwd_prefix = "E:/automation/facilitation-suite"
+
+[family-accounting]
+cwd_prefix = "E:/automation/family-accounting"
+
+[github-copilot-usage]
+cwd_prefix = "E:/automation/github-copilot-usage"
+
+[gitlab-to-github-migrator]
+cwd_prefix = "E:/automation/gitlab-to-github-migrator"
+
+[grocery-shopping-automation]
+cwd_prefix       = "E:/automation/grocery-shopping-automation"
+webapp_port      = 8502
+browser_scheme   = "https"
+tray_cmd         = "tray.bat"
+api_version_path = "/api/version"
+# No restart_cmd: its tray manager lives in app/tray/, and its own CLAUDE.md
+# declares `tray.bat --restart` as the recipe.
+
+[illustration-color-edit]
+cwd_prefix = "E:/automation/illustration-color-edit"
+
+[inspiration-system]
+cwd_prefix = "E:/automation/inspiration-system"
+
+[life-os]
+cwd_prefix      = "E:/automation/life-os"
+# Conversation capture + index. "skills" routing writes per-skill
+# conversations/ dirs under skills_dir, picked by the marker a skill's Step 0
+# writes; the default "flat" routing keeps one conversations/ per project.
+capture         = true
+capture_harnesses = ["claude", "codex"]
+capture_routing = "skills"
+skills_dir      = ".claude/skills"
+# Its channel sessions send household documents without a per-send prompt.
+telegram_file_guard = true
+# Every skill's private context lives under .claude/; the bulk-dir guard must keep it.
+backup_include  = [".claude"]
+active_marker   = ".active-skill"
+# What every skill's bootstrap auto-loads, measured by /context-audit.
+bootstrap_shared   = ["identity/who-i-am.md", "identity/current-focus.md"]
+bootstrap_skill    = ["{skill}/description.md", "{skill}/conversations/index.md"]
+bootstrap_sections = ["Step 1"]
+# The conversation index loads head-only; the audit reads that cap from the file declaring it.
+bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }
+
+[local-llm-hub-lite]
+cwd_prefix = "E:/automation/local-llm-hub-lite"
+
+[mass-html-to-markdown]
+cwd_prefix = "E:/automation/mass-html-to-markdown"
+
+[mathgamesforkids]
+cwd_prefix = "E:/automation/mathgamesforkids"
+
+[mcp-personal-onedrive]
+cwd_prefix = "E:/automation/mcp-personal-onedrive"
+
+[minecraft-bedrock-bot]
+cwd_prefix          = "E:/automation/minecraft-bedrock-bot"
+gate_cmd            = "npm run verify"
+
+[notion-automation-files]
+cwd_prefix = "E:/automation/notion-automation-files"
+
+[oracle-to-gcp]
+cwd_prefix = "E:/automation/oracle-to-gcp"
+
+[parking-manager]
+cwd_prefix          = "E:/automation/parking-manager"
+webapp_port         = 8450
+browser_scheme      = "https"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[pdf-to-markdown]
+cwd_prefix = "E:/automation/pdf-to-markdown"
+
+[project-scaffolding]
+cwd_prefix = "E:/automation/project-scaffolding"
+
+[pvgis]
+cwd_prefix = "E:/automation/pvgis"
+
+[social-media-analytics]
+cwd_prefix = "E:/automation/social-media-analytics"
+
+[suna]
+cwd_prefix = "E:/automation/suna"
+
+[task-os]
+cwd_prefix          = "E:/automation/task-os"
+webapp_port         = 8448
+browser_scheme      = "https"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[vibe-coding-workshop]
+cwd_prefix = "E:/automation/vibe-coding-workshop"
+
+[website]
+cwd_prefix = "E:/automation/website"
+
+[website-analytics]
+cwd_prefix = "E:/automation/website-analytics"
+
+[whatsapp-radar]
+cwd_prefix          = "E:/automation/whatsapp-radar"
+webapp_port         = 8455
+browser_scheme      = "https"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+# ---- Fleet-wide settings ---------------------------------------------------------
+
+[global]
+# Ports no port-scoped kill may touch: 8000 the LLM hub, 8090 whisper-server,
+# 8446 the app-launcher session-host (killing it kills every live session).
+never_kill_ports = [8000, 8090, 8446]
+telegram_chat           = "-1004408175579"   # fallback when a category chat is unset
+telegram_chat_attention = "-1004408175579"   # come-look pings
+telegram_chat_log       = "-1004387099086"   # activity record and weekly digests
+
+# Fleet scope. A repo listed here is dormant: out of every fleet-wide run and
+# off the architecture and config maps. Hooks still know it, and a run that
+# names it explicitly still reaches it. Keep one repo per line; flip one with
+#   skills/_lib/fleet_status.py set <repo> active|dormant
+# which edits this machine's file only. See docs/fleet-scope.md.
+architecture_ignore = [
+  "suna",                    # vendored/external open-source AI-agent platform
+  "externalrisk",           # out of scope for the personal-fleet map
+  "arboldelossuenos",       # out of scope for the personal-fleet map
+  "notion-automation-files", # legacy
+]
+
+# ---- Daily fleet-private backup ------------------------------------------------
+#
+# Stays the LAST table: a TOML table header claims every bare key after it, so
+# a [global] key written below this line would silently move into [backup].
+# It is a table of its own, with no cwd_prefix, so the fleet enumerators never
+# see it. Per-repo overrides live in each repo's table above.
+[backup]
+source_root      = "E:/automation"
+# Singular `backup`: a sibling `backups` folder one letter away is what gets
+# restored from by mistake under pressure.
+dest             = "C:/Users/rober/backup/fleet-private"
+transcripts_src  = "~/.claude/projects"
+transcripts_dest = "E:/backup/claude-transcripts"
+codex_sessions_src  = "~/.codex"
+codex_sessions_dest = "E:/backup/codex-sessions"
+# The always-on services' SQLite databases live outside every working tree, so
+# they get their own leg: snapshotted with SQLite's online backup API (never a
+# byte copy of a live WAL), exempt from max_file_mb, and written to another
+# volume (a same-volume snapshot is refused).
+runtime_data_src  = "C:/sqlite"
+runtime_data_dest = "E:/backup/fleet-runtime-data"
+keep_daily       = 14
+keep_weekly      = 8
+max_file_mb      = 10
+# The bulk-directory guard: a top-level directory whose surviving subtree
+# passes this size is excluded whole and named in the run report, because
+# gitignored generated output would otherwise fill the snapshot.
+bulk_dir_mb      = 25
+# A snapshot older than this reads `stale` from --check-freshness (the job is daily).
+freshness_max_hours = 48

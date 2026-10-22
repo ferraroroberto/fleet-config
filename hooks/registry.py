@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -29,7 +30,30 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
 
 HOOKS_DIR = Path(__file__).resolve().parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
+# The tracked template. projects.toml itself is machine-local and gitignored.
+PROJECTS_TOML_EXAMPLE = HOOKS_DIR / "projects.toml.example"
 PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
+
+
+def projects_toml_path() -> Path:
+    """The registry file hooks read: the env override, else the local file.
+
+    When the local file is missing (a fresh clone, or a pull that deleted it),
+    hooks read the tracked example and say so on stderr. Falling back keeps
+    the guards that depend on the registry, such as ``never_kill_ports``,
+    enforcing; an empty registry would turn them off without a word.
+    """
+    override = os.environ.get(PROJECTS_TOML_ENV_VAR)
+    if override:
+        return Path(override)
+    if PROJECTS_TOML.is_file() or not PROJECTS_TOML_EXAMPLE.is_file():
+        return PROJECTS_TOML
+    print(
+        f"WARNING: {PROJECTS_TOML} is missing; hooks are reading {PROJECTS_TOML_EXAMPLE.name}. "
+        f"Copy it to {PROJECTS_TOML.name} to restore this machine's fleet list.",
+        file=sys.stderr,
+    )
+    return PROJECTS_TOML_EXAMPLE
 
 
 @dataclass(frozen=True)
@@ -80,7 +104,7 @@ def load_registry(path: Optional[Path] = None) -> Registry:
     instead of writing test fixtures into the real fleet paths.
     """
     if path is None:
-        path = Path(os.environ.get(PROJECTS_TOML_ENV_VAR) or PROJECTS_TOML)
+        path = projects_toml_path()
     if not path.exists():
         return Registry(projects=[], globals=GlobalConfig(never_kill_ports=()))
 

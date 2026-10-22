@@ -32,6 +32,23 @@ from acceptance.shared import REPO, _Checker
 _CARD_ROW_RE = re.compile(r"^\|[^|]*?\*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\*[^|]*\|", re.MULTILINE)
 
 
+def _gate_projects_toml() -> Path:
+    """The registry the gate reads: the local file, else the tracked example.
+
+    `hooks/projects.toml` is machine-local, so a fresh clone or a new worktree
+    has only `hooks/projects.toml.example`; the gate must still run there.
+    """
+    local = REPO / "hooks" / "projects.toml"
+    return local if local.is_file() else REPO / "hooks" / "projects.toml.example"
+
+
+def _repo_tables(toml: dict) -> set:
+    return {
+        name for name, tbl in toml.items()
+        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
+    }
+
+
 def _architecture_card_repos(doc: str) -> set:
     """Project names carrying their own card row in ARCHITECTURE.md."""
     return set(_CARD_ROW_RE.findall(doc))
@@ -72,11 +89,13 @@ def _system_map_coverage_check() -> Tuple[int, int]:
 
     Guards the `/system-map` single source of truth (architecture/fleet.data.js)
     against drift, mechanically:
-      1. every fleet repo (projects.toml − [global] architecture_ignore) appears
-         on the map;
-      2. no map entry is a stale/typo'd repo absent from the fleet;
+      1. every declared repo is on the map or switched off in an
+         `architecture_ignore` list (the local file's or the example's);
+      2. no map entry is a stale/typo'd repo that is not declared;
       3. every mapped repo also appears in ARCHITECTURE.md (data ↔ doc agree).
-    Returns the failure count.
+    The committed map is a snapshot of one machine's switch, so a repo
+    flipped either way since the last regeneration is tolerated; a new repo
+    left off the map is not. Returns the failure count.
     """
     import json
     import tomllib
@@ -84,12 +103,12 @@ def _system_map_coverage_check() -> Tuple[int, int]:
     check = _Checker()
 
     arch = REPO / "architecture"
-    toml = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))
-    ignore = set(toml.get("global", {}).get("architecture_ignore", []))
-    fleet = {
-        name for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-    } - ignore
+    declared: set = set()
+    ignore: set = set()
+    for path in {_gate_projects_toml(), REPO / "hooks" / "projects.toml.example"}:
+        toml = tomllib.loads(path.read_text(encoding="utf-8"))
+        declared |= _repo_tables(toml)
+        ignore |= set(toml.get("global", {}).get("architecture_ignore", []))
 
     # fleet.data.js holds `window.FLEET = { ...strict JSON... };` — slice the object out.
     raw = (arch / "fleet.data.js").read_text(encoding="utf-8")
@@ -100,8 +119,8 @@ def _system_map_coverage_check() -> Tuple[int, int]:
         for e in data.get(section, [])
     }
 
-    missing = fleet - mapped
-    stale = mapped - fleet
+    missing = declared - ignore - mapped
+    stale = mapped - declared
     check(f"system_map: every fleet repo is on the map (missing: {sorted(missing) or 'none'})", not missing)
     check(f"system_map: no stale map entries (stale: {sorted(stale) or 'none'})", not stale)
 
@@ -392,16 +411,13 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
     spec.loader.exec_module(scan)  # type: ignore[union-attr]
 
     root = REPO.parent  # E:/automation — the fleet lives beside this checkout
-    on_disk = {d.name for d in scan.iter_fleet_repos(root)}
+    on_disk = {d.name for d in scan.iter_fleet_repos(root, include_ignored=True)}
     if not on_disk:
         print(f"SKIP  fleet_membership: no fleet repos found beside this checkout in {root} (skipped)")
         return 0, 0, 1
 
-    toml = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))
-    declared = {
-        name for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-    }
+    toml = tomllib.loads(_gate_projects_toml().read_text(encoding="utf-8"))
+    declared = _repo_tables(toml)
     ignored = set(toml.get("global", {}).get("architecture_ignore", []))
 
     check = _Checker()
@@ -410,13 +426,54 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
         f"fleet_membership: every repo in {root} is declared in projects.toml "
         f"(undeclared: {undeclared or 'none'})",
         not undeclared,
-        "add each to hooks/projects.toml before the [global] block:\n"
+        "add each to hooks/projects.toml and hooks/projects.toml.example before the [global] block:\n"
         + "\n".join(f'[{r}]\ncwd_prefix = "{root.as_posix()}/{r}"' for r in undeclared)
         + "\n(then regenerate the maps per docs/adding-a-fleet-project.md), "
         "or list it in [global] architecture_ignore to keep it off the map on purpose.",
     )
 
     return check.failures, check.total, check.skipped
+
+
+def _projects_toml_contract_check() -> Tuple[int, int]:
+    """The local registry and its tracked example agree on the fleet.
+
+    `hooks/projects.toml` is gitignored, so a repo added to only one of the
+    two files would vanish on the next fresh clone, or never reach this
+    machine. Their repo tables must match; their `architecture_ignore`
+    switches may differ. Every switch entry must name a declared repo,
+    because a typo'd entry silently leaves the real repo in every run.
+    Without a local file, only the example is checked.
+    """
+    import tomllib
+
+    check = _Checker()
+    example_path = REPO / "hooks" / "projects.toml.example"
+    local_path = REPO / "hooks" / "projects.toml"
+    files = {"projects.toml.example": example_path}
+    if local_path.is_file():
+        files["projects.toml"] = local_path
+
+    parsed = {}
+    for label, path in files.items():
+        try:
+            parsed[label] = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            check(f"projects_toml: {label} parses", False, str(exc))
+    for label, toml in parsed.items():
+        declared = _repo_tables(toml)
+        unknown = sorted(set(toml.get("global", {}).get("architecture_ignore", [])) - declared)
+        check(f"projects_toml: every {label} architecture_ignore entry is a declared repo "
+              f"(unknown: {unknown or 'none'})", not unknown)
+    if len(parsed) == 2:
+        local = _repo_tables(parsed["projects.toml"])
+        example = _repo_tables(parsed["projects.toml.example"])
+        check(f"projects_toml: local and example declare the same repos "
+              f"(only local: {sorted(local - example) or 'none'}, "
+              f"only example: {sorted(example - local) or 'none'})",
+              local == example,
+              "a repo table belongs in both hooks/projects.toml and hooks/projects.toml.example")
+    return check.failures, check.total
 
 
 def _advisory_semantics_check() -> Tuple[int, int]:
