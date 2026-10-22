@@ -168,6 +168,7 @@ fleet-config/
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── scripts/static_ratchet.py       # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `static_ratchet`) — the baseline-and-ratchet duplicate/unused-code stage `tests/run_acceptance.py` runs; findings already present live in `.static-ratchet-baseline.json` (fleet-config#1514)
 ├── scripts/docs_ratchet.py         # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `docs_ratchet`) — the README-size and history-marker stage `tests/run_acceptance.py` runs; markers already present live in `.docs-ratchet-baseline.json`
+├── scripts/structure_ratchet.py    # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `structure_ratchet`) — the file-size, function-length, flat-directory and root-layout stage `tests/run_acceptance.py` runs; offenders already present live in `.structure-ratchet-baseline.json`
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs (fleet-config#1076)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
