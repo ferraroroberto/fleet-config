@@ -77,6 +77,8 @@ import git_run  # noqa: E402
 import index_lock  # noqa: E402
 import untrack_guard  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from structure_debt import baseline as structure_baseline  # noqa: E402
+from structure_debt import section as structure_section  # noqa: E402
 
 # Re-exported: `is_fleet_repo` now lives beside the crawl that uses it
 # (fleet-config#561), but this module is where the unit tests and
@@ -136,7 +138,37 @@ def broken_ledgers(results: dict) -> list[dict]:
     return [e for e in results.get("to_audit", []) if e.get("reason") in audit_issue.BROKEN_LEDGER_REASONS]
 
 
+DIGEST_STATE_REPO = "ferraroroberto/fleet-config"
+
+
+def _load_digest_state() -> str | None:
+    """The digest-state issue body (`""` when there is none yet), or None when gh could not read it."""
+    try:
+        return audit_issue.get_managed(DIGEST_STATE_REPO, "digest")["body"]
+    except (SystemExit, ValueError, KeyError):
+        return None
+
+
+def structure_report(root: str, only: str | None, load_state=_load_digest_state) -> dict:
+    """The structure-baseline debt section, computed synchronously for every repo the walk reaches.
+
+    Each repo's baseline is read from its `origin/<default>` ref, so the checkout's branch and
+    dirty state cannot change it; a repo the gate skipped before its fetch is read from the
+    previous fetch. A repo that cannot be read is `unknown`, never a zero count.
+    """
+    entries = [{"repo": d.name, **structure_baseline.read_repo(str(d))}
+               for d in fleet_repo_scan.iter_fleet_repos(root, only)]
+    return structure_section.build(entries, load_state(), time.strftime("%Y-%m-%d"))
+
+
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
+    """The gate sweep (`_scan_gates`) plus the structure-debt section, both inside this one process."""
+    results = _scan_gates(root, only, dry_run)
+    results["structure"] = structure_report(root, only)
+    return results
+
+
+def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
     results: dict = {
         "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [],
         "stale_lock": [], "errors": [], "enumerated": 0,

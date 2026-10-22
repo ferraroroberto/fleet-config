@@ -83,10 +83,13 @@ JSON shape:
  "errors": [{"repo": "...", "reason": "..."}, ...],
  "restored_untracked": [{"repo": "...", "restored": ["path", ...], "kept_aside": ["path", ...], "stash": "..."|null}, ...],
  "enumerated": N,
- "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true}}
+ "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true},
+ "structure": {"lines": ["- <repo>  files N (+d)  fns N (±0)  dirs N (-d)  excess N (+d)", "- <repo>  not adopted", "- <repo>  unknown (<reason>)", "- fleet total: ..."], "headline": "structure debt grew: <repos>"|null, "state_lines": ["structure-last-run-at: <YYYY-MM-DD>", "structure:<repo>: files=N fns=N dirs=N excess=N", "structure:<repo>: not adopted"|"unknown", ...], "grew": ["<repo>", ...]}}
 ```
 
 `enumerated` counts repos the walk *found*, before any decision; `accounting` asserts the seven buckets sum back to it. `restored_untracked` is not a bucket: it annotates a repo already in one. A repo in no bucket shows nonzero `unaccounted` / `balanced: false` (fleet-config#567). Never report counts that don't add up as healthy.
+
+`structure` is the structure-baseline debt section (`skills/_lib/structure_debt/`), computed inside the same sweep so there is no extra step to wait on. For each repo it reads `.structure-ratchet-baseline.json` from the repo's `origin/<default>` ref (never the checkout, so a dirty or off-branch repo cannot change it) and counts the `size:`/`fn:`/`dir:` entries plus the lines over the limits, and compares them with the `structure:<repo>:` lines of the digest-state body. A repo without the baseline is `not adopted` and one whose baseline or `.fleet.toml` cannot be read is `unknown`; neither is a zero count. Print `lines`, `headline` and `state_lines` verbatim in step 5 instead of re-deriving them. If the previous state could not be read, `lines` ends with a `week-over-week: unknown` line and no deltas are shown.
 
 A `stale_lock` entry is a repo carrying a stranded `.git/index.lock` — **the one bucket that never self-heals**: surface every entry by name, every week, until a human clears it. Invisible to every read (`status`, `fetch`, `rev-list`, an up-to-date `pull --ff-only` all exit 0) while the repo is frozen against every write (fleet-config#667). `verdict: stale` = no git process running at all; `stale_unconfirmed` = past threshold but couldn't be established — both need a look, neither auto-repaired. **Never delete a lock from this skill**, and never instruct a sub-agent to — it's another process's file; fix is a human confirming the holder is dead, then removing it.
 
@@ -219,9 +222,12 @@ design-drift-last-run-at: <YYYY-MM-DD>
 design-drift:<name>: <open-design-drift-count>
 cert-drift:<name>: <open-cert-drift-count>
 ...
+structure-last-run-at: <YYYY-MM-DD>
+structure:<name>: files=<N> fns=<N> dirs=<N> excess=<N> | not adopted | unknown
+...
 ```
 
-Code-bucket per-repo lines are bare `<name>: <count>`; `design-drift:`/`cert-drift:`-prefixed keys below `design-drift-last-run-at:` are the **design bucket's own accounting**, kept separate so a design-drift issue never inflates a repo's code-finding count or `+N since last week` delta (fleet-config#180). Treat a ledger with no `design-drift-last-run-at:` line (pre-#180) as an empty design baseline — note as initial snapshot, not a delta.
+Code-bucket per-repo lines are bare `<name>: <count>`; `design-drift:`/`cert-drift:`-prefixed keys below `design-drift-last-run-at:` are the **design bucket's own accounting**, kept separate so a design-drift issue never inflates a repo's code-finding count or `+N since last week` delta (fleet-config#180). Treat a ledger with no `design-drift-last-run-at:` line (pre-#180) as an empty design baseline — note as initial snapshot, not a delta. The `structure:`-prefixed lines are the structure bucket's own accounting, written verbatim from step 2's `structure.state_lines` and read back by the next sweep's scan; the orchestrator never parses them.
 
 **Count the design-drift bucket (read-only).** `design-drift`/`cert-drift` issues are filed by `/design-sweep`/`/design-sync`, never by an audit sub-agent — count open issues directly via the Issues API rather than `gh search issues --owner` (Search-API-backed, observed reporting issues open for 5+ weeks after they closed — fleet-config#623):
 
@@ -248,9 +254,10 @@ Compose the digest as markdown (single long lines per paragraph, no hard wraps) 
 - **Re-surfaced this week** *(only when non-zero)*: bucket/URL pairs where `resurfaced > 0` — a finding that was ticked as fixed and was found again (a fix that didn't hold), listed right after the new findings (fleet-config#960).
 - **Standing backlog:** single fleet-wide count — sum of every `carried` + `stale` count across every audited repo, never an item list, e.g. `14 standing findings across 5 repos, unchanged or not re-verified this run — see each repo's audit issue for detail.`
 - **New fleet assets this week:** promotion candidates added to the practices ledger this run, with `PRACTICES_LEDGER_URL`. If none: `No new fleet assets catalogued this week.`
+- **Structure debt** *(always)*: the `structure.lines` from step 2, under a `Structure baseline:` heading — one line per repo (`files N (+d)  fns N (+d)  dirs N (+d)  excess N (+d)`, or `not adopted` / `unknown (<reason>)`) and the fleet total with its largest three repos. When `structure.headline` is non-null, append it to the header line (`... — structure debt grew: app-launcher`) and lead the digest with it. A shrunk or unchanged baseline is never flagged.
 - **Design & cert drift:** design-drift bucket reported alongside the six code buckets but never mixed into their counts. One line with fleet-wide open total and week-over-week delta from the `design-drift-last-run-at:` baseline (`6 open design-drift across 3 apps (+2 since last week); 1 cert-drift`), then — only for repos whose count **changed** since baseline — a per-repo delta line (`home-automation: 4 (+2)`). Steady repos fold into the total, not enumerated.
 
-Then upsert the digest-state ledger issue with today's date, current per-repo open-audit-issue counts, **plus** the design/cert bucket counts under `design-drift-last-run-at:` (stamp today's date there too). Keep the two account groups distinct — bare `<name>: <count>` code lines vs `design-drift:`/`cert-drift:`-prefixed lines — never fold one into the other. Helper handles create-vs-edit, collapses strays, stamps the marker (keep `<!-- audit-fleet-digest -->` intact):
+Then upsert the digest-state ledger issue with today's date, current per-repo open-audit-issue counts, **plus** the design/cert bucket counts under `design-drift-last-run-at:` (stamp today's date there too), **plus** step 2's `structure.state_lines` as they are. Keep the account groups distinct — bare `<name>: <count>` code lines vs `design-drift:`/`cert-drift:`-prefixed lines — never fold one into the other. Helper handles create-vs-edit, collapses strays, stamps the marker (keep `<!-- audit-fleet-digest -->` intact):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
