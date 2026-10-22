@@ -48,7 +48,7 @@ window.FLEET = {
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
     {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
     {"ic": "🅿️", "nm": "parking-manager", "port": ":8450", "ds": "Household parking: which days to book, time off and the Thursday release; books them itself."},
-    {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "One master task list: nested projects, capture Inbox, calendar, voice add, mail archiving.", "tag": ["→", "GitHub"]},
+    {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking.", "tag": ["→", "GitHub"]},
     {"ic": "📈", "nm": "website-analytics", "ds": "Local-first GA4, Search Console, crawl, and weekly website-insight dashboard."}
   ],
   "pipe": [
@@ -58,8 +58,8 @@ window.FLEET = {
     {"ic": "📝", "nm": "content-management", "ds": "Content surfaces: reporting, planning, newsletter, podcast and video.", "tag": ["→", "Notion"]},
     {"ic": "📧", "nm": "email-archiver", "ds": "Outlook → OneDrive archive with a SQLite index and headless batch CLI.", "tag": ["→", "OneDrive"]},
     {"ic": "📄", "nm": "pdf-to-markdown", "ds": "PDF → clean Markdown for LLMs."},
-    {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown (+ LLM-shortened variant)."},
-    {"ic": "🎨", "nm": "illustration-color-edit", "port": 8503, "ds": "SVG pipelines for book art."},
+    {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown."},
+    {"ic": "🎨", "nm": "illustration-color-edit", "ds": "SVG pipelines for book art."},
     {"ic": "☀️", "nm": "pvgis", "ds": "Solar-PV output estimate."},
     {"ic": "🗂️", "nm": "copilot-studio-transcripts", "ds": "Copilot Studio workbench."},
     {"ic": "📚", "nm": "closed-company-accounting", "ds": "Accounting for a closed company."},
@@ -67,8 +67,7 @@ window.FLEET = {
     {"ic": "📁", "nm": "mcp-personal-onedrive", "ds": "Read-only MCP to browse OneDrive.", "tag": ["→", "OneDrive"]},
     {"ic": "⛏️", "nm": "minecraft-bedrock-bot", "ds": "Headless Bedrock Realm bot driven by an LLM decision loop on the hub.", "tag": ["→", "Minecraft Realm"]},
     {"ic": "☁️", "nm": "Oracle to GCP", "repo": "oracle-to-gcp", "ds": "Oracle SQL → BigQuery translator prototype with mock validation."},
-    {"ic": "📈", "nm": "algo-trading", "ds": "Rule-based FX trading on major pairs: backtest → paper → live.", "tag": ["→", "IBKR"]},
-    {"ic": "🔀", "nm": "gitlab-to-github-migrator", "ds": "GitLab → GitHub repo migration (history mirror + MR-to-issue replay).", "tag": ["→", "GitHub"]}
+    {"ic": "📈", "nm": "algo-trading", "ds": "Rule-based FX trading on major pairs: backtest → paper → live.", "tag": ["→", "IBKR"]}
   ],
   "external": [
     {"ic": "💬", "nm": "Telegram", "fr": "from app-launcher (orchestration)"},
