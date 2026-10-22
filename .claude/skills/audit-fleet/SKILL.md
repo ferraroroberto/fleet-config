@@ -153,6 +153,7 @@ Report back in this exact shape so the orchestrator can build the digest:
     ESCALATED (<count>, branch left for manual /issue-finish)> — a bare count +
     disposition, NEVER any detail, file, or vulnerability class
   - Skipped-as-dupe: <count>
+  - Dead-code: <the `dead-code leads:` line from /codebase-audit's final report, verbatim>
   - Files inspected: <count>
   - Promotion candidates: <the `promotion candidates spotted:` block from
     /codebase-audit's final report — asset/convention lines, verbatim; omit if none>
@@ -235,7 +236,7 @@ Compose the digest as markdown (single long lines per paragraph, no hard wraps) 
 
 - **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, W stale-lock, X errors`, plus `S security fixes` when any sub-agent reported non-`NONE` `Security:`, and `D design-drift / C cert-drift open`. Then a `Rate gate:` line naming the first gate decision and the pause cycles used (`Rate gate: OK 17.0% (interactive), 0 pauses` or `Rate gate: PAUSE cache_stale (unattended), 3 pauses — 9 repos skipped`). Per-bucket counts **must sum to `E`** (`accounting.enumerated`); if `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket`.
 - **Broken-ledger section** *(only when non-empty)*: repos `broken_ledgers()` returns — one line each naming reason and what couldn't be read (`grocery-shopping-automation: baseline 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`; `local-llm-hub: ledger #31 had no readable audit-ledger block — audited whole-repo, ledger normalized`) — a recurring weekly cost, misread as organic change if omitted (fleet-config#566, #567).
-- **Per audited repo:** result line + issues filed this run (bucket → URL) + delta vs last week (`+2 since last week`). CLEAN/SKIPPED-BY-LEDGER get a one-liner.
+- **Per audited repo:** result line + issues filed this run (bucket → URL) + delta vs last week (`+2 since last week`) + its `Dead-code:` line (`dead-code: 7 hits, 2 confirmed`; `not confirmed (<reason>)` is printed as such, never as zero). CLEAN/SKIPPED-BY-LEDGER get a one-liner.
 - **Security section** *(only when any sub-agent reported non-`NONE` `Security:`)*: one line per repo, counts + disposition only, NEVER detail — `<repo>: 1 gap self-healed, PR merged (private alert sent)` or `<repo>: 1 gap ESCALATED — branch left for manual /issue-finish`.
 - **Self-fix section** *(only when non-empty)*: repos classified `SELF-FIX` — one line each naming closed issue numbers (`website: closed #71, #64 — ledger advanced, no organic change`).
 - **Below-threshold section** *(only when non-empty)*: repos classified `SKIP_BELOW_THRESHOLD` — one line each with accumulated vs threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines since 2026-07-04 — accumulating, not yet audited`). NOT counted toward standing backlog.

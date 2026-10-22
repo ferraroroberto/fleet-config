@@ -306,6 +306,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "NO_QUOTE and UNREADABLE as distinct non-passing verdicts, ticked and "
      "carried items skipped, and the CLI exit codes -- is testable on its "
      "own, against a synthetic repo (fleet-config#960)"),
+    ("dead_code_leads", "test_dead_code_leads.py",
+     "/codebase-audit's dead-code pre-pass -- vulture at floor 60 filtered to "
+     "function/class/method/property, framework names and whitelists dropped, "
+     "test-only symbols tagged, the whole-word caller search, ruff leads "
+     "skipped under the ratchet, and every failure to run (missing, crash, "
+     "timeout, garbage, unreadable file list) as not-confirmed -- is testable "
+     "on its own against synthetic git repos (fleet-config#1527)"),
     ("chief_managed", "test_chief_managed.py",
      "the chief-managed session marker -- mark read back through "
      "notify_on_idle.chief_managed_state (the one reader), cross-sid "

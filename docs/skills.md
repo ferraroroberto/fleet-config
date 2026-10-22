@@ -10,7 +10,7 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 
 ## Skills
 
-- [`/codebase-audit`](skills/codebase-audit.md) — read-only quality sweep of a resting codebase; ledger issue, skip rules, traceability
+- [`/codebase-audit`](skills/codebase-audit.md) — read-only quality sweep of a resting codebase; ledger issue, skip rules, traceability, vulture dead-code pre-pass
 - [`/design-sync`](skills/design-sync.md) — web-app design-conformance detector against the fleet design system
 - [`/design-review`](skills/design-review.md) — rendered-design review: live measurement, rubric score, judge, ledger, report
 - [`/perf-review`](skills/perf-review.md) — phone-profile load timing against versioned budgets

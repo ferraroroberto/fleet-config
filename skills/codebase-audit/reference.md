@@ -2,6 +2,45 @@
 
 Loaded on demand from the `/codebase-audit` skill (`SKILL.md`, steps 8, 9 and 10). "Hard rules" and step numbers refer to that file.
 
+## Step 5a — dead-code leads (fleet-config#1527)
+
+`skills/_lib/dead_code_leads.py leads <repo> --ruff` prints one JSON verdict:
+`state` (`ok` | `not-applicable` | `not-confirmed`), `reason`, `hits[]` (`file`,
+`line`, `kind`, `name`, `test_only`) and a `ruff` block. It runs vulture at floor
+60, because vulture scores an unused function, class, method or property at
+exactly 60 (imports 90, arguments 100) and a floor of 80 finds none of them. It
+keeps only those four kinds, so the ratchet and ruff never double-report. It
+drops dunders, `do_*`/`handle_*`/`visit_*`/`on_*` overrides, `log_message`,
+anything in a test file, framework-decorated handlers (`@app.*`, `@router.*`,
+`@pytest.fixture`, …) and whatever the repo's own `[tool.vulture]` table or
+tracked `vulture_whitelist.py` lists. `test_only` marks a symbol only a test
+calls. `--ruff` adds F401/F841 leads and is skipped under an enabled
+`[static_ratchet]`.
+
+**Confirm each lead** before it is a finding:
+
+1. `dead_code_leads.py refs <repo> NAME...` counts whole-word occurrences over
+   every tracked text file (code, `.bat`/`.ps1`, `jobs.json`, `settings.json`,
+   `projects.toml`, docs), skipping the `def`/`class` line. `refs` > 0 means
+   read the locations before calling it dead; 0 means dead unless a class below
+   applies.
+2. Rule out what a name search cannot see: route handlers and CLI commands
+   registered by decorator, pytest fixtures and hooks, `__all__` re-exports,
+   hook or plugin modules loaded by name, entry points in launchers or config
+   under a different spelling, `getattr` or string dispatch built from parts.
+3. Only then file it, citing the proof on the finding line:
+   ``- [ ] **path.py:12** — dead function `name`. Quote: `def name(x):`. Refs: 0 across 214 files. Fix: delete.``
+   `Quote:` is checked by `audit_quote.py` as for any finding. A symbol with
+   `test_only: true` is its own finding: `Refs: only tests/test_x.py:9`,
+   because green tests around an uncalled function are false confidence.
+
+A lead alone is never a finding. Removals go through `/cleanup-fleet stale` and
+each repo's gate, never this skill. Count the leads (`hit_count` plus ruff hits)
+and the ones that reached the issue for step 10's `dead-code leads:` line. A
+`not-confirmed` state (vulture missing or crashed, unparseable output, an
+unreadable file list or tracked file) is printed as such. `not-applicable` means
+the repo tracks no Python.
+
 ## Step 8 — fresh issue body shape and title style
 
 **Body shape** for a fresh issue (no hard wraps in paragraphs — the global
@@ -151,6 +190,8 @@ Print one summary table and stop. Exact shape:
 
   security (self-healed):  1  — PR merged, private alert sent; or "escalated" / "none"
 
+  dead-code leads: <H> hits, <C> confirmed   (or "not confirmed (<reason>)" / "not applicable")
+
   * stale = carried from an earlier run, not re-verified this pass — kept on
     the checklist and flagged for review, not deleted.
   The security line is a count + disposition only — no finding detail (it never
@@ -169,6 +210,9 @@ Print one summary table and stop. Exact shape:
     - asset:      <repo-relative path / module> — <one-line capability>
     - convention: <convention> — generalizable because <…>
 ```
+
+`/audit-fleet` copies the `dead-code leads:` line into its per-repo digest entry; it is
+not a snapshot column (that format is parsed by `parse_snapshot`).
 
 The `new`/`carried`/`stale` columns are the **same counts** step 8 computed
 for the `## Audit run log` bullets — never recomputed here. `findings` is the
