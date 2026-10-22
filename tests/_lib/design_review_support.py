@@ -1,6 +1,6 @@
 """Fixtures shared by the design-review suites (fleet-config#1481).
 
-`tests/test_design_review.py` is the pure-logic leg; `tests/test_design_review_browser.py` is the
+The suites in `tests/design_review/` are the pure-logic leg; `tests/test_design_review_browser.py` is the
 browser leg, which the gate routes to only when the design-review surface changed. Both read the
 same rubric, fixture specs and fixture metrics, so they load them from here once. The
 `test_design_judgment.py` and `test_design_report.py` CLI legs share `cli_runner` and `SPEC_ARGS`.
@@ -29,6 +29,8 @@ PKG = REPO / "skills" / "_lib" / "design_review"
 SPEC_ARGS = ["--rubric", str(RUBRIC), "--spec", str(FIX / "spec_violating.md"), "--spec-dark", str(FIX / "spec_violating.md")]
 
 rubric = dr.load_rubric(RUBRIC)
+# This checkout's own design*.md, not ~/.claude (which is the primary's).
+src_specs = rb.load_specs(REPO / "design.md", REPO / "design.dark.md")
 
 # What a rule lookup falls back to when the rubric no longer carries the rule.
 MISSING = {"status": "missing", "severity": None, "category": None, "owner": None, "evidence": [{"items": None}], "measured": None, "reason": "rule COMP-18 not in the rubric"}
@@ -47,6 +49,11 @@ def c18_of(metrics: dict) -> dict:
     return next((r for r in ev.evaluate(metrics, rubric, specs("compliant"))["rules"] if r["id"] == "COMP-18"), MISSING)
 
 
+light_c = specs("compliant")["light"]
+out_c = ev.evaluate(doc("compliant"), rubric, specs("compliant"))
+statuses_c = {r["id"]: r["status"] for r in out_c["rules"]}
+
+
 def cli_runner(state: Path) -> Tuple[Callable[..., subprocess.CompletedProcess], Callable[[subprocess.CompletedProcess], dict]]:
     """`(run, kv)` for the design_review CLI, its hooks state kept in `state`.
 
@@ -61,6 +68,14 @@ def cli_runner(state: Path) -> Tuple[Callable[..., subprocess.CompletedProcess],
         return dict(l.split("=", 1) for l in proc.stdout.splitlines() if "=" in l)
 
     return run, kv
+
+
+def comp(rule_id: str, controls_by_screen) -> dict:
+    """The compliant fixture's `rule_id` result with each screen's `controls` patched by `controls_by_screen`."""
+    d = doc("compliant")
+    for s, patch in zip(d["screens"], controls_by_screen):
+        s["metrics"]["controls"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, specs("compliant"))["rules"] if r["id"] == rule_id)
 
 
 def port_open(url: str) -> bool:

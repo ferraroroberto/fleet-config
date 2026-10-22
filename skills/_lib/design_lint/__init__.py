@@ -55,7 +55,7 @@ every time design.md gains a rule, so the file only went one way):
   cli.py         argparse + the JSON document assembly
 
 The names below are the public surface, re-exported so `import design_lint`
-keeps working unchanged for `design_sweep_scan.py`, `tests/test_design_lint.py`,
+keeps working unchanged for `design_sweep_scan.py`, `tests/design_lint/`,
 and anything else that reached into the single file.
 """
 from __future__ import annotations

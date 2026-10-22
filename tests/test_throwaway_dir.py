@@ -54,15 +54,22 @@ proc = subprocess.run([sys.executable, "-c", GIT_CHILD, str(REPO / "tests" / "_l
 made = Path(proc.stdout.strip().splitlines()[0]) if proc.stdout.strip() else None
 check(made is not None and not made.exists(), f"a dir holding a committed git repo is gone after exit -- {made} {proc.stderr[-200:]}")
 
-# The two design-review suites take their state dir from the helper, never a bare mkdtemp.
-for name in ("test_design_review.py", "test_design_review_browser.py"):
-    src = (REPO / "tests" / name).read_text(encoding="utf-8")
-    check('STATE = throwaway_dir("design-review-test-state-")' in src, f"{name}: STATE comes from throwaway_dir")
-    check("mkdtemp(prefix=\"design-review-test-state-\"" not in src, f"{name}: no bare mkdtemp for the state dir")
+# The design-review suites take their state dir from the helper, never a bare mkdtemp: the pure-logic
+# suites through the shared `_suite` preamble, the browser suite on its own.
+suite_src = (REPO / "tests" / "design_review" / "_suite.py").read_text(encoding="utf-8")
+check('STATE = throwaway_dir("design-review-test-state-")' in suite_src, "_suite.py: STATE comes from throwaway_dir")
+check("mkdtemp(prefix=\"design-review-test-state-\"" not in suite_src, "_suite.py: no bare mkdtemp for the state dir")
+review_suites = sorted((REPO / "tests" / "design_review").glob("test_*.py"))
+check(len(review_suites) >= 1, "the design_review folder holds at least one suite")
+for path in review_suites:
+    check("from _suite import" in path.read_text(encoding="utf-8"), f"{path.name}: takes its state dir from _suite")
+browser_state_src = (REPO / "tests" / "test_design_review_browser.py").read_text(encoding="utf-8")
+check('STATE = throwaway_dir("design-review-test-state-")' in browser_state_src, "test_design_review_browser.py: STATE comes from throwaway_dir")
+check("mkdtemp(prefix=\"design-review-test-state-\"" not in browser_state_src, "test_design_review_browser.py: no bare mkdtemp for the state dir")
 
 # The other design suites hold the same contract (fleet-config#1487), and the browser suite exits under its own name only.
-# Globbed, so a new design suite (and test_design_sweep_scan.py, #1489) is covered without editing this list.
-for path in sorted((REPO / "tests").glob("test_design_*.py")):
+# Globbed (flat and the design_lint/design_review folders), so a new design suite (and test_design_sweep_scan.py, #1489) is covered without editing this list.
+for path in sorted((REPO / "tests").glob("test_design_*.py")) + sorted((REPO / "tests").glob("design_*/test_*.py")):
     check("mkdtemp" not in path.read_text(encoding="utf-8"), f"{path.name}: no bare mkdtemp")
 
 browser_src = (REPO / "tests" / "test_design_review_browser.py").read_text(encoding="utf-8")
