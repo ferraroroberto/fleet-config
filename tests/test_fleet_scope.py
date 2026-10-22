@@ -5,6 +5,7 @@ never the live file.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -86,8 +87,8 @@ check(names == ["asleep"], f"an explicit `only` reaches a switched-off repo: {na
 
 # ---- the two fleet sweeps obey the switch with no change of their own ----------
 
-real_default = frs._DEFAULT_PROJECTS_TOML
-frs._DEFAULT_PROJECTS_TOML = scoped
+real_override = os.environ.get(frs.PROJECTS_TOML_ENV_VAR)
+os.environ[frs.PROJECTS_TOML_ENV_VAR] = str(scoped)
 try:
     swept = dss.scan(str(fleet_root))
     seen = {r["repo"] for b in swept.values() for r in b}
@@ -97,7 +98,10 @@ try:
     check(audited["enumerated"] == 2 and "asleep" not in seen,
           f"/audit-fleet's scan skips the switched-off repo: {audited['enumerated']} enumerated, {seen}")
 finally:
-    frs._DEFAULT_PROJECTS_TOML = real_default
+    if real_override is None:
+        os.environ.pop(frs.PROJECTS_TOML_ENV_VAR, None)
+    else:
+        os.environ[frs.PROJECTS_TOML_ENV_VAR] = real_override
 
 # ---- a missing local file fails loudly, naming the example ---------------------
 
@@ -113,6 +117,40 @@ for label, call in (
     except frs.ProjectsTomlMissing as exc:
         msg = str(exc)
     check("projects.toml.example" in msg, f"{label} raises ProjectsTomlMissing naming the example: {msg!r}")
+
+# The env override is explicit: it redirects a default read, and pointing it at an
+# absent file still raises rather than falling back to the example.
+real_override = os.environ.get(frs.PROJECTS_TOML_ENV_VAR)
+try:
+    os.environ[frs.PROJECTS_TOML_ENV_VAR] = str(scoped)
+    check(set(frs.fleet_repos()) == {"awake"}, "the env override redirects a default fleet_repos() read")
+    os.environ[frs.PROJECTS_TOML_ENV_VAR] = str(missing)
+    try:
+        frs.fleet_repos()
+        msg = ""
+    except frs.ProjectsTomlMissing as exc:
+        msg = str(exc)
+    check("projects.toml.example" in msg, f"an override naming an absent file raises, never falls back: {msg!r}")
+finally:
+    if real_override is None:
+        os.environ.pop(frs.PROJECTS_TOML_ENV_VAR, None)
+    else:
+        os.environ[frs.PROJECTS_TOML_ENV_VAR] = real_override
+
+# The gate hands `build_data` the example when the local list is absent; the
+# runtime default must keep raising.
+_spec = importlib.util.spec_from_file_location(
+    "system_map_build_data", ROOT / ".claude" / "skills" / "system-map" / "build_data.py")
+bd = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(bd)
+check(set(bd.fleet_repos(EXAMPLE)) == set(frs.fleet_repos(EXAMPLE)), "build_data.fleet_repos reads the path it is given")
+check(bd.regenerate(projects_toml=scoped).startswith(bd.HEADER), "build_data.regenerate builds from a given list, local file absent or not")
+try:
+    bd.regenerate(projects_toml=missing)
+    msg = ""
+except frs.ProjectsTomlMissing as exc:
+    msg = str(exc)
+check("projects.toml.example" in msg, f"build_data.regenerate raises ProjectsTomlMissing on a missing list: {msg!r}")
 
 # ---- the writer ------------------------------------------------------------------
 
@@ -132,11 +170,14 @@ check(after_dormant == before, "set dormant changes architecture_ignore and noth
 check(fst.set_status(active_repo, fst.ACTIVE, scratch) == "changed", "set active reports changed")
 check(scratch.read_bytes() == original, "dormant then active round-trips the file byte for byte")
 
+# `original` is the working copy of the example, which `core.autocrlf` may have
+# checked out with CRLF already; normalise before doubling the carriage returns.
+crlf_bytes = original.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
 crlf = base / "crlf.toml"
-crlf.write_bytes(original.replace(b"\n", b"\r\n"))
+crlf.write_bytes(crlf_bytes)
 fst.set_status(active_repo, fst.DORMANT, crlf)
 fst.set_status(active_repo, fst.ACTIVE, crlf)
-check(crlf.read_bytes() == original.replace(b"\n", b"\r\n"), "a CRLF file round-trips byte for byte")
+check(crlf.read_bytes() == crlf_bytes, "a CRLF file round-trips byte for byte")
 
 
 def refusal(*args: object) -> str:

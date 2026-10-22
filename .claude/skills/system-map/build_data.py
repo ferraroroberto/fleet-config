@@ -241,12 +241,14 @@ def serialize(data: dict) -> str:
     return HEADER + "window.FLEET = {\n" + ",\n".join(parts) + "\n};\n"
 
 
-def regenerate(refused: list[str] | None = None) -> str:
+def regenerate(refused: list[str] | None = None, projects_toml: Path = PROJECTS_TOML) -> str:
     """Build the aggregated fleet data and return the serialized ``fleet.data.js``.
 
     Over-cap descriptions are reported through ``refused`` (see ``build``).
+    ``projects_toml`` is the fleet list; only the acceptance gate passes the
+    tracked example, every runtime caller keeps the machine-local default.
     """
-    return serialize(build(load_residual(), fleet_repos(), refused))
+    return serialize(build(load_residual(), fleet_repos(projects_toml), refused))
 
 
 def main(argv: list[str] | None = None) -> int:

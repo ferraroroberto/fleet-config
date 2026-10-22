@@ -86,6 +86,27 @@ NO_DOTENV = str(Path(tempfile.gettempdir()) / "fleet-config-test-no-dotenv.env")
 TEMP_STATE_DIR = str(Path(tempfile.mkdtemp(prefix="fleet-config-acceptance-state-")))
 
 
+def gate_projects_toml() -> Path:
+    """The fleet list the gate reads: the machine-local file, else the tracked example.
+
+    A fresh clone or a new worktree has only `hooks/projects.toml.example`, and
+    the gate must still run there.
+    """
+    local = REPO / "hooks" / "projects.toml"
+    return local if local.is_file() else REPO / "hooks" / "projects.toml.example"
+
+
+def seed_fleet_list_env() -> None:
+    """Point `fleet_repo_scan`'s default reads, child suites included, at `gate_projects_toml()`.
+
+    The suite then exercises the fleet-run code with no local list while the
+    runtime keeps failing loudly without it. An override already in the
+    environment wins. The hooks' own registry variable is left alone: hooks fall
+    back to the example themselves.
+    """
+    os.environ.setdefault("FLEET_PROJECTS_TOML", str(gate_projects_toml()))
+
+
 def hook_env(extra_env: Dict[str, str] | None = None) -> Dict[str, str]:
     """The isolated environment every hook subprocess in the suite runs under.
 
