@@ -506,6 +506,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "throwaway tree with the real ruff and jscpd: baselined hits pass, a new "
      "unused import or duplicate block fails by name, a missing prerequisite "
      "is a hard failure (fleet-config#1514)"),
+    ("docs_ratchet_gate", "test_docs_ratchet_gate.py",
+     "the docs ratchet stage's exit-code mapping -- 3 (could not count) fails "
+     "as NOT CONFIRMED instead of landing in SKIP the way `shared.SKIP_EXIT` "
+     "would read it -- and the acceptance criteria on a throwaway git tree: a "
+     "baselined marker passes, an added issue reference or changelog heading "
+     "fails by name, an unclosed fence is exit 3 (fleet-config#1542)"),
     ("skip_delta", "test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "

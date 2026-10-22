@@ -13,7 +13,8 @@ acceptance matrix + foreign-harness parity (`hook_matrix`), architecture/
 fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
 scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
 (`tree_boundary`), the duplicate/unused-code ratchet (`static_ratchet_gate`),
-and the standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
+the README-size and docs history-marker ratchet (`docs_ratchet_gate`), and the
+standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
 The substantive per-hook unit-check functions are the `checks_*` modules, one
 per domain (fleet-config#680, finishing the #502 split that left them piled in
@@ -118,6 +119,7 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
     _scheduled_skill_timeouts_named_check,
 )
 from acceptance import gate_routing  # noqa: E402
+from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
@@ -361,6 +363,10 @@ def main() -> int:
     # run_unit, not run_unit3: exit 3 (a detector could not run) is a failure
     # here, never a skip -- see static_ratchet_gate's docstring.
     run_unit(_static_ratchet_check)
+
+    # ---- README size + history markers in the docs vs the baseline (#1542) ----
+    # run_unit for the same reason: exit 3 (could not count) fails, never skips.
+    run_unit(_docs_ratchet_check)
 
     # ---- hooks/ never imports across into skills/_lib (fleet-config#564) ----
     run_unit(_hooks_tree_boundary_check)
