@@ -57,6 +57,35 @@ These routes keep dormant repos, each for its own reason. A new fleet-wide route
 
 A hit passes when its file names `ignored_repos`, `split_dormant`, `list_status`, `get_status`, `include_dormant` or `SKIPPED_DORMANT` (an `include_ignored=True` call needs an entry regardless), or when `tests/acceptance/fleet_scope_allowlist.json` lists the file and pattern with a reason. The allow-list carries the routes of the two tables above that the scan matches, plus prose that names a route only to rule it out; an entry with no reason, an unknown pattern or no remaining match fails as drift. The failure names the file, line and pattern. The scan is textual and errs noisy: a new route obeys the switch, or joins the allow-list and the table above with its reason.
 
+## An active repo needs a gate
+
+An active repo has a recognised verification gate, or it is dormant. `skills/_lib/fleet_gate.py` answers it per repo (`gate_verdict()`) and fleet-wide (`survey()`); the CLI prints the same report, and a digest reads `survey()` directly:
+
+```powershell
+& E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/fleet_gate.py
+```
+
+A repo has a gate when its committed default branch carries any of these forms (`GATE_SCRIPTS`, `RATCHET_NAMES` and friends in the module hold the list):
+
+| Form | Evidence |
+|---|---|
+| `gate_cmd` | set in the repo's own `projects.toml` table |
+| `scripts/verify-before-ship.ps1` | the file is tracked |
+| `scripts/verify.js` | the file is tracked |
+| `package.json` | `scripts.verify` is a non-empty command; a `package.json` without one is not a gate |
+| a ratchet in a test | a tracked `tests/**/*.py` names `static_ratchet`, `docs_ratchet` or `structure_ratchet` |
+
+Evidence is read with `git show` and `git grep` against the default branch, so a dirty or off-branch checkout does not change the answer.
+
+Each active repo lands in one bucket:
+
+- **gated**: a form above matched.
+- **ungated**: the checkout was read and no form matched. These are the names to fix by adding a gate or flipping the repo to dormant.
+- **unknown**: the answer could not be established (no checkout, no default-branch ref, an unparsable `package.json` with no other form). It is reported on its own line and never counted as gated.
+- **skipped (dormant)**: listed by name, not inspected.
+
+The `fleet_gate` acceptance check prints this report and is advisory, as the report's header says: its inputs are sibling checkouts, so an ungated or unknown repo is counted as skipped and never fails the run.
+
 ## When the local file is missing
 
 Each reader fails in the way that is safe for it:

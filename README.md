@@ -35,8 +35,9 @@ work in this repo doesn't cost the whole catalogue:
   the migration recipes for an agent home that already holds real files.
 - **[`docs/fleet-scope.md`](docs/fleet-scope.md)** — which repos fleet-wide
   runs reach: the machine-local `hooks/projects.toml` and its tracked example,
-  the `architecture_ignore` switch, the `fleet_status.py` writer, and every
-  enumeration route's treatment.
+  the `architecture_ignore` switch, the `fleet_status.py` writer, every
+  enumeration route's treatment, and the rule that an active repo has a
+  recognised gate (`fleet_gate.py`).
 - **[`docs/fleet-private-backup.md`](docs/fleet-private-backup.md)** — the
   daily backup of everything git ignores, native Claude/Codex sessions, and
   the relocated runtime-data root (`C:/sqlite`), including explicit-deletion-

@@ -15,6 +15,7 @@ import io
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import List, Tuple
 
@@ -423,6 +424,46 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
         "or list it in [global] architecture_ignore to keep it off the map on purpose.",
     )
 
+    return check.failures, check.total, check.skipped
+
+
+def _fleet_gate_check() -> Tuple[int, int, int]:
+    """An active fleet repo has a recognised gate, or it is dormant.
+
+    Advisory, like `_fleet_toml_check`'s fleet-wide half: every input is a
+    sibling checkout, so no commit here can make a repo's gate appear and a
+    sibling's contents must never turn this repo's gate red (fleet-config#562).
+    `fleet_gate.survey` owns the answer; this check prints its report and
+    counts each bucket that needs attention as skipped, never failed. A repo
+    whose gate could not be established is reported as `unknown` on its own
+    line, never folded into "has a gate". Returns (failures, total, skipped).
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fleet_gate", REPO / "skills" / "_lib" / "fleet_gate.py")
+    gate = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = gate  # @dataclass resolves its module through sys.modules
+    spec.loader.exec_module(gate)  # type: ignore[union-attr]
+
+    root = REPO.parent  # the fleet lives beside this checkout
+    survey =gate.survey(root, gate_projects_toml())
+    print(gate.format_report(survey))
+
+    check = _Checker()
+    if not survey.gated and not survey.ungated:
+        print(f"SKIP  fleet_gate: no fleet checkouts found beside this checkout in {root} (skipped)")
+        return 0, 0, 1
+    check.advisory(
+        f"fleet_gate: every active repo has a recognised gate (ungated: {survey.ungated or 'none'})",
+        not survey.ungated,
+        "add a gate (docs/fleet-scope.md lists the recognised forms) or mark the repo dormant:\n"
+        "E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/fleet_status.py set <repo> dormant",
+    )
+    check.advisory(
+        f"fleet_gate: every active repo's gate could be established (unknown: {sorted(survey.unknown) or 'none'})",
+        not survey.unknown,
+        "\n".join(f"{name}: {why}" for name, why in survey.unknown.items()),
+    )
     return check.failures, check.total, check.skipped
 
 
