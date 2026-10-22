@@ -216,9 +216,6 @@ cwd_prefix = "E:/automation/mcp-personal-onedrive"
 cwd_prefix          = "E:/automation/minecraft-bedrock-bot"
 gate_cmd            = "npm run verify"
 
-[notion-automation-files]
-cwd_prefix = "E:/automation/notion-automation-files"
-
 [oracle-to-gcp]
 cwd_prefix = "E:/automation/oracle-to-gcp"
 
@@ -242,9 +239,6 @@ cwd_prefix = "E:/automation/pvgis"
 
 [social-media-analytics]
 cwd_prefix = "E:/automation/social-media-analytics"
-
-[suna]
-cwd_prefix = "E:/automation/suna"
 
 [task-os]
 cwd_prefix          = "E:/automation/task-os"
@@ -289,10 +283,8 @@ telegram_chat_log       = "-1004387099086"   # activity record and weekly digest
 #   skills/_lib/fleet_status.py set <repo> active|dormant
 # which edits this machine's file only. See docs/fleet-scope.md.
 architecture_ignore = [
-  "suna",                    # vendored/external open-source AI-agent platform
   "externalrisk",           # out of scope for the personal-fleet map
   "arboldelossuenos",       # out of scope for the personal-fleet map
-  "notion-automation-files", # legacy
 ]
 
 # ---- Daily fleet-private backup ------------------------------------------------
