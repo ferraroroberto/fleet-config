@@ -172,6 +172,9 @@ with tempfile.TemporaryDirectory() as _td:
     _old = time.time() - 15 * 24 * 3600          # the 2026-08-01 shape
     os.utime(_lock, (_old, _old))
 
+    # The structure section reads the digest state over gh; keep this fixture offline.
+    _no_state = mock.patch.object(fas, "_load_digest_state", return_value="")
+    _no_state.start()
     _res = fas.scan(str(_root), only="locked-fixture", dry_run=True)
 
     # `.get` deliberately, not `[...]`: against pre-fix code this must fail as
@@ -201,6 +204,7 @@ with tempfile.TemporaryDirectory() as _td:
     # operation is an established fact, not an unknown.
     os.utime(_lock, None)
     _res2 = fas.scan(str(_root), only="locked-fixture", dry_run=True)
+    _no_state.stop()
     check(_res2.get("stale_lock") == [] and [e["repo"] for e in _res2["skipped"]] == ["locked-fixture"],
           f"scan: a fresh lock is a skip, not a stale-lock report, got {_res2!r}")
     check("index-lock" in _res2["skipped"][0]["reason"],

@@ -30,6 +30,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "on its own"),
     ("fleet_audit_scan", "test_fleet_audit_scan.py",
      "`is_fleet_repo` is testable on its own"),
+    ("structure_debt", "acceptance/test_structure_debt.py",
+     "the digest's structure-baseline section -- counts and excess per kind, "
+     "`not adopted` and `unknown` as their own states, a grown baseline in the "
+     "headline and a shrunk one not, and the numbers read from origin's default "
+     "branch while the working tree differs (fleet-config#1552)"),
     ("fleet_scope", "test_fleet_scope.py",
      "the architecture_ignore switch across both enumerators and both fleet "
      "sweeps, the loud missing-registry error, and the writer's byte-exact "
