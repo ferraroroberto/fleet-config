@@ -2,11 +2,14 @@
   "version": 1,
   "tools": {"jscpd": "5.4.0", "ruff": "0.17.1"},
   "entries": [
+    {"key": "dup:1f292fe64cc3:scripts/docs_ratchet.py|scripts/structure_ratchet.py", "files": ["scripts/docs_ratchet.py", "scripts/structure_ratchet.py"]},
     {"key": "dup:4142de0c9bd6:tests/test_docs_ratchet_gate.py|tests/test_static_ratchet_gate.py", "files": ["tests/test_docs_ratchet_gate.py", "tests/test_static_ratchet_gate.py"]},
     {"key": "dup:4306bb086600:scripts/docs_ratchet.py|scripts/static_ratchet.py", "files": ["scripts/docs_ratchet.py", "scripts/static_ratchet.py"]},
     {"key": "dup:44b95bbfc985:tests/acceptance/docs_ratchet_gate.py|tests/acceptance/static_ratchet_gate.py", "files": ["tests/acceptance/docs_ratchet_gate.py", "tests/acceptance/static_ratchet_gate.py"]},
+    {"key": "dup:44b95bbfc985:tests/acceptance/docs_ratchet_gate.py|tests/acceptance/structure_ratchet_gate.py", "files": ["tests/acceptance/docs_ratchet_gate.py", "tests/acceptance/structure_ratchet_gate.py"]},
     {"key": "dup:8195c09528f8:hooks/_lib.py|skills/_lib/hooks_state.py", "files": ["hooks/_lib.py", "skills/_lib/hooks_state.py"]},
     {"key": "dup:c33a84fcfc16:hooks/_lib.py|skills/_lib/hooks_state.py", "files": ["hooks/_lib.py", "skills/_lib/hooks_state.py"]},
+    {"key": "dup:d325ac24b9dc:scripts/docs_ratchet.py|scripts/structure_ratchet.py", "files": ["scripts/docs_ratchet.py", "scripts/structure_ratchet.py"]},
     {"key": "dup:de56b4edb5d0:tests/test_docs_ratchet_gate.py|tests/test_static_ratchet_gate.py", "files": ["tests/test_docs_ratchet_gate.py", "tests/test_static_ratchet_gate.py"]}
   ]
 }

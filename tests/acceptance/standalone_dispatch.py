@@ -519,6 +519,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "would read it -- and the acceptance criteria on a throwaway git tree: a "
      "baselined marker passes, an added issue reference or changelog heading "
      "fails by name, an unclosed fence is exit 3 (fleet-config#1542)"),
+    ("structure_ratchet_gate", "acceptance/test_structure_ratchet_gate.py",
+     "the structure ratchet stage's exit-code mapping -- 3 (could not "
+     "measure) fails as NOT CONFIRMED instead of landing in SKIP the way "
+     "`shared.SKIP_EXIT` would read it -- and the acceptance criteria on a "
+     "throwaway git tree: a line appended to a baselined file or a new "
+     "101-line function fails with the teaching message and reverting "
+     "passes, an unparseable Python file is exit 3 (fleet-config#1549)"),
     ("skip_delta", "test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "

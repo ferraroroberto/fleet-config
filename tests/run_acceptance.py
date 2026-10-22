@@ -14,6 +14,7 @@ fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
 scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
 (`tree_boundary`), the duplicate/unused-code ratchet (`static_ratchet_gate`),
 the README-size and docs history-marker ratchet (`docs_ratchet_gate`), the
+file/function/directory-size and root-layout ratchet (`structure_ratchet_gate`), the
 fleet-scope enumeration guard (`fleet_scope_guard`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
@@ -132,7 +133,10 @@ from acceptance.spawn_scanner import (  # noqa: E402
 )
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
+from acceptance.structure_ratchet_gate import _structure_ratchet_check  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
+
+_RATCHET_CHECKS = (_static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check)
 
 
 def main() -> int:
@@ -373,14 +377,12 @@ def main() -> int:
     # ---- every runtime `git` spawn routes through run_git (#667 / #677) ----
     run_unit(_git_wrapper_unit_check)
 
-    # ---- no new duplicate block / unused import vs the baseline (#1514) ----
-    # run_unit, not run_unit3: exit 3 (a detector could not run) is a failure
+    # ---- baseline ratchets: duplicate/unused code (#1514), README + docs history
+    # markers (#1542), file/function/directory size + root layout (#1549) ----
+    # run_unit, not run_unit3: exit 3 (could not establish the count) is a failure
     # here, never a skip -- see static_ratchet_gate's docstring.
-    run_unit(_static_ratchet_check)
-
-    # ---- README size + history markers in the docs vs the baseline (#1542) ----
-    # run_unit for the same reason: exit 3 (could not count) fails, never skips.
-    run_unit(_docs_ratchet_check)
+    for _ratchet in _RATCHET_CHECKS:
+        run_unit(_ratchet)
 
     # ---- fleet enumeration routes obey the dormant switch or are allow-listed (#1548) ----
     # run_unit: a dedicated check, never a skip-able standalone_dispatch row.
