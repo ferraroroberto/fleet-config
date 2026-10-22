@@ -222,7 +222,10 @@ def _chief_steer_convention_unit_checks() -> Tuple[int, int]:
 
     skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
     brief = (REPO / ".claude" / "skills" / "chief" / "dispatch-brief.md").read_text(encoding="utf-8")
-    ops = (REPO / "skills" / "_lib" / "chief_ops.py").read_text(encoding="utf-8")
+    # The CLI entry point plus the `chief/` package that holds its body.
+    ops_parts = [REPO / "skills" / "_lib" / "chief_ops.py",
+                 *sorted((REPO / "skills" / "_lib" / "chief").glob("*.py"))]
+    ops = "\n".join(p.read_text(encoding="utf-8") for p in ops_parts)
     # docs/skills.md is an index since the per-skill split (#1515): the skill
     # prose lives in docs/skills/*.md, so the index and every part are read together.
     docs_parts = [REPO / "docs" / "skills.md", *sorted((REPO / "docs" / "skills").glob("*.md"))]
@@ -236,7 +239,7 @@ def _chief_steer_convention_unit_checks() -> Tuple[int, int]:
 
     # ---- the marker is gone, everywhere it was ever taught ----
     for label, text in (("chief/SKILL.md", skill), ("chief/dispatch-brief.md", brief),
-                        ("chief_ops.py", ops), ("docs/skills.md", docs)):
+                        ("chief_ops.py + chief/", ops), ("docs/skills.md", docs)):
         check(f"steer#622: no `CHIEF - ` marker in {label}",
               "CHIEF - " not in text and "CHIEF -\n" not in text)
 

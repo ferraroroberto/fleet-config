@@ -54,14 +54,14 @@ def publish(inbox: Path, name: str, **fields) -> None:
 
 def cli(inbox: Path, *argv: str) -> "tuple[int, str]":
     """`chief_ops.main` against `inbox`, at the injected clock T0."""
-    old_dir, old_now = co.chief_inbox_dir, co._now_ms
-    co.chief_inbox_dir, co._now_ms = (lambda: inbox), (lambda: T0)
+    old_dir, old_now = co.mailbox.chief_inbox_dir, co.mailbox._now_ms
+    co.mailbox.chief_inbox_dir, co.mailbox._now_ms = (lambda: inbox), (lambda: T0)
     try:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = co.main(list(argv))
     finally:
-        co.chief_inbox_dir, co._now_ms = old_dir, old_now
+        co.mailbox.chief_inbox_dir, co.mailbox._now_ms = old_dir, old_now
     return code, out.getvalue()
 
 
@@ -152,7 +152,7 @@ try:
 
     # ---- inbox and wait-event coexist: no event is read twice -------------
     inbox = tmp / "e" / "chief-inbox"
-    now_ms = co._now_ms()
+    now_ms = co.mailbox._now_ms()
     for n in range(60):
         publish(inbox, f"{now_ms + n}-{n:032x}.json", number=n, ts=iso(now_ms))
     seen: "list[list]" = [[], []]
@@ -182,7 +182,7 @@ try:
     # that claimer moving it out of this reader's claim ("move": not found).
     elsewhere = tmp / "other-claimer"
     elsewhere.mkdir()
-    real_read, real_backoff = Path.read_text, co.CLAIM_READ_BACKOFF_SECONDS
+    real_read, real_backoff = Path.read_text, co.mailbox.CLAIM_READ_BACKOFF_SECONDS
     plan: "dict[str, list]" = {}
 
     def injected_read(self, *args, **kwargs):
@@ -210,12 +210,12 @@ try:
     def arm(inbox: Path) -> None:
         for n, event_id in ids.items():
             # Stamped by the real clock: wait-event filters its 24 h TTL by it.
-            publish(inbox, f"{T0 + n}-{event_id}.json", number=n, ts=iso(co._now_ms()))
+            publish(inbox, f"{T0 + n}-{event_id}.json", number=n, ts=iso(co.mailbox._now_ms()))
         plan.clear()
         plan.update({ids[0]: ["lock", "lock"], ids[1]: ["move"],
                      ids[2]: ["lock"] * co.CLAIM_READ_ATTEMPTS})
 
-    co.CLAIM_READ_BACKOFF_SECONDS = 0.0
+    co.mailbox.CLAIM_READ_BACKOFF_SECONDS = 0.0
     Path.read_text = injected_read
     try:
         inbox = tmp / "h" / "chief-inbox"
@@ -253,7 +253,7 @@ try:
         check(any("unreadable after" in line for line in breadcrumbs),
               f"read retry: inbox logs the claim it left unread ({breadcrumbs})")
     finally:
-        Path.read_text, co.CLAIM_READ_BACKOFF_SECONDS = real_read, real_backoff
+        Path.read_text, co.mailbox.CLAIM_READ_BACKOFF_SECONDS = real_read, real_backoff
         co.LOGGER.removeHandler(collector)
         co.LOGGER.propagate = True
         co.LOGGER.setLevel(old_level)

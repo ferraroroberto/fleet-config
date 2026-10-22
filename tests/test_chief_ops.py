@@ -203,16 +203,16 @@ check(
 # ---- caller_session_id: the launcher's own id space (fleet-config#838/#848) --
 
 check(
-    co.caller_session_id({"APP_LAUNCHER_SESSION_ID": _CHIEF_SID}) == _CHIEF_SID,
+    co.rails.caller_session_id({"APP_LAUNCHER_SESSION_ID": _CHIEF_SID}) == _CHIEF_SID,
     "caller_session_id reads APP_LAUNCHER_SESSION_ID",
 )
 check(
-    co.caller_session_id({}) is None,
+    co.rails.caller_session_id({}) is None,
     "caller_session_id is None outside a launcher session -- no exclusion, "
     "so a hand-run chief_ops keeps the pre-#838 behaviour",
 )
 check(
-    co.caller_session_id({"APP_LAUNCHER_SESSION_ID": "   "}) is None,
+    co.rails.caller_session_id({"APP_LAUNCHER_SESSION_ID": "   "}) is None,
     "caller_session_id treats a blank stamp as absent, never as a sid",
 )
 
@@ -301,8 +301,8 @@ for _name in ("finalize_delivery", "classify_exchange_marker", "pending_reason_k
               "last_output_age_seconds", "recent_output_window", "format_output_age",
               "format_verdict_line", "VERDICT_REASONS", "INPUT_NEGATIVE_REASONS",
               "DEFAULT_VERIFY_POLL_INTERVAL"):
-    check(getattr(co, _name) is getattr(sd, _name),
-          f"steer_delivery: chief_ops.{_name} is steer_delivery's own object, not a copy")
+    check(getattr(_owner := co.cli if _name == "DEFAULT_VERIFY_POLL_INTERVAL" else co.commands, _name) is getattr(sd, _name),
+          f"steer_delivery: {_owner.__name__}.{_name} is steer_delivery's own object, not a copy")
 check("chief_ops" not in sd.__dict__,
       "steer_delivery: does not import chief_ops back -- the dependency runs one way")
 
@@ -412,14 +412,14 @@ def _run_exchange(sid, board_columns, exchange_result=None):
             return exchange_result
         raise AssertionError(f"unexpected path: {path}")
 
-    prior = co._request
-    co._request = _fake_request
+    prior = co.launcher._request
+    co.launcher._request = _fake_request
     try:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = co.cmd_exchange(argparse.Namespace(sid=sid, tail=2000, base_url=co.DEFAULT_BASE_URL))
     finally:
-        co._request = prior
+        co.launcher._request = prior
     return rc, buf.getvalue(), calls
 
 
@@ -479,8 +479,8 @@ def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, 
             }]}
         raise AssertionError(f"unexpected path: {path}")
 
-    prior = co._request
-    co._request = _fake_request
+    prior = co.launcher._request
+    co.launcher._request = _fake_request
     try:
         args = argparse.Namespace(
             sid="target-1", file=None, verify=True, timeout=timeout,
@@ -494,7 +494,7 @@ def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, 
         finally:
             sys.stdin = prior_stdin
     finally:
-        co._request = prior
+        co.launcher._request = prior
     return rc, calls
 
 
@@ -591,9 +591,9 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
             return {"session": {"session_id": "spawned-1"}, "launched": launched}
         raise AssertionError(f"unexpected path: {path}")
 
-    prior_request, prior_mark = co._request, co.chief_managed.mark
+    prior_request, prior_mark = co.launcher._request, co.chief_managed.mark
     prior_env = os.environ.get(co.LAUNCHER_SESSION_ID_ENV_VAR)
-    co._request = _fake_request
+    co.launcher._request = _fake_request
     co.chief_managed.mark = lambda *a, **k: {}
     if env_sid is None:
         os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
@@ -610,7 +610,7 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         _run_dispatch.last_output = out.getvalue()
         _run_dispatch.last_requested = requested
     finally:
-        co._request, co.chief_managed.mark = prior_request, prior_mark
+        co.launcher._request, co.chief_managed.mark = prior_request, prior_mark
         if prior_env is None:
             os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
         else:
@@ -683,8 +683,8 @@ finally:
 # gets its own long timeout, like JOBS_TIMEOUT, well above the observed 41 s.
 
 _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
-check(getattr(co, "DISPATCH_TIMEOUT", 0) >= 90.0
-      and _run_dispatch.start_timeout == getattr(co, "DISPATCH_TIMEOUT", None),
+check(getattr(co.commands, "DISPATCH_TIMEOUT", 0) >= 90.0
+      and _run_dispatch.start_timeout == getattr(co.commands, "DISPATCH_TIMEOUT", None),
       "cmd_dispatch: the start POST uses DISPATCH_TIMEOUT (>= 90 s), not the 10 s default (#1329)")
 
 for _label, _exc in (
@@ -807,13 +807,13 @@ def _run_board(jobs):
         if path == "/api/jobs":
             return jobs
         raise AssertionError(f"unexpected path: {path}")
-    prior = co._request
-    co._request = _fake_request
+    prior = co.launcher._request
+    co.launcher._request = _fake_request
     try:
         with contextlib.redirect_stdout(io.StringIO()) as out:
             co.cmd_board(argparse.Namespace(base_url=co.DEFAULT_BASE_URL, json=False))
     finally:
-        co._request = prior
+        co.launcher._request = prior
     return out.getvalue()
 
 
@@ -1035,7 +1035,7 @@ _state_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_dispatch_"))
 _prior_state_dir = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
 _prior_launcher_sid = os.environ.get("APP_LAUNCHER_SESSION_ID")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_state_tmp)
-_prior_request = co._request
+_prior_request = co.launcher._request
 try:
     _calls = []
 
@@ -1051,7 +1051,7 @@ try:
             return {"jobs": []}
         raise AssertionError(f"unexpected path: {path}")
 
-    co._request = _fake_request
+    co.launcher._request = _fake_request
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
         brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
@@ -1072,7 +1072,7 @@ try:
         "cmd_dispatch actually posted /api/board/issues/start",
     )
 finally:
-    co._request = _prior_request
+    co.launcher._request = _prior_request
     if _prior_state_dir is None:
         os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
     else:
@@ -1088,7 +1088,7 @@ finally:
 # ---- cmd_dispatch: an explicit worker_cap of 0 must fail closed (fleet-config#709) ----
 # `int(x or 3)` treats `0` as falsy and silently substitutes the default, so an
 # operator who set worker_cap: 0 to pause dispatch got fleet dispatch anyway.
-_prior_request = co._request
+_prior_request = co.launcher._request
 try:
     def _zero_cap_request(base_url, path, method="GET", body=None, timeout=10.0):
         if path == "/api/board":
@@ -1097,7 +1097,7 @@ try:
             return {"settings": {"worker_cap": 0}}
         raise AssertionError(f"unexpected path: {path}")
 
-    co._request = _zero_cap_request
+    co.launcher._request = _zero_cap_request
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
         brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
@@ -1105,7 +1105,7 @@ try:
     rc = co.cmd_dispatch(args)
     check(rc == 1, "cmd_dispatch: worker_cap=0 -> refused, not silently defaulted to 3")
 finally:
-    co._request = _prior_request
+    co.launcher._request = _prior_request
 
 
 # ---- verify: an unreadable repo is UNKNOWN, never DIRTY (fleet-config#570) ----
@@ -1397,15 +1397,15 @@ try:
                 raise post_result
             return post_result
 
-        _orig = (co.post_session_input, co.fetch_exchange_marker,
-                 co._request, co.fetch_session_card)
-        co.post_session_input = _fake_post
-        co.fetch_exchange_marker = lambda *a, **k: (
+        _orig = (co.launcher.post_session_input, co.launcher.fetch_exchange_marker,
+                 co.launcher._request, co.launcher.fetch_session_card)
+        co.launcher.post_session_input = _fake_post
+        co.launcher.fetch_exchange_marker = lambda *a, **k: (
             marker or {"available": False, "timestamp": None})
-        co._request = lambda base, path, **k: (
+        co.launcher._request = lambda base, path, **k: (
             {"columns": {"claude_turn": [{"session_id": "sid123", "status": status}]}}
             if path == "/api/board" else {})
-        co.fetch_session_card = _fake_card
+        co.launcher.fetch_session_card = _fake_card
         try:
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
@@ -1414,8 +1414,8 @@ try:
                     timeout=timeout, poll_interval=0.0, base_url=co.DEFAULT_BASE_URL))
             return rc, buf.getvalue(), calls["n"]
         finally:
-            (co.post_session_input, co.fetch_exchange_marker,
-             co._request, co.fetch_session_card) = _orig
+            (co.launcher.post_session_input, co.launcher.fetch_exchange_marker,
+             co.launcher._request, co.launcher.fetch_session_card) = _orig
 
     # 202 deferred -> PENDING, exit 1, exactly one POST.
     _rc, _out, _n = _run_say({"ok": True, "reason": "deferred", "error": None})
@@ -1586,14 +1586,14 @@ def _run_sid_cmd(fn, sid, *, kill=False):
         seen["path"] = path
         return {}
 
-    _orig = (co._request, co.post_session_input)
-    co._request = _fake_request
+    _orig = (co.launcher._request, co.launcher.post_session_input)
+    co.launcher._request = _fake_request
 
     def _fake_post(base_url, s, text):
         seen["path"] = f"/api/claude-code/sessions/{s}/input"
         return {"ok": True, "reason": "ok", "error": None}
 
-    co.post_session_input = _fake_post
+    co.launcher.post_session_input = _fake_post
     try:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -1603,7 +1603,7 @@ def _run_sid_cmd(fn, sid, *, kill=False):
             rc = fn(args)
         return rc, buf.getvalue(), seen["path"]
     finally:
-        co._request, co.post_session_input = _orig
+        co.launcher._request, co.launcher.post_session_input = _orig
 
 
 _prefix_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_prefix_"))
@@ -1695,8 +1695,8 @@ try:
     check(got == [], "wait_for_events: an empty inbox returns [] at the timeout")
 
     # Real timing: a writer thread's event makes the waiter return within the interval.
-    old_dir = co.chief_inbox_dir
-    co.chief_inbox_dir = lambda: inbox
+    old_dir = co.mailbox.chief_inbox_dir
+    co.mailbox.chief_inbox_dir = lambda: inbox
     try:
         threading.Timer(0.5, lambda: publish("7-g.json", number=3, ts=real_ts())).start()
         started = time.monotonic()
@@ -1708,18 +1708,18 @@ try:
               f"wait-event CLI: exits soon after an event lands (took {took:.1f}s)")
 
         board_calls = []
-        old_request = co._request
-        co._request = lambda base, path: board_calls.append(path) or {}
+        old_request = co.launcher._request
+        co.launcher._request = lambda base, path: board_calls.append(path) or {}
         try:
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 code = co.main(["wait-event", "--timeout", "0.3", "--interval", "0.1"])
         finally:
-            co._request = old_request
+            co.launcher._request = old_request
         check(code == 0 and out.getvalue().startswith("WAIT_EVENT=timeout") and board_calls == ["/api/board"],
               "wait-event CLI: an empty inbox times out with the board digest")
     finally:
-        co.chief_inbox_dir = old_dir
+        co.mailbox.chief_inbox_dir = old_dir
 finally:
     shutil.rmtree(_inbox_tmp, ignore_errors=True)
 
@@ -1752,14 +1752,14 @@ def _run_wake(reply):
             raise reply
         return reply
 
-    old_request = co._request
-    co._request = fake_request
+    old_request = co.launcher._request
+    co.launcher._request = fake_request
     try:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = co.main(["wake"])
     finally:
-        co._request = old_request
+        co.launcher._request = old_request
     return code, out.getvalue().strip(), calls
 
 
@@ -1815,7 +1815,7 @@ check("unknown" in refusals["unknown"] and "below threshold (17% < 30%)" == refu
 check(co.self_compact_refusal(30, 30, 10, 10) is None, "self_compact_refusal: at the threshold with a fresh refresh -> proceed")
 
 _compact_tmp = Path(tempfile.mkdtemp(prefix="self_compact_"))
-_saved = (co._request, co.caller_session_id, os.environ.get("CLAUDE_HOOKS_STATE_DIR"))
+_saved = (co.launcher._request, co.rails.caller_session_id, os.environ.get("CLAUDE_HOOKS_STATE_DIR"))
 try:
     os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_compact_tmp)
     (_compact_tmp / "chief-handover.md").write_text("fresh", encoding="utf-8")
@@ -1838,8 +1838,8 @@ try:
             return {"reason": "deferred"}
         raise AssertionError(f"unexpected launcher call {method} {path}")
 
-    co._request = fake_request
-    co.caller_session_id = lambda env=None: world["caller"]
+    co.launcher._request = fake_request
+    co.rails.caller_session_id = lambda env=None: world["caller"]
 
     def self_compact(*extra):
         out = io.StringIO()
@@ -1893,7 +1893,7 @@ try:
         code = co.main(["context"])
     check(code == 1 and "percent=unknown" in out.getvalue(), "context CLI: a null percentage prints unknown and exits 1")
 finally:
-    co._request, co.caller_session_id = _saved[0], _saved[1]
+    co.launcher._request, co.rails.caller_session_id = _saved[0], _saved[1]
     if _saved[2] is None:
         os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
     else:

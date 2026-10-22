@@ -6,7 +6,7 @@
   },
   {
     "pattern": "include_ignored",
-    "files": ["skills/_lib/chief_ops.py"],
+    "files": ["skills/_lib/chief/rails.py"],
     "reason": "resolves a repo name the user typed; a dormant repo must still resolve"
   },
   {
