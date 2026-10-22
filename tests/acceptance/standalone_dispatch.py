@@ -275,6 +275,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "needs-input event and type nothing into the chief; no live chief or a "
      "failed write pings Telegram as before, unretried; the real wait-event "
      "digest line the chief sees (fleet-config#1456)"),
+    ("chief_job_failed", "test_chief_job_failed.py",
+     "a failed app-launcher Job through the mailbox -- the real inbox and "
+     "wait-event render a job-failed event (head line, detail line, excerpt, "
+     "null exit_code/repo, not-confirmed, any trigger as-is), count and ack it "
+     "like every kind, and leave v1, v2 and needs-input lines unchanged "
+     "(fleet-config#1539)"),
     ("chief_mailbox", "test_chief_mailbox.py",
      "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
      "an unacked claim after the stale window (injected clock), the "
