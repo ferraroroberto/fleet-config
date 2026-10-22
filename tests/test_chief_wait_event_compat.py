@@ -48,15 +48,15 @@ def stamp(seconds_ago: int) -> str:
 
 
 def run_wait_event(inbox: Path, *argv: str) -> "tuple[int, str]":
-    old_dir, old_request = co.chief_inbox_dir, co._request
-    co.chief_inbox_dir = lambda: inbox
-    co._request = lambda base, path: {}  # the timeout path's board digest, never a live launcher
+    old_dir, old_request = co.mailbox.chief_inbox_dir, co.launcher._request
+    co.mailbox.chief_inbox_dir = lambda: inbox
+    co.launcher._request = lambda base, path: {}  # the timeout path's board digest, never a live launcher
     try:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = co.main(["wait-event", *argv])
     finally:
-        co.chief_inbox_dir, co._request = old_dir, old_request
+        co.mailbox.chief_inbox_dir, co.launcher._request = old_dir, old_request
     return code, out.getvalue()
 
 

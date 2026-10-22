@@ -207,8 +207,8 @@ check(lines[2].endswith("-> unknown") and "gh error" in lines[2], "sessions: a f
 # ---- CLI ------------------------------------------------------------------------
 
 board = {"columns": {"claude_turn": [{"session_id": "s", "alive": True, "project_dir": str(TMP / "work-wt-7")}]}}
-saved_request = co._request
-co._request = lambda *_a, **_k: board
+saved_request = co.launcher._request
+co.launcher._request = lambda *_a, **_k: board
 try:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -228,7 +228,7 @@ try:
     def unreachable(*_a, **_k):
         raise OSError("connection refused")
 
-    co._request = unreachable
+    co.launcher._request = unreachable
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         code = co.main(["sweep", "--root", str(TMP), "--apply"])
@@ -236,6 +236,6 @@ try:
           and (TMP / "work-wt-4").exists() and "unknown      work-wt-7" in out.getvalue(),
           "CLI: with the board unreadable --apply removes nothing and says unknown")
 finally:
-    co._request = saved_request
+    co.launcher._request = saved_request
 
 _h.report_and_exit("test_chief_sweep")

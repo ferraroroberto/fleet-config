@@ -2,7 +2,7 @@
 
 The durable channel from chief-managed workers to the fleet chief. Every worker turn-end, session exit and permission gate becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (app-launcher#1645, step 5/7 of #1372) may later tell the chief to read. It carries no data.
 
-This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s, #1645) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief_ops.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`). The tests named under [Conformance](#conformance) pin every rule below.
+This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s, #1645) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief/mailbox.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`, behind the `chief_ops.py` CLI). The tests named under [Conformance](#conformance) pin every rule below.
 
 ## Directory layout
 
@@ -114,7 +114,7 @@ A reader that only needs to know *whether there is work* (the doorbell) counts b
 
 - **R**: entries directly in `chief-inbox/` that are regular files, whose name ends in `.json` and does **not** start with `.`.
 - **S**: entries directly in `chief-inbox/.claimed/` that are regular files, whose name ends in `.json` and does not start with `.`, **and** whose claim is stale. A claim is stale when its name matches `^(\d+)-(.+)\.json$` and `now_ms - int(group 1) >= CLAIM_STALE_MS`, **or** when the name does not match that pattern at all (a claim with no readable time counts as stale, erring toward waking the chief).
-- `CLAIM_STALE_MS` = **900,000** (15 minutes, `chief_ops.CLAIM_STALE_SECONDS`).
+- `CLAIM_STALE_MS` = **900,000** (15 minutes, `chief.mailbox.CLAIM_STALE_SECONDS`).
 
 Never counted:
 
