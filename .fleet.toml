@@ -6,6 +6,7 @@
 layer       = "governance"
 icon        = "⚙️"
 description = "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."
+shape       = "skills-governance"
 
 # [vendored] -- components copied byte-for-byte from project-scaffolding, with the
 # scaffold commit each came from. Re-vendor through /propagate-vendored, never by hand.

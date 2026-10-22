@@ -38,6 +38,8 @@ stderr); the regenerated file then carries that repo's residual fallback card.
     port         = ":8444"
     chips        = ["whisper :8090"]
     tag          = ["→", "Notion"]  # [relation, target]
+    shape        = "webapp-tray"    # validated, not shown on the card; ids in fleet_toml.SHAPES
+    extra_roots  = ["custom_components"]  # deliberate top-level dirs the shape does not list
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import fleet_repo_scan  # noqa: E402
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -157,6 +160,7 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
     for required in ("icon", "description"):
         if not meta.get(required):
             raise ValueError(f"{repo_name}: .fleet.toml is missing required `{required}`")
+    fleet_toml.validate_layout(repo_name, meta)
     cap = DESCRIPTION_CAP[layer]
     if len(meta["description"]) > cap:
         raise DescriptionTooLong(
