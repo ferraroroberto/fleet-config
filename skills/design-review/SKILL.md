@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: Review a running fleet web app's rendered design — live measurement in real browsers (phone/desktop × light/dark), rubric score, fresh-context judge, ledger diff, one HTML report with now-vs-proposed mock-ups. `file` upserts findings into the repo's managed issue; `fleet` sweeps every declared web app; `full-app` runs the whole-app redesign review. Never starts, restarts or kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
+description: Review a running fleet web app's rendered design — real-browser measurement (phone/desktop, light/dark), rubric score, fresh-context judge, ledger diff, HTML now-vs-proposed mock-up report. `file` upserts the managed issue, `fleet` sweeps all apps, `full-app` runs the whole-app redesign. Never starts/restarts/kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
 ---
 
 # design-review
