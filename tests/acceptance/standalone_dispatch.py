@@ -188,19 +188,49 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the tailnet-cert drift truth table -- LAN-only stays clean, an "
      "already-migrated app stays clean, only a tailnet-reachable "
      "self-signed-only app trips -- is testable on its own (fleet-config#210)"),
-    ("design_lint", "test_design_lint.py",
-     "/design-sync v2's deterministic lenses -- spec frontmatter "
-     "parsing, custom-prop extraction (P3/comment immunity), alias "
-     "mapping, adoption ratios, contract checks, vendored byte-compare, "
-     "and sibling duplicate detection -- are testable on their own "
+    ("design_lint_tokens", "design_lint/test_tokens.py",
+     "design_lint's token layer -- spec frontmatter parsing, custom-prop "
+     "extraction (P3/comment immunity), alias mapping and adoption "
+     "ratios -- is testable on its own (fleet-config#277)"),
+    ("design_lint_contracts_core", "design_lint/test_contracts_core.py",
+     "design_lint's core contract checks -- the green-switch decision, "
+     "focus ring, nav shell, viewport zoom lock, button tiers, theme and "
+     "text-size settings, typography -- are testable on their own "
      "(fleet-config#277)"),
-    ("design_review", "test_design_review.py",
-     "/design-review's deterministic core -- rubric load/validate, spec-token "
-     "threshold + measurement-floor resolution, the scoring formula on one "
-     "compliant and one violating fixture metrics.json, run-to-run determinism, "
-     "the unmeasured lattice (dead target, failed tab, failed section never "
-     "read as a pass), and the NOT_LISTENING-vs-TIMEOUT probe -- is testable "
-     "on its own (fleet-config#971)"),
+    ("design_lint_icons", "design_lint/test_icon_contracts.py",
+     "design_lint's icon contracts -- emoji vs Lucide, comment and char-"
+     "class immunity, vendored-bundle scope, the app-icon family and "
+     "chevron placement -- are testable on their own (fleet-config#284)"),
+    ("design_lint_layout", "design_lint/test_layout_contracts.py",
+     "design_lint's layout contracts -- nav nesting, the row-height "
+     "scale and its false positives, evidence file:line, the native-"
+     "checkbox ban -- are testable on their own (fleet-config#843)"),
+    ("design_lint_modal", "design_lint/test_modal_hit_target_contracts.py",
+     "design_lint's editor-modal, hit-target, chart and async-lifecycle "
+     "contracts are testable on their own (fleet-config#307, #342)"),
+    ("design_lint_vendored", "design_lint/test_vendored_and_exceptions.py",
+     "design_lint's vendored byte-compare, sibling duplicate detection, "
+     "shipped-spec smoke, accepted exceptions and the retired range-tab "
+     "are testable on their own (fleet-config#836, #1407)"),
+    ("design_review_rubric", "design_review/test_rubric_and_nav_rules.py",
+     "design_review's rubric load/validate, spec-token threshold "
+     "resolution and the layout, type, action-row and navigation rules "
+     "are testable on their own (fleet-config#971)"),
+    ("design_review_evaluate", "design_review/test_component_rules_and_evaluate.py",
+     "design_review's component, text and layout rules, then evaluate on "
+     "the compliant and violating fixtures, determinism and the "
+     "unmeasured lattice -- a dead target, failed tab or failed section "
+     "is never read as a pass -- are testable on their own (fleet- "
+     "config#971)"),
+    ("design_review_plan", "design_review/test_plan_and_e2e.py",
+     "design_review's plan resolution, the missing-target and theme- "
+     "mismatch states, the synthetic instance and `measure --e2e` are "
+     "testable on their own (fleet-config#995, #1498, #1507)"),
+    ("design_review_walk", "design_review/test_walk.py",
+     "design_review's capture probe (NOT_LISTENING vs TIMEOUT) and walk "
+     "-- error classification, oversize captures, every walk_context arm "
+     "and its golden browser trace -- are testable on their own (fleet- "
+     "config#1085, #1244)"),
     ("design_review_browser", "test_design_review_browser.py",
      "/design-review's browser leg -- the measure and walk CLIs against the "
      "static fixture pages through a sibling venv's Playwright, skipped honestly "

@@ -3,7 +3,7 @@
   "entries": [
     {"key": "dir:hooks", "modules": 43},
     {"key": "dir:skills/_lib", "modules": 64},
-    {"key": "dir:tests", "modules": 112},
+    {"key": "dir:tests", "modules": 110},
     {"key": "fn:.claude/skills/context-audit/audit.py:main", "lines": 102},
     {"key": "fn:.claude/skills/context-purge/digest.py:render_html", "lines": 181},
     {"key": "fn:.claude/skills/context-purge/digest.py:render_markdown", "lines": 121},
@@ -74,8 +74,6 @@
     {"key": "size:tests/acceptance/checks_notify.py", "lines": 1250},
     {"key": "size:tests/test_chief_ops.py", "lines": 1904},
     {"key": "size:tests/test_claude_progress.py", "lines": 1362},
-    {"key": "size:tests/test_design_lint.py", "lines": 2184},
-    {"key": "size:tests/test_design_review.py", "lines": 2328},
     {"key": "size:tests/test_design_review_browser.py", "lines": 1355},
     {"key": "size:tests/test_e2e_value.py", "lines": 1114},
     {"key": "size:tests/test_fleet_private_backup.py", "lines": 1485},

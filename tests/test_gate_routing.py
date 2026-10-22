@@ -30,7 +30,7 @@ check(all((REPO / p).exists() for p in SURFACE), f"every routed prefix exists on
 check(gr.matches("skills/_lib/design_review/walk.py", SURFACE), "a file under a directory prefix matches")
 check(gr.matches("design.rubric.toml", SURFACE), "an exact file prefix matches")
 check(not gr.matches("skills/_lib/design_review_extra.py", SURFACE), "a sibling that merely shares the directory name does not match")
-check(not gr.matches("hooks/_lib.py", SURFACE) and not gr.matches("tests/test_design_review.py", SURFACE),
+check(not gr.matches("hooks/_lib.py", SURFACE) and not gr.matches("tests/design_review/test_walk.py", SURFACE),
       "an unrelated hook and the pure-logic suite do not match")
 
 # ---- routed_out over a stubbed diff ----

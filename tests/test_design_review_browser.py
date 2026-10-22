@@ -1,4 +1,4 @@
-"""Browser leg of the design-review suite (fleet-config#971, split out of test_design_review.py in #1481).
+"""Browser leg of the design-review suite (fleet-config#971).
 
 Drives `measure` and the walk against the static fixture pages in
 `tests/fixtures/design_review/` through whichever sibling fleet checkout has Playwright in its
@@ -7,7 +7,7 @@ Drives `measure` and the walk against the static fixture pages in
 surface changed (`tests/acceptance/gate_routing.py`); `GATE_FULL=1` forces it. No sibling
 Playwright is reported as a skip — never a pass.
 
-The pure-logic leg is `tests/test_design_review.py`.
+The pure-logic leg is the suites in `tests/design_review/`.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_review_browser.py`  (also invoked by tests/run_acceptance.py)
 """

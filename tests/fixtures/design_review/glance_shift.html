@@ -2,7 +2,7 @@
 <!-- Fixture for LAYOUT-10, a glance card that changes height as late reads land (fleet-config#1354): the grocery
      full-app review found a tab's first card growing row by row as its reads came back, pushing the list down
      under the thumb. design.md's glance card contract: every row is drawn at once, a dash for a value still loading.
-     Served over loopback by tests/test_design_review.py, whose `/late?ms=N` answers after N ms; `?case=` picks the page.
+     Served over loopback by tests/design_review/, whose `/late?ms=N` answers after N ms; `?case=` picks the page.
      Each case has two tabs: Today reads at load, History reads when its tab is clicked (the tracker has to see the
      click's first paint without the walk racing it).
        fail     both cards draw a title, then append three rows when their read lands; Today's read takes 5 s, past the
@@ -21,7 +21,7 @@
        last     the fail cards with nothing under them: a card that is its pane's last content moves nothing as
                 it grows -> not applicable
        none     no card under either header, only a paragraph -> not applicable
-     Asserted by tests/test_design_review.py. -->
+     Asserted by tests/design_review/. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
