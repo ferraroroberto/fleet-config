@@ -43,6 +43,19 @@ These routes keep dormant repos, each for its own reason. A new fleet-wide route
 | `service_probe` via `fleet_repo_tables()` | restart and deploy-coverage checks | a dormant repo's app may still be running |
 | `hooks/backup/select.py` `iter_repos` | the daily private backup | a backup never skips a repo for being idle |
 | `chief_sweep.py` | worktree housekeeping | residue in a dormant repo is still residue |
+| `/issue-batch` bare-number lookup (`gh search issues --owner`) | `/issue-batch` | an issue the user names must resolve in any repo |
+| `chief_ops.py` repo-name resolution, `/design-review <repo>` target resolution | `/chief`, `/design-review` | a repo the user names must resolve |
+
+## The guard
+
+`tests/acceptance/fleet_scope_guard.py` fails the gate on a fleet enumeration route that neither handles the status nor is listed above. It scans `hooks/`, `skills/` and `.claude/skills/` (`.py` and `SKILL.md`; `tests/` is exempt) for:
+
+- `fleet_repo_tables(`, which is unfiltered by design;
+- `fleet_repos(` and `iter_fleet_repos(` called with `include_ignored=True`, the explicit opt-out (their defaults already drop dormant repos);
+- `gh repo list` and `gh search issues --owner`, as a command line or an argv list;
+- `.iterdir()` within ten lines of a `".git"` test, an ad hoc crawl of a directory of repos.
+
+A hit passes when its file names `ignored_repos`, `split_dormant`, `list_status`, `get_status`, `include_dormant` or `SKIPPED_DORMANT` (an `include_ignored=True` call needs an entry regardless), or when `tests/acceptance/fleet_scope_allowlist.json` lists the file and pattern with a reason. The allow-list carries the routes of the two tables above that the scan matches, plus prose that names a route only to rule it out; an entry with no reason, an unknown pattern or no remaining match fails as drift. The failure names the file, line and pattern. The scan is textual and errs noisy: a new route obeys the switch, or joins the allow-list and the table above with its reason.
 
 ## When the local file is missing
 

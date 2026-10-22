@@ -1,0 +1,42 @@
+[
+  {
+    "pattern": "fleet_repo_tables",
+    "files": ["skills/_lib/design_review/plan.py", "skills/_lib/service_probe.py"],
+    "reason": "answers what a repo declares (a port, a tray command) for a repo the caller names or whose app may still be running, not which repos a run reaches"
+  },
+  {
+    "pattern": "include_ignored",
+    "files": ["skills/_lib/chief_ops.py"],
+    "reason": "resolves a repo name the user typed; a dormant repo must still resolve"
+  },
+  {
+    "pattern": "gh_repo_list",
+    "files": [".claude/skills/learning-log/gather.py", ".claude/skills/learning-log/SKILL.md"],
+    "reason": "reads merged history across the owner's repos; it is not a run over repos"
+  },
+  {
+    "pattern": "gh_search_issues",
+    "files": [".claude/skills/audit-fleet/SKILL.md", "skills/_lib/issue_state_gate.py"],
+    "reason": "names the Search-API route as the one not to use, in prose"
+  },
+  {
+    "pattern": "gh_search_issues",
+    "files": ["skills/issue-batch/SKILL.md"],
+    "reason": "resolves bare issue numbers the user typed; a named issue must resolve even in a dormant repo"
+  },
+  {
+    "pattern": "iterdir_git",
+    "files": ["hooks/backup/select.py"],
+    "reason": "the daily backup never skips a repo for being idle"
+  },
+  {
+    "pattern": "iterdir_git",
+    "files": ["skills/_lib/chief_sweep.py"],
+    "reason": "worktree housekeeping: residue in a dormant repo is still residue"
+  },
+  {
+    "pattern": "iterdir_git",
+    "files": ["skills/_lib/branch_residue.py"],
+    "reason": "lists the sibling worktree folders of one named repo, not a directory of repos"
+  }
+]
