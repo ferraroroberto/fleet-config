@@ -352,7 +352,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         return args.func(args)
-    except (ValueError, urllib.error.URLError) as exc:
+    except (ValueError, urllib.error.URLError, TimeoutError) as exc:
+        failure = launcher.transport_failure(exc)
+        if failure is not None:
+            print(failure[0])
+            return failure[1]
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

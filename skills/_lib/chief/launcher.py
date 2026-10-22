@@ -27,6 +27,9 @@ DEFAULT_OWNER = "ferraroroberto"
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# Default per-request budget; the `UNCONFIRMED=` line names it.
+REQUEST_TIMEOUT = 10.0
+
 # `/api/jobs` shells out to schtasks per job: ~4 s cold, well under 1 s warm.
 JOBS_TIMEOUT = 30.0
 
@@ -43,6 +46,30 @@ def assert_loopback(url: str) -> None:
     host = urllib.parse.urlsplit(url).hostname
     if host is None or host.lower() not in LOOPBACK_HOSTS:
         raise ValueError(f"chief_ops refuses a non-loopback host: {host!r}")
+
+
+def is_timeout(exc: BaseException) -> bool:
+    """True for a read timeout (raw `TimeoutError`) or a connect timeout
+    (`URLError` wrapping one)."""
+    if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
+        exc = exc.reason if isinstance(exc.reason, BaseException) else exc
+    return isinstance(exc, TimeoutError)
+
+
+def transport_failure(exc: BaseException) -> Optional[Tuple[str, int]]:
+    """`(stdout line, exit code)` for a launcher call that got no answer, or
+    None for anything else (an HTTP status, a bad body) so it keeps its own
+    handling.
+
+    Two distinct states, never folded together: `UNCONFIRMED` -- the launcher
+    stayed silent past the budget, so a write may still have landed -- and
+    `UNREACHABLE` -- the connection itself failed, so nothing was sent.
+    """
+    if is_timeout(exc):
+        return f"UNCONFIRMED=timeout after {REQUEST_TIMEOUT:g}s", 1
+    if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
+        return f"UNREACHABLE={exc.reason}", 2
+    return None
 
 
 # ---- launcher reads behind one command each ---------------------------------
@@ -114,7 +141,7 @@ def _request(
     path: str,
     method: str = "GET",
     body: Optional[dict] = None,
-    timeout: float = 10.0,
+    timeout: float = REQUEST_TIMEOUT,
 ) -> Dict[str, Any]:
     url = base_url.rstrip("/") + path
     assert_loopback(url)

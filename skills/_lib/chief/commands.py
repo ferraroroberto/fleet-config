@@ -469,11 +469,33 @@ def cmd_stop(args: argparse.Namespace) -> int:
         print(f"UNRESOLVABLE reason={reason}")
         return 1
     mode = "kill" if args.kill else "quit"
-    launcher._request(
-        args.base_url, f"/api/claude-code/sessions/{resolved_sid}/stop",
-        method="POST", body={"mode": mode},
-    )
+    try:
+        launcher._request(
+            args.base_url, f"/api/claude-code/sessions/{resolved_sid}/stop",
+            method="POST", body={"mode": mode},
+        )
+    except (TimeoutError, urllib.error.URLError) as exc:
+        if not launcher.is_timeout(exc):
+            raise
+        return _stop_after_timeout(args.base_url, resolved_sid, mode)
     print(f"STOPPED sid={resolved_sid} mode={mode}")
+    return 0
+
+
+def _stop_after_timeout(base_url: str, sid: str, mode: str) -> int:
+    """The stop POST went unanswered: one board read says whether it landed.
+    The write alone is never taken as success, and an unreadable board is
+    left as `UNCONFIRMED`."""
+    try:
+        board = launcher._request(base_url, "/api/board")
+    except (TimeoutError, urllib.error.URLError, ValueError) as exc:
+        print(f"UNCONFIRMED=timeout after {launcher.REQUEST_TIMEOUT:g}s; "
+              f"follow-up board read failed ({type(exc).__name__}) sid={sid} mode={mode}")
+        return 1
+    if rails.session_holds_live_pty(board.get("columns") or {}, sid):
+        print(f"STILL_LIVE sid={sid} mode={mode} (stop timed out; the board still shows the session alive)")
+        return 1
+    print(f"STOPPED sid={sid} mode={mode} (stop timed out; the board no longer shows a live session)")
     return 0
 
 

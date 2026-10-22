@@ -307,6 +307,9 @@ just the launcher call):
   alluding to it.
 - Stop a worker: `chief_ops.py stop <sid>` (quit by default; add `--kill`
   only on an explicit "kill/force" ask).
+  A slow launcher prints `UNCONFIRMED=timeout ...` (exit 1; a write may have landed, so
+  re-read before retrying) and a dead one `UNREACHABLE=...` (exit 2); `stop` after a
+  timeout re-reads the board and prints `STOPPED` or `STILL_LIVE`.
 - Free-text goal (no issue yet): the launcher no longer takes free text
   (app-launcher#1382 removed the Board's free-text dispatch). File the issue
   first — `gh issue create` with `--assignee @me`, a type label and a
