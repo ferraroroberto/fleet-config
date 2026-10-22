@@ -9,7 +9,8 @@ One command replaces steps 1–5 and 6b for every declared web app:
 ```
 
 It walks every `hooks/projects.toml` table with a `webapp_port` in file
-order, **one app at a time** — probe, measure, evaluate, ledger + diff,
+order, except dormant repos ([fleet scope](../../docs/fleet-scope.md); a
+named `/design-review <repo>` still runs one), **one app at a time** — probe, measure, evaluate, ledger + diff,
 render — so never more than one browser is open. An app whose port is
 `NOT_LISTENING` or `TIMEOUT` gets an `unmeasured` run and ledger entry and is
 **never started, restarted or killed**; the sweep goes on. The judgment stage
@@ -20,7 +21,8 @@ sweep.
 
 Read `FLEET_DIR=`, `APPS=`, one `APP=<name> probe= unmeasured= grade= score=
 failed= fixed= regressed= new= run=` line per app, `MEASURED=`,
-`UNMEASURED_APPS=<name:reason,...>|none`, `SPEC=`, `SCAFFOLD=`,
+`UNMEASURED_APPS=<name:reason,...>|none`, `SKIPPED_DORMANT=<name,...>|none`
+(skipped on purpose, not unmeasured), `SPEC=`, `SCAFFOLD=`,
 `PROMOTED=` (an **app-owned rule failing in two or more apps** is promoted
 to the scaffold list once and left off every app issue), `JUDGMENT=skipped`,
 `FILING=dry-run|filed`, `ISSUE=<repo> <url | body path>` per repo,
@@ -38,7 +40,7 @@ Summary block for a sweep:
 ```
 /design-review fleet summary — <stamp> (rubric v<version>)
 
-  apps:       <n> declared · <n> measured · <n> unmeasured (<name:reason, …> | none)
+  apps:       <n> declared · <n> measured · <n> unmeasured (<name:reason, …> | none) · <n> dormant, skipped (<names | none>)
   <app>:      <grade> <score> · <n> app-owned · <n> promoted · <n> fixed / <n> regressed / <n> new   (per measured app)
   <app>:      unmeasured — <reason>                                                                   (per unmeasured app)
   spec:       <ids | none>   → fleet-config

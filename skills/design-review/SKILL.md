@@ -69,7 +69,8 @@ page text to an issue, PR or comment.
   run: without it step 6b is a dry run whose one summary line says what
   *would* be filed, and nothing reaches GitHub.
 - `fleet` → the **fleet sweep** (below): every `hooks/projects.toml` table
-  with a `webapp_port`, serially, one digest; `--devices` applies, the
+  with a `webapp_port` (dormant repos skipped, `docs/fleet-scope.md`),
+  serially, one digest; `--devices` applies, the
   judgment stage is skipped, `file` opts into filing the app issues and the
   two digest issues. No other target argument is accepted with `fleet`.
 - `full-app` → the **full-app review** (below): steps 1–5 on the target,

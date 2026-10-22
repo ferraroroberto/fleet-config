@@ -473,6 +473,7 @@ def cmd_fleet(args: argparse.Namespace) -> int:
     unm = [f"{a['target']}:{a['unmeasured']}" for a in dig["apps"] if a.get("unmeasured")]
     print(f"MEASURED={len(measured)}")
     print(f"UNMEASURED_APPS={','.join(unm) or 'none'}")
+    print(f"SKIPPED_DORMANT={','.join(dig.get('skipped_dormant', [])) or 'none'}")
     print(f"SPEC={','.join(s['id'] for s in dig['spec']) or 'none'}")
     print(f"SCAFFOLD={','.join(s['id'] for s in dig['scaffold'] if not s.get('promoted')) or 'none'}")
     print(f"PROMOTED={','.join(dig['promoted']) or 'none'}")

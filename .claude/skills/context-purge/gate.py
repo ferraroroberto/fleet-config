@@ -23,7 +23,8 @@ Surface enumeration:
              skills/*/SKILL.md, .claude/skills/*/SKILL.md.
   --fleet  — additionally every sister repo under E:\\automation\\: its
              CLAUDE.md + any .claude/skills/*/SKILL.md. Linked worktrees
-             (`.git` is a file) are skipped.
+             (`.git` is a file) and dormant repos (`docs/fleet-scope.md`)
+             are skipped; `gate` names the dormant ones as `SKIPPED_DORMANT`.
 
 CLI (run from anywhere; `reconcile` also shells out to `gh`):
   gate      [--fleet] [--json]   — print TO_PURGE / UNCHANGED and a summary
@@ -63,7 +64,7 @@ FLEET_ROOT = REPO_ROOT.parent
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 import git_run  # noqa: E402
 from audit_issue_client import run_audit_issue  # noqa: E402
-from fleet_repo_scan import is_linked_worktree  # noqa: E402
+from fleet_repo_scan import ignored_repos, is_linked_worktree  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Repo-relative (fleet-config#502), matching every other _lib cross-reference
@@ -259,6 +260,18 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
 
 # ---- surface enumeration ---------------------------------------------------
 
+def _sister_repos() -> list[Path]:
+    """Every sister checkout under the fleet root; a linked worktree is its primary's copy."""
+    return [p for p in sorted(FLEET_ROOT.iterdir())
+            if p.is_dir() and p != REPO_ROOT and (p / ".git").exists() and not is_linked_worktree(p)]
+
+
+def dormant_repos() -> list[str]:
+    """Sister repos a `--fleet` run leaves out because they are dormant (`docs/fleet-scope.md`)."""
+    dormant = ignored_repos()
+    return [p.name for p in _sister_repos() if p.name in dormant]
+
+
 def surface_files(fleet: bool) -> dict[str, Path]:
     """{ledger key: absolute path} for the requested surface."""
     out: dict[str, Path] = {}
@@ -274,10 +287,9 @@ def surface_files(fleet: bool) -> dict[str, Path]:
             add(skill_md)
 
     if fleet:
-        for repo_dir in sorted(p for p in FLEET_ROOT.iterdir() if p.is_dir()):
-            if repo_dir == REPO_ROOT or not (repo_dir / ".git").exists():
-                continue
-            if is_linked_worktree(repo_dir):
+        dormant = ignored_repos()
+        for repo_dir in _sister_repos():
+            if repo_dir.name in dormant:
                 continue
             add(repo_dir / "CLAUDE.md")
             for skill_md in sorted(repo_dir.glob(".claude/skills/*/SKILL.md")):
@@ -496,12 +508,15 @@ def main() -> int:
     if args.cmd == "gate":
         ledger = read_ledger()
         to_purge, unchanged = diff_ledger(current, ledger)
+        dormant = dormant_repos() if args.fleet else []
         if args.json:
-            print(json.dumps({"to_purge": to_purge, "unchanged": unchanged}, indent=2))
+            print(json.dumps({"to_purge": to_purge, "unchanged": unchanged, "skipped_dormant": dormant}, indent=2))
         else:
             for p in to_purge:
                 print(f"TO_PURGE  {p}")
             print(f"SUMMARY: to_purge={len(to_purge)} unchanged={len(unchanged)} surface={len(current)}")
+            if dormant:
+                print(f"SKIPPED_DORMANT={len(dormant)}: {', '.join(dormant)} (not assessed, not clean)")
         return 0
 
     # advance: merge assessed keys over the existing ledger, keep foreign keys.

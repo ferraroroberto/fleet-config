@@ -32,7 +32,7 @@ Then gate:
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py gate [--fleet]
 ```
 
-Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. `to_purge=0` → report "surface unchanged since last run" and stop (a valid, successful run). After the run, record every **assessed** file — both the rewritten ones and the ones judged already-lean (both count; neither should re-surface until edited):
+Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. With `--fleet`, dormant repos (`docs/fleet-scope.md`) are skipped and named on `SKIPPED_DORMANT=`: not assessed, so the surface is not clean for them. `to_purge=0` → report "surface unchanged since last run" and stop (a valid, successful run). After the run, record every **assessed** file — both the rewritten ones and the ones judged already-lean (both count; neither should re-surface until edited):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py advance [--fleet] --only <path> [<path> ...]

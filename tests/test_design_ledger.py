@@ -38,7 +38,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import audit_issue as ai  # noqa: E402
 from design_lint import accepted as lint_accepted  # noqa: E402
-from design_review import evaluate as ev, filing, fleet, ledger, report, rubric as rb  # noqa: E402
+from design_review import evaluate as ev, filing, fleet, ledger, plan, report, rubric as rb  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -130,7 +130,9 @@ check(ledger.previous("fixture-app", "20260922T000023Z")["run_id"] == "20260922T
 check(ledger.previous("fixture-app", "20260922T999999Z")["run_id"] == "20260922T000023Z", "an unrecorded run compares against the latest earlier entry")
 
 # The hub's build identity lives under /admin/, so live_build asks the path projects.toml declares for it (#1385).
-_hub_path = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))["local-llm-hub"].get("api_version_path")
+_fleet_list = REPO / "hooks" / "projects.toml"  # machine-local; a fresh clone or worktree has only the example
+_fleet_list = _fleet_list if _fleet_list.is_file() else _fleet_list.with_name("projects.toml.example")
+_hub_path = tomllib.loads(_fleet_list.read_text(encoding="utf-8"))["local-llm-hub"].get("api_version_path")
 _asked: list = []
 _real_running_sha = ledger.service_probe.running_sha
 ledger.service_probe.running_sha = lambda port, path: (_asked.append((port, path)), "445c838")[1]
@@ -416,6 +418,21 @@ fixture_toml.write_text(
     f'[app-b]\ncwd_prefix = "{(WORK / "app-b").as_posix()}"\nwebapp_port = 2\nbrowser_scheme = "http"\napi_version_path = "/api/version"\n'
     f'[not-a-web-app]\ncwd_prefix = "{(WORK / "n").as_posix()}"\n', encoding="utf-8")
 check([n for n, _ in fleet.fleet_targets(fixture_toml)] == ["app-a", "app-b"], "fleet targets = every table with a webapp_port, in file order")
+dormant_toml = WORK / "projects-dormant.toml"
+dormant_toml.write_text(fixture_toml.read_text(encoding="utf-8") + '[global]\narchitecture_ignore = ["app-b"]\n', encoding="utf-8")
+check([n for n, _ in fleet.fleet_targets(dormant_toml)] == ["app-a"] and fleet.dormant_targets(dormant_toml) == ["app-b"],
+      "a dormant web app leaves the fleet walk and is named as dormant, not dropped")
+check(fleet.dormant_targets(fixture_toml) == [], "no dormant list -> nothing skipped")
+check(plan.resolve_target("app-b", dormant_toml).name == "app-b", "a named single-target run still resolves a dormant repo")
+_dormant_out = WORK / "fleet-dormant"
+_dormant_out.mkdir()
+dig_d = fleet.run_fleet(rubric, _specs("violating"), ["desktop"], dormant_toml, file_issues=False, out_dir=_dormant_out,
+                        reviewer=lambda n, t: _review(n, violating),
+                        fetch=lambda r, k: {"number": None, "body": "", "duplicates": []},
+                        upsert=lambda r, k, t, b, l: "url", today="2026-09-22")
+check([a["target"] for a in dig_d["apps"]] == ["app-a"] and dig_d["skipped_dormant"] == ["app-b"]
+      and "Skipped (dormant, not walked): app-b" in (_dormant_out / "fleet-digest.html").read_text(encoding="utf-8"),
+      "a fleet run walks only the live app and records the dormant one as skipped in the digest json and page")
 _fetched: list = []
 _upserted: list = []
 out_dir = WORK / "fleet-1"

@@ -26,9 +26,23 @@ The two files must declare the same repo tables. A new repo, or a new key on one
 | `fleet_repo_scan.iter_fleet_repos()` | `/audit-fleet`, `/design-sweep`, `/fleet-10x` | drops dormant repos; a repo named through `only` (`--only`) still runs |
 | `fleet_repos(include_ignored=True)` | `chief_ops.py` repo-name resolution | keeps them: a repo the user names must resolve |
 | `iter_fleet_repos(include_ignored=True)` | the `fleet_membership` acceptance check | keeps them: a dormant repo is still declared |
-| `fleet_repo_tables()` | `service_probe`, `/design-review <repo>` target resolution | unfiltered: it answers what a repo declares, not whether a run reaches it |
+| `fleet_repo_tables()` | `/design-review <repo>` target resolution | unfiltered: it answers what a repo declares, not whether a run reaches it |
 | `_lib.load_registry()` | every hook | unfiltered: hooks serve any session in any repo |
-| owner-wide `gh repo list` and other direct walks | `/cleanup-fleet`, `/cleanup-fleet-all`, `/issue-triage`, `/learning-log`, `/design-review fleet`, `/context-purge`, `/context-audit`'s CLAUDE.md budget scan | do not read the switch yet |
+| `gh_issue_fetch.py fetch` (owner-wide `gh repo list`) | `/cleanup-fleet`, `/cleanup-fleet-all`, `/issue-triage`, `/audit-fleet`'s drift counts, `/chief` backlog search | drops dormant repos and still fetches a repo the list does not declare; `--include-dormant` fetches all; `SKIPPED_DORMANT=<n>: <names>` on stderr names what was dropped |
+| `design_review.fleet.fleet_targets()` | `/design-review fleet` | skips dormant web apps and records them in the digest as skipped (`skipped_dormant`, `SKIPPED_DORMANT=`), never as absent |
+| `audit.py`'s CLAUDE.md budget scan | `/context-audit` | drops dormant repos and lists them as `NOT MEASURED (dormant)`; their context cost is unknown, never zero, and an undeclared directory is still measured |
+| `gate.py`'s `surface_files()` | `/context-purge --fleet` | drops dormant repos and names them on `SKIPPED_DORMANT=`: not assessed, not clean |
+
+## Deliberately unfiltered
+
+These routes keep dormant repos, each for its own reason. A new fleet-wide route obeys the switch or joins this list with its reason.
+
+| Route | Used by | Why dormant repos stay |
+|---|---|---|
+| `learning-log/gather.py` `gh repo list` | `/learning-log` | it reads merged history, not a run over repos |
+| `service_probe` via `fleet_repo_tables()` | restart and deploy-coverage checks | a dormant repo's app may still be running |
+| `hooks/backup/select.py` `iter_repos` | the daily private backup | a backup never skips a repo for being idle |
+| `chief_sweep.py` | worktree housekeeping | residue in a dormant repo is still residue |
 
 ## When the local file is missing
 
