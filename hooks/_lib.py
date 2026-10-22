@@ -790,11 +790,13 @@ from registry import (  # noqa: E402
     DOTENV_PATH_ENV_VAR as DOTENV_PATH_ENV_VAR,
     PROJECTS_TOML as PROJECTS_TOML,
     PROJECTS_TOML_ENV_VAR as PROJECTS_TOML_ENV_VAR,
+    PROJECTS_TOML_EXAMPLE as PROJECTS_TOML_EXAMPLE,
     GlobalConfig as GlobalConfig,
     ProjectConfig as ProjectConfig,
     Registry as Registry,
     detect_project as detect_project,
     load_registry as load_registry,
+    projects_toml_path as projects_toml_path,
     resolve_board_url as resolve_board_url,
     resolve_notify_target as resolve_notify_target,
 )

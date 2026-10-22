@@ -30,6 +30,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "on its own"),
     ("fleet_audit_scan", "test_fleet_audit_scan.py",
      "`is_fleet_repo` is testable on its own"),
+    ("fleet_scope", "test_fleet_scope.py",
+     "the architecture_ignore switch across both enumerators and both fleet "
+     "sweeps, the loud missing-registry error, and the writer's byte-exact "
+     "round trip and refusals run against throwaway registries and fixture repos"),
     ("repo_preflight", "test_repo_preflight.py",
      "the per-repo availability gate -- classify_repo's ordering, the "
      "repos-vs-issues count split, `unknown` as its own state, and the "

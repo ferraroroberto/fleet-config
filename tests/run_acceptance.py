@@ -54,6 +54,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _gate_evidence_wiring_check,
     _mermaid_check,
     _installer_symmetry_check,
+    _projects_toml_contract_check,
     _manual_compact_never_gated_check,
     _readme_layout_check,
     _docs_links_check,
@@ -300,6 +301,9 @@ def main() -> int:
     # missing from it (fleet-config#640). run_unit3: skipped, not passed, when
     # there is no fleet beside this checkout to compare against.
     run_unit3(_fleet_membership_drift_check)
+
+    # ---- the machine-local registry and its tracked example agree ----
+    run_unit(_projects_toml_contract_check)
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     run_unit(_mermaid_check)

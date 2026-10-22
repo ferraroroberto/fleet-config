@@ -642,13 +642,14 @@ def resolve_repo_path(repo: str, repos: Optional[Dict[str, Any]] = None) -> Path
 
     `repos` is injectable (`{name: path}`) so this stays unit-testable
     without touching the real `hooks/projects.toml`; the CLI passes
-    `fleet_repo_scan.fleet_repos()` when omitted. Case-insensitive name
+    `fleet_repo_scan.fleet_repos(include_ignored=True)` when omitted (a named
+    repo resolves even when it is switched out of fleet runs). Case-insensitive name
     match, mirroring `worktree_claim.py`'s tolerant path/name resolution.
     """
     candidate = Path(repo)
     if candidate.is_dir():
         return candidate.resolve()
-    table = repos if repos is not None else fleet_repo_scan.fleet_repos()
+    table = repos if repos is not None else fleet_repo_scan.fleet_repos(include_ignored=True)
     if repo in table:
         return Path(table[repo]).resolve()
     lower = repo.lower()

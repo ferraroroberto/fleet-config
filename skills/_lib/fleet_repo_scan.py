@@ -3,6 +3,12 @@ logic behind /config-map's and /system-map's `build_data.py` (fleet-config#318),
 plus the filesystem-crawl half (`is_fleet_repo` / `iter_fleet_repos`) that
 /audit-fleet's and /design-sweep's scanners share (fleet-config#561).
 
+It also owns reading the fleet list itself. `hooks/projects.toml` is
+machine-local and gitignored (a tracked `hooks/projects.toml.example` carries
+the committed shape), and its `[global] architecture_ignore` array is the
+fleet-scope switch: a repo listed there is out of every fleet-wide run. See
+`docs/fleet-scope.md`.
+
 Both skills derive their per-repo data from the same `hooks/projects.toml`
 membership list, and both need each repo's committed default branch (to read
 state from `origin/HEAD`, independent of whatever branch the repo happens to
@@ -20,13 +26,46 @@ from __future__ import annotations
 import sys
 import tomllib
 from pathlib import Path
-from typing import Dict, Iterator, Optional
+from typing import Dict, FrozenSet, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 
 # skills/_lib/fleet_repo_scan.py -> repo root is two levels up.
 _DEFAULT_PROJECTS_TOML = Path(__file__).resolve().parent.parent.parent / "hooks" / "projects.toml"
+
+
+class ProjectsTomlMissing(FileNotFoundError):
+    """The machine-local fleet list is absent.
+
+    A fleet-wide run with no list must stop, never fall back to "no repos" or
+    "every repo"; the message names the tracked template to copy from.
+    """
+
+    def __init__(self, path: Path) -> None:
+        example = path.with_name(path.name + ".example")
+        super().__init__(
+            f"{path} is missing. It is machine-local and gitignored: copy "
+            f"{example.name} to {path.name} beside it (install.ps1 seeds it on a fresh clone)."
+        )
+        self.path = path
+
+
+def load_projects_toml(projects_toml: Optional[Path] = None) -> dict:
+    """Parse the fleet list, raising `ProjectsTomlMissing` when it is absent."""
+    path = Path(projects_toml) if projects_toml else _DEFAULT_PROJECTS_TOML
+    if not path.is_file():
+        raise ProjectsTomlMissing(path)
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def ignored_repos(projects_toml: Optional[Path] = None) -> FrozenSet[str]:
+    """The repos switched out of fleet-wide runs (`[global] architecture_ignore`)."""
+    return _ignored(load_projects_toml(projects_toml))
+
+
+def _ignored(toml: dict) -> FrozenSet[str]:
+    return frozenset(toml.get("global", {}).get("architecture_ignore", []))
 
 
 def fleet_repo_tables(projects_toml: Optional[Path] = None) -> Dict[str, dict]:
@@ -40,8 +79,7 @@ def fleet_repo_tables(projects_toml: Optional[Path] = None) -> Dict[str, dict]:
     ``[global] architecture_ignore``: that list says a repo is out of scope
     for the architecture map, never that it has no long-running process.
     """
-    path = Path(projects_toml) if projects_toml else _DEFAULT_PROJECTS_TOML
-    return _tables(tomllib.loads(path.read_text(encoding="utf-8")))
+    return _tables(load_projects_toml(projects_toml))
 
 
 def _tables(toml: dict) -> Dict[str, dict]:
@@ -52,14 +90,17 @@ def _tables(toml: dict) -> Dict[str, dict]:
     }
 
 
-def fleet_repos(projects_toml: Path = _DEFAULT_PROJECTS_TOML) -> Dict[str, Path]:
-    """Return ``{repo_name: repo_dir}`` for the architecture fleet.
+def fleet_repos(
+    projects_toml: Path = _DEFAULT_PROJECTS_TOML, *, include_ignored: bool = False
+) -> Dict[str, Path]:
+    """Return ``{repo_name: repo_dir}`` for the fleet in scope.
 
     Fleet = every ``[<name>]`` table carrying a ``cwd_prefix`` − the
-    ``[global] architecture_ignore`` list (vendored / legacy / out-of-scope).
+    ``[global] architecture_ignore`` switch. ``include_ignored=True`` keeps
+    the switched-off repos, for a caller resolving a repo the user named.
     """
-    toml = tomllib.loads(projects_toml.read_text(encoding="utf-8"))
-    ignore = set(toml.get("global", {}).get("architecture_ignore", []))
+    toml = load_projects_toml(projects_toml)
+    ignore = frozenset() if include_ignored else _ignored(toml)
     return {
         name: Path(tbl["cwd_prefix"])
         for name, tbl in _tables(toml).items()
@@ -100,7 +141,13 @@ def is_fleet_repo(remote_url: str | None) -> bool:
     return bool(remote_url) and "ferraroroberto/" in remote_url
 
 
-def iter_fleet_repos(root: str | Path, only: str | None = None) -> Iterator[Path]:
+def iter_fleet_repos(
+    root: str | Path,
+    only: str | None = None,
+    *,
+    include_ignored: bool = False,
+    projects_toml: Optional[Path] = None,
+) -> Iterator[Path]:
     """Yield every fleet repo directory directly under `root`, in name order.
 
     A directory qualifies when it is a real repo (`.git` is a **directory** —
@@ -111,16 +158,24 @@ def iter_fleet_repos(root: str | Path, only: str | None = None) -> Iterator[Path
     A directory whose `origin` can't be read is skipped silently — it isn't a
     fleet repo as far as this crawl can tell.
 
+    A repo switched off in `[global] architecture_ignore` is skipped unless
+    `include_ignored` is set or `only` names it: an explicit request runs. An
+    undeclared directory is still yielded; the `fleet_membership` acceptance
+    check fails it separately.
+
     `fleet_audit_scan.scan` and `design_sweep_scan.scan` carried this loop
     copy-pasted verbatim, comment and all (fleet-config#561), which is why the
     worktree guard had to be got right twice.
     """
+    ignore = frozenset() if (include_ignored or only) else ignored_repos(projects_toml)
     for d in sorted(Path(root).iterdir()):
         if not d.is_dir():
             continue
         if not (d / ".git").is_dir():
             continue
         if only and d.name != only:
+            continue
+        if d.name in ignore:
             continue
         try:
             remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])

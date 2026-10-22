@@ -22,7 +22,7 @@ Versioned home for user-scope coding-agent configuration. After `install.ps1`, `
 
 ## Adding a new fleet project
 
-New repo under `E:/automation/` → **always** add a minimal `hooks/projects.toml` entry before the `[global]` block, regenerate the maps and place it on the architecture map, all in the same PR — `tests/run_acceptance.py`'s `fleet_membership` check fails the gate by name otherwise (fleet-config#640). Entry shape, the three regeneration commands, the `ARCHITECTURE.md` row, the residual `_adopted` registry and `architecture_ignore`: [docs/adding-a-fleet-project.md](docs/adding-a-fleet-project.md).
+New repo under `E:/automation/` → **always** add a minimal entry before the `[global]` block of both the tracked `hooks/projects.toml.example` and the machine-local, gitignored `hooks/projects.toml`, regenerate the maps and place it on the architecture map, all in the same PR — `tests/run_acceptance.py`'s `fleet_membership` check fails the gate by name otherwise (fleet-config#640). Entry shape, the three regeneration commands, the `ARCHITECTURE.md` row, the residual `_adopted` registry and `architecture_ignore`: [docs/adding-a-fleet-project.md](docs/adding-a-fleet-project.md).
 
 ## Verification
 

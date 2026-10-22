@@ -181,10 +181,10 @@ class RepoOverrides:
 
 
 def _projects_toml_path(explicit: Optional[Path] = None) -> Path:
-    """Resolve projects.toml, honouring the same env override the hooks use."""
+    """Resolve projects.toml the same way the hooks do (env override, example fallback)."""
     if explicit is not None:
         return explicit
-    return Path(os.environ.get(_lib.PROJECTS_TOML_ENV_VAR) or _lib.PROJECTS_TOML)
+    return _lib.projects_toml_path()
 
 
 def _read_toml(path: Path) -> Dict[str, Any]:

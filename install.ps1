@@ -455,6 +455,14 @@ Install-OtelProjectProfileHook
 Install-AgyContextFilterPlugin
 Install-CopilotContextFilterHook
 
+# The fleet registry is machine-local and gitignored; a fresh clone starts from
+# the tracked template. An existing file is never overwritten.
+$ProjectsToml = Join-Path $RepoRoot 'hooks/projects.toml'
+if (-not (Test-Path -LiteralPath $ProjectsToml)) {
+    Copy-Item -LiteralPath "$ProjectsToml.example" -Destination $ProjectsToml
+    Write-Host "Seeded hooks/projects.toml from hooks/projects.toml.example"
+}
+
 # The same scoped manifest/reconcile engine backs install, diagnosis and teardown.
 & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') install --registered
 $discoveryExit = $LASTEXITCODE
