@@ -75,6 +75,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 - Implement only what was asked. No nice-to-haves.
 - Three similar lines beats a premature abstraction — add a helper on the third caller, not the second; don't wrap framework scaffolds on day one.
 - **Comments state the present-tense *why*.** Decision history and issue-number narratives live in the issue and `git log`, never in comments; a magic constant still gets its why-comment. Enforcement: `project-scaffolding`'s `docs/comment-ratchet.md`.
+- **Where code goes.** New code goes where the repo's `docs/layout.md` puts it. Where the structure ratchet is enabled it fails a file over 1,000 lines, a function over 100 lines, a directory past 40 modules or a `src`→`app` import, so split rather than grow.
 
 ## Workflow defaults
 
