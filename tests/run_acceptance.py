@@ -122,7 +122,7 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
 )
 from acceptance import gate_routing  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
-from acceptance.shared import _subprocess_unit_check  # noqa: E402
+from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
     _no_window_unit_check,
@@ -133,6 +133,7 @@ from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 
 def main() -> int:
+    seed_fleet_list_env()
     failures = 0
     total_checks = 0
     skipped_checks = 0

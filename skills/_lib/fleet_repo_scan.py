@@ -23,6 +23,7 @@ stdlib + the `git` CLI only (via `skills/_lib/git_run`).
 
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -33,6 +34,17 @@ import git_run  # noqa: E402
 
 # skills/_lib/fleet_repo_scan.py -> repo root is two levels up.
 _DEFAULT_PROJECTS_TOML = Path(__file__).resolve().parent.parent.parent / "hooks" / "projects.toml"
+# Redirects fleet-run reads only, never the hooks' registry (`CLAUDE_HOOKS_PROJECTS_TOML`):
+# suites that build their own temp registry tree must not be pulled onto another file.
+# Only the acceptance run sets it, to the tracked example; an unset variable never
+# falls back, so a fleet run with no list still stops.
+PROJECTS_TOML_ENV_VAR = "FLEET_PROJECTS_TOML"
+
+
+def default_projects_toml() -> Path:
+    """The fleet list a caller reads when it names none: the env override, else the local file."""
+    override = os.environ.get(PROJECTS_TOML_ENV_VAR)
+    return Path(override) if override else _DEFAULT_PROJECTS_TOML
 
 
 class ProjectsTomlMissing(FileNotFoundError):
@@ -53,7 +65,7 @@ class ProjectsTomlMissing(FileNotFoundError):
 
 def load_projects_toml(projects_toml: Optional[Path] = None) -> dict:
     """Parse the fleet list, raising `ProjectsTomlMissing` when it is absent."""
-    path = Path(projects_toml) if projects_toml else _DEFAULT_PROJECTS_TOML
+    path = Path(projects_toml) if projects_toml else default_projects_toml()
     if not path.is_file():
         raise ProjectsTomlMissing(path)
     return tomllib.loads(path.read_text(encoding="utf-8"))
@@ -91,7 +103,7 @@ def _tables(toml: dict) -> Dict[str, dict]:
 
 
 def fleet_repos(
-    projects_toml: Path = _DEFAULT_PROJECTS_TOML, *, include_ignored: bool = False
+    projects_toml: Optional[Path] = None, *, include_ignored: bool = False
 ) -> Dict[str, Path]:
     """Return ``{repo_name: repo_dir}`` for the fleet in scope.
 

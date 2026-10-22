@@ -425,9 +425,9 @@ def coverage(repos: dict[str, Path]) -> dict:
 # assemble + serialize
 # ---------------------------------------------------------------------------
 
-def build(residual: dict) -> dict:
+def build(residual: dict, projects_toml: Path = PROJECTS_TOML) -> dict:
     links = parse_install_links()
-    repos = fleet_repos()
+    repos = fleet_repos(projects_toml)
     hooks, helpers = hooks_inventory(residual)
     return {
         "agents": residual["agents"],
@@ -448,8 +448,8 @@ def serialize(data: dict) -> str:
     return HEADER + "window.CONFIG = " + body + ";\n"
 
 
-def regenerate() -> str:
-    return serialize(build(load_residual()))
+def regenerate(projects_toml: Path = PROJECTS_TOML) -> str:
+    return serialize(build(load_residual(), projects_toml))
 
 
 def main(argv: list[str] | None = None) -> int:

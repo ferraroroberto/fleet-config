@@ -32,6 +32,9 @@ from pathlib import Path
 # isolation only covers hook payload checks. Redirect it before the import, or
 # a gate run writes reservations into live fleet state.
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="wc-state-")
+# The gate points fleet-list readers at the example; this suite declares its own
+# temp registry trees, which the default read must reach.
+os.environ.pop("FLEET_PROJECTS_TOML", None)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import service_probe as sp  # noqa: E402

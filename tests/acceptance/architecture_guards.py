@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
-from acceptance.shared import REPO, _Checker
+from acceptance.shared import REPO, _Checker, gate_projects_toml
 
 
 # A card row is a markdown table row whose FIRST cell names the project, in
@@ -30,16 +30,6 @@ from acceptance.shared import REPO, _Checker
 # (fleet-config#681). Non-repo rows (`**Telegram**`, `**GPU**`) also match and are
 # harmless: the set is only ever tested for membership of known repo names.
 _CARD_ROW_RE = re.compile(r"^\|[^|]*?\*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\*[^|]*\|", re.MULTILINE)
-
-
-def _gate_projects_toml() -> Path:
-    """The registry the gate reads: the local file, else the tracked example.
-
-    `hooks/projects.toml` is machine-local, so a fresh clone or a new worktree
-    has only `hooks/projects.toml.example`; the gate must still run there.
-    """
-    local = REPO / "hooks" / "projects.toml"
-    return local if local.is_file() else REPO / "hooks" / "projects.toml.example"
 
 
 def _repo_tables(toml: dict) -> set:
@@ -105,7 +95,7 @@ def _system_map_coverage_check() -> Tuple[int, int]:
     arch = REPO / "architecture"
     declared: set = set()
     ignore: set = set()
-    for path in {_gate_projects_toml(), REPO / "hooks" / "projects.toml.example"}:
+    for path in {gate_projects_toml(), REPO / "hooks" / "projects.toml.example"}:
         toml = tomllib.loads(path.read_text(encoding="utf-8"))
         declared |= _repo_tables(toml)
         ignore |= set(toml.get("global", {}).get("architecture_ignore", []))
@@ -194,6 +184,7 @@ def _fleet_toml_check() -> Tuple[int, int, int]:
     spec.loader.exec_module(bd)
 
     committed_text = (REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8")
+    projects_toml = gate_projects_toml()
 
     # --- hard: fleet-config's own card, both sides committed in this repo ---
     own_detail = ""
@@ -216,7 +207,7 @@ def _fleet_toml_check() -> Tuple[int, int, int]:
 
     # --- advisory: everything below reads sibling repos' live checkouts ---
     try:
-        fresh, regen_err = bd.regenerate() == committed_text, ""
+        fresh, regen_err = bd.regenerate(projects_toml=projects_toml) == committed_text, ""
     except Exception as exc:  # noqa: BLE001 - surface a malformed declaration cleanly
         fresh, regen_err = False, f" ({exc})"
     check.advisory(
@@ -226,7 +217,7 @@ def _fleet_toml_check() -> Tuple[int, int, int]:
     )
 
     residual = bd.load_residual()
-    repos = bd.fleet_repos()
+    repos = bd.fleet_repos(projects_toml)
     adopted = residual.get("_adopted", [])
     missing = [r for r in adopted if r not in repos or bd.read_fleet_toml(repos[r]) is None]
     check.advisory(
@@ -416,7 +407,7 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
         print(f"SKIP  fleet_membership: no fleet repos found beside this checkout in {root} (skipped)")
         return 0, 0, 1
 
-    toml = tomllib.loads(_gate_projects_toml().read_text(encoding="utf-8"))
+    toml = tomllib.loads(gate_projects_toml().read_text(encoding="utf-8"))
     declared = _repo_tables(toml)
     ignored = set(toml.get("global", {}).get("architecture_ignore", []))
 
@@ -909,7 +900,7 @@ def _config_map_check() -> Tuple[int, int, int]:
 
     committed = (REPO / "architecture" / "config.data.js").read_text(encoding="utf-8")
     try:
-        fresh = bd.regenerate() == committed
+        fresh = bd.regenerate(gate_projects_toml()) == committed
         regen_err = ""
     except Exception as exc:  # noqa: BLE001
         fresh, regen_err = False, f" ({exc})"

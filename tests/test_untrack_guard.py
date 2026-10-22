@@ -8,11 +8,16 @@ live copies; now they survive and are reported.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# The gate points fleet-list readers at the example; this suite declares its own
+# temp registry tree, which the default read must reach.
+os.environ.pop("FLEET_PROJECTS_TOML", None)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))

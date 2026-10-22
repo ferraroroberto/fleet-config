@@ -1024,13 +1024,13 @@ try:
     check(str(defaults.runtime_data_dest).upper().startswith("E:"),
           f"config: the default destination is on E:, so the leg crosses volumes, "
           f"got {defaults.runtime_data_dest}")
-    real_backup_table = bp._read_toml(ROOT / "hooks" / "projects.toml").get("backup", {})
+    real_backup_table = bp._read_toml(bp.config._projects_toml_path()).get("backup", {})
     check(real_backup_table.get("runtime_data_src") and real_backup_table.get("runtime_data_dest"),
           "projects.toml: the real [backup] table declares both runtime-data keys")
     check(real_backup_table.get("codex_sessions_src")
           and real_backup_table.get("codex_sessions_dest"),
           "projects.toml: the real [backup] table declares both Codex-session keys")
-    real_cfg = bp.load_backup_config(ROOT / "hooks" / "projects.toml")
+    real_cfg = bp.load_backup_config(bp.config._projects_toml_path())
     check(not bp._same_volume(real_cfg.runtime_data_src.parent, real_cfg.runtime_data_dest.parent)
           or sys.platform != "win32",
           "projects.toml: the real runtime-data leg crosses volumes (preflight would refuse it)")
@@ -1360,7 +1360,7 @@ try:
     # above `architecture_ignore` re-parented that list out of [global] and
     # dropped four repos off the architecture map; this asserts the ordering
     # rather than trusting the comment that now says so (fleet-config#590).
-    real_toml = ROOT / "hooks" / "projects.toml"
+    real_toml = bp.config._projects_toml_path()  # the hooks' own resolution: example when no local list
     real_text = real_toml.read_text(encoding="utf-8")
     real_data = json.loads(json.dumps(bp._read_toml(real_toml), default=str))
     check("architecture_ignore" in real_data.get("global", {}),

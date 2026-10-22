@@ -50,6 +50,6 @@ Each reader fails in the way that is safe for it:
 
 - **Fleet runs** (`fleet_repos`, `iter_fleet_repos`, `fleet_repo_tables`, `fleet_status.py`) raise `ProjectsTomlMissing`, naming the example to copy. A run never guesses "no repos" or "every repo".
 - **Hooks** read the example and print a warning on stderr. An empty registry would quietly switch off guards such as `never_kill_ports`; the example keeps them enforcing until the local file is restored.
-- **The acceptance gate** reads the example, so it runs on a fresh clone and in a worktree, neither of which has the local file.
+- **The acceptance gate** reads the example, so it runs on a fresh clone and in a worktree, neither of which has the local file. `tests/run_acceptance.py` points `FLEET_PROJECTS_TOML` at the example for the whole run, child suites included, when the local file is absent; its own checks name the example through `gate_projects_toml()` in `tests/acceptance/shared.py`.
 
-`CLAUDE_HOOKS_PROJECTS_TOML` overrides the path for hooks and tests.
+`CLAUDE_HOOKS_PROJECTS_TOML` overrides the path for hooks and tests; `FLEET_PROJECTS_TOML` does the same for fleet runs (`fleet_repo_scan`). Each is an explicit choice, never a fallback: set to a path that does not exist, a fleet run still raises `ProjectsTomlMissing`.
