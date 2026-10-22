@@ -231,6 +231,15 @@ def find_session_status(columns: Dict[str, Any], sid: str) -> Optional[str]:
     return None
 
 
+def session_holds_live_pty(columns: Dict[str, Any], sid: str) -> bool:
+    """True when a card for `sid` in any column still holds a live PTY."""
+    for bucket in (columns.get("claude_turn"), columns.get("your_turn"), columns.get("other")):
+        for card in bucket or []:
+            if str(card.get("session_id") or "") == sid and _holds_a_live_pty(card):
+                return True
+    return False
+
+
 def refuse_dispatch(
     repo: str,
     mode: str,

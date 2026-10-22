@@ -375,6 +375,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`unwait <id>`; fleet-config#1049) and the `chief_ops.py plan` CLI "
      "legs -- is testable on its own, with no real chief-plan.json "
      "touched (fleet-config#1034)"),
+    ("chief_ops_transport", "acceptance/test_chief_ops_transport.py",
+     "chief_ops against a slow or dead launcher -- the distinct "
+     "`UNCONFIRMED=timeout` and `UNREACHABLE=` lines and exit codes with no "
+     "traceback, and `stop` resolving a timed-out POST from one board read -- "
+     "is testable on its own against a loopback stand-in (fleet-config#1581)"),
     ("dirty_tree_check", "test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "
