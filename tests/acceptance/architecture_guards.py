@@ -302,6 +302,59 @@ def _description_cap_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _fleet_toml_layout_check() -> Tuple[int, int]:
+    """`shape` and `extra_roots` validate, stay off the card, and the enum has one home.
+
+    Hard, like `_description_cap_check`: every input is a fixture or this
+    repo's own files, so a sibling repo's commit can never turn it red. The
+    fleet-wide half (every present `.fleet.toml` is valid) already runs
+    advisory through `card_from_toml` in `_fleet_toml_check`.
+    """
+    import importlib.util
+
+    check = _Checker()
+
+    bd_path = REPO / ".claude" / "skills" / "system-map" / "build_data.py"
+    spec = importlib.util.spec_from_file_location("system_map_build_data_layout", bd_path)
+    bd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bd)
+    shapes = bd.fleet_toml.SHAPES
+
+    base = {"layer": "working-web", "icon": "🌐", "description": "A web app."}
+    declared = {**base, "shape": "webapp-tray", "extra_roots": ["custom_components"]}
+    check("fleet_toml_layout: shape + extra_roots leave the map card byte-identical",
+          bd.card_from_toml("ghost-repo", declared) == bd.card_from_toml("ghost-repo", base))
+
+    def refusal(meta: dict) -> str:
+        try:
+            bd.card_from_toml("ghost-repo", meta)
+        except ValueError as exc:
+            return str(exc)
+        return ""
+
+    bad_shape = refusal({**base, "shape": "monolith"})
+    check("fleet_toml_layout: an unknown shape is refused with repo, value and allowed list",
+          "ghost-repo" in bad_shape and "'monolith'" in bad_shape and all(s in bad_shape for s in shapes),
+          bad_shape or "accepted")
+    for bad in ("docs", [1], [""], ["a/b"]):
+        msg = refusal({**base, "extra_roots": bad})
+        check(f"fleet_toml_layout: extra_roots={bad!r} is refused with repo and value",
+              "ghost-repo" in msg and repr(bad) in msg, msg or "accepted")
+
+    readme = (REPO / "architecture" / "README.md").read_text(encoding="utf-8")
+    row = next((ln for ln in readme.splitlines() if ln.startswith("| `shape` |")), "")
+    documented = re.findall(r"`([^`]+)`", row.split("|", 2)[2]) if row else []
+    check("fleet_toml_layout: architecture/README.md lists exactly the SHAPES ids",
+          sorted(documented) == sorted(shapes),
+          f"README: {documented}; code: {list(shapes)}")
+
+    own = bd.fleet_toml.load(REPO) or {}
+    check("fleet_toml_layout: fleet-config's own .fleet.toml declares a valid shape",
+          own.get("shape") in shapes, f"shape = {own.get('shape')!r}")
+
+    return check.failures, check.total
+
+
 def _fleet_membership_drift_check() -> Tuple[int, int, int]:
     """The fleet on disk and the fleet in `projects.toml` are the same set (#640).
 

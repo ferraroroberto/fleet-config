@@ -28,6 +28,8 @@ display_name = "grocery"        # when the card label ≠ repo directory name
 port         = ":8444"          # fixed loopback port the app serves (enabling tier)
 chips        = ["whisper :8090"] # sub-services shown as chips (enabling tier)
 tag          = ["→", "Notion"]  # [relation, target] edge annotation (working tiers)
+shape        = "webapp-tray"    # which canonical layout the repo is held to; not shown on the card
+extra_roots  = ["custom_components"]  # top-level dirs the shape does not list but the repo deliberately has
 ```
 
 | Field | Required | Maps to | Notes |
@@ -39,6 +41,10 @@ tag          = ["→", "Notion"]  # [relation, target] edge annotation (working 
 | `port` | | `port` | enabling cards render it; `:NNNN` form |
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
+| `shape` | | — | one of `webapp-tray`, `streamlit`, `pipeline-cli`, `skills-governance`, `node`, `static-site` (the ids of project-scaffolding's repo-layout doc); the one enum is SHAPES in skills/_lib/fleet_toml.py; read by the scaffold's layout check, not rendered |
+| `extra_roots` | | — | list of top-level directory names the shape does not list but the repo deliberately has (for example `custom_components`); a justified exception declared once, in data |
+
+`build_data.py` validates both: an unknown `shape` or an `extra_roots` that is not a list of directory names is an error naming the repo and the value. Dormancy is not a `.fleet.toml` field; the per-repo active/dormant status lives in `hooks/projects.toml`.
 
 **Description cap (fleet-config#1250).** A description must fit two lines of its card, so the cap depends on the card's width and font, i.e. on the layer:
 

@@ -50,6 +50,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _description_cap_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
+    _fleet_toml_layout_check,
     _gate_evidence_wiring_check,
     _mermaid_check,
     _installer_symmetry_check,
@@ -293,6 +294,7 @@ def main() -> int:
 
     # ---- system-map: no card description past two lines (#1250) ----
     run_unit(_description_cap_check)
+    run_unit(_fleet_toml_layout_check)
 
     # ---- projects.toml is the fleet-membership list: no repo on disk may be
     # missing from it (fleet-config#640). run_unit3: skipped, not passed, when

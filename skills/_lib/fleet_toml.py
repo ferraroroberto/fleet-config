@@ -16,6 +16,36 @@ from typing import Any, Dict, Optional, Tuple
 
 FILENAME = ".fleet.toml"
 
+# The repo shapes a `.fleet.toml` may declare -- the ids of project-scaffolding's
+# docs/repo-layout.md. architecture/README.md lists the same ids; a test compares.
+SHAPES = (
+    "webapp-tray",
+    "streamlit",
+    "pipeline-cli",
+    "skills-governance",
+    "node",
+    "static-site",
+)
+
+
+def validate_layout(repo_name: str, meta: Dict[str, Any]) -> None:
+    """Raise `ValueError` naming the repo and value when `shape` is not one of
+    `SHAPES` or `extra_roots` is not a list of top-level directory names.
+    Both keys are optional; absent is valid."""
+    if "shape" in meta and meta["shape"] not in SHAPES:
+        raise ValueError(
+            f"{repo_name}: .fleet.toml `shape` must be one of {list(SHAPES)}, got {meta['shape']!r}"
+        )
+    if "extra_roots" in meta:
+        roots = meta["extra_roots"]
+        if not isinstance(roots, list) or not all(
+            isinstance(r, str) and r and "/" not in r and "\\" not in r for r in roots
+        ):
+            raise ValueError(
+                f"{repo_name}: .fleet.toml `extra_roots` must be a list of top-level "
+                f"directory names, got {roots!r}"
+            )
+
 
 def read_text(repo: Path) -> Optional[str]:
     """The repo's `.fleet.toml` text, or `None` when absent or unreadable."""
