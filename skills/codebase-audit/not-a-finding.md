@@ -13,7 +13,8 @@ Concrete anti-examples. If a candidate finding looks like a **no**,
   `TODO`, an unused import (a linter catches the import; the comment doesn't
   materially mislead). **Yes:** an entire orphaned module no caller references;
   a removed feature's scaffolding still imported on startup; a
-  `# removed in v2` block shipped in v5.
+  `# removed in v2` block shipped in v5. Also a **no**: a vulture lead with no `refs`
+  caller search behind it (step 5a).
 - **CLAUDE.md drift.** No: a typo in a rule's prose, one instance of slightly
   inconsistent phrasing (the rule still reads correctly). **Yes:** a rule
   violated systematically (CLAUDE.md says "use `.venv`" and three modules use

@@ -24,7 +24,7 @@ of (security is not a checklist bucket — see step 8b):
 1. **Duplication** — repeated logic, parallel implementations, copy-pasted
    blocks, two helpers doing the same thing under different names.
 2. **Stale / dead code** — unused exports, orphaned files, references to
-   things that were removed, outdated comments, half-finished implementations,
+   things that were removed (dead-code leads: step 5a), outdated comments, half-finished implementations,
    `// removed` placeholders, dead feature flags.
 3. **CLAUDE.md drift** — concrete violations of conventions stated in the
    global `~/.claude/CLAUDE.md` or the project's own `CLAUDE.md`. Cite the
@@ -131,19 +131,15 @@ Branch on the decision:
   `No changes since last audit (<short-sha> on <date>) — skipped.` Read no
   files, file nothing.
 - **`SKIP_SELF_FIX`** — every commit since the last audit closes only this
-  repo's own audit-managed findings (merged-PR `closingIssuesReferences`,
-  entirely in Python — `evaluate_repo`/`audit_only_churn`). The gate call has
-  **already advanced the ledger** and posted the `<!-- audit-self-fix -->`
-  comment. Stop immediately:
+  repo's own audit-managed findings (`evaluate_repo`/`audit_only_churn`). The
+  gate call has **already advanced the ledger** and posted the
+  `<!-- audit-self-fix -->` comment. Stop immediately:
   `Skipped — commits since last audit only close this repo's own audit
-  findings (#N, #M); ledger advanced, no organic change.` This stops a repo
-  from being endlessly re-flagged for fixing its own findings.
-- **`SKIP_BELOW_THRESHOLD`** — real organic commits exist, but their
-  weighted-LOC significance (feature/refactor commits count fully,
-  docs/test count nothing, fix/chore count partially — `audit_issue.py`'s
-  `PR_TYPE_WEIGHTS`) hasn't crossed `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000)
-  yet. The ledger is **not** advanced, so this keeps accumulating across
-  runs. Stop immediately: `Skipped — organic change since last audit is
+  findings (#N, #M); ledger advanced, no organic change.`
+- **`SKIP_BELOW_THRESHOLD`** — organic commits exist, but their weighted-LOC
+  significance (`audit_issue.py`'s `PR_TYPE_WEIGHTS`) hasn't crossed
+  `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000). The ledger is **not** advanced, so
+  it keeps accumulating across runs. Stop immediately: `Skipped — organic change since last audit is
   below the significance threshold (<significance>/<threshold> weighted
   lines); accumulating, not yet audited.` Read no files, file nothing.
 - **`AUDIT`** — continue to step 3.
@@ -228,6 +224,20 @@ Same materiality bar, even higher. These are **never issues and never a write to
 another repo** — surfaced in the final report only (step 10), where
 `/audit-fleet` collects them into the cross-fleet practices ledger. Most runs
 have zero; that is fine.
+
+### 5a. Dead-code leads (bucket 2 pre-pass)
+
+Run in the foreground, whole repo (a scope path still scans every tracked file,
+since a caller can sit anywhere):
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dead_code_leads.py leads <repo-root> --ruff
+```
+
+Its hits are **leads, not findings**: confirm each with `refs` per
+[reference.md](reference.md), step 5a before it enters the `stale` issue. Exit 3
+or `state` `not-confirmed` is reported as `not confirmed (<reason>)` in step 10,
+never as "no dead code".
 
 ### 6. Dedupe against existing open issues
 
@@ -354,13 +364,9 @@ scoped to security and gated on the rules below.
 When it runs, open [security-self-heal.md](security-self-heal.md) and follow its
 six steps in order, **inline in your own agent context** — never a nested
 background sub-agent, which gets no auto-resume wake-up and would silently stall
-under `/audit-fleet`. In outline: claim the repo with `worktree_claim.py acquire
-<repo-root> --force-worktree` and work only in the printed `WORKTREE=`; file the
-redacted `audit: security findings` issue; fix every gap on one branch via
-`/issue-yolo` with a mandatory regression test per gap and generic artifact
-text; auto-merge only on a green gate; close the redacted issue; fire the private
-`--kind security` alert. No test surface, or a red gate → escalate, never merge
-blind. The invariants are restated under **Hard rules**.
+under `/audit-fleet`. It claims the repo with `worktree_claim.py acquire
+<repo-root> --force-worktree` and works only in the printed `WORKTREE=`. No test
+surface, or a red gate → escalate, never merge blind. Invariants: **Hard rules**.
 
 ### 9. Update the ledger
 
@@ -479,18 +485,13 @@ are.
 
 ## Notes
 
-- Read-only by design for the seven buckets — "find problems" (this skill) stays
-  separate from "fix problems" (`/issue-start` → `/simplify` / manual).
-- The project's own CLAUDE.md is the rubric for bucket 3; no file → bucket 3
-  usually empty, that's fine.
-- **Not a deep security audit or pentest, and not a performance audit** — don't
-  expand scope into either. Security here is limited to gaps that surface
-  naturally during a resting-state read (an obvious injection sink, a committed
-  secret, a missing authz check); anything found is self-healed via step 8b, not
-  filed as a public finding. `/security-review` remains the diff-scoped
-  reviewer; this is the whole-repo resting-state lens.
-- Step 2's four decisions plus step 6's dedupe are layered idempotency, all
-  decided by one Python function (`evaluate_repo`; unit-tested in
-  `tests/test_audit_issue.py`), never LLM judgment.
-- The ledger is labelled `audit-meta` so it never shows up as actionable —
-  `/issue-triage` and `/issue-start` filter it out.
+- Read-only by design for the seven buckets: "find problems" stays separate
+  from "fix problems" (`/issue-start` → `/simplify` / manual). The project's
+  CLAUDE.md is the bucket-3 rubric; no file, bucket 3 is empty.
+- **Not a deep security audit, pentest or performance audit.** Security is
+  limited to gaps that surface in a resting-state read (an obvious injection
+  sink, a committed secret, a missing authz check), self-healed via step 8b,
+  never filed publicly. `/security-review` is the diff-scoped reviewer.
+- Step 2's four decisions and step 6's dedupe are one Python function
+  (`evaluate_repo`), never LLM judgment. The `audit-meta` ledger label keeps it
+  out of `/issue-triage` and `/issue-start`.
