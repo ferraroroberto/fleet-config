@@ -13,7 +13,8 @@ acceptance matrix + foreign-harness parity (`hook_matrix`), architecture/
 fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
 scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
 (`tree_boundary`), the duplicate/unused-code ratchet (`static_ratchet_gate`),
-the README-size and docs history-marker ratchet (`docs_ratchet_gate`), and the
+the README-size and docs history-marker ratchet (`docs_ratchet_gate`), the
+fleet-scope enumeration guard (`fleet_scope_guard`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
 The substantive per-hook unit-check functions are the `checks_*` modules, one
@@ -122,6 +123,7 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
 )
 from acceptance import gate_routing  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
+from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
 from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
@@ -374,6 +376,10 @@ def main() -> int:
     # ---- README size + history markers in the docs vs the baseline (#1542) ----
     # run_unit for the same reason: exit 3 (could not count) fails, never skips.
     run_unit(_docs_ratchet_check)
+
+    # ---- fleet enumeration routes obey the dormant switch or are allow-listed (#1548) ----
+    # run_unit: a dedicated check, never a skip-able standalone_dispatch row.
+    run_unit(_fleet_scope_guard_check)
 
     # ---- hooks/ never imports across into skills/_lib (fleet-config#564) ----
     run_unit(_hooks_tree_boundary_check)
