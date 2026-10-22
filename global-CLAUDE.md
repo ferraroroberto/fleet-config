@@ -112,6 +112,8 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 
 **`docs/` is for durable reference** a future reader will re-open (design records, architecture overviews, integration guides, shared playbooks). Topic filenames, never dates. Never plans/TODOs (→ issues) or dated changelogs.
 
+**READMEs and `docs/` state what is true now and why, in the present tense — no dated narratives, "added in #N" or changelog sections (git, PRs and issues hold history).** The README is an index (what it is, install, run, gate, one line per feature) under 40 KiB; reference moves to `docs/<topic>.md` (`project-scaffolding`'s `docs/readme-and-docs.md`).
+
 **Feature work:** update `README.md` if usage, config, or output changed; add `docs/<topic>.md` only for a durable concept. One-line fixes: just commit. **Rotation/expiration dates go in README, not memory** — certs, tokens, deprecations get a calendar-anchored README line.
 
 ### Markdown that will be rendered — no hard wraps
