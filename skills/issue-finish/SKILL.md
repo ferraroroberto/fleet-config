@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisory (skip only when the recorded local gate/e2e pass still matches the tree, or no e2e surface touched; flake reruns once), auto-merge, delete branch, restart tray. Use "/issue-finish"; pairs with /issue-start.
+description: Finish an issue — confirm acceptance, update docs/README, run the gate, push, open a closing PR, treat CI as advisory (skip only when the recorded local gate/e2e pass still matches the tree, or no e2e surface touched; flake reruns once), auto-merge, delete branch, restart tray. Use "/issue-finish"; pairs with /issue-start.
 ---
 
 # issue-finish
