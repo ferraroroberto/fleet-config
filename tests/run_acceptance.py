@@ -49,6 +49,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _chief_wait_event_check,
     _config_map_check,
     _description_cap_check,
+    _fleet_gate_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
     _fleet_toml_layout_check,
@@ -304,6 +305,10 @@ def main() -> int:
     # missing from it (fleet-config#640). run_unit3: skipped, not passed, when
     # there is no fleet beside this checkout to compare against.
     run_unit3(_fleet_membership_drift_check)
+
+    # ---- an active repo needs a recognised gate, or it is dormant. Advisory:
+    # the inputs are sibling checkouts (fleet-config#562).
+    run_unit3(_fleet_gate_check)
 
     # ---- the machine-local registry and its tracked example agree ----
     run_unit(_projects_toml_contract_check)
