@@ -60,7 +60,8 @@ Subcommands
   wait-event [--timeout 1800] [--interval 5] [--base-url URL]
       Block until a chief-managed worker's turn ends, its session exits or it
       hits a permission gate (`hooks/chief_inbox.py` publishes one event file
-      per event; a gate is `kind=needs-input`, fleet-config#1456), claim every
+      per event; a gate is `kind=needs-input`, fleet-config#1456; a failed
+      app-launcher Job is `kind=job-failed`, fleet-config#1539), claim every
       pending event exactly once, print them (`WAIT_EVENT=events n=N` plus one
       line each) and exit 0 -- launched as a one-shot background task, its exit
       is what wakes the chief (fleet-config#999). A burst settles for ~3s into
@@ -827,7 +828,8 @@ CLAIMED_DIRNAME = ".claimed"
 # dead. Longer than any chief turn that handles a batch, so a live chief is
 # not handed its own batch twice.
 CLAIM_STALE_SECONDS = 900.0
-EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input"}
+EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input",
+                   "job-failed": "job failed"}
 # Reading a just-claimed file retries a sharing violation this many times,
 # backing off from this delay and doubling (10+20+40+80 ms): the concurrent
 # claimer holding it finishes its rename in well under that (fleet-config#1465).
@@ -1061,6 +1063,26 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
     return events
 
 
+def _job_failed_lines(event: Dict[str, Any]) -> List[str]:
+    """A `job-failed` event's head line and one detail line, ahead of its excerpt.
+
+    A Job has no worker session, so the worker form (`repo#n`, sid) does not
+    apply. A reaped run has no exit code and an unowned script no repo: both
+    read `-`. `outcome` is shown only when it is not a plain `failed`, so a
+    run whose result could not be confirmed never reads as a confirmed failure.
+    """
+    def field(name: str) -> str:
+        value = event.get(name)
+        return "-" if value in (None, "") else str(value)
+
+    outcome = event.get("outcome")
+    head = (f"- job {field('job_name')} failed exit={field('exit_code')} "
+            f"run={field('run_id')} repo={field('repo')}")
+    if outcome and outcome != "failed":
+        head += f" outcome={outcome}"
+    return [head, f"  job_id={field('job_id')} trigger={field('trigger')} script={field('script_path')}"]
+
+
 def _event_line(event: Dict[str, Any], moment: datetime) -> str:
     """`- <repo>#<n>: <what> (<agent>) sid=<8> age=<age>` -- the v1 line, unchanged."""
     kind = event.get("kind")
@@ -1093,7 +1115,11 @@ def format_inbox_digest(events: List[Dict[str, Any]], now: Optional[datetime] = 
     lines = [f"WAIT_EVENT=events n={len(events)}"]
     for event in events:
         kind = f" kind={event['kind']}" if event.get("kind") else ""
-        lines.append(_event_line(event, moment) + kind)
+        if event.get("kind") == "job-failed":
+            head, *detail = _job_failed_lines(event)
+            lines.extend([head + kind, *detail])
+        else:
+            lines.append(_event_line(event, moment) + kind)
         lines.extend(_excerpt_lines(event))
     lines.append("Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.")
     return "\n".join(lines)
@@ -1109,7 +1135,12 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
     lines = [f"INBOX=events n={len(events)} reoffered={len(reoffered)} dropped={dropped}"]
     for event in events:
         tail = f" kind={event.get('kind') or '?'} id={event['id']} dispatch={event.get('dispatch_id') or '-'}"
-        lines.append(_event_line(event, moment) + tail + (" re-offered" if event["id"] in again else ""))
+        again_mark = " re-offered" if event["id"] in again else ""
+        if event.get("kind") == "job-failed":
+            head, *detail = _job_failed_lines(event)
+            lines.extend([head + tail + again_mark, *detail])
+        else:
+            lines.append(_event_line(event, moment) + tail + again_mark)
         lines.extend(_excerpt_lines(event))
     lines.append("ACK=chief_ops.py ack " + " ".join(event["id"] for event in events))
     lines.append(f"Next: handle each (a re-offered id may already be handled), then run the ACK line; "

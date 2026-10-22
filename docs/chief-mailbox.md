@@ -49,7 +49,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end` or `needs-input`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live (#1456). |
+| `kind` | `turn-end`, `session-end`, `needs-input` or `job-failed`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live (#1456). A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
@@ -65,7 +65,46 @@ Excerpt sources per harness, verified live for #1455:
 | Codex (0.154.0) | `Stop` payload `last_assistant_message`; same transcript fallback (rollout `response_item` records) |
 | Pi (0.84.4) | The `pi/extensions/session_state.ts` extension reads the session branch's newest assistant text and sends it as `last_assistant_message`; Pi sends no `transcript_path` |
 
-Readers must ignore fields they do not know, and must accept v1 events (no `v`, `id`, `kind`, `dispatch_id` or excerpt fields).
+Readers must ignore fields they do not know, and must accept v1 events (no `v`, `id`, `kind`, `dispatch_id` or excerpt fields). A reader that does not know a `kind` still counts and claims the event; the counting rule below never looks at `kind`.
+
+### Job events (`kind: "job-failed"`)
+
+An app-launcher Job run that failed is published as one `job-failed` event, so a failing Job wakes the chief the way a worker does. A Job has no worker session: `launcher_sid`, `number` and `dispatch_id` are always `null`. The launcher writes the file and never imports from `hooks/`.
+
+```json
+{
+  "v": 2,
+  "id": "6b1f0c2e9d3a4f58a7c4e1d2b3a49586",
+  "kind": "job-failed",
+  "event": "JobFailed",
+  "job_id": "<the Job's id>",
+  "job_name": "<the Job's display name>",
+  "run_id": "<the failed run's id>",
+  "exit_code": 1,
+  "outcome": "failed",
+  "trigger": "schedule",
+  "script_path": "<the Job's script_path>",
+  "repo": "life-os",
+  "launcher_sid": null,
+  "number": null,
+  "agent": null,
+  "dispatch_id": null,
+  "ts": "2026-10-22T05:00:00Z",
+  "excerpt": "<last ≤1500 chars of the run's output.log, or null>",
+  "excerpt_source": "job-output"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `job_id`, `job_name`, `run_id` | Which Job and which run. One event per failed run. |
+| `exit_code` | The run's exit code; `null` for a reaped run that never reported one. |
+| `outcome` | `failed` or `not-confirmed`, as `src.jobs_outcome.run_outcome` in app-launcher classifies the run. `not-confirmed` is a run whose result could not be established, never folded into `failed`. |
+| `trigger` | `schedule`, `manual`, `chain` or `webhook`. The launcher passes any other trigger its run record holds through unchanged, so a reader renders an unknown value as-is and never rejects the event. |
+| `script_path`, `repo` | The Job's script and the fleet repo that owns it, or `null` when no fleet repo does. |
+| `excerpt`, `excerpt_source` | The last 1,500 characters of the run's `output.log`, with `excerpt_source: "job-output"`. `excerpt` and `excerpt_source` are `null`, with `excerpt_unavailable`, when the log is missing or empty. Job output can hold private data: it is for the chief's eyes only and never copied into an issue. |
+
+The event `id` is the dedupe key, as for every event. Readers render the event as `job <job_name> failed exit=<n> run=<run_id> repo=<repo>` (`-` for a null `exit_code` or `repo`; ` outcome=not-confirmed` appended when `outcome` is not `failed`), then a `job_id=… trigger=… script=…` line, then the excerpt lines.
 
 ## Pending: the counting rule
 
@@ -137,3 +176,4 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
 - `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
 - `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
+- `tests/test_chief_job_failed.py`: a synthetic `job-failed` event through the real `inbox` and `wait-event` (the head line, the detail line, the excerpt, a null `exit_code` and `repo`, `not-confirmed`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2 and `needs-input` events rendering unchanged beside it.
