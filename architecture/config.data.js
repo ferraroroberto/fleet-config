@@ -123,7 +123,7 @@ window.CONFIG = {
     },
     {
       "nm": "design-review",
-      "ds": "Review a running fleet web app's rendered design — live measurement in real browsers (phone/desktop × light/dark), rubric score,…",
+      "ds": "Review a running fleet web app's rendered design — real-browser measurement (phone/desktop, light/dark), rubric score, fresh-cont…",
       "scope": "repo"
     },
     {
@@ -163,7 +163,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-finish",
-      "ds": "Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisor…",
+      "ds": "Finish an issue — confirm acceptance, update docs/README, run the gate, push, open a closing PR, treat CI as advisory (skip only…",
       "scope": "repo"
     },
     {
@@ -294,7 +294,7 @@ window.CONFIG = {
     {
       "repo": "app-launcher",
       "items": [
-        "verify"
+        "verify-app-launcher"
       ]
     },
     {
@@ -311,6 +311,12 @@ window.CONFIG = {
         "newsletter-triage",
         "podcast",
         "schedule-autoheal"
+      ]
+    },
+    {
+      "repo": "facilitation-suite",
+      "items": [
+        "verify-facilitation-suite"
       ]
     },
     {
@@ -342,13 +348,20 @@ window.CONFIG = {
         "slides",
         "sparring-private",
         "sparring-work",
-        "visual-muse"
+        "visual-muse",
+        "writing-style"
       ]
     },
     {
       "repo": "local-llm-hub",
       "items": [
         "frontier-refresh"
+      ]
+    },
+    {
+      "repo": "task-os",
+      "items": [
+        "verify-task-os"
       ]
     }
   ],
@@ -436,6 +449,13 @@ window.CONFIG = {
       "block": true,
       "reach": "Claude only",
       "ds": "Block `AskUserQuestion` from a chief-managed worker (fleet-config#463)."
+    },
+    {
+      "nm": "telegram_file_reply_guard",
+      "ev": "PreToolUse · mcp__plugin_telegram_telegram__reply",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Refuse a Telegram file reply outside the sender's private chat (fleet-config#1478)."
     },
     {
       "nm": "branch_before_edit_guard",
@@ -614,9 +634,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 40,
-    "claude_md": "39/40",
-    "fleet_toml": "38/40"
+    "total": 29,
+    "claude_md": "28/29",
+    "fleet_toml": "28/29"
   },
   "principles": [
     [
