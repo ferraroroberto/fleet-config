@@ -20,7 +20,7 @@ own. The two cover different failure modes and neither subsumes the other.
 
 Subcommand
 ----------
-  fetch [--label LABEL]
+  fetch [--label LABEL] [--include-dormant] [--projects-toml PATH]
         Prints a JSON array to stdout, each element shaped like a `gh
         search issues` row (`number`, `title`, `body`, `labels`, `url`,
         `repository: {"name": ...}`) so existing callers that read
@@ -30,6 +30,13 @@ Subcommand
         that fails is skipped and reported, never allowed to blank the
         whole fetch (same "degrade, don't block" rule every fan-out skill
         in this repo already follows).
+
+        A repo in `hooks/projects.toml`'s `[global] architecture_ignore` is
+        dormant and is not fetched (`docs/fleet-scope.md`); a repo the list
+        does not know is still fetched. Dormant repos are named on a second
+        stderr line, `SKIPPED_DORMANT=<n>: <names>`, so a shrunk result is
+        never silent. `--include-dormant` fetches them too and never reads
+        the list. A missing list exits 2: a run never guesses its own scope.
 
 The aggregation logic (`aggregate`) is pure and unit-tested
 (`tests/test_gh_issue_fetch.py`) independent of the `gh` plumbing around
@@ -42,9 +49,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Collection, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 
 GH_TIMEOUT_SECONDS = 60
@@ -60,6 +68,11 @@ def list_owner_repos() -> List[str]:
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "gh repo list failed").strip())
     return [row["name"] for row in json.loads(proc.stdout)]
+
+
+def split_dormant(repos: List[str], dormant: Collection[str]) -> Tuple[List[str], List[str]]:
+    """`(kept, skipped)`: `repos` without the dormant names, and the ones dropped, order preserved."""
+    return [r for r in repos if r not in dormant], [r for r in repos if r in dormant]
 
 
 def fetch_repo_issues(repo: str, label: str | None) -> List[Dict[str, Any]]:
@@ -95,11 +108,16 @@ def aggregate(
     return issues, errors
 
 
-def cmd_fetch(label: str | None) -> None:
+def cmd_fetch(label: str | None, include_dormant: bool = False, projects_toml: Path | None = None) -> None:
     repos = list_owner_repos()
+    skipped: List[str] = []
+    if not include_dormant:
+        repos, skipped = split_dormant(repos, fleet_repo_scan.ignored_repos(projects_toml))
     issues, errors = aggregate(repos, lambda r: fetch_repo_issues(r, label))
     print(json.dumps(issues))
     print(f"REPOS={len(repos)} ISSUES={len(issues)} ERRORS={len(errors)}", file=sys.stderr)
+    if skipped:
+        print(f"SKIPPED_DORMANT={len(skipped)}: {', '.join(skipped)}", file=sys.stderr)
     for repo, reason in errors:
         print(f"ERROR {repo}: {reason}", file=sys.stderr)
 
@@ -109,9 +127,15 @@ def main(argv: List[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch")
     f.add_argument("--label", default=None)
+    f.add_argument("--include-dormant", action="store_true", help="also fetch repos switched out of fleet runs")
+    f.add_argument("--projects-toml", type=Path, default=None, help="read the fleet list from another copy")
     args = ap.parse_args(argv)
     if args.cmd == "fetch":
-        cmd_fetch(args.label)
+        try:
+            cmd_fetch(args.label, args.include_dormant, args.projects_toml)
+        except fleet_repo_scan.ProjectsTomlMissing as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     return 0
 
 

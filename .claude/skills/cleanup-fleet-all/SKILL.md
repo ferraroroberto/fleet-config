@@ -58,7 +58,7 @@ Parse args through the synonym table (see "Arguments"). No args → all nine que
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting issues open 5+ weeks after they closed, fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape. Avoids a known-bad source; **not proven immune** — step 5 still re-checks each selected issue's state before dispatch.
+**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting issues open 5+ weeks after they closed, fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape. Avoids a known-bad source; **not proven immune** — step 5 still re-checks each selected issue's state before dispatch. Dormant repos (`docs/fleet-scope.md`) are skipped and named on the `SKIPPED_DORMANT=` stderr line; add `--include-dormant` to fetch them.
 
 Read the JSON directly (no jq/python/awk — group and select model-side, same convention as `/cleanup-fleet`). For each issue, collect every label matching one of this run's resolved bucket names — **drop any row carrying `audit-meta`** (the ledger issues, never actionable), and drop any row matching none of the resolved buckets. An issue carrying more than one bucket label legitimately appears in more than one bucket's list; buckets run serially, so it's never worked on twice at once.
 

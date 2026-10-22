@@ -230,7 +230,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label cert-drift
 ```
 
-Group each result by `repository.name` into per-repo open counts — the one place this accounting is tallied, never conflated with code buckets. `/audit-fleet` is the unified reporter; `/design-sweep` is the doer. If either fetch fails outright, note `design-drift: count skipped (<reason>)`, carry the last snapshot forward unchanged, never fail the run over it. If stderr reports per-repo `ERROR` lines but still returns a partial result, use the partial count and note which repos were skipped.
+Dormant repos (`docs/fleet-scope.md`) are not fetched, matching the audit's own scope. Group each result by `repository.name` into per-repo open counts — the one place this accounting is tallied, never conflated with code buckets. `/audit-fleet` is the unified reporter; `/design-sweep` is the doer. If either fetch fails outright, note `design-drift: count skipped (<reason>)`, carry the last snapshot forward unchanged, never fail the run over it. If stderr reports per-repo `ERROR` lines but still returns a partial result, use the partial count and note which repos were skipped.
 
 Compose the digest as markdown (single long lines per paragraph, no hard wraps) — stdout verbatim, attached to email as `.md`, rendered to HTML for the email body in step 6:
 

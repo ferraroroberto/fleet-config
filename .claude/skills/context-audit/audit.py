@@ -17,7 +17,9 @@ Measured surfaces:
      `unparseable` — neither is ever folded into the compliant count
      (fleet-config#626, #845).
   2. Always-on budget    — bytes / words / est-tokens of `global-CLAUDE.md` and
-     every project `CLAUDE.md` under the fleet root, plus a fleet total.
+     every project `CLAUDE.md` under the fleet root, plus a fleet total. Dormant
+     repos (`docs/fleet-scope.md`) are not measured and are listed as such,
+     never folded into the total as zero.
   3. Single-home leaks   — substantial lines in a project `CLAUDE.md` that also
      appear (normalized) in `global-CLAUDE.md`: candidate duplications to review.
   4. Header inventory     — `##`/`###` headers per project `CLAUDE.md` and the
@@ -38,7 +40,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Collection, Dict, List, NamedTuple, Optional, Tuple
 
 # Repo root = .../fleet-config ; fleet root = .../automation (its parent).
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -49,7 +51,7 @@ SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bootstrap_loads  # noqa: E402
-from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
+from fleet_repo_scan import fleet_repos, ignored_repos, is_linked_worktree  # noqa: E402
 from frontmatter import frontmatter_error  # noqa: E402
 from skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
@@ -225,14 +227,12 @@ def find_project_claude_mds(fleet_root: Optional[Path] = None) -> List[Tuple[str
     moved between runs with no file changed, corrupting the week-over-week
     trend this block exists to produce (fleet-config#629).
 
-    Deliberately *only* the worktree guard, via `fleet_repo_scan`'s shared
-    `is_linked_worktree` rather than a fourth copy of the rule. Gating on
-    `fleet_repos()` instead — the `projects.toml` membership list the skill
-    scan uses — was measured and rejected: it would have silently dropped
-    three real repos carrying a `CLAUDE.md` that costs context every session
-    (`arboldelossuenos`, `externalrisk`, `local-llm-hub-lite`). A budget scan
-    that quietly stops measuring part of the budget is the same failure class
-    as #626's `over_cap=0`.
+    Only the worktree guard, via `fleet_repo_scan`'s shared
+    `is_linked_worktree` rather than a fourth copy of the rule. Membership is
+    not `fleet_repos()`: a repo the list does not declare still costs context,
+    so it is measured. The caller removes the dormant repos (`docs/fleet-scope.md`)
+    and reports them as not measured, because a budget scan that quietly stops
+    measuring part of the budget is the failure class of #626's `over_cap=0`.
     """
     root = FLEET_ROOT if fleet_root is None else fleet_root
     out: List[Tuple[str, Path]] = []
@@ -249,12 +249,15 @@ def _headers(text: str) -> list[str]:
     return [m.group(0).strip() for m in re.finditer(r"^#{2,3} .+$", text, re.M)]
 
 
-def scan_budget_and_drift(ignore: set[str]) -> dict:
+def scan_budget_and_drift(ignore: set[str], dormant: Collection[str] = ()) -> dict:
+    """`dormant` repos are left out and listed under `not_measured_dormant`; they are not zero cost."""
     global_text = _read(GLOBAL_FILE)
     global_norm = {_norm(l) for l in global_text.splitlines() if len(_norm(l)) >= 40}
     scaffold_headers = set(_headers(_read(SCAFFOLD_FILE)))
 
-    files = [("global-CLAUDE.md", GLOBAL_FILE)] + find_project_claude_mds()
+    project_mds = find_project_claude_mds()
+    not_measured = [name for name, _ in project_mds if name in dormant]
+    files = [("global-CLAUDE.md", GLOBAL_FILE)] + [(n, p) for n, p in project_mds if n not in dormant]
     budget: list[dict] = []
     leaks: list[dict] = []
     drift: list[dict] = []
@@ -302,6 +305,7 @@ def scan_budget_and_drift(ignore: set[str]) -> dict:
     return {
         "budget": budget,
         "total_est_tokens": total_tokens,
+        "not_measured_dormant": not_measured,
         "leaks": leaks,
         "drift": drift,
     }
@@ -318,7 +322,7 @@ def main() -> int:
 
     skills, unmeasured, unparseable = scan_skills(args.cap)
     by_repo = per_repo_summary(skills, unmeasured, unparseable)
-    bd = scan_budget_and_drift(DEFAULT_IGNORE)
+    bd = scan_budget_and_drift(DEFAULT_IGNORE, ignored_repos())
     boot = bootstrap_loads.scan_fleet(REPO_ROOT / "hooks" / "projects.toml", args.read_cap)
     report = {
         "cap": args.cap,
@@ -340,7 +344,7 @@ def main() -> int:
         f"MANIFEST: skills={len(skills) + len(unmeasured) + len(unparseable)} "
         f"compliant={len(skills) - len(over)} over_cap={len(over)} "
         f"unmeasured={len(unmeasured)} unparseable={len(unparseable)} repos={len(by_repo)} "
-        f"claude_mds={len(bd['budget'])} leaks={len(bd['leaks'])} "
+        f"claude_mds={len(bd['budget'])} not_measured_dormant={len(bd['not_measured_dormant'])} leaks={len(bd['leaks'])} "
         f"total_est_tokens={bd['total_est_tokens']} "
         f"bootstrap_over_cap={sum(len(r['over_cap']) for b in boot for r in b['skills'])} "
         f"bootstrap_unmeasured={sum(len(r['unmeasured']) for b in boot for r in b['skills']) + sum(1 for b in boot if b['status'] != 'ok')} "
@@ -375,7 +379,10 @@ def main() -> int:
     print("\n-- always-on budget (est tokens, desc) --")
     for b in bd["budget"]:
         print(f"  {b['file']:<40} {b['est_tokens']:>6} tok  {b['words']:>6} words")
-    print(f"  {'TOTAL':<40} {bd['total_est_tokens']:>6} tok")
+    print(f"  {'TOTAL (measured repos only)':<40} {bd['total_est_tokens']:>6} tok")
+    if bd["not_measured_dormant"]:
+        names = ", ".join(bd["not_measured_dormant"])
+        print(f"  ❓ NOT MEASURED (dormant): {len(bd['not_measured_dormant'])} repos, cost unknown not zero: {names}")
 
     print("\n-- single-home leaks (lines duplicated from global) --")
     if not bd["leaks"]:

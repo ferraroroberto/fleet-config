@@ -35,7 +35,7 @@ Run in order. If a step fails, print a short error and stop.
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-This replaces `gh search issues --owner ferraroroberto`, which is backed by GitHub's eventually-consistent Search API and was observed reporting 23 issues as open for five-plus weeks after they were closed (fleet-config#623). The helper reads the direct Issues API instead — one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape the old search call returned. Run it **once**, via Bash; the agent reads the JSON straight from the tool result.
+This replaces `gh search issues --owner ferraroroberto`, which is backed by GitHub's eventually-consistent Search API and was observed reporting 23 issues as open for five-plus weeks after they were closed (fleet-config#623). The helper reads the direct Issues API instead — one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape the old search call returned. Run it **once**, via Bash; the agent reads the JSON straight from the tool result. Dormant repos (`docs/fleet-scope.md`) are skipped and named on the `SKIPPED_DORMANT=` stderr line; add `--include-dormant` to triage them too.
 
 Notes:
 - `--limit 300` no longer applies — a repo-scoped `gh issue list` has no comparable cap, so there's nothing to warn about hitting.

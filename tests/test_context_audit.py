@@ -272,6 +272,23 @@ with tempfile.TemporaryDirectory() as td:
           "adding two more worktrees changes nothing — the budget total is now "
           "stable across runs, which is what the #218 trend depends on")
 
+    # Dormant repos (docs/fleet-scope.md) leave the budget but are named as
+    # not measured; an undeclared directory is still measured.
+    _real_root = audit.FLEET_ROOT
+    audit.FLEET_ROOT = fleet
+    try:
+        everyone = audit.scan_budget_and_drift(set())
+        slept = audit.scan_budget_and_drift(set(), {"beta"})
+    finally:
+        audit.FLEET_ROOT = _real_root
+    measured = {b["file"] for b in slept["budget"]}
+    check("beta/CLAUDE.md" in {b["file"] for b in everyone["budget"]} and everyone["not_measured_dormant"] == [],
+          "with no dormant repo the budget measures every CLAUDE.md and reports nothing as not measured")
+    check("beta/CLAUDE.md" not in measured and {"alpha/CLAUDE.md", "not-a-repo/CLAUDE.md"} <= measured,
+          "a dormant repo leaves the budget; live and undeclared repos stay in it")
+    check(slept["not_measured_dormant"] == ["beta"] and slept["total_est_tokens"] < everyone["total_est_tokens"],
+          "the dormant repo is listed as not measured and its tokens are absent from the total")
+
 # ------------------------------------------------ bootstrap loads (#1014) ----
 # What a declaring repo's skills auto-load on every invocation. Synthetic tree
 # only: sizes and pattern counts are what's under test, never private content.

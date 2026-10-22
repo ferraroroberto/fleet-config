@@ -219,4 +219,26 @@ check("project-scaffolding/docs/agents/CLAUDE.master.md" in _plan_no_surface["up
       "plan_reconcile: with no surface given (surface=None), nothing is filtered "
       "-- the restriction is opt-in for callers that know the current surface")
 
+# ---- surface: dormant repos (docs/fleet-scope.md) ----------------------------
+
+import tempfile  # noqa: E402
+
+with tempfile.TemporaryDirectory() as _tmp:
+    _fleet = Path(_tmp)
+    for _name in ("fleet-config", "awake", "asleep"):
+        (_fleet / _name / ".git").mkdir(parents=True)
+        (_fleet / _name / "CLAUDE.md").write_text("# x\n", encoding="utf-8")
+    (_fleet / "awake-wt-3").mkdir()
+    (_fleet / "awake-wt-3" / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    _real = (gate.FLEET_ROOT, gate.REPO_ROOT, gate.ignored_repos)
+    gate.FLEET_ROOT, gate.REPO_ROOT, gate.ignored_repos = _fleet, _fleet / "fleet-config", lambda: frozenset({"asleep"})
+    try:
+        _keys = {k for k in gate.surface_files(True) if "/" in k and k.endswith("CLAUDE.md")}
+        _dormant = gate.dormant_repos()
+    finally:
+        gate.FLEET_ROOT, gate.REPO_ROOT, gate.ignored_repos = _real
+check("awake/CLAUDE.md" in _keys and "asleep/CLAUDE.md" not in _keys,
+      "surface_files(--fleet): a dormant repo's files leave the surface, a live repo's stay")
+check(_dormant == ["asleep"], "dormant_repos names the dormant sister repo and not the worktree or this repo")
+
 _h.report_and_exit("test_context_purge_gate")

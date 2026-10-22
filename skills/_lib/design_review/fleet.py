@@ -1,6 +1,7 @@
 """Fleet mode of /design-review — every declared web app, serially, one digest (fleet-config#974).
 
-`run_fleet` walks every `hooks/projects.toml` table with a `webapp_port`,
+`run_fleet` walks every `hooks/projects.toml` table with a `webapp_port`
+that is not dormant (`[global] architecture_ignore`, `docs/fleet-scope.md`),
 in file order, **one at a time**: `probe` first, then `measure` (which
 never starts, restarts or kills anything — an app that is `NOT_LISTENING`
 or `TIMEOUT` yields an `unmeasured` metrics envelope and an `unmeasured`
@@ -14,7 +15,8 @@ The digest, under `<hooks state>/design-review/_fleet/<UTC stamp>/`:
     fleet-digest.json
       {"schema_version": 1, "stamp", "generated_at", "rubric_version",
        "judgment": "skipped in fleet mode ...",
-       "apps":      [{"target", "run_id", "run_dir", "probe", "unmeasured": reason|null, "commit",
+       "skipped_dormant": [target],   # only when some web app is dormant: not walked, not absent
+       "apps":     [{"target", "run_id", "run_dir", "probe", "unmeasured": reason|null, "commit",
                       "live_build", "overall": {score, grade}|null, "failed": [id], "unmeasured_rules": n,
                       "diff": {fixed, regressed, new, unchanged, unmeasured}, "filed": [id],
                       "accepted": [id], "problems": [str]}],
@@ -73,10 +75,21 @@ DIGEST_JSON = "fleet-digest.json"
 DIGEST_HTML = "fleet-digest.html"
 
 
-def fleet_targets(projects_toml: Optional[Path] = None) -> List[Tuple[str, dict]]:
-    """Every projects.toml table with a `webapp_port`, in file order."""
+def _webapp_tables(projects_toml: Optional[Path]) -> List[Tuple[str, dict]]:
     tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
     return [(name, tbl) for name, tbl in tables.items() if tbl.get("webapp_port")]
+
+
+def fleet_targets(projects_toml: Optional[Path] = None) -> List[Tuple[str, dict]]:
+    """Every projects.toml table with a `webapp_port` that is not dormant, in file order."""
+    dormant = fleet_repo_scan.ignored_repos(projects_toml)
+    return [(name, tbl) for name, tbl in _webapp_tables(projects_toml) if name not in dormant]
+
+
+def dormant_targets(projects_toml: Optional[Path] = None) -> List[str]:
+    """Web apps the sweep leaves out because they are dormant, in file order."""
+    dormant = fleet_repo_scan.ignored_repos(projects_toml)
+    return [name for name, _ in _webapp_tables(projects_toml) if name in dormant]
 
 
 def fleet_dir(now: Optional[_dt.datetime] = None) -> Path:
@@ -227,6 +240,8 @@ def render_digest(dig: dict) -> str:
     apps_table = ('<div class="tbl"><table><thead><tr><th>App</th><th>Probe</th><th>Grade</th><th>App-owned (filed)</th>'
                   '<th>Promoted</th><th>Since previous run</th><th>commit / live</th></tr></thead><tbody>'
                   + "".join(rows) + "</tbody></table></div>")
+    if dig.get("skipped_dormant"):
+        apps_table += f'<p class="muted">Skipped (dormant, not walked): {_esc(", ".join(dig["skipped_dormant"]))}</p>'
 
     def lst(items: List[dict], empty: str) -> str:
         if not items:
@@ -295,6 +310,9 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
     for a in dig["apps"]:
         a["problems"] = problems_by_target.get(a["target"], [])
     dig["filing"]["mode"] = "filed" if file_issues else "dry-run"
+    skipped = dormant_targets(projects_toml)
+    if skipped:
+        dig["skipped_dormant"] = skipped
     inv = compare_inventories([r["row"]["target"] for r in reviews], specs, inventory_loader, catalog, review_kw.get("scaffold"))
     if inv:
         dig["inventory"] = inv
