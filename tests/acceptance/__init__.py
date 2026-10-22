@@ -12,8 +12,12 @@ standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 The ~25 substantive per-hook unit-check functions live in the `checks_*`
 modules, one per domain (fleet-config#680): `checks_context_filter`,
 `checks_notify`, `checks_guards`, `checks_session_state`, `checks_cross_agent`,
-`checks_capture`, `checks_skill_helpers`. They were the one straggler of the
-#502 split -- left as a single 2681-line `unit_checks.py` while every sibling
-concern got its own file -- and each is now the obvious home for the next
-check in its domain. All of them import `shared`, and nothing else here.
+`checks_capture`, `checks_skill_helpers`. The two longest case lists are data, not
+code: `hook_cases/` holds the hook-matrix records (one module per hook family) and
+`context_filter_sections/` holds the context-filter check as small section functions
+plus its case tables; `hook_matrix` and `checks_context_filter` are the runners.
+The `checks_*` modules were the one straggler of the #502 split -- left as a
+single 2681-line `unit_checks.py` while every sibling concern got its own
+file -- and each is now the obvious home for the next check in its domain.
+All of them import `shared`, and nothing else here.
 """
