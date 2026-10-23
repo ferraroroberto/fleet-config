@@ -56,7 +56,7 @@ COMMON_BLANKET_KILL = (
 
 # ----- git safety bypasses -----
 # Flagged only as arguments of a real `git` invocation at command position, so a
-# read-only search that merely *mentions* a flag is not refused (fleet-config#1303).
+# read-only search that merely *mentions* a flag is not refused.
 # The old check was a line regex that matched `git` and the flag anywhere on the line.
 GIT_BYPASS_FLAGS = ("--no-verify", "--no-gpg-sign")
 GIT_BYPASS_CONFIG = "commit.gpgsign=false"
@@ -66,11 +66,11 @@ GIT_BYPASS_CONFIG = "commit.gpgsign=false"
 # anywhere on the line. The old lookahead — `(?=[^\n;|&]*\b(?:main|master)\b)` —
 # was a word-boundary search over the whole command, so it refused
 # `git push --force origin chore/rename-main-config-loader`: a legitimate
-# feature-branch force-push this module's own docstring promises to allow
-# (fleet-config#562). A fleet-wide guard that blocks valid work is the expensive
-# kind of wrong — #464/#472 reverted a hook within the hour for exactly that.
+# feature-branch force-push this module's own docstring promises to allow.
+# A fleet-wide guard that blocks valid work is the expensive
+# kind of wrong — an earlier over-broad force-push pattern was reverted within the hour for exactly that.
 # Git's global options may sit between `git` and the subcommand
-# (`git -C <dir> push …`, fleet-config#1275), so a push is found by walking those
+# (`git -C <dir> push …`), so a push is found by walking those
 # options token by token (`_lib.GIT_GLOBAL_OPTS_WITH_VALUE`), not by a
 # `git\s+push` adjacency regex.
 # `--force`, `--force-with-lease[=ref]`, and short-flag clusters carrying `f`
@@ -273,7 +273,7 @@ def _scan_port_kills(cmd: str) -> list[int]:
     # kill — not just anywhere on the line. Whole-command matching let a
     # PID-scoped kill that merely *mentions* a protected port in a later
     # clause ("Stop-Process -Id 1234 -Force; curl http://127.0.0.1:8446/")
-    # get refused as though it targeted that port (fleet-config#709).
+    # get refused as though it targeted that port.
     for segment in STATEMENT_SPLIT_RE.split(cmd):
         if re.search(r"\bStop-Process\b", segment, re.IGNORECASE):
             ports.extend(int(p) for p in NETSTAT_PORT_RE.findall(segment))
@@ -294,7 +294,7 @@ def main() -> None:
     #    in the other shell doesn't false-positive. A harness with a single,
     #    shell-agnostic terminal tool (e.g. Grok or Codex) gets *both* sets: we cannot observe
     #    which shell it will use, and a missed blanket kill costs far more than
-    #    an over-eager block on an echoed kill string (fleet-config#491).
+    #    an over-eager block on an echoed kill string.
     tn = _lib.tool_name(payload)
     ambiguous = _lib.shell_is_ambiguous(payload)
     shell_note = " Shell unknown; checked PowerShell and Bash safety rules." if ambiguous else ""

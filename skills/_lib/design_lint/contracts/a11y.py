@@ -28,7 +28,7 @@ _BARE_FOCUS_VISIBLE = {":focus-visible", "*:focus-visible"}
 
 def _check_focus_visible_ring(ctx: _ContractsCtx) -> List[dict]:
     # 1. tokenized :focus-visible ring. Every :focus-visible rule is weighed,
-    # not just the first (fleet-config#994): a vendored component's scoped
+    # not just the first: a vendored component's scoped
     # `outline: none` sorting ahead of the global ring must not mask it. A
     # bare (global) tokenized rule is preferred as the evidence.
     css_all = ctx.css_all
@@ -58,7 +58,7 @@ def _check_reduced_motion(ctx: _ContractsCtx) -> List[dict]:
     return [_result("reduced-motion", "FAIL", "no prefers-reduced-motion handling (design.md v2 Motion section)")]
 
 
-# An at-rule's condition (`@media (max-width: 720px)`) is a breakpoint, never a declaration (#1087).
+# An at-rule's condition (`@media (max-width: 720px)`) is a breakpoint, never a declaration.
 _AT_PRELUDE_RE = re.compile(r"@(?:media|container|supports)\b[^{;]*")
 
 
@@ -66,7 +66,7 @@ def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
     # 3. desktop measure (centered 772px column, spec `layout.measure`). Only
     # declarations count: at-rule conditions are blanked, length-preserving so
     # evidence lines stay true. A cap through a custom property set to 772px
-    # (`max-width: var(--layout-measure)`) is the measure too (#1087).
+    # (`max-width: var(--layout-measure)`) is the measure too.
     decls = _AT_PRELUDE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), ctx.css_all)
     tokens = sorted(set(re.findall(r"(--[\w-]+)\s*:\s*772px", decls)))
     cap_re = r"max-width:\s*(?:772px" + "".join(rf"|var\(\s*{re.escape(t)}\b" for t in tokens) + ")"
@@ -79,7 +79,7 @@ def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
         return [_result("desktop-measure", "WARN",
                          f"content capped at {near.group(1)}px — spec is 772px",
                          _evidence(decls, near_re))]
-    # Width follows the shape of the view (#1113): an app that declares wide views has one
+    # Width follows the shape of the view: an app that declares wide views has one
     # full-width layout by design, and CSS cannot say which views are which. Its other views'
     # measure is what `/design-review`'s LAYOUT-06 verifies, so this is a WARN, not a FAIL.
     # A declaration that cannot be read stays a FAIL: unknown is never a pass.
@@ -102,14 +102,14 @@ _INTERACTIVE_COMPOUND_RE = re.compile(
 def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
     # 21. effective touch targets — every non-navigation pointer target
     #     presents >= components.hit-target.min (44px) effective (design.md
-    #     Touch targets; home-automation#409). Static view only: a compact
+    #     Touch targets). Static view only: a compact
     #     authored square (explicit sub-min width AND height on an
     #     interactive-looking selector) must pair with an invisible-expansion
     #     pseudo on the same class or a co-applied expansion utility in the
     #     markup. Effective rectangles and non-overlap are rendered facts —
-    #     the browser leg (project-scaffolding#157) proves the geometry.
-    #     App-authored surfaces only (`files.is_third_party`,
-    #     fleet-config#940): a bundled library's control chrome is sized by
+    #     the browser leg proves the geometry.
+    #     App-authored surfaces only (`files.is_third_party`):
+    #     a bundled library's control chrome is sized by
     #     that library and can't be widened in the app that vendored it.
     css_own, markup_own = ctx.css_own, ctx.markup_own
     min_m = re.match(r"(\d+)px", ctx.spec_light.get("components.hit-target.min", ""))
@@ -184,8 +184,8 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
 def _check_spec_contrast(ctx: _ContractsCtx) -> List[dict]:
     # 28. the spec's own pairs clear AA — every `components.<name>` with a
     #     textColor and backgroundColor, composited over `card`, per theme,
-    #     from the spec alone (fleet-config#963 found accent-on-accent-soft
-    #     at 4.13 / 3.79). The same for every app, so it flags the spec, not
+    #     from the spec alone (this check found accent-on-accent-soft
+    #     at 4.13 / 3.79 when first run). The same for every app, so it flags the spec, not
     #     the app. Colour maths lives in `design_lint/colormath.py` (a leaf
     #     module both `design_lint` and `design_review` import normally).
     low: List[str] = []
@@ -211,9 +211,9 @@ def _check_rendered_leg(ctx: _ContractsCtx) -> List[dict]:
     # 29. rendered leg adoption — a static PASS proves authored CSS, not the
     #     rendered box: hit-target passed on app-launcher while rendered
     #     heights were 33-39px. The shared rendered-geometry helper
-    #     (project-scaffolding#157, `tests/e2e/_geometry.py`) is what measures
+    #     (`tests/e2e/_geometry.py`) is what measures
     #     it. Without it the rendered leg is unmeasured, and says so here
-    #     rather than only in the /design-sync prose (fleet-config#969).
+    #     rather than only in the /design-sync prose.
     if not ctx.index_files:
         return [_result("rendered-leg", "NA", "no index.html — no rendered UI to measure")]
     helper = ctx.root / "tests" / "e2e" / "_geometry.py"

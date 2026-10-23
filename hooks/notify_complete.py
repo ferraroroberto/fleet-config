@@ -93,10 +93,10 @@ import work_summary  # noqa: E402
 _PR_KINDS = ("finish", "yolo", "security")
 
 # Action-needed kinds — the ping is a call to action the user must respond to,
-# so it routes to the "attention" chat, not the activity log (issue #139).
+# so it routes to the "attention" chat, not the activity log.
 # `cleanup` is conditional: it's action-needed only when issues await review.
 # `security` is always action-needed — an audit auto-fix shipped to a public repo
-# and the private after-the-fact diff review is the whole point (fleet-config#361).
+# and the private after-the-fact diff review is the whole point.
 # Everything else (add, finish, yolo, audit, recap, learning, finish-batch,
 # design) is a completed-work record → the "log" chat.
 _ATTENTION_KINDS = ("start", "batch", "security")
@@ -105,11 +105,11 @@ _ATTENTION_KINDS = ("start", "batch", "security")
 # source literal**, never carried across the shell boundary as a `--summary`
 # character. A skill writes the ASCII token instead — `"8 swept | 2 drifted"` —
 # and gets `8 swept · 2 drifted` in the chat. See `_lib.repair_mojibake` for why the
-# boundary can't be trusted (fleet-config#507): the emoji and em-dash in every
+# boundary can't be trusted: the emoji and em-dash in every
 # message above are Python literals for exactly the same reason, which is why
 # they always rendered while the argv-sourced `·` did not. The `???` seen in
 # practice was not argv at all: `run-hook.ps1` corrupted the command
-# `context_filter_hook` rewrites before it ever ran (fleet-config#912, fixed);
+# `context_filter_hook` rewrites before it ever ran (since fixed: the shim now reads stdin as UTF-8);
 # the token stays as the transport-independent path.
 SUMMARY_SEPARATOR = " · "
 _SUMMARY_SEPARATOR_TOKEN = re.compile(r"\s*\|\s*")
@@ -146,7 +146,7 @@ def category_for(kind: str, *, review: Optional[str] = None) -> str:
     return "log"
 
 
-# The gh shell-out lives in `_lib` (fleet-config#561) so `work_summary` — which
+# The gh shell-out lives in `_lib` so `work_summary` — which
 # this module imports, and which therefore could not import back — reaches the
 # same implementation instead of keeping a copy. Re-exported under the original
 # name because it is this module's public surface (callers and tests both reach
@@ -225,8 +225,8 @@ def build_message(
         return f"🚀 Shipped #{issue}{name} — PR{link}"
     if kind == "security":
         # No vulnerability detail here — the redacted issue title + generic PR
-        # title are all that ride. The call to action is the private diff review
-        # (fleet-config#361); a public repo can't hide the fix commit, so the
+        # title are all that ride. The call to action is the private diff review;
+        # a public repo can't hide the fix commit, so the
         # mitigation is a short window + this after-the-fact review, not secrecy.
         tail = f" — {summary.strip()}" if summary and summary.strip() else " — review the diff"
         return f"🔒 Security #{issue}{name}{tail}{link}"

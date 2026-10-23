@@ -102,8 +102,7 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
         # Non-login: the body inherits the harness shell's environment, as it
         # would unwrapped. A login shell re-sourced /etc/profile on every call
         # (~280 ms) and diverged from that environment, e.g. LANG=en_US.UTF-8
-        # instead of the harness's C.UTF-8 changed `sort` and `wc -m` output
-        # (fleet-config#1272).
+        # instead of the harness's C.UTF-8 changed `sort` and `wc -m` output.
         args = [bash, "-c", command] if bash else [command]
     else:
         args = [command]
@@ -111,7 +110,7 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
     # Popen + a bounded two-phase collection rather than subprocess.run(timeout=):
     # run() reacts to a timeout by killing only the direct child and then calling
     # communicate() with NO timeout, which deadlocks whenever a surviving
-    # grandchild still holds the pipes (fleet-config#411).
+    # grandchild still holds the pipes.
     process = subprocess.Popen(
         args,
         cwd=cwd or None,
@@ -193,7 +192,7 @@ def _header(compressed: Any) -> str:
         # lines=N->M is what lets a reader tell heavy filtering from an empty
         # result without re-reading the source: `lines=0->1` is a command that
         # printed nothing, `lines=412->9` is one whose output was mostly
-        # withheld (fleet-config#837). Appended, never reordered — the banner is
+        # withheld. Appended, never reordered — the banner is
         # a parsed contract for the fixture eval.
         f"lines={compressed.line_count}->{compressed.compressed_line_count}"
     )
@@ -248,7 +247,7 @@ def run_wrapped(args: argparse.Namespace) -> int:
         # In-band on stdout, not just stderr: a consumer parsing stdout as the
         # command's output (e.g. JSON from a fleet sweep helper) must not be
         # able to mistake truncated content for a complete, well-formed
-        # result (fleet-config#424).
+        # result.
         sys.stdout.write(
             f"[fleet-context-filter: OUTPUT TRUNCATED - killed after {exc.timeout}s; "
             "content above may be incomplete]\n"
@@ -258,7 +257,7 @@ def run_wrapped(args: argparse.Namespace) -> int:
 
     raw = (result.stdout or "") + (result.stderr or "")
 
-    # Fail open, loudly (fleet-config#837). The command has already run and its
+    # Fail open, loudly. The command has already run and its
     # output is in hand; anything that goes wrong from here on is the filter's
     # problem, not the command's, and must never cost the agent the output or
     # turn a successful command into a failure. The command's own exit code is
@@ -308,7 +307,7 @@ def _load_manifest(fixtures: Path) -> list[dict[str, Any]]:
 
 def run_eval(args: argparse.Namespace) -> int:
     # Deferred: `run` sits in front of every wrapped shell call and never needs
-    # it (fleet-config#1272).
+    # it.
     from statistics import median
 
     fixtures = Path(args.fixtures)
@@ -402,8 +401,8 @@ def run_compress(args: argparse.Namespace) -> int:
     """
     # Decode the raw bytes as UTF-8: a piped stdin's text layer defaults to the
     # locale codec (cp1252) on Windows, and Pi spawns this without PYTHONUTF8, so
-    # any non-ASCII output came back mojibaked (fleet-config#1440, same fix as
-    # `harness_wire.read_stdin_json`, #912). `utf-8-sig` drops a leading BOM.
+    # any non-ASCII output came back mojibaked (same fix as
+    # `harness_wire.read_stdin_json`). `utf-8-sig` drops a leading BOM.
     try:
         data = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -425,7 +424,7 @@ def run_compress(args: argparse.Namespace) -> int:
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    # Fail open, same contract as `run_wrapped` (fleet-config#837): wrap=False
+    # Fail open, same contract as `run_wrapped`: wrap=False
     # leaves Pi's own tool result untouched, so a filter fault costs telemetry
     # rather than the agent's view of its output.
     try:
@@ -469,7 +468,7 @@ def main() -> int:
     # _run_command), but re-emitting it via sys.stdout.write still falls back
     # to the locale codec (cp1252 on this machine) unless reconfigured here —
     # any emoji or box-drawing character in that output otherwise crashes the
-    # wrapper instead of passing through (fleet-config#426).
+    # wrapper instead of passing through.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
@@ -481,7 +480,7 @@ def main() -> int:
     run_p.add_argument("--mode", default="rewrite", choices=["rewrite", "shadow"])
     run_p.add_argument("--encoded", required=True)
     run_p.add_argument("--cwd")
-    # Telemetry attribution (fleet-config#541); optional so an older hook (or a
+    # Telemetry attribution; optional so an older hook (or a
     # hand-run wrapper) stays valid.
     run_p.add_argument("--session-id", dest="session_id", default="")
     run_p.add_argument("--agent", default="")

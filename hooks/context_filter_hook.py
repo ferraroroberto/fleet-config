@@ -64,12 +64,12 @@ def main() -> None:
         # "Hook failed". Preserving the wrapped command's status therefore
         # falsely blames this hook, while forcing zero would hide a real user
         # command failure. Until Codex separates those statuses, fail open and
-        # let its shell execute the original command exactly once (#755).
+        # let its shell execute the original command exactly once.
         _lib.allow()
     if agent == "grok":
         # Grok's PreToolUse honors only allow/deny — `updatedInput` is ignored,
         # so the wrap would never substitute and the emitted JSON would be dead
-        # weight on its runner. Explicitly inert there (fleet-config#541).
+        # weight on its runner. Explicitly inert there.
         _lib.allow()
     tool = _lib.tool_name(payload)
     if tool not in {"Bash", "PowerShell", "bash", "powershell"}:
@@ -78,7 +78,7 @@ def main() -> None:
     # A backgrounded command is the one shape the harness itself does not cap,
     # and the wrapper's fixed 600s ceiling therefore *introduces* a kill that
     # would not otherwise exist: a 10-minute monitoring poll came back as
-    # `exit code 124` with the tick simply lost (fleet-config#837). There is no
+    # `exit code 124` with the tick simply lost. There is no
     # compression upside either — background output is collected separately —
     # so the honest move is not to wrap it at all.
     if _lib.tool_input(payload).get("run_in_background"):
@@ -88,7 +88,7 @@ def main() -> None:
     if agent == "antigravity":
         # agy reports a Bash-flavored tool name but executes under the platform
         # shell — its live overwrite probe expanded `$env:OS` but left `%OS%`
-        # literal (fleet-config#546). Wrap for the shell that actually parses
+        # literal. Wrap for the shell that actually parses
         # and runs the command.
         shell_tool = "PowerShell" if sys.platform == "win32" else "Bash"
 
@@ -109,7 +109,7 @@ def main() -> None:
     if decision.prefix:
         # `cd X && …`: the harness's shell keeps its cwd between calls, so the
         # cd runs there, verbatim, and the wrapper inherits the directory it
-        # moved to instead of being pinned to the old one (fleet-config#1268).
+        # moved to instead of being pinned to the old one.
         rewritten = f"{decision.prefix.rstrip()} {rewritten}"
     else:
         rewritten += f" --cwd {_quote_path(Path(str(_lib.cwd(payload))))}"
@@ -123,7 +123,7 @@ def main() -> None:
 
     # Per-harness outbound rewrite dialect (Antigravity's `overwrite`,
     # Copilot's `modifiedArgs`, Claude's `hookSpecificOutput.updatedInput`)
-    # lives in `_lib.rewrite_command()`, not here (fleet-config#818) — the
+    # lives in `_lib.rewrite_command()`, not here — the
     # third outbound category alongside `block()`/`warn()`'s refuse/nudge
     # dialects, so a fifth harness is one branch there instead of an edit to
     # this hook.

@@ -87,22 +87,22 @@ TAB_SETTLE_MS = 2200
 DETAILS_SETTLE_MS = 1200
 DIALOG_SETTLE_MS = 500
 STEP_SETTLE_MS = 1200
-STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state (#995)
-WAIT_MS_MAX = 30000          # the ceiling on a declared `wait_ms` / tab `ready` wait: a target may wait longer, never forever (#1385)
+STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state
+WAIT_MS_MAX = 30000          # the ceiling on a declared `wait_ms` / tab `ready` wait: a target may wait longer, never forever
 READY_WAIT_MS = 15000        # how long a declared tab `ready` selector is waited for before the tab is captured as it stands
-GEAR_WAIT_MS = 1000          # the base page has settled (SETTLE_MS); a gear not visible this much later is not there (#1217)
-# The glance card's late reads (#1354): after the tab settles, wait for no request in flight for IDLE_QUIET_MS, at
+GEAR_WAIT_MS = 1000          # the base page has settled (SETTLE_MS); a gear not visible this much later is not there
+# The glance card's late reads: after the tab settles, wait for no request in flight for IDLE_QUIET_MS, at
 # most IDLE_WAIT_MS. A page that never goes quiet is read as unmeasured, never as settled. Streams never finish, so
 # an EventSource or WebSocket is not a read in flight.
 IDLE_WAIT_MS = 10000
 IDLE_QUIET_MS = 500
 IDLE_POLL_MS = 100
 _STREAM_TYPES = frozenset({"eventsource", "websocket"})
-# The vendored home-head gear is an icon-only button named "Settings" (project-scaffolding#316): found by role and name.
+# The vendored home-head gear is an icon-only button named "Settings": found by role and name.
 _SETTINGS_NAME = re.compile(r"^\s*settings\s*$", re.I)
 DEFAULT_TIMEOUT_MS = 15000
 # Neither engine captures an image over this many device px on a side: an iPhone (3x) page
-# over ~10,900 CSS px tall fails its full-page screenshot (#1085).
+# over ~10,900 CSS px tall fails its full-page screenshot.
 SCREENSHOT_MAX_PX = 32767
 _PAGE_SIZE_JS = ("() => ({dpr: devicePixelRatio, width: document.documentElement.scrollWidth,"
                  " height: document.documentElement.scrollHeight})")
@@ -114,7 +114,7 @@ sel => { const list = document.querySelector('[role=tablist]'); const root = lis
     id: t.dataset.tab || (t.getAttribute('aria-controls') || '').replace(/^pane[-_]?/i, '') || t.id || t.textContent.trim().toLowerCase()
   })); }
 """
-# Open every closed `<details>` under `root`, but only one popover per family (#1155): a disclosure
+# Open every closed `<details>` under `root`, but only one popover per family: a disclosure
 # whose body is positioned over the page (a row's menu) is one of a family -- its `name` group, else
 # its first class -- of which the app shows one at a time, so opening them all stacks menus that never
 # coexist. The first of each family opens (or the one already open stays); inline disclosures all open.
@@ -134,13 +134,13 @@ _OPEN_DETAILS_JS = """
   || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
   """ + _OPEN_ALL_JS + """ return openAll(pane); }
 """
-# Dialogs and extra steps: the open dialog when there is one, else the page (#995).
+# Dialogs and extra steps: the open dialog when there is one, else the page.
 _OPEN_SCOPE_DETAILS_JS = """
 () => { const root = document.querySelector('dialog[open]') || document.body;
   """ + _OPEN_ALL_JS + """ return openAll(root); }
 """
 _DIALOG_IDS_JS = "() => [...document.querySelectorAll('dialog[id]')].map(d => d.id)"
-# Is the element inside any no_go selector? An invalid selector fails closed (#995).
+# Is the element inside any no_go selector? An invalid selector fails closed.
 _NO_GO_JS = "(el, sels) => sels.some(s => { try { return !!el.closest(s); } catch (e) { return true; } })"
 
 
@@ -583,14 +583,14 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     key = review.get("theme_storage_key")
     if key:
         ctx.add_init_script(f"try{{localStorage.setItem({json.dumps(str(key))},{json.dumps(theme)})}}catch(e){{}}")
-    # The glance tracker (#1354) watches the first card under the header from the first frame of every load; it only reads.
+    # The glance tracker watches the first card under the header from the first frame of every load; it only reads.
     ctx.add_init_script(measure.GLANCE_TRACK_JS)
     page = ctx.new_page()
     page.set_default_timeout(args.timeout_ms)
     inflight = _Inflight(page)
     retouch = touch_restorer(ctx, page, profile["engine"], ctx_args)
     tab_selector = str(review.get("tab_selector") or "[role=tab]")
-    # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
+    # A synthetic run walks a throwaway instance: its own no_go, when declared, replaces the live list.
     synth = review.get("synthetic") if isinstance(review.get("synthetic"), dict) else {}
     no_go_src = synth.get("no_go") if args.synthetic and isinstance(synth.get("no_go"), list) else review.get("no_go", [])
     declared_ready = review.get("tab_ready") if isinstance(review.get("tab_ready"), dict) else {}

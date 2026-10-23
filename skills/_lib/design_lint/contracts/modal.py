@@ -43,9 +43,8 @@ def _check_native_dialog(ctx: _ContractsCtx) -> List[dict]:
 
 
 def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
-    # 16-20. Editor-modal contract (design.md `modal` component;
-    #     fleet-config#307) — a <dialog> containing real editable fields
-    #     (<form> wrapper optional, fleet-config#342) is held to the
+    # 16-20. Editor-modal contract (design.md `modal` component) — a <dialog>
+    #     containing real editable fields (<form> wrapper optional) is held to the
     #     header/rows/fieldset/footer/top-anchor contract. All five share
     #     the one `modals` scan, so they live in one function rather than
     #     re-deriving it per check.
@@ -60,7 +59,7 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
 
     # classes carried by the <dialog> tags themselves and by elements inside
     # them — a rule scoped under any of these is dialog-scoped even when the
-    # ancestor name has no "dialog" in it (`.detail-card .row`, #342).
+    # ancestor name has no "dialog" in it (`.detail-card .row`).
     dialog_classes_set: set = set()
     for modal in modals:
         dialog_classes_set |= modal["classes"]
@@ -71,7 +70,7 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     # 16. unstyled dialog rows — a dialog row (label) whose classes are only
     #     ever styled under some other, unrelated scope. Judged per label,
     #     not per class: one properly styled class makes the row styled — an
-    #     unstyled *modifier* riding a styled base class is fine (#342).
+    #     unstyled *modifier* riding a styled base class is fine.
     unstyled: List[Tuple[str, str]] = []
     for modal in modals:
         for lm in _LABEL_CLASS_RE.finditer(modal["inner"]):
@@ -154,7 +153,7 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     #     the full-width solid-accent primary. Applies only to *staged*
     #     editors (a Save/submit persistence boundary exists): a live-control
     #     dialog with fields but no Save (a camera PTZ surface, a filter
-    #     panel) has action rails, not a persistence footer (#342).
+    #     panel) has action rails, not a persistence footer.
     footer_bad: List[Tuple[str, str]] = []
     footer_checked = 0
     for modal in modals:
@@ -169,7 +168,7 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
                 continue
             # the footer is terminal — interactive content after the
             # container means this is a mid-body action rail, not the
-            # persistence footer (#342, the camera live-view rail).
+            # persistence footer (e.g. the camera live-view rail).
             if re.search(r"<(button|input|select|textarea|label)\b",
                          modal["inner"][fm2.end():], re.I):
                 continue
@@ -193,8 +192,7 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
         is_full_width = False
         for c in btn_classes:
             for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
-                # `accent-fill` is the solid primary since #963
-                # (project-scaffolding#274, fleet-config#994).
+                # `accent-fill` is the solid primary, alongside plain `accent`.
                 if re.search(r"background(-color)?:\s*var\(--accent(-fill)?\)", body):
                     is_accent = True
                 if re.search(r"width:\s*100%|flex:\s*1\b|align-self:\s*stretch", body):

@@ -28,7 +28,7 @@ import dirty_tree_check
 import hooks_state
 from no_window import NO_WINDOW
 import worktree_claim
-# `say --verify`'s delivery classifier is its own subsystem (fleet-config#680);
+# `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
 from steer_delivery import (
     INPUT_DEFERRED,
@@ -51,7 +51,7 @@ DEFAULT_TAIL = 2000
 DEFAULT_VERIFY_TIMEOUT = 20.0
 
 # `POST /api/board/issues/start` spawns the PTY before answering: 12.5/15.8/22.5/
-# 41.2 s under load (fleet-config#1329). A client that gives up at the 10 s
+# 41.2 s under load. A client that gives up at the 10 s
 # default leaves the server spawning anyway, and a blind retry then double-spawns.
 DISPATCH_TIMEOUT = 120.0
 
@@ -318,7 +318,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         return 1
     sid = (result.get("session") or {}).get("session_id")
     # One handle per dispatch, carried by every mailbox event the worker
-    # writes, so a re-dispatch of the same issue is told apart (#1455).
+    # writes, so a re-dispatch of the same issue is told apart.
     dispatch_id = uuid.uuid4().hex
     if sid:
         try:
@@ -359,7 +359,7 @@ def cmd_say(args: argparse.Namespace) -> int:
     if not args.verify:
         # Plain `say` is the most-used call, and a traceback here turns a
         # steer the operator could deliberately retry into a crash they have
-        # to diagnose. Report the failure instead (fleet-config#643).
+        # to diagnose. Report the failure instead.
         if not posted["ok"]:
             print(f"FAILED sid={args.sid} chars={len(text)} reason={posted['error']}")
             return 1
@@ -393,7 +393,7 @@ def cmd_say(args: argparse.Namespace) -> int:
     last_input = launcher._last_input(card)
     # Measured once: the classifier and the printed line must agree about how
     # long the target has been quiet, or the verdict can contradict the
-    # evidence beside it — which is exactly how #662 happened.
+    # evidence beside it.
     output_age = last_output_age_seconds(card.get("last_output_at"))
     output_window = recent_output_window(args.poll_interval)
 
@@ -406,7 +406,7 @@ def cmd_say(args: argparse.Namespace) -> int:
         output_window=output_window,
     )
     # DELIVERED is printed only after the full classification, never straight
-    # out of the poll loop: exchange movement alone is not proof (#856).
+    # out of the poll loop: exchange movement alone is not proof.
     if state == "delivered":
         print(f"DELIVERED sid={args.sid} chars={len(text)}")
         return 0
@@ -437,7 +437,7 @@ def _poll_delivery(
         if post_reason == INPUT_DEFERRED:
             # The target is mid-turn, so its exchange advances whether or
             # not this paste was submitted — wait on the watcher's own
-            # record instead (fleet-config#856).
+            # record instead.
             card = launcher.fetch_session_card(args.base_url, args.sid)
             if deferred_submit_outcome(post_reason, launcher._last_input(card)) != "in_flight":
                 return state, marker
@@ -542,7 +542,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     except (dirty_tree_check.Unreadable, ValueError) as exc:
         # The repo could not be read, so there is no verdict about it. Exit 1
         # like DIRTY does — an unverifiable self-report must not be relayed as
-        # verified — but say UNKNOWN, never DIRTY (fleet-config#570).
+        # verified — but say UNKNOWN, never DIRTY.
         return _print_verify("UNKNOWN", "", str(exc))
     result = dirty_tree_check.evaluate(
         args.expect, current_branch, resolved_default, args.branch, porcelain_empty, commits_ahead
@@ -565,7 +565,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         cards = chief_sweep.board_cards(launcher._request(args.base_url, "/api/board"))
     except (OSError, ValueError) as exc:
         # An unreadable board is an unestablished fact, not an empty one: every
-        # removable verdict degrades to `unknown` (fleet-config#1496).
+        # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
     markers = active_issue.read_rows()
     findings = chief_sweep.scan(
