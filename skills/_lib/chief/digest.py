@@ -23,11 +23,11 @@ def _fmt_age(seconds: Any) -> str:
 
 
 # Each digest count token and the `/api/board` source section whose
-# `available` flag says its column is real (app-launcher#910, #915). An
+# `available` flag says its column is real. An
 # unreadable source hands back empty lists, and `len([])` is a plausible
 # `0` — so a count is only ever rendered through `_source_unavailable`, and a
-# new token cannot be added here without naming the source that establishes it
-# (fleet-config#840). `other` mixes open PRs (github) with job cards, so a
+# new token cannot be added here without naming the source that establishes it.
+# `other` mixes open PRs (github) with job cards, so a
 # missing github fetch makes its total unknown too.
 _DIGEST_COUNTS: Tuple[Tuple[str, str], ...] = (
     ("backlog", "github"),

@@ -95,7 +95,7 @@ def _merge_table(text: str, table: str | None, values: dict[str, str]) -> str:
         else:
             output.append(line)
         # Also when the table's last line was itself a replaced managed key: the
-        # unseen keys still belong after it (fleet-config#1252).
+        # unseen keys still belong after it.
         if index == end - 1:
             output.extend(f"{key} = {value}{newline}" for key, value in values.items() if key not in seen)
     if body_start == end:

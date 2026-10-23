@@ -54,7 +54,7 @@ AUDIT_ISSUE_GET_TIMEOUT_S = 60
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
 # Bounds the archive so the ledger body never approaches GitHub's 65,536-char
-# issue-body ceiling (fleet-config#732): at ~12 new bullets/week the archive
+# issue-body ceiling: at ~12 new bullets/week the archive
 # would otherwise grow unbounded (94 bullets / 32.7k chars and counting on the
 # live ledger). 150 bullets is comfortably wide (~2.5 years at the 12/week
 # cap) while keeping the body well under the limit even before dedup trims it
@@ -64,7 +64,7 @@ ARCHIVE_CAP = 150
 # window is NOT uncapped: a repo with more merged PRs / closed issues than
 # PER_REPO_LIST_LIMIT, or an owner with more public repos than REPO_LIST_LIMIT,
 # is truncated by `gh`, so a `--since` backfill can under-count; `gh` says
-# nothing, so `_warn_if_capped` prints one stderr line per full list (#1295).
+# nothing, so `_warn_if_capped` prints one stderr line per full list.
 # 400 per repo is generous for one weekly window; 200 repos is well above the
 # fleet's size.
 PER_REPO_LIST_LIMIT = 400

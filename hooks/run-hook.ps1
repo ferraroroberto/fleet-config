@@ -38,7 +38,7 @@ if (-not (Test-Path $hookPath)) {
     exit 0   # missing hook is a config bug, not a tool-call problem -- don't block
 }
 
-# UTF-8 on both legs (fleet-config#912). `[Console]::In` decodes with the OEM
+# UTF-8 on both legs. `[Console]::In` decodes with the OEM
 # code page (ibm850) and `$payload | python` encodes with `$OutputEncoding`
 # (us-ascii in Windows PowerShell 5.1), so every non-ASCII codepoint reached the
 # hook as `?`. Wrap the raw stdin stream instead of setting
@@ -50,7 +50,7 @@ $payload = $stdin.ReadToEnd()
 $OutputEncoding = $utf8
 # The native pipe below writes the child's stdin through `Console.InputEncoding`,
 # and on a code-page-65001 console (what a pwsh 7 parent hands down) that
-# encoding emits a UTF-8 BOM ahead of the `{` (fleet-config#920). Swap in the
+# encoding emits a UTF-8 BOM ahead of the `{`. Swap in the
 # BOM-less instance of the *same* code page, so the shared console's CP is never
 # changed; any other page (or no console at all) has no preamble to strip.
 try {
@@ -67,8 +67,8 @@ try {
 # first on PATH.
 $pythonCmd = $null
 $candidates = @(
-    # fleet-config owns these hooks and ships its own project .venv
-    # (fleet-config#350); prefer it, falling back to a system Python if the
+    # fleet-config owns these hooks and ships its own project .venv;
+    # prefer it, falling back to a system Python if the
     # venv is ever absent (the Test-Path guard below keeps this safe).
     "E:\automation\fleet-config\.venv\Scripts\python.exe",
     "$env:LOCALAPPDATA\Python\bin\python.exe",

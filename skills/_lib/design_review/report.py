@@ -353,7 +353,7 @@ def _method(doc: dict) -> str:
         items.append("measured on the target's own synthetic instance (a throwaway copy with synthetic data, "
                      "booted and stopped by this run), not the live app; compared only with earlier synthetic runs")
     else:
-        # fleet-config#1163: the walk measures what the live app held at capture time, so a state that needs data
+        # The walk measures what the live app held at capture time, so a state that needs data
         # it did not have (list rows, per-item controls, populated overlays) is never measured and its rules can
         # read as passing (photo-ocr: per-photo controls under 44px beside a fixed TOUCH-01).
         items.append("states not walked: only what the live app held at capture time was measured, so states that need data it "
@@ -365,7 +365,7 @@ def _method(doc: dict) -> str:
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))
     e2e = doc.get("e2e") if isinstance(doc.get("e2e"), dict) else None
     if e2e:
-        # fleet-config#1498: `measure --e2e` adds the surfaces the app's own e2e suite opened; its failure is its own
+        # `measure --e2e` adds the surfaces the app's own e2e suite opened; its failure is its own
         # word and never the walk's, so the walk's screens still stand when the suite could not capture.
         eu = e2e.get("unmeasured") if isinstance(e2e.get("unmeasured"), dict) else None
         if eu:
@@ -379,7 +379,7 @@ def _method(doc: dict) -> str:
                          + (f"; {e2e['note']}" if e2e.get("note") else ""))
     mismatched = [s for s in doc.get("theme_mismatch_screens") or [] if isinstance(s, dict)]
     if mismatched:
-        # fleet-config#1216: the app owns its theme and re-applied its own after the walk stamped one, so a leg
+        # The app owns its theme and re-applied its own after the walk stamped one, so a leg
         # labelled light can have been dark; reading it as light would judge the wrong palette (and fail it).
         shown = ", ".join(str(s.get("id")) for s in mismatched[:6]) + (f" (+{len(mismatched) - 6} more)" if len(mismatched) > 6 else "")
         items.append(f"{len(mismatched)} screen(s) did not render the requested theme ({shown}): the app set its own theme after the walk "
@@ -388,7 +388,7 @@ def _method(doc: dict) -> str:
                      "follow the stamped theme, or declare [design.review] theme_storage_key")
     cov = doc.get("overlay_coverage") if isinstance(doc.get("overlay_coverage"), dict) else {}
     if cov.get("status") == "measured" and cov.get("not_walked_count"):
-        # fleet-config#1353: a drawer or sheet the walk never opened is invisible to every rule, so the grade can read
+        # A drawer or sheet the walk never opened is invisible to every rule, so the grade can read
         # as complete when it is not. Coverage, not a finding: nothing here moves the grade.
         n, sample = int(cov["not_walked_count"]), [str(k) for k in cov.get("not_walked") or []]
         more = f" +{n - len(sample)} more" if n > len(sample) else ""

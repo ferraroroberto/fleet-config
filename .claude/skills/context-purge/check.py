@@ -76,8 +76,8 @@ def check(before: str, after: str) -> list[str]:
             failures.append(f"marked block not byte-identical in after: {label}")
 
     # A trigger found by a line regex is not a description the harness can read:
-    # a rewrite that breaks the YAML keeps every phrase and loses them all
-    # (fleet-config#845), so the after-file's frontmatter must actually parse.
+    # a rewrite that breaks the YAML keeps every phrase and loses them all,
+    # so the after-file's frontmatter must actually parse.
     parse_error = frontmatter_error(after)
     if parse_error:
         failures.append(f"frontmatter does not parse: {parse_error}")

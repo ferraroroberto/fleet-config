@@ -108,7 +108,7 @@ class Rule:
     mockup: str
     threshold_token: Optional[str] = None
     adopt: str = ""
-    theme_dependent: bool = False  # judges the rendered palette: unmeasured on a screen that did not render the requested theme (#1216)
+    theme_dependent: bool = False  # judges the rendered palette: unmeasured on a screen that did not render the requested theme
     devices: List[str] = field(default_factory=list)
     screens: List[str] = field(default_factory=list)
     params: Dict[str, object] = field(default_factory=dict)

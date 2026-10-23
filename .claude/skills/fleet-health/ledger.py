@@ -26,7 +26,7 @@ from typing import Optional
 # Pin stdout/stderr to UTF-8 at the entry point -- see the same guard in
 # capture.py. `previous` prints a prior ledger entry verbatim, and the ledger
 # is full of arrows and box-drawing characters, so under captured stdout on
-# Windows this exits 1 on the first entry it reads (fleet-config#812).
+# Windows this exits 1 on the first entry it reads.
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):

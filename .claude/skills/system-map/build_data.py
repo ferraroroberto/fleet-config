@@ -90,7 +90,7 @@ HEADER = """\
 # 234 px at 10.5 px), 84 (enabling, 232 px at 12 px) and 137 (governance,
 # 513 px at the page font); each cap rounds down to keep a margin. Counting the
 # text as written (`&amp;` is five) only errs short. Detail beyond that goes in
-# `chips`/`tag` (fleet-config#1250).
+# `chips`/`tag`.
 DESCRIPTION_CAP = {
     "governance": 130,
     "enabling": 80,

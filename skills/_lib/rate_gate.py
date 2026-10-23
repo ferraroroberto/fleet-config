@@ -72,7 +72,7 @@ UNATTENDED_ENV = "FLEET_SCHEDULED_RUN"
 # The effective stall watchdog of the process that launched this run, exported
 # by scheduled_runner.py ("0" = watchdog off). A silent Monitor wait emits no
 # stream record at all, so an over-threshold wait of hours is killed as a hung
-# job (fleet-config#891 probe: --stall-timeout 120 fired at 02:10 into a silent
+# job (a probe with --stall-timeout 120 fired at 02:10 into a silent
 # 5-min wait). Each unattended wait is therefore capped at this fraction of the
 # watchdog; the caller re-checks between cycles, and that re-check is stream
 # activity the watchdog sees.

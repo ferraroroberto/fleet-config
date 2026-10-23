@@ -24,7 +24,7 @@ SKIP_DIR_PARTS = {".git", ".venv", "node_modules", "__pycache__", "spike", "spik
 # `_vendored/` component family — those are project-scaffolding components we
 # author and byte-compare, so they stay fully in scope. Hence an exact
 # path-segment comparison, never a substring: `vendor` must not read as a
-# prefix of `_vendored` (fleet-config#416, #843, #940).
+# prefix of `_vendored`.
 THIRD_PARTY_DIR_PARTS = {"vendor", "vendors"}
 
 

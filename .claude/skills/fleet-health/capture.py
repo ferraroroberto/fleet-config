@@ -54,7 +54,7 @@ from typing import Any, Optional
 # 1 -- under capture only, never in a terminal, which is to say only in the
 # scheduled run. The durable fix belongs here rather than in a PYTHONUTF8
 # wrapper at the call site (global-CLAUDE.md, "Windows Python: UTF-8 stdout
-# under capture"; fleet-config#812, the fifth occurrence).
+# under capture").
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -69,7 +69,7 @@ HUB_PORT = int(os.environ.get("FLEET_HEALTH_HUB_PORT", "8000"))
 DEFAULT_DURATION_S = float(os.environ.get("FLEET_HEALTH_DURATION_S", "3600"))
 DEFAULT_INTERVAL_S = float(os.environ.get("FLEET_HEALTH_INTERVAL_S", "30"))
 
-# Never end a turn waiting on background work (fleet-config#314): the caller
+# Never end a turn waiting on background work (a headless run is not resumed): the caller
 # polls in blocking chunks no longer than this, so each tool call returns well
 # inside its own timeout.
 POLL_CHUNK_S = 540.0

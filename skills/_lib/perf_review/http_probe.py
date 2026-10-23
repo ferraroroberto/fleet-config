@@ -21,7 +21,7 @@ from typing import Dict, List, Optional, Tuple
 TIMEOUT_S = 30.0
 # Pseudo-statuses, reported where a status goes. A response that never ends (an SSE feed, a long poll
 # that keeps pinging) defeats a socket timeout, which only bounds the gap between bytes, so each
-# request also carries a deadline on the whole exchange (fleet-config#1221).
+# request also carries a deadline on the whole exchange.
 SKIPPED_STREAM = "skipped (stream)"
 TIMEOUT = "timeout"
 

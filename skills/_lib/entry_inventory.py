@@ -334,7 +334,7 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
             if not is_test(path) and (path in text or (path.endswith(".py") and PurePosixPath(path).name in text)):
                 launched_by.setdefault(path, set()).add(f"doc:{doc}")
 
-    # Interpreter-start hits (fleet-config#1114): a `-m pkg.mod` hit resolves from the repo root.
+    # Interpreter-start hits: a `-m pkg.mod` hit resolves from the repo root.
     beacon = evidence.get("beacon") if isinstance(evidence.get("beacon"), dict) else {}
     beacon_state = "error" if evidence.get("beacon_error") else beacon.get("state", "absent")
     beacon_hits: Dict[str, str] = {}

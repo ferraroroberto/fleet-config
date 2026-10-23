@@ -45,7 +45,7 @@ _NOT_A_CLAIM_RE = re.compile(
     r"after|every|cadence|default|previous|prior|was|were|old|before)\b[^.;]{0,12}$|>\s*\**\s*$", re.I)
 
 
-# ---- waits: where a suite pays wall time without doing anything (fleet-config#1134) --------------------
+# ---- waits: where a suite pays wall time without doing anything --------------------
 # home-automation's biggest savings were waits, not merges: a real 15 s poll a test waited out (31 s of
 # the suite, now `page.clock`) and nine copies of a fixed 750 ms page timer (16 s, now held responses).
 # Merging 34 nodes saved about 10 s. A wait is found statically, so this works with no timing source.
@@ -368,7 +368,7 @@ def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_roo
 
     # A fixed sleep or page timer ranks by the seconds it is paid, a poll constant by its nodes' seconds. A
     # `timeout=` or a poll-loop sleep is a ceiling the test may never reach, so it ranks after every wait that is actually paid
-    # (task-os#284: a story with 30 s ceilings had 1.5 s of real waits in its 20.9 s).
+    # (e.g. a story with 30 s ceilings had 1.5 s of real waits in its 20.9 s).
     return sorted(out, key=lambda r: (bool(r["ceiling"]), -cost(r)))
 
 
@@ -393,7 +393,7 @@ def runtime_claims(text: str, file: str) -> List[Dict[str, object]]:
             if not _RUNTIME_CONTEXT_RE.search(near) or _NOT_A_CLAIM_RE.search(line[max(0, m.start() - 40):m.start()]):
                 continue
             # The first figure on a line is its headline; every later one needs a span word right before it, or it is
-            # a history, a scenario or a phase the log has no span for (app-launcher#1375: one bullet gave five claims).
+            # a history, a scenario or a phase the log has no span for (otherwise one bullet gives five claims).
             if kept and not _RUNTIME_CONTEXT_RE.search(line[max(0, m.start() - SPAN_WORD_WINDOW):m.start()]):
                 continue
             kept += 1

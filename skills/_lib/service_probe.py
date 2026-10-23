@@ -43,7 +43,7 @@ import fleet_repo_scan  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 
-# ---- live-service vocabulary for the fourth land-primary guard (#665) -----
+# ---- live-service vocabulary for the fourth land-primary guard -----
 #
 # What a liveness probe established, kept as three states rather than a
 # boolean: "nothing is listening" is a *positive* finding, while "the probe
@@ -100,7 +100,7 @@ def live_service_check(
                    f"refusing rather than assuming idle -- restart required if it is up")
 
 
-# ---- live-service probe (impure half of the #665 guard) -------------------
+# ---- live-service probe (impure half of the land-primary guard) -------------------
 
 # A refusal costs a restart the operator already owes; a slow probe costs every
 # finish on the fleet. Both budgets are deliberately small (netstat measures at

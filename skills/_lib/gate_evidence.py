@@ -103,7 +103,7 @@ def tree_hash(repo: Path) -> Tuple[Optional[str], str]:
             # copy2, not copyfile: git decides an entry is "racily clean" (its content must be re-read, its stat
             # cannot be trusted) by comparing the entry's mtime to the INDEX FILE's mtime, at one-second
             # resolution on Git for Windows. A copy stamped "now" erases that, so a same-size rewrite in the
-            # same second as the last index write read as unchanged and FRESH (fleet-config#1192).
+            # same second as the last index write read as unchanged and FRESH.
             shutil.copy2(index, tmp)
         else:
             tmp.unlink()  # a fresh repo has no index yet; git creates the temp one

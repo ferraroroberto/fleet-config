@@ -31,7 +31,7 @@ def _check_icon_sizes(ctx: _ContractsCtx) -> List[dict]:
     for bm in _BLOCK_RE.finditer(css_all):
         # `selector_group`, never raw group(1): that string also carries the
         # `/*FILE ...*/` delimiter, so a stylesheet under `_vendored/icons/`
-        # would make its first rule an "icon" rule (fleet-config#843).
+        # would make its first rule an "icon" rule.
         selector = selector_group(bm.group(1))
         if "icon" not in selector:
             continue
@@ -57,8 +57,7 @@ def _check_icon_set(ctx: _ContractsCtx) -> List[dict]:
     # 13. icon-set — one set, vendored Lucide sprite, never hand-drawn/mixed
     #     (design.md Icons). Emoji glyphs anywhere in rendered UI-chrome text
     #     (markup text nodes or JS string literals) are the anti-pattern; the
-    #     lucide-sprite adoption signal is the vendored `icons/` component
-    #     (fleet-config#284, app-launcher#355/#368).
+    #     lucide-sprite adoption signal is the vendored `icons/` component.
     vendored_root = ctx.vendored_root
     lucide_adopted = (vendored_root is not None
                        and (vendored_root / "icons").is_dir())
@@ -81,7 +80,7 @@ def _check_icon_set(ctx: _ContractsCtx) -> List[dict]:
 def _check_glyph_icons(ctx: _ContractsCtx) -> List[dict]:
     # 13b. text glyphs as icons — arrows (U+2190-21FF) and geometric shapes
     #      (U+25A0-25FF) in rendered text stand in for a Lucide glyph: refresh
-    #      as a literal arrow, a caret as a triangle (fleet-config#969). The
+    #      as a literal arrow, a caret as a triangle. The
     #      emoji scan never saw them. WARN, never FAIL: the fix is per app.
     if not ctx.html_files and not ctx.js_files:
         return [_result("glyph-icons", "NA", "no HTML or JS to scan")]

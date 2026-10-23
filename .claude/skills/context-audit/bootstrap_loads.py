@@ -48,7 +48,7 @@ from typing import Dict, List, Optional, Tuple
 
 # Claude Code's Read returns a partial view past a token limit that is not a
 # documented constant (code.claude.com/docs/en/tools.md: "exceeds the token
-# limit"). 25k is the threshold observed when #1014 was filed; override with
+# limit"). 25k is the threshold observed on a truncated life-os index; override with
 # `audit.py --read-cap`.
 READ_CAP_TOKENS = 25_000
 
@@ -56,7 +56,7 @@ READ_CAP_TOKENS = 25_000
 # trend estimate; here the question is "will this load truncated?", and an
 # underestimate reports a truncated load as ok -- the exact failure this module
 # exists to catch. Calibrated on the one measured fact: Read refused a 69k-byte
-# life-os conversation index at ~29k tokens (#1014), about 2.4 bytes/token for
+# life-os conversation index at ~29k tokens, about 2.4 bytes/token for
 # dense generated markdown. Plain English prose tokenizes looser, so this errs
 # toward flagging early, never toward passing a truncated file.
 CAP_BYTES_PER_TOKEN = 2.4
@@ -70,7 +70,7 @@ CREDENTIAL_RE = re.compile(
 
 
 # How a bootstrap states its head-only read: life-os's `_shared/bootstrap.md`
-# says "Read the file's first **244 lines**" (life-os#171). Exactly one match
+# says "Read the file's first **244 lines**". Exactly one match
 # in the declaring file is required; none or several is "not confirmed".
 LINE_CAP_RE = re.compile(r"first \*\*(\d+) lines\*\*")
 

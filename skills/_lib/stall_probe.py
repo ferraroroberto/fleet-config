@@ -123,7 +123,7 @@ _POWER_PS = (
     "catch{{ if($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*'){{ $ev=@() }} else {{ throw }} }};"
     "ConvertTo-Json -InputObject $ev -Compress"
 )
-# HWiNFO64's process start: its 8-hourly relaunch lines up with the E: stalls (fleet-config#1106).
+# HWiNFO64's process start: its 8-hourly relaunch lines up with the E: stalls.
 # `running` and `start_utc` apart: a process whose start time can't be read is running with a null start.
 _HWINFO_PS = (
     "$h=Get-Process -Name HWiNFO64 -ErrorAction SilentlyContinue | Select-Object -First 1;$st=$null;"

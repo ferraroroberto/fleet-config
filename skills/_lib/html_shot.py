@@ -212,8 +212,7 @@ def shoot(
     # — only Chrome's stderr is read — but it is still a real file, and every
     # /system-map, /config-map and design render dropped one in %TEMP% that
     # nothing reclaimed. Unlinked in `finally`, like the staged shot below, so
-    # a probe that fails to yield DIMS doesn't leak on its way out
-    # (fleet-config#681).
+    # a probe that fails to yield DIMS doesn't leak on its way out.
     probe_png = tmp / ("html_shot_probe_" + uuid.uuid4().hex + ".png")
     try:
         probe = _run_browser(browser_exe, is_headless_shell, url, [

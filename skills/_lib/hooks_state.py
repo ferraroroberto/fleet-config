@@ -30,8 +30,8 @@ from typing import Optional
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
 # An abrupt death between mkstemp and os.replace runs no Python handler, so a
-# writer's own except-branch unlink never fires and the temp is stranded
-# (fleet-config#816). Nothing inside the dead process can clean up, so temps
+# writer's own except-branch unlink never fires and the temp is stranded.
+# Nothing inside the dead process can clean up, so temps
 # are named after their target and expired by age by the next writer instead.
 # An hour is orders of magnitude beyond a real write's duration, so the sweep
 # cannot race a live writer's temp.

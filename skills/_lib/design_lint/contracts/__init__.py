@@ -102,8 +102,8 @@ def contracts(
     css_all = _css_blob(css_files)
     # app-authored CSS only. A bundled third-party library's internals are not
     # the adopting app's design choice and can't be fixed there anyway — the
-    # reason `find_emoji_sites` already skips them (#416). Leaflet's popup
-    # close button is not home-automation's button (fleet-config#940).
+    # reason `find_emoji_sites` already skips them. Leaflet's popup
+    # close button is not home-automation's button.
     # `files.is_third_party` states which blob a new contract should read.
     css_own = _css_blob([p for p in css_files if not is_third_party(p)])
 
@@ -116,7 +116,7 @@ def contracts(
     markup_files = html_files + js_files
     markup_all = _markup_blob(markup_files)
     # app-authored markup only, same rule as `css_own` — Leaflet's own
-    # layers-control checkbox is not home-automation's checkbox (#843).
+    # layers-control checkbox is not home-automation's checkbox.
     markup_own = _markup_blob([p for p in markup_files if not is_third_party(p)])
     index_files = [p for p in html_files if p.name == "index.html"]
     ctx = _ContractsCtx(

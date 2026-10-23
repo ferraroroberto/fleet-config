@@ -118,8 +118,8 @@ def cmd_measure(args: argparse.Namespace) -> int:
         print(f"ERROR=rubric names unknown metrics on rules {bad}")
         return 2
     try:
-        # A synthetic run's URL comes from the target's own launcher (#995), so no port lookup is needed.
-        # `--e2e` without `--url` measures the disposable instance too (#1507): its walk never touches the live port,
+        # A synthetic run's URL comes from the target's own launcher, so no port lookup is needed.
+        # `--e2e` without `--url` measures the disposable instance too: its walk never touches the live port,
         # and a target with no synthetic launcher is unmeasured (SYNTHETIC_UNDECLARED), never walked live.
         synthetic = args.synthetic or (args.e2e and not args.url)
         url = args.url or (plan.SYNTHETIC_URL if synthetic else None)
@@ -145,7 +145,7 @@ def cmd_measure(args: argparse.Namespace) -> int:
     print(f"RUN_DIR={doc['run_dir']}")
     print(f"METRICS={Path(str(doc['run_dir'])) / 'metrics.json'}")
     print(f"SCREENS={ok}/{len(screens)}")
-    print(f"ABSENT={sum(1 for s in screens if s.get('status') == 'absent')}")  # step targets not in this app state (#995)
+    print(f"ABSENT={sum(1 for s in screens if s.get('status') == 'absent')}")  # step targets not in this app state
     unm = doc.get("unmeasured")
     print(f"UNMEASURED={unm['reason'] if unm else 'none'}")
     if unm and unm.get("detail"):
@@ -206,7 +206,7 @@ def _print_summary(doc: Dict[str, object]) -> None:
     print("CATEGORIES=" + ",".join(f"{c}:{g}" for c, g in s["categories"].items()))
     print("MOCKUPS=" + (",".join(s["mockups"]) or "none"))
     cov = doc.get("overlay_coverage") if isinstance(doc.get("overlay_coverage"), dict) else {}
-    # Overlay surfaces no walked screen opened (#1353): coverage, never part of the grade above.
+    # Overlay surfaces no walked screen opened: coverage, never part of the grade above.
     print(f"NOT_WALKED={cov['not_walked_count'] if cov.get('status') == 'measured' else 'unknown'}"
           + (f" ({','.join(cov.get('not_walked') or [])})" if cov.get("not_walked") else ""))
     j = doc.get("judgment")
@@ -306,7 +306,7 @@ def cmd_judge_merge(args: argparse.Namespace) -> int:
     print(f"DROPPED={len(merged.get('dropped') or [])}")
     if str(ev_doc.get("rubric_version")) != rb.version:
         # The grades were scored under another rubric version than the checklist
-        # was answered against; #974's diff must read both stamps, not one.
+        # was answered against; the ledger diff must read both stamps, not one.
         print(f"RUBRIC_MISMATCH=evaluate:{ev_doc.get('rubric_version')} judgment:{rb.version}")
     for e in merged.get("errors") or []:
         print(f"ERROR_DETAIL={e}")

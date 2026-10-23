@@ -115,7 +115,7 @@ def main() -> None:
     if _lib.tool_name(payload) not in GUARDED_TOOLS:
         _lib.allow()
 
-    # Cheapest *and* most selective gate first (fleet-config#680). Only a
+    # Cheapest *and* most selective gate first. Only a
     # launcher-dispatched session can ever be blocked here, and the vast
     # majority of live sessions are interactive ones that carry no such
     # variable — so asking this before `_current_branch`/`_default_branch`

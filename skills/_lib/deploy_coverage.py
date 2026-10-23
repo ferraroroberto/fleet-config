@@ -195,7 +195,7 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     changed = git_run.changed_files(repo, base or _default_base(repo))
     for comp in components:
         # A diff that could not be taken is `unknown`, exactly as a component
-        # with no parseable path token is — never `no` (fleet-config#681).
+        # with no parseable path token is — never `no`.
         touched = "unknown" if changed is None else component_touch_status(comp, changed)
         print(f"COMPONENT={comp['name']}")
         print(f"TOUCHED={touched}")

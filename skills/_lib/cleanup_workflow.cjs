@@ -68,7 +68,7 @@ async function next(state) {
       // has no module system (it must stay a bare, pasteable script body for
       // the native Workflow tool), so the two checks cannot share code; keep
       // both conditions identical to `inconsistentBuild`/`inconsistentValidate`
-      // if either ever changes (fleet-config#1065).
+      // if either ever changes.
       if (opts.phase === 'Validate' && (!prior.result.feedback.trim() || (prior.result.pass && prior.result.verification !== 'PASS'))) {
         throw new Error('validator requires feedback and a consistent verification verdict')
       }

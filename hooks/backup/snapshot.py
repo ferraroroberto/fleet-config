@@ -28,7 +28,7 @@ logger = logging.getLogger("backup_private")
 
 #: Pages copied per `Connection.backup` step (4 MB at SQLite's default page size).
 #: A single unbounded step cannot be interrupted, so a writer holding the lock
-#: would block it forever (fleet-config#1422); big enough steps keep the read
+#: would block it forever; big enough steps keep the read
 #: window long enough that a live writer rarely forces a restart.
 _BACKUP_PAGES_PER_STEP = 1024
 #: Longest a single step waits inside SQLite's busy handler. The stall deadline
@@ -206,7 +206,7 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
                 # Native JSONL histories are append-only but live. They can
                 # change after the source hash and before/during copy, so the
                 # manifest's authority is the stable snapshot that landed,
-                # never an earlier view of the source (fleet-config#797).
+                # never an earlier view of the source.
                 digest = sha256_file(target)
                 copied += 1
         except FileNotFoundError:

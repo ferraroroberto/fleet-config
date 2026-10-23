@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 
-# Fallback when app-launcher's Settings value (app-launcher#1298) can't be read.
+# Fallback when app-launcher's Settings value can't be read.
 DEFAULT_COMPACT_THRESHOLD = 30
 # The pre-compact refresh must have just run: handover log and plan both
 # written within this window, or the compaction would drop state they lack.

@@ -152,7 +152,7 @@ def main() -> int:
         parts.append(refresh)
     if not parts:
         return 0
-    # `_lib.warn()` owns the per-harness SessionStart dialect (fleet-config#818):
+    # `_lib.warn()` owns the per-harness SessionStart dialect:
     # Claude gets the hookSpecificOutput.additionalContext envelope this hook
     # used to hand-roll unconditionally; a non-Claude harness -- e.g. Grok,
     # which loads this repo's hooks by default -- gets the plain-stdout

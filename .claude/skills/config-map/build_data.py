@@ -358,8 +358,8 @@ def hooks_inventory(residual: dict) -> tuple[list[dict], list[dict]]:
         return f"{event} · {m}" if m else event
 
     # A hook keeps its first event, plus every matcher it is wired on under that
-    # event: since the dispatcher (fleet-config#1274) Bash and PowerShell are two
-    # entries naming the same hooks, so first-wins dropped PowerShell (#1296).
+    # event: since the shared dispatcher, Bash and PowerShell are two
+    # entries naming the same hooks, so first-wins would drop PowerShell.
     wired: dict[str, tuple[str, list[str]]] = {}
     for name, event, matcher in claude_wiring:
         first_event, matchers = wired.setdefault(name, (event, []))

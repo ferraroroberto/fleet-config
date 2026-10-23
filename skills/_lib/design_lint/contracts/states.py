@@ -22,7 +22,7 @@ _INTERACTION_STATES = {"open", "closed", "checked", "unchecked", "on", "off",
 # The live region can be declared in markup or set from JS — a JS-rendered
 # drawer/toast is exactly the surface this contract exists for, and the
 # lifecycle half of the same check already reads `dataset.state = '...'`.
-# Grepping only the markup spelling made those surfaces unpassable (#416).
+# Grepping only the markup spelling made those surfaces unpassable.
 _ROLE_STATUS_RE = re.compile(
     r'role=["\']status["\']'
     r'|setAttribute\(\s*["\']role["\']\s*,\s*["\']status["\']\s*\)'
@@ -34,7 +34,7 @@ def _check_async_lifecycle(ctx: _ContractsCtx) -> List[dict]:
     # 24. async lifecycle vocabulary — data surfaces declare the five-state
     #     set loading/ready/empty/stale/error on data-state and announce
     #     changes via a role="status" live region (design.md Async data &
-    #     feedback; home-automation#409). Static view: literal data-state
+    #     feedback). Static view: literal data-state
     #     values in markup/JS/CSS; runtime-only assignments are the rendered
     #     leg's problem.
     markup_all, css_all = ctx.markup_all, ctx.css_all

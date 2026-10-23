@@ -57,7 +57,7 @@ RUN_MARKER_NAME = ".run-in-progress"
 LATEST_DIR = "latest"
 DATE_FMT = "%Y-%m-%d"
 
-# The relocated-runtime-data leg (fleet-config#724). Its name is load-bearing in
+# The relocated-runtime-data leg. Its name is load-bearing in
 # three places — the manifest's `leg`, `policy_summary`'s cap exemption, and the
 # restore note's per-leg blurb — so it is a constant, not a repeated literal.
 RUNTIME_DATA_LEG = "runtime-data"
@@ -118,7 +118,7 @@ class BackupConfig:
     transcripts_dest: Path
     codex_sessions_src: Path
     codex_sessions_dest: Path
-    # The relocated runtime-data root (project-scaffolding#243) and its
+    # The relocated runtime-data root and its
     # destination. `runtime_data_dest` has to live on E: — the legs cross
     # volumes on purpose, and `_preflight` refuses a same-volume snapshot.
     runtime_data_src: Path
@@ -172,11 +172,11 @@ class RepoOverrides:
     exclude: Tuple[str, ...] = ()
     include: Tuple[str, ...] = ()
     # Basename globs exempted from the global deny_dirs/deny_globs check, for
-    # this repo only (fleet-config#722) — e.g. a *.log file that is actually
+    # this repo only — e.g. a *.log file that is actually
     # security-relevant automation state, not routine debug noise.
     include_globs: Tuple[str, ...] = ()
     # Relative paths (matched like `include`/`exclude`) exempted from the
-    # global max_file_mb cap, for this repo only (fleet-config#722).
+    # global max_file_mb cap, for this repo only.
     always_include: Tuple[str, ...] = ()
 
 

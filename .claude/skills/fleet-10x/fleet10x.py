@@ -51,7 +51,7 @@ DEFAULT_ROOT = Path("E:/automation")
 DEFAULT_MIN_COMMITS = 20
 DEFAULT_DAYS = 60
 # A quiet repo gets one line in the report; .fleet.toml descriptions run to
-# 1000+ characters (fleet-config#1250), so the first sentence, capped.
+# 1000+ characters, so the first sentence, capped.
 ONE_LINE_MAX = 160
 
 IMPACT = {"H": 3, "M": 2, "L": 1}

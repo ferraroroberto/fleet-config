@@ -42,7 +42,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Repo-relative (fleet-config#502), matching gate.py / check.py / digest.py.
+# Repo-relative, matching gate.py / check.py / digest.py.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import digest_delivery  # noqa: E402
 

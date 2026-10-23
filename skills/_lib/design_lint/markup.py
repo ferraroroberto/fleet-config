@@ -87,7 +87,7 @@ _EMOJI_RE = re.compile(
     "]"
 )
 # Arrows and geometric shapes drawn as text in place of an icon (refresh as a
-# literal arrow, a dropdown caret as a triangle — fleet-config#969). Disjoint
+# literal arrow, a dropdown caret as a triangle). Disjoint
 # from the emoji ranges above, so a site is never counted by both scans.
 _GLYPH_ICON_RE = re.compile(f"[{GLYPH_ICON_CLASS}]")   # arrows, geometric shapes
 _TAG_RE = re.compile(r"<[^>]*>")
@@ -142,11 +142,11 @@ def _rendered_text_sites(root: Path, html_files: List[Path], js_files: List[Path
 # ------------------------------------------------------------ editor modal
 #
 # A native <dialog> containing real editable fields is an "editor modal" and
-# held to design.md's `modal` component contract (fleet-config#307 — the
-# app-launcher#70 root cause: `.stacked` was styled only inside
+# held to design.md's `modal` component contract (root cause: `.stacked` was
+# styled only inside
 # `.settings-card`, so the same class fell back to unstyled inline labels
 # inside <dialog> forms, and raw <fieldset> groups had no CSS at all).
-# A <form> wrapper is NOT required (fleet-config#342): home-automation#409's
+# A <form> wrapper is NOT required: home-automation's
 # three JS-managed editors carry bare input/select fields with a plain
 # type="button" Save, and the old form-based classifier NA'd every modal-*
 # check for them. What makes a dialog an editor is the fields, not the

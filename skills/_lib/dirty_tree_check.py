@@ -60,7 +60,7 @@ class Result(NamedTuple):
     reason: Optional[str]
 
 
-# Re-exported, not redefined (fleet-config#677): this module exists to be the
+# Re-exported, not redefined: this module exists to be the
 # independent check on a sub-agent's self-report, so a manufactured verdict here
 # is worse than no verdict — but that argument is `git_run.Unreadable`'s, and one
 # class means `repo_preflight` and this module can never drift apart on it.
@@ -107,7 +107,7 @@ def evaluate(
 
 
 # Stripped stdout, or `Unreadable` — never an empty string standing in for a
-# fact. Shared with `repo_preflight` (fleet-config#677); the local name is kept
+# fact. Shared with `repo_preflight`; the local name is kept
 # so the call sites below read unchanged.
 _run_git = git_run.run_git_or_raise
 

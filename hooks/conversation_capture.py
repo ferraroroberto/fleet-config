@@ -31,7 +31,7 @@ logger = logging.getLogger("conversation_capture")
 # Tags Claude Code embeds in user messages when a skill is invoked.
 _CMD_NAME_RE = re.compile(r"<command-name>/([^<]+)</command-name>")
 
-# Marker provenance (fleet-config#784). The marker and the transcript are stamped
+# Marker provenance. The marker and the transcript are stamped
 # by the same host clock, so only a token skew allowance is needed; the max age is
 # the weaker fallback used when a source records no timestamp at all.
 _MARKER_SKEW_SECONDS = 5
@@ -268,7 +268,7 @@ def make_description(messages: list[tuple[str, str]]) -> str:
 # Words too generic to make a representative slug: grammatical glue plus the
 # conversational filler ("today", "really", "think", …) that dominates a casual
 # Life OS chat. Topic-bearing nouns survive the filter; "day"/"today" are dropped
-# deliberately — issue #84 cites "day-today-which" as a canonical bad slug.
+# deliberately — "day-today-which" is a canonical bad slug.
 _STOPWORDS = {
     "i", "a", "an", "the", "and", "or", "to", "in", "on", "of", "is", "it",
     "my", "me", "we", "you", "he", "she", "ok", "okay", "want", "have", "had",
@@ -434,7 +434,7 @@ def _trigger_delayed_index(project_name: str) -> None:
 
 # ----------------------------------------------------------- outcome breadcrumb
 
-# One line per Stop of a capture-enabled project, whatever happened (#983). Every
+# One line per Stop of a capture-enabled project, whatever happened. Every
 # no-op here was stderr-only, and Claude Code keeps no Stop-hook stderr, so a
 # missing or stale capture could not be explained after the session ended.
 # Metadata only -- outcome, session id, routing, paths, turn counts -- never a
@@ -518,8 +518,8 @@ def write_capture(
             # extracts from the first lines. This scan runs once per Stop hook
             # per capture in every routed directory, so re-reading whole
             # transcripts here re-slurps the entire capture corpus on every
-            # turn-end for a project routing to many skill directories
-            # (fleet-config#819); `conversation_index._read_header` already
+            # turn-end for a project routing to many skill directories;
+            # `conversation_index._read_header` already
             # does the bounded read.
             header = _read_header(path)
             same = (header.get("agent") == transcript.harness and
@@ -553,7 +553,7 @@ def write_capture(
         stamp = filename_time or now
         # Filename token is a truncated *cosmetic* uniquifier only — dedup/resume
         # identity always reads the full `key` from the header (see the header-parsing
-        # loop above), never the filename, so truncating here is safe (fleet-config#791).
+        # loop above), never the filename, so truncating here is safe.
         filename = f"{stamp:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key[:8]}.md"
         out_path = out_dir / filename
     header = capture_header(transcript.session_id, transcript.harness, now.isoformat(timespec="seconds"),

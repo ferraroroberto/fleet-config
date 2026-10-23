@@ -87,7 +87,7 @@ DerivedWithFacts = Tuple[Optional[float], List[object], Optional[str], Dict[str,
 # text to histogram): skipped, counted separately from `unmeasured`. A rule
 # that is N/A on every screen still reports `pass` — vacuously, and says so.
 NOT_APPLICABLE = "n/a"
-ABSENT = "absent"  # walk.py's status for a step whose target never appeared (STEP_TARGET_ABSENT, #995)
+ABSENT = "absent"  # walk.py's status for a step whose target never appeared (STEP_TARGET_ABSENT)
 
 
 def _share(num: object, den: object) -> Optional[float]:
@@ -120,7 +120,7 @@ def _d_icons_off_step(m: dict, rule: Rule, ctx: dict) -> Derived:
     if not steps:
         return None, [], "icons.size steps unresolved from the spec"
     tol = float(rule.params.get("tolerance_px", 1.0))
-    # Which element each box is (#1020); a run from before that key has none, never an error.
+    # Which element each box is; a run from before that key has none, never an error.
     elements = measure.metric_value(m, "icons.elements") or {}
     off: List[object] = []
     for key, n in sorted(boxes.items()):
@@ -307,13 +307,13 @@ def _d_no_text_size_control(m: dict, rule: Rule, ctx: dict) -> Derived:
     locked = measure.metric_value(m, "a11y.zoom_locked")
     if not ctl:
         # The control is one fact about the app, not about a screen: Settings is rendered only while open, so it
-        # is absent from every other screen. Seen on any walked screen -> the app has it (#1185).
+        # is absent from every other screen. Seen on any walked screen -> the app has it.
         if ctx.get("text_size_control_seen"):
             return 0.0, [{"zoom_locked": locked, "text_size_control": False, "seen_on_another_screen": True}], None
         # The vendored boot script stamped <html data-textsize> but no walked screen showed the control. When the walk
         # opened the Settings gear and still did not see it, it is missing (fails, below); when the pane was never
         # opened (no gear, or the click refused or failed) it is not established -> unmeasured, never a pass and
-        # never a false fail (#1217).
+        # never a false fail.
         if measure.metric_value(m, "a11y.text_size_stamped") is True and ctx.get("settings_gear") != "ok":
             gear = {"absent": "no Settings gear was found to open (SETTINGS_GEAR_ABSENT)",
                     "error": "the Settings gear could not be opened"}.get(str(ctx.get("settings_gear")), "its Settings pane was not opened")
@@ -780,7 +780,7 @@ class _Tally:
         self.passed = 0
         self.not_applicable = 0
         self.na_reasons: List[str] = []  # stated reasons behind n/a screens (a bare `n/a` has none)
-        self.absent = 0  # step screens whose target never appeared (#995): neither measured nor unmeasured
+        self.absent = 0  # step screens whose target never appeared: neither measured nor unmeasured
 
 
 def _fold(result: dict, tally: _Tally, sid: str, value: Optional[float], items: List[object],
@@ -917,7 +917,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "metrics_rubric_version": doc.get("rubric_version"),
         "base_url": doc.get("base_url"),
         "mode": doc.get("mode") or "live",
-        # `measure --e2e` (#1498): the suite's outcome rides through to the report and the ledger; a plain run has none.
+        # `measure --e2e`: the suite's outcome rides through to the report and the ledger; a plain run has none.
         **({"e2e": doc["e2e"]} if doc.get("e2e") is not None else {}),
         "synthetic_declared": isinstance((doc.get("review") or {}).get("synthetic"), dict),
         "run_dir": doc.get("run_dir"),

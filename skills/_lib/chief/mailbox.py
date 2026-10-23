@@ -20,7 +20,7 @@ from . import digest
 LOGGER = logging.getLogger(__name__)
 
 
-# ---- chief inbox: worker turn-end wake events (fleet-config#999) ------------
+# ---- chief inbox: worker turn-end wake events -------------------------------
 
 # Written by `hooks/chief_inbox.py` (one JSON file per event); read here by
 # path, not import -- `hooks/` and `skills/_lib/` stay independent trees.
@@ -35,9 +35,9 @@ DEFAULT_WAIT_EVENT_INTERVAL = 5.0
 WAIT_EVENT_SETTLE_SECONDS = 3.0
 
 
-# Mailbox v2 (fleet-config#1455; contract: docs/chief-mailbox.md). A v2 claim
+# Mailbox v2 (contract: docs/chief-mailbox.md). A v2 claim
 # lives under `.claimed/`, where `wait-event` never looks, so both readers
-# coexist until the doorbell switch-over (#1457).
+# coexist until the doorbell switch-over.
 CLAIMED_DIRNAME = ".claimed"
 # A claim unacked this long is re-offered: the reader that took it is assumed
 # dead. Longer than any chief turn that handles a batch, so a live chief is
@@ -47,7 +47,7 @@ EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "ne
                    "job-failed": "job failed"}
 # Reading a just-claimed file retries a sharing violation this many times,
 # backing off from this delay and doubling (10+20+40+80 ms): the concurrent
-# claimer holding it finishes its rename in well under that (fleet-config#1465).
+# claimer holding it finishes its rename in well under that.
 CLAIM_READ_ATTEMPTS = 5
 CLAIM_READ_BACKOFF_SECONDS = 0.01
 
@@ -381,7 +381,7 @@ def wait_for_events(
 
 
 
-# ---- which reader wakes the chief (fleet-config#1457) -------------------------
+# ---- which reader wakes the chief ---------------------------------------------
 
 def resolve_wake_mode(
     config: Optional[Dict[str, Any]], unread_reason: str = "launcher unreachable",

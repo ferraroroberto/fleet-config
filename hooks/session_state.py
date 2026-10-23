@@ -350,7 +350,7 @@ def remove_from_payload(payload: Dict[str, Any]) -> bool:
 def main() -> None:
     # Same stderr wiring every sibling hook installs, so a "write not confirmed"
     # warning lands in the fleet's format instead of logging's lastResort
-    # fallback — this module logs now (fleet-config#816), so it needs it too.
+    # fallback — this module logs now, so it needs it too.
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     try:
         payload = _lib.read_stdin_json()
@@ -364,7 +364,7 @@ def main() -> None:
                     payload, status, allow_reopen=event == "UserPromptSubmit"
                 )
         if event in ("Stop", "SessionEnd"):
-            # A chief-managed worker's turn-end wakes the chief (fleet-config#999).
+            # A chief-managed worker's turn-end wakes the chief.
             import chief_inbox
             chief_inbox.record_safely(payload, event)
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session

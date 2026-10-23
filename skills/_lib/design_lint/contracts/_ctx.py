@@ -50,7 +50,7 @@ def _loc_at(blob: str, pos: int) -> str:
         end = blob.find("*/", fh)
         fname = blob[fh + 7:end]
         # Content starts after the newline that ends the marker line — that
-        # newline belongs to the marker, not the file (fleet-config#858).
+        # newline belongs to the marker, not the file.
         start = blob.find("\n", end) + 1
     line = blob.count("\n", start, pos) + 1
     return f"{fname}:{line}"

@@ -25,11 +25,11 @@ from .http_probe import SKIPPED_STREAM  # noqa: E402
 BUDGETS_PATH = Path(__file__).resolve().parent / "budgets.toml"
 LEDGER_KEEP = 20
 # A cold sample is an outlier when it sits more than twice the median AND at least this far above it:
-# a first load right after a restart read 3072 ms on an app that otherwise loads in ~370 ms (#1140).
+# a first load right after a restart read 3072 ms on an app that otherwise loads in ~370 ms.
 OUTLIER_FACTOR = 2.0
 OUTLIER_MIN_MS = 500
 # An endpoint is "slower" than the previous run when its p95 rose by this factor AND this many ms: parking-manager's `/`
-# went 31 -> 43 ms (+39%, +12 ms) under a 50 ms budget, so every status stayed `pass` and `DIFF` read clean (#1180).
+# went 31 -> 43 ms (+39%, +12 ms) under a 50 ms budget, so every status stayed `pass` and `DIFF` read clean.
 SLOWER_FACTOR = 1.25
 SLOWER_MIN_MS = 10.0
 TITLE = audit_issue.PERF_REVIEW_TITLE

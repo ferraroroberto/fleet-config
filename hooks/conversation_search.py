@@ -404,7 +404,7 @@ def search(
 
     # A plain bag of words is rewritten up front rather than after a parse
     # failure: it parses fine, it just cannot match an unfinished word, so the
-    # old raw-first order had no rescue path to reach (#935). Decided before
+    # old raw-first order had no rescue path to reach. Decided before
     # the db is opened so an empty query costs nothing and leaks nothing.
     expr = query if _looks_like_fts5(query) else _quote_terms(query)
     if not expr.strip():

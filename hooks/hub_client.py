@@ -34,8 +34,7 @@ HUB_URL = os.environ.get("HUB_URL", "http://127.0.0.1:8000/v1").rstrip("/")
 # outright when a newer model ships ("latest-only"), so a pinned
 # `claude-haiku-4-5` starts 404ing on the next bump and `complete()` returns
 # None forever after. The failure is invisible: the indexer is spawned
-# detached with stdout/stderr DEVNULL, so the warning reaches nobody
-# (fleet-config#679).
+# detached with stdout/stderr DEVNULL, so the warning reaches nobody.
 DEFAULT_MODEL = os.environ.get("HUB_CHAT_MODEL", "claude_haiku")
 
 

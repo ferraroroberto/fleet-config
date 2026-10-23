@@ -88,8 +88,8 @@ def run_cli(
     """Shared CLI body: UTF-8 stdout, ``--file``/``--ref`` args, git-show read, print."""
     # Captured stdout falls back to cp1252 on Windows, which can't encode the
     # U+2212 minus sign — force UTF-8 so the line survives the skill's capture.
-    # `utf8_stdio` is the shared home for that guard (fleet-config#500); this was
-    # one call site its consolidation missed (fleet-config#561), and routing it
+    # `utf8_stdio` is the shared home for that guard; this was
+    # one call site its consolidation missed, and routing it
     # here also covers stderr, which the local copy did not.
     ensure_utf8_stdio()
 

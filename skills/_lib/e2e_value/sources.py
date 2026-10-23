@@ -50,7 +50,7 @@ _LINE_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2}) \+\s*[\d.,]+s\] (.*)$")
 _DONE_RE = re.compile(r"^DONE\s+(.+?) \((\d+(?:\.\d+)?)s\)( \[gw\d+\])?$")
 _START_RE = re.compile(r"^START (.+)$")
 _FAIL_RE = re.compile(r"^(FAILED|ERROR) \((setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
-# A skipped node still gets its DONE line; it ran no browser (fleet-config#1134).
+# A skipped node still gets its DONE line; it ran no browser.
 _SKIP_RE = re.compile(r"^SKIPPED \((?:setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
 _PHASE_RE = re.compile(r"^==> phase: (.*?)(?:\.\.\.)?$")
 _ROUTE_RE = re.compile(r"e2e routing: (?:tier=)?(skip|static|surface|full)\b")

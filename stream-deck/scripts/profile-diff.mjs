@@ -5,7 +5,7 @@
 // nested page's manifest.json carries one Settings.targetId per placed
 // launch-target/call-action key. This is what tells a human exactly which
 // registry entries still need a physical key dragged in, instead of
-// re-deriving it by eye every time the registry grows (fleet-config#591).
+// re-deriving it by eye every time the registry grows.
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";

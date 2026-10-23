@@ -59,7 +59,7 @@ TURN_END = "Stop"
 SESSION_END = "SessionEnd"
 SCHEMA_VERSION = 2
 # v1 `event` -> v2 `kind`. A needs-input event keeps its harness's own `event`
-# (`Notification` / `PermissionRequest`) and passes `kind=NEEDS_INPUT` (#1456).
+# (`Notification` / `PermissionRequest`) and passes `kind=NEEDS_INPUT`.
 KINDS = {TURN_END: "turn-end", SESSION_END: "session-end"}
 NEEDS_INPUT = "needs-input"
 EXCERPT_CHARS = 1500
@@ -69,7 +69,7 @@ NEEDS_INPUT_EXCERPT_CHARS = 300
 # A transcript tail read on the worker's Stop stays bounded however long the
 # session ran; an assistant record larger than this is reported unavailable.
 TRANSCRIPT_TAIL_BYTES = 256 * 1024
-# A needs-input line naming the pending call (fleet-config#1510): the tool name
+# A needs-input line naming the pending call: the tool name
 # and its detail are capped so the whole line fits NEEDS_INPUT_EXCERPT_CHARS.
 PENDING_TOOL_CHARS = 40
 PENDING_DETAIL_CHARS = 200
