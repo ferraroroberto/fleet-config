@@ -16,7 +16,7 @@ starting — several later steps change what you'd do in the earlier ones.
 far has broken at least one thing the previous one established, and the failures
 are silent by nature — a hook that no-ops, a state row that never appears, a
 guard that reports a block it did not perform. Two concrete examples from
-onboarding Grok (fleet-config#491), both of which contradicted the issue that
+onboarding Grok, both of which contradicted the brief that
 commissioned the work:
 
 - The issue specified a `~/.grok/rules/` link for the global instructions.
@@ -49,7 +49,7 @@ Establish, empirically:
 | What is its **hook vocabulary**? | Which Board states it can prove | Its hooks doc; map onto `UserPromptSubmit` / `Stop` / `SessionEnd` / idle |
 | What is the exact **stdin payload shape**? | Key names *and* value casing both matter | Its hooks doc, then verify against a live event |
 | How does a hook **refuse** a tool call? | Exit code, stdout JSON, or both — and what it does with the codes it does not recognise | Its hooks doc's exit-code table, then verify live |
-| Can a hook **substitute tool input/output**, or only observe/block, and does a substituted command retain ordinary exit attribution? | Decides whether the context filter (and any future rewriting hook) can run there at all — Claude: `updatedInput`; Codex: `updatedInput` substitutes but a nonzero command exit is misreported as `Hook failed`, so rewriting is disabled (#755); Copilot: `modifiedArgs`; agy: `overwrite`; Pi: mutable `tool_call` input / modifiable `tool_result`; Grok: **neither** — allow/deny only | Its hooks doc's response-field list, then verify real successful **and failing** substitutions live (an emitted field the harness ignores fails silently; a substituted command whose failure is blamed on the hook is also unusable) |
+| Can a hook **substitute tool input/output**, or only observe/block, and does a substituted command retain ordinary exit attribution? | Decides whether the context filter (and any future rewriting hook) can run there at all — Claude: `updatedInput`; Codex: `updatedInput` substitutes but a nonzero command exit is misreported as `Hook failed`, so rewriting is disabled; Copilot: `modifiedArgs`; agy: `overwrite`; Pi: mutable `tool_call` input / modifiable `tool_result`; Grok: **neither** — allow/deny only | Its hooks doc's response-field list, then verify real successful **and failing** substitutions live (an emitted field the harness ignores fails silently; a substituted command whose failure is blamed on the hook is also unusable) |
 | Does it fire turn-boundary hooks in **headless/print mode**? | Whether you can verify without a human at a TUI | Run it headless with debug logging |
 | Which **models / effort levels** does it accept? | The `docs/model-tiers.md` row | Introspection; then actually pass each level and see which are rejected |
 | Does it **self-name** sessions? Fullscreen/alt-screen? | app-launcher's renderer and title logic | ConPTY probe (see app-launcher's own notes) |
@@ -69,7 +69,7 @@ So the first thing to check is not "what do I need to add" but "what is already
 running, and does it actually work there". Concretely, for each blocking guard,
 drive it with the new harness's payload shape and confirm it still blocks. A
 one-page A/B table (guard × harness-shape → blocked/allowed) is the cheapest
-possible artefact and the one that found the whole of #491.
+possible artefact and the one that found the whole class of silent failure in the Grok onboarding.
 
 ## Step 1 — Context: the global instructions
 
@@ -99,7 +99,7 @@ is the entire port — there is no per-agent translation.
   junction resolves *through* the compat layer.
 - Fleet-only skills under `.claude/skills/` are project-scoped by design and
   reach a harness only when its cwd is this repo. That is intentional
-  (fleet-config#161), not a gap to fix.
+  not a gap to fix.
 
 ## Step 3 — Hooks and the payload contract
 
@@ -115,12 +115,12 @@ command string that Claude will route through Git Bash.
 name its shell tool `Bash` and still execute the command under PowerShell —
 Codex does exactly this on Windows, and the context filter's Bash-form wrap died
 there with a PowerShell ParserError until the wrap was keyed to the *invoking
-harness*, not the tool name (fleet-config#541, the codex probe). Any hook that
+harness*, not the tool name. Any hook that
 emits a command string the harness will re-parse must determine the real shell
 empirically: substitute a probe command whose parse differs by dialect and see
 which shell ran it.
 
-**Shell safety invariant (#743).** `normalize_payload()` reuses the invoked `.codex/hooks/<module>.py` provenance established for Codex refusal transport (#759), before junction resolution. Codex's snake_case envelope alone cannot distinguish it from Claude, and `APP_LAUNCHER_AGENT` can name a parent process, so neither is used to guess a shell. A direct invocation outside the configured entry cannot establish Codex provenance. Claude payloads still return the identical object.
+**Shell safety invariant.** `normalize_payload()` reuses the invoked `.codex/hooks/<module>.py` provenance established for Codex refusal transport, before junction resolution. Codex's snake_case envelope alone cannot distinguish it from Claude, and `APP_LAUNCHER_AGENT` can name a parent process, so neither is used to guess a shell. A direct invocation outside the configured entry cannot establish Codex provenance. Claude payloads still return the identical object.
 
 Codex shell tools stay marked unknown: no observed shell metadata establishes Bash versus PowerShell. The shared ambiguity marker is the same contract used by Grok and agy; future adapters, including Pi safety adapters, must carry that marker whenever their terminal tool cannot establish a shell. `safe_kill_guard` checks both blanket-kill sets and PowerShell protected-port patterns, logs an info-level breadcrumb without command text, and includes `Shell unknown` in relevant refusals. Unknown-shell quoted kill literals are conservatively refused; genuine Claude Bash/PowerShell tools retain their existing cross-shell literal behavior. This policy is heuristic, not a shell parser.
 
@@ -138,7 +138,7 @@ Two properties are non-negotiable:
   it in a test, not in a comment.
 - **Carry the harness identity forward**, so `session_state` can attribute the
   row. Precedence is `APP_LAUNCHER_AGENT` → payload hint → `default_agent` →
-  `claude`; the launcher-injected value always wins (fleet-config#345).
+  `claude`; the launcher-injected value always wins.
 
 **Check every axis the payload feeds, not just the ones you changed.** Grok's
 envelope differed on three at once: key casing (`toolName`), event-value casing
@@ -247,7 +247,7 @@ Add a host section to [`model-tiers.md`](model-tiers.md) mapping
   still separates them — the tiers encode *execution shape* (review-gated or
   not), not just model spend.
 
-For interactive workflows, follow [workflow-capabilities.md](workflow-capabilities.md), including its native two-worker launch/collect proof and capability fixtures for failure, cancellation, absent spawn and mode-dependent input. Record the exact surface: a Codex app/API collaboration result does not certify Codex CLI. Pi/Grok stay unknown per capability until those scenarios pass. Fresh independent review and human approval survive missing tools. Scheduled process/stream adapters are a separate domain (fleet-config#750). The ≤3 Opus cap does not replace host slot limits.
+For interactive workflows, follow [workflow-capabilities.md](workflow-capabilities.md), including its native two-worker launch/collect proof and capability fixtures for failure, cancellation, absent spawn and mode-dependent input. Record the exact surface: a Codex app/API collaboration result does not certify Codex CLI. Pi/Grok stay unknown per capability until those scenarios pass. Fresh independent review and human approval survive missing tools. Scheduled process/stream adapters are a separate domain, covered in [scheduled-runners.md](scheduled-runners.md). The ≤3 Opus cap does not replace host slot limits.
 
 ## Step 6 — app-launcher
 

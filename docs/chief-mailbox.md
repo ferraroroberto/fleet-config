@@ -1,8 +1,8 @@
 # Chief mailbox
 
-The durable channel from chief-managed workers to the fleet chief. Every worker turn-end, session exit and permission gate becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (app-launcher#1645, step 5/7 of #1372) may later tell the chief to read. It carries no data.
+The durable channel from chief-managed workers to the fleet chief. Every worker turn-end, session exit and permission gate becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (implemented in app-launcher) may later tell the chief to read. It carries no data.
 
-This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s, #1645) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief/mailbox.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`, behind the `chief_ops.py` CLI). The tests named under [Conformance](#conformance) pin every rule below.
+This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief/mailbox.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`, behind the `chief_ops.py` CLI). The tests named under [Conformance](#conformance) pin every rule below.
 
 ## Directory layout
 
@@ -16,7 +16,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 
 - `<state_dir>` is `CLAUDE_HOOKS_STATE_DIR` when set, else `~/.claude/hooks/state` (`hooks/_lib.state_dir()`).
 - `<published_ms>` and `<claimed_at_ms>` are Unix epoch **milliseconds**, decimal digits, no padding.
-- `<id>` is the event id. A v2 writer uses `uuid4().hex`: 32 lowercase hex characters. A v1 file (written before #1455) has an 8-hex suffix instead; readers take whatever follows the first `-` as its id.
+- `<id>` is the event id. A v2 writer uses `uuid4().hex`: 32 lowercase hex characters. A v1 file (written before the v2 id format) has an 8-hex suffix instead; readers take whatever follows the first `-` as its id.
 
 ## Publishing (writers)
 
@@ -49,15 +49,15 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end`, `needs-input` or `job-failed`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live (#1456). A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). |
+| `kind` | `turn-end`, `session-end`, `needs-input` or `job-failed`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
-| `excerpt` | The last 1,500 characters of the worker's final reply. For `needs-input`, the hook's one-line prompt instead (at most 300 characters). Claude names the pending tool call, found in the tail of the parent transcript and of recently active sub-agent transcripts: `permission: Bash <command head> (parent)` or `(sub-agent <id8>)`; no pending call found reads `pending call: unknown (payload message: ...)` or `(default text: ...)`, never a bare idle line (#1510). Codex: `Codex in fleet-config awaits approval to edit files`. It is never an empty string: no readable reply means `null`. |
+| `excerpt` | The last 1,500 characters of the worker's final reply. For `needs-input`, the hook's one-line prompt instead (at most 300 characters). Claude names the pending tool call, found in the tail of the parent transcript and of recently active sub-agent transcripts: `permission: Bash <command head> (parent)` or `(sub-agent <id8>)`; no pending call found reads `pending call: unknown (payload message: ...)` or `(default text: ...)`, never a bare idle line. Codex: `Codex in fleet-config awaits approval to edit files`. It is never an empty string: no readable reply means `null`. |
 | `excerpt_source` | `payload` (the harness's own last-assistant field), `transcript` (the tail of `transcript_path`), `prompt` (a `needs-input` event's classified prompt), or `null`. |
 | `excerpt_unavailable` | Why `excerpt` is `null`. Present only then. |
 
-Excerpt sources per harness, verified live for #1455:
+Excerpt sources per harness, verified live:
 
 | Harness | Source |
 |---|---|
@@ -136,7 +136,7 @@ Edge cases, decided:
 
 ## Reading (the chief)
 
-Two readers coexist. Since #1457 the chief reads with `inbox` / `ack` when the doorbell rings, and arms `wait-event` only while `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown. `wait-event` is retired after a soak (#1458).
+Two readers coexist. The chief reads with `inbox` / `ack` when the doorbell rings, and arms `wait-event` only while `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown. `wait-event` is retired after a soak.
 
 **v2: `chief_ops.py inbox`, then `chief_ops.py ack <id…>`** (at-least-once):
 
@@ -151,7 +151,7 @@ A chief that dies between claim and ack leaves stale claims behind. They count a
 
 ### A failed read is not junk
 
-On Windows, two racing renames of the same file can **both** succeed. The rename opens the source by name, then moves it through that handle, so a reader that opened it just before another's rename landed moves it again, out of the first reader's claim. Until that second move finishes, the first reader's read fails with a sharing violation; after it, the file is gone from the first reader's path. So a reader must never treat a failed read of a just-claimed file as junk and delete it (fleet-config#1465):
+On Windows, two racing renames of the same file can **both** succeed. The rename opens the source by name, then moves it through that handle, so a reader that opened it just before another's rename landed moves it again, out of the first reader's claim. Until that second move finishes, the first reader's read fails with a sharing violation; after it, the file is gone from the first reader's path. So a reader must never treat a failed read of a just-claimed file as junk and delete it:
 
 - **Sharing violation / access denied:** retry briefly (five attempts, 10 ms doubling).
 - **File not found:** the other reader holds it now and delivers it. Skip it and delete nothing.
@@ -161,7 +161,7 @@ Each of these paths logs a line to stderr. Stdout is unchanged.
 
 ## Doorbell line
 
-While the launcher's `chief_doorbell` switch (Settings > Chief > Doorbell) is on, the chief is idle with an empty input line, and pending is above zero, the doorbell (app-launcher#1645) types this fixed line, which carries no count and no data, and repeats it on later ticks until pending reaches zero:
+While the launcher's `chief_doorbell` switch (Settings > Chief > Doorbell) is on, the chief is idle with an empty input line, and pending is above zero, the doorbell types this fixed line, which carries no count and no data, and repeats it on later ticks until pending reaches zero:
 
 ```
 ⟳ chief-inbox: pending — run chief_ops.py inbox
@@ -172,7 +172,7 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 ## Conformance
 
 - `tests/test_chief_mailbox.py`: the counting rule case by case (temps, dot-files, non-`.json`, directories, `wait-event`'s claim folder, fresh vs stale vs unstamped claims, the exact stale boundary, an unlistable directory being unknown), claim, ack, re-offer with an injected clock, the two readers racing, and a claimed file that cannot be read yet (an injected read failure) never being dropped by either reader.
-- `tests/probe_claim_race.py` (opt-in, not in the gate): the real two-claimer race, 60 events × 400 iterations, for both reader pairs. Before #1465 it lost events on Windows.
+- `tests/probe_claim_race.py` (opt-in, not in the gate): the real two-claimer race, 60 events × 400 iterations, for both reader pairs. It fails if any event is lost, which is what a reader deleting a file after a failed read would cause on Windows.
 - `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
 - `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
 - `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.

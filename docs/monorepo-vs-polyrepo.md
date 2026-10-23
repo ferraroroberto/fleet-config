@@ -3,7 +3,7 @@
 A learning document, not a log: the criteria behind the fleet's repo topology,
 what the industry actually does, and the triggers that would reopen the
 decision. Written after the July 2026 vendored-component cascade
-(project-scaffolding#144–#150: one tray helper, four defect waves, ~40
+(one tray helper, four defect waves, ~40
 mechanical re-vendor PRs across 6–7 repos in 48 hours) forced the question:
 *is paying N PRs per shared change a sign we should be a monorepo?*
 
@@ -91,15 +91,14 @@ that machinery was missing. The fleet's version of the standard kit:
 
 - **Quality gate at the source** — a shared component's fix wave doesn't
   leave the scaffold until the scaffold's own behavioral tests pass; a second
-  same-day bug in the same component freezes propagation until it soaks
-  (project-scaffolding#152). Propagation is a multiplier: it distributes
+  same-day bug in the same component freezes propagation until it soaks.
+  Propagation is a multiplier: it distributes
   whatever quality you ship, including defects.
 - **Version manifest + one-command fan-out** — each adopter records
   component → scaffold SHA; re-vendoring is a single command that opens
-  auto-merging, issue-less PRs, Dependabot-style (fleet-config#338). "Who is
+  auto-merging, issue-less PRs, Dependabot-style. "Who is
   behind" becomes a query, not an audit.
-- **Right channel per component class** (the "does it ship?" rule,
-  project-scaffolding#153):
+- **Right channel per component class** (the "does it ship?" rule):
   - *Ships with the app* (UI components, `_vendored/*`) → vendored copies +
     manifest + automated fan-out. Legitimate skew, visible skew.
   - *Machine-local infrastructure* (tray lifecycle) → one shared junctioned
@@ -118,8 +117,8 @@ engineering on the seams.
 
 Reopen this decision (new issue linking here) if any of these hold:
 
-- Propagation waves become weekly rather than episodic *despite* #338's
-  automation — i.e. the change mix has genuinely shifted cross-cutting.
+- Propagation waves become weekly rather than episodic *despite* the
+  fan-out automation — i.e. the change mix has genuinely shifted cross-cutting.
 - Shared-component count grows past the point where the manifest/fan-out kit
   is itself a maintenance burden (rough line: more scaffold-fix PRs than
   app-feature PRs in a normal month).
@@ -131,9 +130,8 @@ web apps that share the most surface), not a return to one repo.
 
 ## Decision log
 
-- **2026-07-10** — Reflection prompted by the #144–#150 cascade. Decision:
+- **2026-07-10** — Reflection prompted by the vendored-component cascade. Decision:
   stay polyrepo; treat the cascade as a release-engineering gap, not a
-  topology error. Filed the seam kit: project-scaffolding#152 (source gate +
-  freeze rule), fleet-config#338 (manifest + `/propagate-vendored`),
-  project-scaffolding#153 (de-vendor machine-local tray helper). Keep
+  topology error. Filed the seam kit: a source gate + freeze rule, a manifest +
+  `/propagate-vendored`, and de-vendoring of the machine-local tray helper. Keep
   `automation` as the incubator; graduation criteria recorded above.
