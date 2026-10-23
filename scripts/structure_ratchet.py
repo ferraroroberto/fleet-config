@@ -144,7 +144,7 @@ class Shape:
 #: cannot be waived (`extra_roots` only adds), so a set is required only where every repo of the
 #: shape has it. docs/structure-ratchet.md carries the same table; a test compares the two.
 SHAPES = {
-    "webapp-tray": Shape(("app", "src", "tests", "docs"), ("scripts", "data", "brand"), DEFAULT_LAYERS),
+    "webapp-tray": Shape(("app", "src", "tests", "docs"), ("scripts", "data", "brand", "assets", "config"), DEFAULT_LAYERS),
     "streamlit": Shape(("app", "src", "tests"), ("scripts", "data", "brand"), DEFAULT_LAYERS),
     "pipeline-cli": Shape(("tests",), ("src", "common", "scripts", "config", "data")),
     "skills-governance": Shape(("skills", "tests"), ("hooks", "scripts", "architecture")),
