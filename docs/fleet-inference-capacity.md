@@ -1,10 +1,10 @@
 # Fleet inference capacity — open-weight model fit per compute node
 
-One-time survey for [#400](https://github.com/ferraroroberto/fleet-config/issues/400): what open-weight model classes realistically fit each fleet compute node's **measured** ceiling, with the size math shown. Consult before assigning any local-inference role in any fleet repo.
+One-time survey of what open-weight model classes realistically fit each fleet compute node's **measured** ceiling, with the size math shown. Consult before assigning any local-inference role in any fleet repo.
 
 **Measured 2026-07-20** — CPU/RAM/GPU captured live over SSH on each box (not copied from config role strings; the `tower` entry's "32 GB RAM" was already stale). Node addresses and login details deliberately not recorded here (public repo) — they live in the private geek-out setup notes and `local-llm-hub`'s `config/models.yaml` `hosts:` block.
 
-**Relationship to the frontier ledger:** [local-llm-hub#272](https://github.com/ferraroroberto/local-llm-hub/issues/272) runs a bi-weekly `/frontier-refresh` that owns *which model wins each role on pc-cuda* (latest run 2026-07-12: `agentic_light`/`agentic_heavy` both **keep**). This doc answers a different question — *what class of model each node can carry at all* — and defers every role verdict to that ledger. The `gaming` bring-up is tracked in [local-llm-hub#323](https://github.com/ferraroroberto/local-llm-hub/issues/323). Kept honest by `/sota-watch`'s `fleet-inference-capacity` watchlist area ([#393](https://github.com/ferraroroberto/fleet-config/issues/393)).
+**Relationship to the frontier ledger:** `local-llm-hub` runs a bi-weekly `/frontier-refresh` (the frontier ledger) that owns *which model wins each role on pc-cuda* (latest run 2026-07-12: `agentic_light`/`agentic_heavy` both **keep**). This doc answers a different question — *what class of model each node can carry at all* — and defers every role verdict to that ledger. Kept honest by `/sota-watch`'s `fleet-inference-capacity` watchlist area.
 
 ## The fit math
 
@@ -29,18 +29,18 @@ One-time survey for [#400](https://github.com/ferraroroberto/fleet-config/issues
 The 16 GB picture is already maintained in depth by the frontier run (`local-llm-hub` `docs/frontier/runs/2026-07-12/report.md`) — not re-derived here. The fit envelope:
 
 - **Dense ≤14B** at Q4–Q6 with full context headroom (14B × 0.60 ≈ 8.4 GB + cache ≈ 10 GB).
-- **26B-class MoE at the ceiling:** `gemma4-26b-a4b` IQ4_XS ≈ 13.4 GB weights — fits alone, but collides with the GPU-resident audio services (whisper large-v3-turbo ~1.6 GB + orpheus TTS ~4 GB); exactly the pressure that motivates offloading audio to `gaming` (local-llm-hub#323).
+- **26B-class MoE at the ceiling:** `gemma4-26b-a4b` IQ4_XS ≈ 13.4 GB weights — fits alone, but collides with the GPU-resident audio services (whisper large-v3-turbo ~1.6 GB + orpheus TTS ~4 GB); exactly the pressure that motivates offloading audio to `gaming`.
 - **Big MoE via CPU offload:** 128 GB RAM + the 7800X3D make expert-offload runs (GLM-4.5-air class) workable; 100B+ dense and ~700B-MoE (GLM-5.2) remain NO-GO — no quant fits 144 GB combined (local-llm-hub `docs/glm-5.2-evaluation.md`).
 
 ## gaming — 8 GB Pascal satellite (bring-up in progress)
 
 **Measured:** GTX 1070 8 GB (GP104, Pascal) · Ryzen 9 5900X 12c/24t · 16 GB RAM, **single-stick** (single-channel — roughly halves memory bandwidth vs dual, which directly caps CPU-inference speed) · 100 GB root, 85 GB free · Ubuntu Desktop.
 
-- **⚠️ Driver gap (measured):** the box currently runs **nouveau** — `nvidia-smi` is absent, so no CUDA and no GPU inference until the proprietary NVIDIA driver is installed. A remaining bring-up step for local-llm-hub#323.
+- **⚠️ Driver gap (measured):** the box currently runs **nouveau** — `nvidia-smi` is absent, so no CUDA and no GPU inference until the proprietary NVIDIA driver is installed. A remaining bring-up step for the `gaming` node.
 - **Pascal caveats:** no tensor cores and crippled FP16 on GP104 — llama.cpp falls back to FP32/DP4A paths, so throughput sits well below what "8 GB" suggests on newer cards. Community guidance treats a 1070 as effectively a 6 GB-tier card for planning.
 - **Dense fit:** 7–9B Q4 fits (9B × 0.60 ≈ 5.4–6.6 GB + reduced ctx), e.g. Qwen 3.5 9B — workable, not fast.
-- **Intended role (the actual plan, per #323):** STT/TTS offload — whisper large-v3-turbo (~1.6 GB) + orpheus 3B TTS (~4 GB) ≈ **6 GB, comfortably inside 8 GB together**, freeing pc-cuda's VRAM for both agentic lanes. Pascal's compute limits matter far less for these small resident models than for chat-class LLMs; this is the right job for the card.
-- **CPU fallback:** the 5900X is strong, but single-channel 16 GB caps it — 4B-class Q4 (~2.6 GB) only; a second RAM stick was removed for boot instability (#323 history), so don't plan around 32 GB.
+- **Intended role (the actual plan):** STT/TTS offload — whisper large-v3-turbo (~1.6 GB) + orpheus 3B TTS (~4 GB) ≈ **6 GB, comfortably inside 8 GB together**, freeing pc-cuda's VRAM for both agentic lanes. Pascal's compute limits matter far less for these small resident models than for chat-class LLMs; this is the right job for the card.
+- **CPU fallback:** the 5900X is strong, but single-channel 16 GB caps it — 4B-class Q4 (~2.6 GB) only; a second RAM stick was removed for boot instability, so don't plan around 32 GB.
 
 ## mac-mini-m4 — Apple-silicon peer
 
