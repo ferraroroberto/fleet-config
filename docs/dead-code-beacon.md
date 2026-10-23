@@ -1,6 +1,6 @@
 # Dead-code start beacon
 
-Static analysis can't tell whether a script that only a human, a desktop shortcut or a Stream Deck button starts is still used. The Step 1 inventory (`skills/_lib/entry_inventory.py`, fleet-config#961) left 170 of `automation`'s 191 files `unknown` for that reason. The start beacon (`skills/_lib/start_beacon.py`, fleet-config#1114) records which scripts actually run, so a 90-day window can move them to `live` or `cold`. It is report-only: nothing is deleted on its evidence.
+Static analysis can't tell whether a script that only a human, a desktop shortcut or a Stream Deck button starts is still used. The Step 1 inventory (`skills/_lib/entry_inventory.py`) left 170 of `automation`'s 191 files `unknown` for that reason. The start beacon (`skills/_lib/start_beacon.py`) records which scripts actually run, so a 90-day window can move them to `live` or `cold`. It is report-only: nothing is deleted on its evidence.
 
 ## How it works
 
@@ -16,7 +16,7 @@ One file, `fleet_start_beacon.pth`, goes into the target repo's `.venv` site-pac
 - **It is self-contained.** The `.pth` embeds the code, so it imports nothing from fleet-config and keeps working whatever branch this repo's checkout is on. Re-run `install` after changing the beacon, and `status` reports `CURRENT=False` until you do.
 - **No network, no personal data:** only the script path is recorded.
 
-## Probe (2026-09-30, Python 3.14.3, Windows 11)
+## Probe (Python 3.14.3, Windows 11)
 
 - **It fires on every start kind:** the `.pth` line ran for `python.exe -c`, `pythonw.exe -c`, `python.exe <script>` and `pythonw.exe -m json.tool`, all with exit 0 and empty stderr. At `site` time, `sys.argv[0]` is the script path, `-c` or `-m`, and `sys.orig_argv` carries the module name.
 - **It runs twice per process:** an unguarded `.pth` line fired twice in one PID, which is why the guard exists.
@@ -35,7 +35,7 @@ One file, `fleet_start_beacon.pth`, goes into the target repo's `.venv` site-pac
 
 Deleting `E:\automation\automation\.venv\Lib\site-packages\fleet_start_beacon.pth` by hand also removes it. Without the uninstall header, the inventory reads that as `removed` and keeps no-hit entries `unknown`. The `.venv` itself is never created, deleted or rebuilt, and nothing in the target repo's git tree changes. Recreating the venv drops the `.pth` the same way.
 
-Pilot: `automation` only. `/codebase-audit` wiring waits until a full 90-day window has run (#961's verdict).
+Pilot: `automation` only. `/codebase-audit` wiring waits until a full 90-day window has run and its verdict is in.
 
 ## Reading it in the inventory
 

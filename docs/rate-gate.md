@@ -15,9 +15,9 @@ TUI render time, and never persisted it to disk.
 That constraint no longer holds. `statusline-command.ps1` now caches
 `rate_limits.five_hour` / `seven_day` (`used_percentage` + `resets_at`) plus a
 `captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on **every**
-statusline render (fleet-config#259 / app-launcher#326), specifically so a
+statusline render, specifically so a
 non-statusline process can read current usage without being the statusline
-itself. `rate_gate.py` (fleet-config#261) reads that cache and lets a skill
+itself. `rate_gate.py` reads that cache and lets a skill
 **self-pace proactively** — pause before hitting the wall, wait in place, resume
 — instead of dying and hoping a scheduled relaunch picks up the pieces next week.
 
@@ -60,20 +60,21 @@ calling skill to branch on and name in its digest. Mode is unattended when `FLEE
 `run-weekly.bat` job gets it) or `--unattended` is passed. No flag makes an
 unattended run less cautious.
 
-## Unattended runs: fail-open re-decided (fleet-config#825)
+## Unattended runs: no signal pauses instead of proceeding
 
-The original design (#261) treated `UNKNOWN` as OK everywhere, reasoning that
-no signal is no evidence of a problem. That tradeoff was tested in production
-and lost on **2026-09-10**: the scheduled `codebase-audit-fleet` run ran 54
+The gate does not treat `UNKNOWN` as OK for unattended runs, although an
+interactive run still does. Treating `UNKNOWN` as OK everywhere rests on the
+reasoning that no signal is no evidence of a problem. That tradeoff was tested
+in production and lost on **2026-09-10**: the scheduled `codebase-audit-fleet` run ran 54
 minutes on `UNKNOWN`, hit the 5-hour session limit mid-flight, lost 13
 sub-agents in the same second, delivered no digest, and took
 `design-sweep-fleet` and `cleanup-fleet-all-weekly` down behind it in the chain.
 The reactive rate-limit-signature fallback didn't save it either, because the
 limit killed the sub-agents outright rather than surfacing a per-repo failure.
 
-Roberto re-decided it on 2026-09-13, for unattended runs only:
+So unattended runs behave differently, and only unattended runs:
 
-1. **Does the #751 shared quota snapshot give a headless run a fresh number?
+1. **Does the shared quota snapshot give a headless run a fresh number?
    No.** Its Claude producer (`quota_sources.py claude`) is fed by
    `statusline-command.ps1`, the same render that writes `rate-limits.json`.
    A `claude -p` process never renders a statusline, so with no interactive
@@ -106,7 +107,7 @@ The cache path resolves via `CLAUDE_HOOKS_STATE_DIR` first, falling back to
 `~/.claude/hooks/state` — the same resolution `hooks/session_state.py`'s
 `state_file()` uses, so both stay overridable the same way in tests.
 
-## Unattended waits vs the stall watchdog (fleet-config#891)
+## Unattended waits vs the stall watchdog
 
 `scheduled_runner.py` kills a child whose stream has been silent for its stall
 timeout (45 min by default, exit 124). A `Monitor` wait is silent. Probed on
@@ -147,7 +148,7 @@ again.
 
 - **`/audit-fleet`** — before each dispatch/refill of its ≤3-wide sub-agent
   window (a check that's a session-budget pacing default and, since `hard`
-  tier resolves to Opus again, also the live Opus-burst-limiter cap — see
+  tier resolves to Opus, also the live Opus-burst-limiter cap — see
   `docs/model-tiers.md`). On `PAUSE`, stop
   dispatching new sub-agents (let in-flight ones finish), wait via the pattern
   above, then resume. The same handling applies **reactively** if a sub-agent

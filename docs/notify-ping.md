@@ -1,6 +1,6 @@
 # Completion pings go through `notify_complete.py` only
 
-Every skill that ends by pinging the user (`/issue-start`, `/issue-finish`, `/issue-yolo`, `/issue-finish-batch`, `/cleanup-fleet`, `/cleanup-fleet-all`) sends that ping with `hooks/notify_complete.py` and nothing else. This note is the one home for the rule's reasoning; each skill states the rule in one line and links here (fleet-config#928), so the rationale cannot drift per copy.
+Every skill that ends by pinging the user (`/issue-start`, `/issue-finish`, `/issue-yolo`, `/issue-finish-batch`, `/cleanup-fleet`, `/cleanup-fleet-all`) sends that ping with `hooks/notify_complete.py` and nothing else. This note is the one home for the rule's reasoning; each skill states the rule in one line and links here, so the rationale cannot drift per copy.
 
 **The rule.** Never use an MCP chat tool (Slack, Telegram, or any other connector's search/send) to find a chat or post the ping, not even when `notify_complete.py` sends nothing.
 

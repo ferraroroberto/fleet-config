@@ -1,6 +1,6 @@
 # Interactive workflow capabilities
 
-This is the canonical capability contract for shared issue/audit skills (fleet-config#749). It adapts workflow intent to tools exposed by the current session. It does not install tools, switch permission/plan mode, launch a scheduled process, or grant shipping authorization. Project skill discovery and scope remain owned by project-scaffolding’s `docs/agents/project-skills.md`; scheduled spawning and stream parsing are separate (fleet-config#750).
+This is the canonical capability contract for shared issue/audit skills. It adapts workflow intent to tools exposed by the current session. It does not install tools, switch permission/plan mode, launch a scheduled process, or grant shipping authorization. Project skill discovery and scope remain owned by project-scaffolding’s `docs/agents/project-skills.md`; scheduled spawning and stream parsing are separate (see `docs/scheduled-runners.md`).
 
 ## Bind before dispatch
 
@@ -35,9 +35,9 @@ No-spawn fallback is explicit and workflow-specific: read-only audits and permit
 
 Native initialization listed `Task`, `TaskOutput`, `TaskStop`; the actual model called its accepted `Agent` alias with `prompt`, `description`, `subagent_type`, `model`, and `run_in_background`. Inspect the current schema rather than assuming the inventory spelling. Foreground calls return terminal content; background IDs require terminal notification/result collection or `TaskOutput` polling. `TaskStop` is available for owned task cancellation; cancellation side effects remain unverified by the smoke below. No per-Agent effort control was established. `Workflow` is an optional specialization only when actually exposed, with its own result/wait path.
 
-### Codex app/API native collaboration (2026-09-05 session)
+### Codex app/API native collaboration
 
-`collaboration.spawn_agent` returns a canonical task ID. `fork_turns: "none"` gives fresh context; full-history forks inherit the parent model/effort and cannot override them. Use fresh context for independent review. `collaboration.wait_agent` waits for mailbox activity, not necessarily task completion; consume delivered `FINAL_ANSWER` results. `list_agents` is an inventory aid, and completed entries can be pruned. `send_message` queues a message without starting an idle turn; `followup_task` can start an idle worker. `interrupt_agent` interrupts the current turn and leaves the agent addressable; it does not promise to kill OS children.
+Observed in a session on 2026-09-05. `collaboration.spawn_agent` returns a canonical task ID. `fork_turns: "none"` gives fresh context; full-history forks inherit the parent model/effort and cannot override them. Use fresh context for independent review. `collaboration.wait_agent` waits for mailbox activity, not necessarily task completion; consume delivered `FINAL_ANSWER` results. `list_agents` is an inventory aid, and completed entries can be pruned. `send_message` queues a message without starting an idle turn; `followup_task` can start an idle worker. `interrupt_agent` interrupts the current turn and leaves the agent addressable; it does not promise to kill OS children.
 
 This session exposed four active slots including the root, and accepted the probe’s `gpt-5.6-luna`, `reasoning_effort: "low"`. Other exposed names included Astra/Sol/Terra; they are session metadata, not permanent tier IDs or evidence of provider execution. The Default-mode session had Plan-only `request_user_input` unavailable for use; use `request_user_input_async` only when actually exposed and permitted, otherwise plain text. Do not switch modes or invent an input tool to satisfy a skill. This proof does **not** certify Codex CLI’s tool names, model menu, or wake-up semantics.
 

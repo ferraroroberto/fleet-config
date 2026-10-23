@@ -46,11 +46,10 @@ background-spawned sub-agent inherits whatever effort its parent session runs at
 and awaits either a `Workflow`-based dispatch or a future `Agent`-tool `effort`
 parameter to be enforceable per sub-agent.
 
-**`easy` and `hard` now resolve to different models on Claude Code** — `easy`
-stays Sonnet (cheap, full-autonomy work); `hard` is Opus again (see Decision
-log below: reverted 2026-07-16, higher Opus subscription limits removed the
-cost rationale for the 2026-07 change). The tier split still independently
-drives execution shape (full autonomy vs. review-gated) regardless of model.
+**`easy` and `hard` resolve to different models on Claude Code** — `easy` is
+Sonnet (cheap, full-autonomy work); `hard` is Opus (see "Why the Claude Code
+mapping is what it is" below). The tier split also independently drives
+execution shape (full autonomy vs. review-gated) regardless of model.
 
 ### Codex / GPT
 
@@ -102,43 +101,28 @@ and `/config-map`). Not applicable until that changes.
 ## Concurrency cap, restated in tier terms
 
 See `global-CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3": the
-≤3-in-flight window is a property of **Opus's server-side burst limiter**
-(anthropics/claude-code#53922), not of any tier name. On Claude Code today,
+≤3-in-flight window is a property of **Opus's server-side burst limiter**,
+not of any tier name. On Claude Code today,
 `easy` resolves to Sonnet — exempt from that cap and free to fan out — while
 `hard` and `extreme` both resolve to Opus and bind the cap. Restated generally:
 **whichever tier resolves to Opus is capped at 3 concurrent; every tier also respects the active host’s free slots and the skill’s own window.**
 
 `/audit-fleet` additionally keeps its own ≤3-wide dispatch window as a
 **session-token-budget pacing default** (a reasonable checkpoint cadence for
-re-evaluating live usage — see `docs/rate-gate.md`). With `hard` back on Opus,
-this window now does double duty — it's also the live Opus burst-limiter cap,
+re-evaluating live usage — see `docs/rate-gate.md`). Because `hard` resolves to Opus,
+this window does double duty — it's also the live Opus burst-limiter cap,
 not just the pacing default — which is fine since both land on the same number;
 it's a second, independent reason for that number, not a restatement of it.
 
-## Decision log
+## Why the Claude Code mapping is what it is
 
-- **2026-07 (fleet-config#250):** Claude Code's `hard` tier changed from
-  Opus → **Sonnet at high effort**, on explicit user direction: Sonnet 5 is
-  judged as capable as Opus 4.8 for nearly all fleet-skill work, so Opus is
-  reserved for the new, rare `extreme` tier at `xhigh` effort instead. The user
-  additionally confirmed `easy` should get the same Sonnet-high treatment, not
-  just `hard` — so on Claude Code today the two tiers differ only in execution
-  shape, not model. This is a deliberate deviation from fleet-config#250's own
-  literal acceptance criterion ("hard/audit = Opus, at most 3 hard workers in
-  flight") — superseded live in that issue's session, recorded here as the
-  durable rationale.
-- **2026-07-16:** Reverted — Claude Code's `hard` tier changed back
-  Sonnet → **Opus at high effort**. Rationale: the user's subscription now
-  carries higher Opus limits, removing the cost/throughput reasoning behind
-  #250; for genuinely investigation/audit-grade sub-tasks (the whole point of
-  `hard` tier) there's no longer a reason to default down from the stronger
-  model. `easy` is untouched (still Sonnet — that tier is full-autonomy,
-  mechanical work, not what prompted either change). `extreme` is untouched
-  (still Opus at `xhigh` — the higher-effort, rarer escalation above `hard`).
-  This re-activates the ≤3-concurrent Opus burst-limiter cap for every
-  `hard`-tier spawn (see "Concurrency cap" above) — previously dormant because
-  `hard` resolved to Sonnet. Same-day addition: a placeholder Codex mapping
-  (`gpt-5.6`, unverified) so a `hard`/`extreme` model id exists to reference if
-  Codex work ever needs one named — this does not itself establish a verified
-  Codex background-fan-out surface (still serial/manual, per the Codex section
-  above).
+- **`hard` is Opus at high effort.** The user's subscription carries higher
+  Opus limits, which removes any cost/throughput reason to default down to a
+  cheaper model for genuinely investigation/audit-grade sub-tasks, the whole
+  point of the `hard` tier. Sonnet 5 is judged as capable as Opus 4.8 for
+  nearly all fleet-skill work, which is why `easy` stays on Sonnet, but `hard`
+  work gets the stronger model. Every `hard`-tier spawn therefore binds the
+  ≤3-concurrent Opus burst-limiter cap (see "Concurrency cap" above).
+- **`easy` is Sonnet.** That tier is full-autonomy, mechanical work.
+- **`extreme` is Opus at `xhigh`.** It is the higher-effort, rarer escalation
+  above `hard`.

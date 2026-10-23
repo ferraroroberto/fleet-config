@@ -11,7 +11,7 @@ agent with no memory of the build, reviewing the diff adversarially but
 leniently before anything ships. That pattern was bespoke to one script. This
 doc extracts it into a reusable fleet convention so other build-then-ship
 skills can adopt the same shape deliberately, rather than each inventing (or
-omitting) their own review gate (fleet-config#408).
+omitting) their own review gate.
 
 ## The pattern
 
@@ -32,13 +32,18 @@ context:
    something a human reviewer would actually reject (gate genuinely fails, diff
    doesn't touch what the issue asked for, an obvious bug), never on style
    preference.
-   Acceptance is accounted per criterion, not as one boolean
-   (fleet-config#958): the verdict carries a `criteria` array of
+   Acceptance is accounted per criterion, not as one boolean: the verdict carries a `criteria` array of
    `{criterion, proof_location, verdict, evidence}` — `proof_location`
    `DIFF` / `CROSS-REPO` / `EXTERNAL`, `verdict` `DONE` / `NOT DONE` /
    `UNVERIFIABLE`. `pass: true` requires zero `NOT DONE`, and an
    `UNVERIFIABLE` item is reported, never counted as satisfied. The lenient
    stance above is about judgment, not accounting, and is unchanged.
+   "Could not be established from this session" is its own state
+   (`UNVERIFIABLE`) rather than riding a single `pass` through as met;
+   `/issue-finish` step 1 audits acceptance the same way through
+   `skills/_lib/acceptance_audit.py`, and an unattended finish ships an
+   `UNVERIFIABLE` item only when it is `EXTERNAL` and checkable after merge by
+   nature.
 3. **Execute** — ships an already-validated change: push, PR, CI-advisory wait,
    merge, tray restart. Never guesses past a failure; reports FAILED with a
    reason rather than force-completing.
@@ -75,15 +80,18 @@ choice wholesale.
 A skill is a candidate if it both **builds and ships** in the same run with no
 mandatory human checkpoint in between. Concretely:
 
-- **Adopted: `/issue-yolo`** (fleet-config#433). Its Phase 3 ("Validate hard")
+- **Adopted: `/issue-yolo`.** Its Phase 3 ("Validate hard")
   was explicitly self-review — the same agent that wrote the code ran every
   gate, and step 3g said outright "the reviewer in this run is you." It was
   the highest-blast-radius unattended-*shipping* flow in the fleet workflow
   set (it merges to `main` with no human checkpoint) with zero independent
   review. Phase 3h now spawns a genuinely fresh agent (not a forked
-  continuation of the build's own context) once 3a–3g pass: it fetches the
-  issue itself, re-runs the verification gate independently, and judges the
-  diff against the issue **and** the repo's `CLAUDE.md`. Failure handling:
+  continuation of the build's own context) once 3a–3g pass and before Phase 4
+  ("Ship"): it fetches the issue itself, re-runs the verification gate
+  independently, and judges the diff against the issue **and** the repo's
+  `CLAUDE.md`, returning a schema-validated `pass`/`feedback` verdict. A
+  rejected verdict stops the run and surfaces the reviewer's feedback; Phase 4
+  only runs on `pass: true`. Failure handling:
   **stop-and-report**, matching Phase 3's existing "if anything fails, stop"
   ethos — `/issue-yolo` is invoked interactively, so there is already a human
   on the other end of the run to decide on a retry, unlike `cleanup-fleet-all`'s
@@ -97,26 +105,3 @@ mandatory human checkpoint in between. Concretely:
   `/design-sweep`, `/system-map`, `/config-map`, `/sota-watch`, etc.). These
   file issues or regenerate data files; they don't merge code changes to a
   repo's `main`, so there is no "ship" step to gate.
-
-## Decision log
-
-- **2026-07-26 (fleet-config#408):** Extracted the build/validate/execute
-  split from `cleanup-fleet-all.js` into this reusable convention. Decided
-  `/issue-yolo` is the first adopter (see fleet-config#433 for the scoped
-  follow-up); `/issue-finish`'s hard-tier path is already effectively covered
-  by its existing human-review checkpoint; scheduled read-only skills are out
-  of scope entirely. Failure handling for `/issue-yolo` specifically:
-  stop-and-report, not retry-then-escalate, because it runs interactively with
-  a human already present.
-- **2026-07-26 (fleet-config#433):** Wired the decision above into
-  `skills/issue-yolo/SKILL.md` as Phase 3h — a fresh, non-forked agent
-  invocation between the existing self-review gates (3a–3g) and Phase 4
-  ("Ship"), gating on a schema-validated `pass`/`feedback` verdict. A rejected
-  verdict stops the run and surfaces the reviewer's feedback; Phase 4 only
-  runs on `pass: true`.
-- **2026-09-27 (fleet-config#958):** The 3h verdict gained a per-criterion
-  `criteria` array, and `/issue-finish` step 1 audits acceptance the same way
-  through `skills/_lib/acceptance_audit.py`. "Could not be established from
-  this session" is now its own state (`UNVERIFIABLE`) instead of riding a
-  single `pass` through as met; unattended finishes ship one only when it is
-  `EXTERNAL` and checkable after merge by nature.
