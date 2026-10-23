@@ -13,7 +13,7 @@ url = "https://youtu.be/e7TY56-yIvM"
 kind = "video"
 added = 2026-10-02
 claims = [
-  { text = "Long reference files need a table of contents", trace = "anthropic-skill-authoring#Structure longer reference files with table of contents" },
+  { text = "Long reference files need a table of contents", trace = "anthropic-skill-authoring#Structure longer reference files with a table of contents" },
   { text = "Match a skill's degrees of freedom to how fragile the task is", trace = "anthropic-skill-authoring#Set appropriate degrees of freedom" },
   { text = "Test skills on every model you plan to use", trace = "anthropic-skill-authoring#Test with all models you plan to use" },
   { text = "Keep references one level deep from SKILL.md", trace = "anthropic-skill-authoring#Avoid deeply nested references" },

@@ -1096,7 +1096,7 @@ check(sorted(r for r, v in RULES.items() if v["assist"]) == pa.ASSIST_RULES,
       "every lint-assisted judgment rule in rules.md has a lint assist in audit.py and vice versa")
 _page_sections = {"Avoid time-sensitive information", "Naming conventions", "Token budgets", "Writing effective descriptions",
                   "YAML frontmatter requirements", "Core quality", "Avoid deeply nested references",
-                  "Structure longer reference files with table of contents", "Avoid Windows-style paths",
+                  "Structure longer reference files with a table of contents", "Avoid Windows-style paths",
                   "Runtime environment", "MCP tool references", "Set appropriate degrees of freedom",
                   "Use workflows for complex tasks", "Implement feedback loops", "Create verifiable intermediate outputs",
                   "Use consistent terminology", "Avoid offering too many options", "Provide utility scripts",
