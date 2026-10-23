@@ -4,6 +4,9 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/design_review/te
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from _suite import STATE, _h, check  # noqa: E402
 
 from design_review import capture, evaluate as ev, measure, plan  # noqa: E402
@@ -585,6 +588,33 @@ mixed = _doc("compliant")
 mixed["screens"][1]["metrics"]["layout"]["overflow_x"] = True
 out_m = ev.evaluate(mixed, rubric, _specs("compliant"))
 check(next(r for r in out_m["rules"] if r["id"] == "LAYOUT-01")["status"] == "fail", "one failing screen fails the rule")
+
+# ---- TOUCH-02: a scan that stopped at its bound is unmeasured when clean, never a pass ----
+def _touch02(patch, base="compliant") -> dict:
+    d = _doc(base)
+    for s in d["screens"]:
+        s["metrics"]["targets"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, _specs(base))["rules"] if r["id"] == "TOUCH-02")
+
+
+_t02_cut = _touch02({"overlap_scan_truncated": True})
+check(_t02_cut["status"] == "unmeasured" and "target bound" in _t02_cut["reason"],
+      f"TOUCH-02: a clean count from a truncated scan is unmeasured, naming the bound -- {_t02_cut['status']} {_t02_cut['reason']}")
+check(_touch02({"overlap_scan_truncated": False})["status"] == "pass", "TOUCH-02: a clean count from a full scan passes")
+_t02_old = _doc("compliant")
+for _s in _t02_old["screens"]:
+    _s["metrics"]["targets"].pop("overlap_scan_truncated")
+check(next(r for r in ev.evaluate(_t02_old, rubric, _specs("compliant"))["rules"] if r["id"] == "TOUCH-02")["status"] == "unmeasured",
+      "TOUCH-02: a run that did not record the scan's coverage is unmeasured, never a pass")
+_t02_hit = _touch02({"overlap_scan_truncated": True}, "violating")
+check(_t02_hit["status"] == "fail" and _t02_hit["evidence"], "TOUCH-02: a pair found in a truncated scan still fails")
+
+# every `<name>_truncated` flag the page script emits is read by evaluate.py, so a bound the measurement knows it hit is
+# never dropped on the way to a verdict
+_emitted = set(re.findall(r"\b(\w+_truncated)\s*:", Path(measure.__file__).read_text(encoding="utf-8")))
+_read = Path(ev.__file__).read_text(encoding="utf-8")
+check(_emitted and all(any(p.endswith("." + k) for p in measure.metric_paths()) and k in _read for k in _emitted),
+      f"every *_truncated flag measure.py emits is a metric path and is read by evaluate.py -- {sorted(_emitted)}")
 
 # ---- measure.py helpers -------------------------------------------------------
 

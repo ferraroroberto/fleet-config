@@ -1497,7 +1497,7 @@ def metric_paths() -> List[str]:
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
                      "segmented_bad", "segmented_bad_count", "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
                      "icon_buttons_painted_count", "icon_only_count", "icon_only_unlabelled", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
-        "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
+        "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "overlap_scan_truncated", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
