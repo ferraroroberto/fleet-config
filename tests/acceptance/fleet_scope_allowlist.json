@@ -28,15 +28,5 @@
     "pattern": "iterdir_git",
     "files": ["hooks/backup/select.py"],
     "reason": "the daily backup never skips a repo for being idle"
-  },
-  {
-    "pattern": "iterdir_git",
-    "files": ["skills/_lib/chief_sweep.py"],
-    "reason": "worktree housekeeping: residue in a dormant repo is still residue"
-  },
-  {
-    "pattern": "iterdir_git",
-    "files": ["skills/_lib/branch_residue.py"],
-    "reason": "lists the sibling worktree folders of one named repo, not a directory of repos"
   }
 ]

@@ -518,9 +518,12 @@ def is_content_command(command: str) -> bool:
     if not subcommands:
         return False
     tokens = command.strip().removeprefix("& ").split()[1:]
-    i = 0
-    while i < len(tokens) and tokens[i].startswith("-"):
-        i += 2 if base == "git" and tokens[i] in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
+    if base == "git":
+        i = _lib.git_globals(tokens, 0).subcommand
+    else:
+        i = 0
+        while i < len(tokens) and tokens[i].startswith("-"):
+            i += 1
     rest = [t.lower() for t in tokens[i:i + 2]]
     return " ".join(rest) in subcommands or bool(rest) and rest[0] in subcommands
 

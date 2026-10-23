@@ -54,10 +54,11 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import active_issue  # noqa: E402
 import git_run  # noqa: E402
+import worktree_residue  # noqa: E402
+from worktree_residue import WT_SEP  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
 
-WT_SEP = "-wt-"
 WORKTREE_RE = re.compile(rf"^(?P<repo>.+){re.escape(WT_SEP)}(?P<number>\d+)$")
 DEFAULT_REF_CANDIDATES = ("origin/main", "origin/master")
 GH_TIMEOUT_S = 60
@@ -200,13 +201,11 @@ def classify_worktree(
 
     if (path / ".git").is_dir():
         return Finding(name, path, UNKNOWN, "a real repository named like a worktree")
-    if not (path / ".git").exists():
-        try:
-            entries = sum(1 for _ in path.iterdir())
-        except OSError as exc:
-            return Finding(name, path, UNKNOWN, f"unreadable folder: {exc}")
-        if entries:
-            return Finding(name, path, UNKNOWN, f"not a git worktree, {entries} entries")
+    facts = worktree_residue.dir_facts(path)
+    if not facts.has_git:
+        cls, why = worktree_residue.classify_orphan(False, None if facts.empty is None else not facts.empty)
+        if cls != "orphan-empty":
+            return Finding(name, path, UNKNOWN, why)
         if not live_known:
             return Finding(name, path, UNKNOWN, "empty folder, live sessions not established")
         return Finding(name, path, ORPHAN_EMPTY, "empty folder, not a git worktree")

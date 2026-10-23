@@ -27,16 +27,15 @@ stdlib only.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
-import tempfile
 import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet_repo_scan  # noqa: E402
+import hooks_state  # noqa: E402
 
 ACTIVE = "active"
 DORMANT = "dormant"
@@ -139,14 +138,8 @@ def set_status(repo: str, value: str, projects_toml: Optional[Path] = None) -> s
     if after != expected:
         raise FleetStatusError("the edit changed more than architecture_ignore; file left untouched")
 
-    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(new_text.encode("utf-8"))
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    # `newline=""`: the file's own line endings were kept in `new_text`.
+    hooks_state.atomic_write_text(path, new_text, newline="")
     return "changed"
 
 

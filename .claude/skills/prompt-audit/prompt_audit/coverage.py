@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from .common import clean, fence_flags
+from .common import atomic_write_text, clean, fence_flags
 from .state import state_path
 
 # Pages with sections worth encoding; an index (llms.txt) or a changelog has none.
@@ -39,9 +39,8 @@ def cache_page(sid: str, data: bytes) -> Path:
     d = pages_dir()
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{sid}.md"
-    tmp = p.with_name(f"{p.name}.tmp")
-    tmp.write_bytes(data)
-    tmp.replace(p)
+    # `newline=""` and a lossless decode keep the page's bytes as fetched; `page_text` decodes with `replace` anyway.
+    atomic_write_text(p, data.decode("utf-8", errors="replace"), newline="")
     return p
 
 

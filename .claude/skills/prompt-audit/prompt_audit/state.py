@@ -11,6 +11,8 @@ import datetime as dt
 from pathlib import Path
 from typing import Optional, Tuple
 
+from .common import atomic_write_text
+
 
 # ---- state ----------------------------------------------------------------------
 
@@ -32,9 +34,7 @@ def load_state(path: Optional[Path] = None) -> dict:
 def save_state(state: dict, path: Optional[Path] = None) -> None:
     p = path or state_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, p)
+    atomic_write_text(p, json.dumps(state, indent=2, sort_keys=True) + "\n")
 
 
 def source_due(record: Optional[dict], every: int, today: dt.date) -> Tuple[bool, str]:

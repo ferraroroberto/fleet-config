@@ -350,17 +350,6 @@ _REDIRECT_RE = re.compile(r"^\d*(?:>>?|<)(&\d*)?")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def _join_operand(base: str, raw: str) -> str:
-    """`raw` against a `git -C` directory, kept as a string.
-
-    Joined with `/` rather than `Path`: an MSYS `-C /e/automation/x` must reach
-    `_operand_path` still MSYS-shaped, or its drive translation never fires.
-    """
-    if not base or re.match(r"^(?:[A-Za-z]:)?[\\/]", raw):
-        return raw
-    return base.rstrip("\\/") + "/" + raw
-
-
 def git_clean_operands(tokens: List[str]) -> Tuple[Optional[str], List[str]]:
     """`(verb, paths)` for a `git [globals] clean` that can reach a `.venv`.
 
@@ -377,22 +366,8 @@ def git_clean_operands(tokens: List[str]) -> Tuple[Optional[str], List[str]]:
     if i >= len(tokens) or tokens[i].lower().replace("\\", "/").rsplit("/", 1)[-1] \
             not in {"git", "git.exe"}:
         return None, []
-    i += 1
-    workdir = ""
-    while i < len(tokens) and tokens[i].startswith("-"):
-        option = tokens[i]
-        if option == "-C" and i + 1 < len(tokens):
-            workdir = _join_operand(workdir, tokens[i + 1])
-            i += 2
-        elif option.startswith("--work-tree="):
-            workdir = _join_operand(workdir, option.split("=", 1)[1])
-            i += 1
-        elif option in _lib.GIT_GLOBAL_OPTS_WITH_VALUE:
-            if option == "--work-tree" and i + 1 < len(tokens):
-                workdir = _join_operand(workdir, tokens[i + 1])
-            i += 2
-        else:
-            i += 1
+    parsed = _lib.git_globals(tokens, i + 1)
+    workdir, i = parsed.workdir, parsed.subcommand
     if i >= len(tokens) or tokens[i] != "clean":
         return None, []
 
@@ -442,7 +417,7 @@ def git_clean_operands(tokens: List[str]) -> Tuple[Optional[str], List[str]]:
     spares_venv = "X" not in flags and any(
         e.strip("\\/") == ".venv" for e in excludes)
     verb = GIT_CLEAN_SPARING_VERB if spares_venv else GIT_CLEAN_VERB
-    return verb, [_join_operand(workdir, p) for p in pathspecs] or [workdir or "."]
+    return verb, [_lib.join_workdir(workdir, p) for p in pathspecs] or [workdir or "."]
 
 
 def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:

@@ -92,8 +92,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import stat
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
@@ -221,44 +219,21 @@ def parse_worktree_list(porcelain: str) -> Tuple[str, ...]:
     return tuple(entry.path for entry in worktree_residue.parse_worktree_porcelain(porcelain))
 
 
-def _is_reparse(path: Path) -> Optional[bool]:
-    try:
-        st = os.lstat(path)
-    except OSError:
-        return None
-    attrs = getattr(st, "st_file_attributes", None)
-    if attrs is None:  # non-Windows: a symlink is the nearest equivalent
-        return stat.S_ISLNK(st.st_mode)
-    return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
-
-
-def _is_empty(path: Path) -> Optional[bool]:
-    # No top-level child means no descendant, so this is the recursive check.
-    try:
-        with os.scandir(path) as it:
-            return next(it, None) is None
-    except OSError:
-        return None
-
-
 def scan_leftovers(repo_path: Path, registered: Tuple[str, ...]) -> Tuple[LeftoverDir, ...]:
     """Every `<repo>-wt-*` sibling git does not list, with its read-only facts.
 
-    The glob is per repo, exactly as teardown check 2's, never a fleet-wide
-    `*-wt-*`: another repo's in-flight worktree is not this repo's leftover
-    (app-launcher#709).
+    The scan and its facts are `worktree_residue`'s, the one implementation
+    `branch_residue` and `chief_sweep` read too; the live-holder probe is added
+    here because only this verdict (would teardown halt on it) needs one.
     """
-    known = {dir_holders.normalize(p) for p in registered}
     found = []
-    for hit in sorted(repo_path.parent.glob(f"{repo_path.name}-wt-*")):
-        if dir_holders.normalize(str(hit)) in known:
-            continue
-        reparse = _is_reparse(hit)
+    for hit in worktree_residue.unregistered_siblings(repo_path, registered):
+        facts = worktree_residue.dir_facts(hit)
         probe = dir_holders.probe(str(hit))
         found.append(LeftoverDir(
             path=str(hit),
-            reparse=reparse,
-            empty=_is_empty(hit) if reparse is False else None,
+            reparse=facts.reparse,
+            empty=facts.empty,
             holders=probe.status,
             holder_pids=tuple(h["pid"] for h in probe.holders),
             probe_reason=probe.reason,

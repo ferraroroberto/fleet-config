@@ -246,6 +246,7 @@ from no_window import NO_WINDOW  # noqa: E402
 from service_probe import service_state  # noqa: E402
 from untrack_guard import guarded_fast_forward, report_lines as untrack_report_lines  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from worktree_residue import WT_SEP as WT_SEP  # noqa: E402
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
 # lives in its own module (fleet-config#731) -- including, since
 # fleet-config#1065, the side-instance preflight's own config discovery and
@@ -280,8 +281,6 @@ DEFAULT_TTL_HOURS = 8.0
 
 # ---- pure helpers (unit-tested without git) -------------------------------
 
-WT_SEP = "-wt-"
-
 
 def worktree_path(repo_root: Path, issue: str) -> Path:
     """Sibling worktree path: `<parent>/<repo-name>-wt-<N>`.
@@ -289,7 +288,7 @@ def worktree_path(repo_root: Path, issue: str) -> Path:
     Same convention as /issue-batch. The `<repo>-wt-<N>` *prefix-matches* the
     repo's `cwd_prefix` in projects.toml, so notify_on_idle still names the right
     project (a `.worktrees/` layout would break that match). `primary_for_worktree`
-    inverts this, so `WT_SEP` is the one place the separator is spelled.
+    inverts this, so `worktree_residue.WT_SEP` is the one place the separator is spelled.
     """
     return repo_root.parent / f"{repo_root.name}{WT_SEP}{issue}"
 

@@ -75,6 +75,8 @@ fixtures for each class. stdlib only.
 from __future__ import annotations
 
 import argparse
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Callable, Iterable, List, NamedTuple, Optional, Sequence, Tuple
@@ -87,6 +89,11 @@ FOREIGN_DIRTY = "foreign-dirty"
 FOREIGN_UNMERGED = "foreign-unmerged"
 FOREIGN_MERGED = "foreign-merged"
 UNKNOWN = "unknown"
+
+# The one spelling of the sibling-worktree separator (`<repo>-wt-<N>`). A leaf
+# module owns it so `worktree_config` (which `worktree_claim` imports) and every
+# scanner below reach it without a cycle.
+WT_SEP = "-wt-"
 
 VERDICT_CLEAN = "clean"
 VERDICT_FOREIGN_DEFERRED = "foreign-deferred"
@@ -137,6 +144,72 @@ def normalize_path(p: str) -> str:
     case-insensitive, no trailing slash. `git worktree list` prints forward
     slashes; the workflow script passes backslashes."""
     return p.replace("\\", "/").rstrip("/").lower()
+
+
+class DirFacts(NamedTuple):
+    """Read-only facts about one folder; `None` means the fact could not be read,
+    which no caller may take as a pass."""
+
+    has_git: bool
+    reparse: Optional[bool]
+    empty: Optional[bool]  # None too for a reparse point, which is never listed
+
+
+def is_reparse(path: Path) -> Optional[bool]:
+    """Whether `path` is a junction/symlink itself; `None` when it cannot be stat'ed."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    attrs = getattr(st, "st_file_attributes", None)
+    if attrs is None:  # non-Windows: a symlink is the nearest equivalent
+        return stat.S_ISLNK(st.st_mode)
+    return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def is_empty(path: Path) -> Optional[bool]:
+    """Whether `path` has no top-level child (so no descendant either); `None` when unreadable."""
+    try:
+        with os.scandir(path) as it:
+            return next(it, None) is None
+    except OSError:
+        return None
+
+
+def dir_facts(path: Path) -> DirFacts:
+    """The facts every `<repo>-wt-*` scanner judges a folder by. Never descends: a
+    `.venv` junction inside must not be walked, and a junction itself is not listed."""
+    reparse = is_reparse(path)
+    return DirFacts((path / ".git").exists(), reparse, is_empty(path) if reparse is False else None)
+
+
+def classify_orphan(has_git: bool, has_entries: Optional[bool]) -> Tuple[str, str]:
+    """Class and reason for a folder named like a worktree that git does not register."""
+    if has_git:
+        return "orphan-with-git-file", "has a .git entry but git does not register it as a worktree"
+    if has_entries is None:
+        return UNKNOWN, "could not read the folder"
+    if has_entries:
+        return "orphan-has-content", "not a registered worktree, and not empty"
+    return "orphan-empty", "not a registered worktree, and empty"
+
+
+def unregistered_siblings(primary: Path, registered: Iterable[str]) -> List[Path]:
+    """Every directory beside `primary` named `<primary-name>-wt-*` that git does not list.
+
+    Any suffix counts, not only digits, and the match is per repo, never a
+    fleet-wide `*-wt-*`: another repo's in-flight worktree is not this repo's
+    leftover. Case-insensitive like the filesystem. An unreadable parent is `[]`.
+    """
+    prefix = primary.name.lower() + WT_SEP
+    known = {normalize_path(p) for p in registered}
+    try:
+        siblings = sorted(primary.parent.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return []
+    return [sib for sib in siblings
+            if sib.name.lower().startswith(prefix) and (sib.is_dir() or is_reparse(sib))
+            and normalize_path(str(sib)) not in known]
 
 
 def is_own(entry: WorktreeEntry, own_paths: Iterable[str], own_branches: Iterable[str]) -> bool:

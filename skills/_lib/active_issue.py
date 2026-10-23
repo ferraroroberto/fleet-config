@@ -32,6 +32,7 @@ from typing import AbstractSet, Any, Callable, Dict, Iterator, Mapping, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from hooks_state import atomic_write_text, state_dir  # noqa: E402
+from worktree_residue import WT_SEP  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -59,51 +60,16 @@ LIVENESS_DEAD = "dead"
 LIVENESS_UNKNOWN = "unknown"
 
 
-def _pid_alive(pid: int) -> bool:
-    """Best-effort liveness check for a lock's recorded holder pid.
-
-    A pid can be reused by an unrelated process after a fast crash+respawn,
-    which would read as a false "alive" -- an accepted gap, since the failure
-    mode this guards against (displacing a still-live holder) is worse than
-    occasionally waiting out a lock a little longer than strictly necessary.
-    """
-    if pid <= 0:
-        return False
-    if sys.platform == "win32":
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-            _WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid
-        )
-        if not handle:
-            return False
-        try:
-            exit_code = ctypes.c_ulong()
-            if not ctypes.windll.kernel32.GetExitCodeProcess(  # type: ignore[attr-defined]
-                handle, ctypes.byref(exit_code)
-            ):
-                return False
-            return exit_code.value == _WIN_STILL_ACTIVE
-        finally:
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
-
-
 def pid_state(pid: int) -> Optional[bool]:
     """Tri-state pid probe for claim-owner liveness: True alive, False
     confirmed gone, None when the probe cannot tell.
 
-    Deliberately separate from :func:`_pid_alive`, whose bool folds "could
-    not open the process" into dead -- safe for the lock (age must also
-    exceed the stale horizon) but not for a claim, where ``dead`` needs
-    positive evidence (fleet-config#852). Access denied means the process
-    exists. The same pid-reuse caveat applies and errs toward alive.
+    A claim's ``dead`` needs positive evidence (fleet-config#852), so "could
+    not open the process" stays ``None`` rather than folding into dead; the
+    state lock reads ``pid_state(pid) is True``, where unknown counts as not
+    alive because the lock's age must also exceed the stale horizon. Access
+    denied means the process exists. A pid reused by an unrelated process
+    reads as alive: the failure to avoid is displacing a live holder.
     """
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return None
@@ -280,7 +246,7 @@ def state_lock(
             try:
                 age = time.time() - lock_dir.stat().st_mtime
                 owner = _read_lock_owner(lock_dir)
-                holder_alive = owner is not None and _pid_alive(owner.get("pid", -1))
+                holder_alive = owner is not None and pid_state(owner.get("pid", -1)) is True
                 if age > stale_after_seconds and not holder_alive:
                     shutil.rmtree(lock_dir)
                     continue
@@ -322,7 +288,7 @@ def resolve_repo_name(repo: str | Path) -> str:
     remote_name = _remote_repo_name(repo_path)
     if remote_name:
         return remote_name
-    return re.sub(r"-wt-\d+$", "", repo_path.name, flags=re.IGNORECASE)
+    return re.sub(rf"{re.escape(WT_SEP)}\d+$", "", repo_path.name, flags=re.IGNORECASE)
 
 
 def marker_key(repo_name: str, issue: int) -> str:

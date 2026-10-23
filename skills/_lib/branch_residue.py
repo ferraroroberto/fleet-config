@@ -94,7 +94,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import re
 import subprocess
 import sys
@@ -236,16 +235,6 @@ def summarize(rows: Sequence[Row]) -> Dict[str, int]:
     return counts
 
 
-def classify_orphan(has_git: bool, has_entries: Optional[bool]) -> Tuple[str, str]:
-    if has_git:
-        return "orphan-with-git-file", "has a .git entry but git does not register it as a worktree"
-    if has_entries is None:
-        return UNKNOWN, "could not read the folder"
-    if has_entries:
-        return "orphan-has-content", "not a registered worktree, and not empty"
-    return "orphan-empty", "not a registered worktree, and empty"
-
-
 # ---- gh lookups (injectable) ------------------------------------------------
 
 def repo_slug(repo: Path) -> Optional[str]:
@@ -330,28 +319,11 @@ def tip_readable(repo: Path, sha: str) -> bool:
 
 
 def find_orphans(primary: str, registered: Sequence[str]) -> List[Orphan]:
-    """Sibling `<primary-name>-wt-*` folders that git does not register."""
-    primary_path = Path(primary)
-    prefix = primary_path.name.lower() + "-wt-"
-    known = {wr.normalize_path(p) for p in registered}
+    """Sibling `<primary-name>-wt-*` folders that git does not register, as `worktree_residue` scans and judges them."""
     found: List[Orphan] = []
-    try:
-        siblings = sorted(primary_path.parent.iterdir(), key=lambda p: p.name.lower())
-    except OSError:
-        return found
-    for sib in siblings:
-        if not sib.name.lower().startswith(prefix) or not sib.is_dir():
-            continue
-        if wr.normalize_path(str(sib)) in known:
-            continue
-        has_git = (sib / ".git").exists()
-        try:
-            # Top level only -- never descend: a `.venv` junction inside must not be walked.
-            with os.scandir(sib) as it:
-                has_entries: Optional[bool] = any(True for _ in it)
-        except OSError:
-            has_entries = None
-        cls, why = classify_orphan(has_git, has_entries)
+    for sib in wr.unregistered_siblings(Path(primary), registered):
+        facts = wr.dir_facts(sib)
+        cls, why = wr.classify_orphan(facts.has_git, None if facts.empty is None else not facts.empty)
         found.append(Orphan(str(sib), cls, why))
     return found
 

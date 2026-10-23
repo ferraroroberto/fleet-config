@@ -20,6 +20,7 @@ import git_run as git_run  # noqa: E402
 from audit_issue import rubric_sha  # noqa: E402
 from audit_issue_client import run_audit_issue as run_audit_issue  # noqa: E402
 from fleet_repo_scan import fleet_repos as fleet_repos, is_linked_worktree as is_linked_worktree  # noqa: E402
+from hooks_state import atomic_write_text as atomic_write_text  # noqa: E402
 from frontmatter import frontmatter_error as frontmatter_error, frontmatter_field as frontmatter_field  # noqa: E402
 from skill_description import (  # noqa: E402
     frontmatter_description as frontmatter_description,
