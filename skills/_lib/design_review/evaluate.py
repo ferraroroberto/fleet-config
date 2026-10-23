@@ -533,6 +533,24 @@ def _d_toast_tinted(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(len(tinted)), list(tinted), None  # type: ignore[arg-type]
 
 
+def _d_overlap_count(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """TOUCH-02: count of overlapping hit-rect pairs among the targets the scan checked.
+
+    A pair found is a fact whatever the scan bound. A clean count is a pass only when the scan covered every target:
+    `targets.overlap_scan_truncated` true (targets past the bound unchecked) or absent (not established) is `unmeasured`.
+    """
+    count, truncated = measure.metric_value(m, "targets.overlap_count"), measure.metric_value(m, "targets.overlap_scan_truncated")
+    if count is None:
+        return None, [], _section_reason(m, "targets")
+    if count:
+        return float(count), list(measure.metric_value(m, "targets.overlaps") or []), None  # type: ignore[arg-type]
+    if truncated is None:
+        return None, [], "overlap scan coverage not recorded: targets.overlap_scan_truncated missing"
+    if truncated:
+        return None, [], "overlap scan stopped at its target bound: targets past it were not checked"
+    return 0.0, [], None
+
+
 def _d_glance_card_growth(m: dict, rule: Rule, ctx: dict) -> Derived:
     """LAYOUT-10: px the tab's first card grew from its first paint to its height once the late reads landed (#1354).
 
@@ -567,6 +585,7 @@ def _d_glance_card_growth(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "targets.small_share": _d_small_share,
+    "targets.overlap_count": _d_overlap_count,
     "text.under14_share": _d_under14_share,
     "icons.off_step_count": _d_icons_off_step,
     "text.uppercase_outside_role": _d_uppercase,
