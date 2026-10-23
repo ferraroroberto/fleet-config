@@ -53,11 +53,11 @@ $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $AgentsHome     = Join-Path $env:USERPROFILE '.agents'
 $CodexHome      = Join-Path $env:USERPROFILE '.codex'
 # Pi's config dir is ~/.pi/agent (PI_CODING_AGENT_DIR), where it reads a user-scope AGENTS.md;
-# Copilot reads ~/.copilot/copilot-instructions.md. Both verified empirically (#189).
+# Copilot reads ~/.copilot/copilot-instructions.md. Both verified empirically.
 $PiAgentHome    = Join-Path (Join-Path $env:USERPROFILE '.pi') 'agent'
 $CopilotHome    = Join-Path $env:USERPROFILE '.copilot'
 # agy (Antigravity CLI) loads plugins from ~/.gemini/config/plugins/<name>/ --
-# verified live against agy 1.1.8 (fleet-config#546). Unlike every other agent,
+# verified live against agy 1.1.8. Unlike every other agent,
 # the wiring is agy's own `plugin install` (registry entry + file copy), not a
 # link: its Go plugin scanner does not descend directory junctions (observed
 # live -- a junctioned plugin dir loads 0 hooks), and file symlinks would drag
@@ -70,7 +70,7 @@ $ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
 # Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
 # (the cross-agent skills location Codex reads); 'codex' -> ~/.codex (Codex's own home, for
 # AGENTS.md, hooks/, prompts/, hooks.json); 'pi' -> ~/.pi/agent and 'copilot' -> ~/.copilot
-# (each agent's user-scope context-file home, #189). Keep targets base-relative so one repo
+# (each agent's user-scope context-file home). Keep targets base-relative so one repo
 # source can be linked into more than one home.
 function Get-BaseHome([string]$base) {
     switch ($base) {
@@ -89,7 +89,7 @@ function Get-ManifestKey($item) {
 }
 
 function Install-OtelProjectProfileHook {
-    # fleet-config#310: wires shell/claude-otel-project.ps1 into $PROFILE for
+    # Wires shell/claude-otel-project.ps1 into $PROFILE for
     # both PowerShell 7 (pwsh) and Windows PowerShell 5.1, so `claude`
     # auto-tags OTEL_RESOURCE_ATTRIBUTES with the current repo name regardless
     # of which host launches it. Explicit paths (not the ambient $PROFILE)
@@ -168,7 +168,7 @@ function Invoke-CodexSandboxVerification {
 }
 
 function Invoke-GrokCompatVerification {
-    # fleet-config#491: Grok Build gets NO links of its own. It reaches the
+    # Grok Build gets NO links of its own. It reaches the
     # global instructions, the fleet skills, and every hook in this repo through
     # its own Claude-compatibility scanning, which is on by default. That makes
     # those defaults load-bearing config we do not own -- if xAI flips a cell,
@@ -240,12 +240,12 @@ function Invoke-GrokCompatVerification {
 # What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents'|'codex'|'pi'|'copilot' (default 'claude') }
 # NOTE: Grok Build (~/.grok) deliberately has NO entry here -- it reads ~/.claude
 # directly via [compat.claude]. Verify that reach with -VerifyGrokCompat rather
-# than adding a duplicate link (fleet-config#491).
+# than adding a duplicate link.
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
-    # fleet-config#153: the ONE machine-local copy of tray_lifecycle.ps1 --
+    # The ONE machine-local copy of tray_lifecycle.ps1 --
     # every sister app's tray.bat calls it at this stable path instead of
     # vendoring a byte-copy into each repo. Junction, not symlink: it is a
     # directory entry, same mechanism as hooks/ and skills/ above.
@@ -259,7 +259,7 @@ $Items = @(
     # live in both agents. Skills reach Codex AND Pi via the ~/.agents/skills junction above --
     # that is the documented user-skills path both scan (Codex per developers.openai.com/codex/skills;
     # Pi per pi.dev/docs/skills, which also reads ~/.agents/skills). All four agents use the same
-    # SKILL.md format, so a junction is the whole port -- no per-agent translation (#160).
+    # SKILL.md format, so a junction is the whole port -- no per-agent translation.
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
     @{ kind = 'junction'; source = 'commands';               target = 'prompts';                base = 'codex' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
@@ -267,9 +267,9 @@ $Items = @(
     # Pi (~/.pi/agent) and Copilot (~/.copilot): link the one global context file into each
     # agent's user-scope path so a single edit reaches them too. Pi also auto-discovers global
     # extensions from ~/.pi/agent/extensions, so its Claude-style footer/statusline is junctioned
-    # from this repo (#188). Pi/Copilot settings files are tool-managed -- documented non-goals (#189).
+    # from this repo. Pi/Copilot settings files are tool-managed -- documented non-goals.
     # Skills, however, ARE wired: Pi reads ~/.agents/skills (junctioned above); Copilot scans its
-    # own ~/.copilot/skills/<name>/SKILL.md (auto-discovered, no enable step), junctioned below (#160).
+    # own ~/.copilot/skills/<name>/SKILL.md (auto-discovered, no enable step), junctioned below.
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'pi' },
     @{ kind = 'junction'; source = 'pi/extensions';          target = 'extensions';             base = 'pi' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' },
@@ -284,7 +284,7 @@ foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $Copi
 
 # agy (Antigravity CLI) context-filter plugin: registry + copy via agy's own
 # installer, re-run only when the installed files drift from the repo source
-# (see the $GeminiConfHome note above; fleet-config#546). Silent no-op when the
+# (see the $GeminiConfHome note above). Silent no-op when the
 # agy CLI is not on this machine.
 function Install-AgyContextFilterPlugin {
     $agy = Get-Command agy -ErrorAction SilentlyContinue
@@ -309,7 +309,7 @@ function Install-AgyContextFilterPlugin {
     Write-Host "INSTALL agy plugin fleet-context-filter (agy plugin install: registry + copy)" -ForegroundColor Cyan
 }
 
-# Copilot CLI context-filter hook (fleet-config#547): a per-feature file under
+# Copilot CLI context-filter hook: a per-feature file under
 # ~/.copilot/hooks/ (Copilot's native user-scope hook location, camelCase
 # events). A drift-guarded copy, same pattern as the agy plugin above — the
 # hooks dir holds tool-managed and sister-repo files, so a whole-dir junction
@@ -362,7 +362,7 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     # own Invoke-*Verification calls at the end of the script. Any switch not
     # forwarded here silently no-ops on exactly the machines that need the UAC
     # prompt -- a fresh install -- reporting a successful install for a
-    # verification that never ran (fleet-config#681).
+    # verification that never ran.
     if ($ConfigureCodexStatusline) { $psArgs += '-ConfigureCodexStatusline' }
     if ($ConfigureCodexModelPolicy) { $psArgs += '-ConfigureCodexModelPolicy' }
     if ($ConfigureSessionRetention) { $psArgs += '-ConfigureSessionRetention' }

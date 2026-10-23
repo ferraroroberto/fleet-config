@@ -59,7 +59,7 @@ def _role_of_value(value: str, css_all: str) -> str:
 
 
 def _check_switch_on_accent(ctx: _ContractsCtx) -> List[dict]:
-    # 4. switch on-track color (THE accent decision, fleet-config#1200 — reversed Round 3's green)
+    # 4. switch on-track color (THE accent decision: the on-track is the accent, not green)
     css_all = ctx.css_all
     sw = re.search(r"\.toggle\.on[^{}]*\{([^{}]*)\}", css_all)
     if not sw:
@@ -78,7 +78,7 @@ _CLOSE_BG_RE = re.compile(r"--close-bg\s*:\s*([^;}]*)")
 
 
 def _check_icon_button_unpainted(ctx: _ContractsCtx) -> List[dict]:
-    # icon buttons draw nothing at rest (fleet-config#1259): the vendored header toggles and modal close
+    # icon buttons draw nothing at rest: the vendored header toggles and modal close
     # paint `var(--close-bg, transparent)`, so the app's own `--close-bg` value decides, in every theme.
     css = ctx.css_own
     decls = list(_CLOSE_BG_RE.finditer(css))
@@ -101,7 +101,7 @@ def _check_icon_button_unpainted(ctx: _ContractsCtx) -> List[dict]:
 
 # An attribute-selector span (`input:not([type="checkbox"])`) is a *query*,
 # not a control. Blanked before the control scan, length- and newline-neutral
-# so `_evidence` still reports the right file:line (fleet-config#843).
+# so `_evidence` still reports the right file:line.
 _ATTR_SELECTOR_RE = re.compile(r"\[[^\[\]]*\]")
 # `<input type=checkbox>`, `box.type = 'checkbox'`, `{ type: "checkbox" }` —
 # the three ways the fleet's apps actually construct one. Group 1 is the
@@ -151,7 +151,7 @@ def _check_no_native_checkbox(ctx: _ContractsCtx) -> List[dict]:
     # 5. checkbox recipe. design.md Base UI maps **Checkbox -> shadcn
     #    `checkbox`**, and shadcn's Checkbox *is* a real `<input
     #    type=checkbox>` with `appearance: none` and a drawn tick — so a
-    #    checkbox is not itself the violation (fleet-config#843). The old
+    #    checkbox is not itself the violation. The old
     #    rule read "the fleet boolean control is the switch", which is
     #    design.md's rule for an on/off *setting*, not for a *selection*
     #    control (ticking rows, picking filter values). What a grep can
@@ -209,11 +209,10 @@ def _check_disclosure_box(ctx: _ContractsCtx) -> List[dict]:
 
 
 def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
-    # 11. button tiers — the fleet button vocabulary (design.md Components;
-    #     fleet-config#296). Hardcoded fills and a filled "ghost" are FAILs;
+    # 11. button tiers — the fleet button vocabulary (design.md Components). Hardcoded fills and a filled "ghost" are FAILs;
     #     a solid accent outside the primary and a tint without accent text
     #     are WARNs for /design-sync's judgment layer to arbitrate.
-    #     App-authored CSS only (`files.is_third_party`, fleet-config#940):
+    #     App-authored CSS only (`files.is_third_party`):
     #     Leaflet's popup close button is Leaflet's tier choice, not ours.
     css_own = ctx.css_own
     hardcoded: List[str] = []
@@ -244,7 +243,7 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
             solid_strays.append(sel)
         if "var(--accent-soft)" in bg:
             col = decls.get("color")
-            # accent-text is the contrast-safe role (#963); bare accent is the
+            # accent-text is the contrast-safe role; bare accent is the
             # legacy recipe, still accepted until the apps adopt the new token
             if col and col not in ("var(--accent-text)", "var(--accent)"):
                 tint_off.append(f"{sel} {{ color: {col[:30]} }}")
@@ -291,7 +290,7 @@ def _storage_key_re(markup: str, suffix: str, const_re: str) -> str:
 def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
     # 12. user-selectable theme — pre-paint data-theme boot + persisted .theme
     #     toggle + dual scheme-gated theme-color metas (design.md Colors "Theme
-    #     switching"; fleet-config#290). Grep-level only — whether the glyph
+    #     switching"). Grep-level only — whether the glyph
     #     shows the action stays LLM judgment in /design-sync step 4. Both
     #     stamp idioms (dataset.theme / setAttribute) and every key shape
     #     `_storage_key_re` reads (literal, concatenation, constant, helper) are
@@ -361,7 +360,7 @@ def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
 
 def _check_text_size(ctx: _ContractsCtx) -> List[dict]:
     # 12b. user text-size setting — the zoom-lock escape (design.md Layout
-    #      "Text size"; fleet-config#967): a pre-paint html[data-textsize]
+    #      "Text size"): a pre-paint html[data-textsize]
     #      stamp read from a `.textsize` localStorage key in <head>, plus a
     #      persisted control that writes it. WARN, never FAIL: no app shipped
     #      it when the contract landed, and adoption lands per app. Same key
@@ -409,12 +408,12 @@ _RANGE_TAB_RE = re.compile(r"(?<![\w-])range-tabs?(?!\w)")
 
 def _check_range_tab(ctx: _ContractsCtx) -> List[dict]:
     # 12c. range-tab retired — `segmented` is the one shape for a choice among
-    #      2-5 peers (design.md components.segmented; fleet-config#1334, #1407).
+    #      2-5 peers (design.md components.segmented).
     #      The tinted, accent-outlined `range-tab` row sat beside a `segmented`
     #      theme toggle in one Settings dialog. Flags app-authored markup, JS
     #      or CSS naming it, with file:line. Skips `_vendored/` (the scaffold's
     #      deprecated copy, byte-compared by `vendored`, migrated by
-    #      project-scaffolding#353). WARN, never FAIL: each app migrates in its
+    #      project-scaffolding). WARN, never FAIL: each app migrates in its
     #      own issue, and a contract row never blocks an app's own gate.
     sites: List[str] = []
     for blob in (ctx.css_own, ctx.markup_own):
@@ -438,7 +437,7 @@ def _check_range_tab(ctx: _ContractsCtx) -> List[dict]:
 def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
     # 14. chevron placement — disclosure summaries pin the chevron right,
     #     never a leading arrow (design.md disclosure.chevron: right;
-    #     app-launcher#362 shipped a leading `›` the lint never caught).
+    #     a leading `›` once shipped in an app because the lint missed it).
     markup_all = ctx.markup_all
     leading_chevrons: List[str] = []
     trailing_ok = 0
@@ -473,7 +472,7 @@ def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
 
 
 # The rule is about row *containers* — the repeating box whose height the
-# scale governs — never the parts inside one (fleet-config#843: 7 of task-os's
+# scale governs — never the parts inside one (7 of task-os's
 # 9 hits were `.trow-status`, `.trow-check`, `.trow-meta` … a select, a tick
 # and a meta line, each legitimately its own size). A container is named by
 # the tail of its own class: `.trow`, `.link-row`, `.rows`, `.action-rail`.
@@ -506,7 +505,7 @@ def _check_row_height_scale(ctx: _ContractsCtx) -> List[dict]:
     # 15. row-height scale — repeating list/action-rail rows draw their
     #     height from the 3-step scale (rows.sm 44px / rows.md 52px /
     #     rows.lg 60px), not an ad hoc literal (design.md Components
-    #     list-row; app-launcher#365/PR#380). Row *containers* only, per
+    #     list-row). Row *containers* only, per
     #     `_is_row_container` above.
     css_all, spec_light = ctx.css_all, ctx.spec_light
     allowed_row_px = set()
