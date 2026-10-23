@@ -34,7 +34,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Repo-relative (fleet-config#502), matching gate.py / check.py: the absolute
+# Repo-relative, matching gate.py / check.py: the absolute
 # form would load whatever lives in the primary checkout, so a run from one of
 # this repo's own <repo>-wt-N worktrees would silently use main's helper rather
 # than the one it is being tested against.

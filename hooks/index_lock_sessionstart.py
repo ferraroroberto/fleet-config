@@ -199,7 +199,7 @@ def main() -> int:
         return 0
     if not found:
         return 0
-    # `_lib.warn()` owns the per-harness SessionStart dialect (fleet-config#818):
+    # `_lib.warn()` owns the per-harness SessionStart dialect:
     # Claude gets the hookSpecificOutput.additionalContext envelope, a foreign
     # harness the plain-stdout form it actually reads.
     _lib.warn(build_context(found))

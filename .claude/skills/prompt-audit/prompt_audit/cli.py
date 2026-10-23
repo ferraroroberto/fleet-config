@@ -49,7 +49,7 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
     parts = partition_run(run)
     all_findings = [dict(f, path=k) for k in parts["judged"] for f in (run.get("judgments") or {})[k]
                     if f.get("verdict") in ("violation", "consider")]
-    # R-44 (#1131): eval regressions the fold-in found, filed like any judged finding.
+    # R-44: eval regressions the fold-in found, filed like any judged finding.
     all_findings += [dict(f) for f in (run.get("evals") or {}).get("findings", [])
                      if f.get("verdict") in ("violation", "consider")]
     entries = {e.key: e.text for e in inventory(repos, cfg.get("audiences", {}))}

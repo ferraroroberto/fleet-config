@@ -37,7 +37,7 @@ def main() -> int:
     if _lib.is_scheduled_run():
         # A detached indexer still digesting when a short scheduled run's
         # provider exits is an owned descendant: exit 118, then killed by the
-        # job teardown (fleet-config#911). The next interactive session indexes.
+        # job teardown. The next interactive session indexes.
         return 0
     if not INDEXER.exists():
         return 0

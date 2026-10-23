@@ -83,7 +83,7 @@ ensure_utf8_stdio()
 # serve`/`tailscale funnel` invocation, or a tailnet CGNAT IP (100.64.0.0/10).
 # A bare prose mention of the word "tailscale" alone must NOT match: it can't
 # distinguish "reachable at host.tailnet.ts.net" from "a dropped Tailscale
-# handoff can surface as WinError 64" (fleet-config#418). Scoped to
+# handoff can surface as WinError 64". Scoped to
 # README/CLAUDE/docs at the IO layer so an incidental mention elsewhere can't
 # trip it either.
 TAILNET_RE = re.compile(

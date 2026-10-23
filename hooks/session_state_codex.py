@@ -67,7 +67,7 @@ def main() -> None:
                     allow_reopen=event == "UserPromptSubmit",
                 )
         if event in ("Stop", "SessionEnd"):
-            # A chief-managed worker's turn-end wakes the chief (fleet-config#999),
+            # A chief-managed worker's turn-end wakes the chief,
             # independent of codex_attention's Telegram path and its chat config.
             import chief_inbox
             chief_inbox.record_safely(payload, event, default_agent="codex")

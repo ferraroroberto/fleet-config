@@ -57,7 +57,7 @@ LINE_PATTERNS: Dict[str, re.Pattern] = {
 _MODAL = re.compile(r"\b(always|must not|must|never|do not|don't)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})", re.I)
 # "I" only as a capitalised standalone word (never the I in "I/O"); the rest any case.
 _PERSON = re.compile(r"\bI\b(?!/)|\b(?i:me|my|we|our|you|your)\b")
-# R-15 frontmatter (#1126): the name field's charset and length; no XML tags in the description.
+# R-15 frontmatter: the name field's charset and length; no XML tags in the description.
 _SKILL_NAME = re.compile(r"[a-z0-9-]{1,64}")
 _XML_TAG = re.compile(r"</?[A-Za-z][\w.-]*(?:\s[^<>]*)?>")
 # R-35: a contents heading near the top of a long reference file.

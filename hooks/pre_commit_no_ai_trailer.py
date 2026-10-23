@@ -30,8 +30,8 @@ FORBIDDEN_PATTERNS = (
     r"\xf0\x9f\xa4\x96\s*Generated\s+with",  # robot emoji + Generated with (UTF-8 bytes form)
     r"🤖\s*Generated\s+with",
     r"<noreply@anthropic\.com>",
-    # The session-link trailer the Claude Code harness asks agents to append
-    # (fleet-config#1288). Needs the URL, so prose naming the trailer passes.
+    # The session-link trailer the Claude Code harness asks agents to append.
+    # Needs the URL, so prose naming the trailer passes.
     r"\bClaude-Session:\s*https?://",
 )
 

@@ -175,7 +175,7 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     changed = git_run.changed_files(repo, base)
     if changed is None:
         # An empty stale set is a claim ("no visual-docs feature was touched")
-        # that a failed diff has no basis for making (fleet-config#681).
+        # that a failed diff has no basis for making.
         print("STALE=unknown")
         print("UNMAPPED=unknown")
     else:

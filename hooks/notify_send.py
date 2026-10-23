@@ -61,7 +61,7 @@ DOTENV_PATH_ENV_VAR = "FLEET_CONFIG_ENV_PATH"
 
 # A test-only hard stop at the transport, not at the token. Closing token
 # sources one by one is how the acceptance suite spent weeks posting four real
-# pings to Roberto's phone on every gate run (fleet-config#813): it stripped
+# pings to Roberto's phone on every gate run: it stripped
 # TOKEN_ENV_VAR and closed settings.json, then `_token_from_dotenv` was added
 # and read the token straight off disk, and a comment in the harness went on
 # asserting the network was out of reach.
@@ -677,8 +677,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     # Resolve the destination chat from projects.toml so nothing is hardcoded.
-    # --chat wins; otherwise route by --category through the shared resolver
-    # (issue #139).
+    # --chat wins; otherwise route by --category through the shared resolver.
     chat: Optional[str] = args.chat
     try:
         import _lib  # local import keeps the transport import-safe if _lib is absent

@@ -18,7 +18,7 @@ from ._ctx import _ContractsCtx, _result
 
 def _check_nav_contract(ctx: _ContractsCtx) -> List[dict]:
     # 8. nav contract signals — architecture decides, not provenance. A vendored
-    #    copy still needs the app-side standalone shell (#303), and a hand-carried
+    #    copy still needs the app-side standalone shell, and a hand-carried
     #    nav with the full architecture passes on merit (home-automation is the
     #    reference and is hand-carried). Provenance is the `vendored` lens's job.
     css_all = ctx.css_all
@@ -35,7 +35,7 @@ def _check_nav_contract(ctx: _ContractsCtx) -> List[dict]:
     vendored_nav = vendored_root is not None and (vendored_root / "nav" / "nav-tabs.css").exists()
     provenance = "vendored" if vendored_nav else "hand-carried"
     # nav-nesting: nav.tabs must be a <body> sibling of main.app, never a
-    # descendant (_vendored/nav/README.md; app-launcher#369) — a structural
+    # descendant (_vendored/nav/README.md) — a structural
     # violation the CSS signals above can't see, so it FAILs on its own
     # regardless of everything else passing.
     if nav_nested_in_app(ctx.index_files):
@@ -60,8 +60,8 @@ def _check_nav_contract(ctx: _ContractsCtx) -> List[dict]:
 
 
 def _check_viewport_lock(ctx: _ContractsCtx) -> List[dict]:
-    # 10. viewport zoom lock — installable PWAs pin the scale (design.md Layout;
-    #     fleet-config#296): user-scalable=no + maximum-scale=1, plus
+    # 10. viewport zoom lock — installable PWAs pin the scale (design.md Layout):
+    #     user-scalable=no + maximum-scale=1, plus
     #     viewport-fit=cover for the safe-area insets the nav contract needs.
     index_files = ctx.index_files
     if not index_files:

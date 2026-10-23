@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 
-# ---- second-projection fit (fleet-config#1026) -------------------------------------------------------
+# ---- second-projection fit -------------------------------------------------------
 
 SECOND_PROJECTIONS = ("webkit", "firefox")
 # Where the engine or the viewport matters (layout, touch targets, nav, composer, safe-area):

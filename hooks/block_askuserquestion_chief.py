@@ -58,8 +58,8 @@ def main() -> None:
         # Launcher-spawned, but `chief-managed.json` could not be read. Still
         # fail open -- stranding an ordinary launcher session over a bad read is
         # the worse outcome -- but never silently: "couldn't tell" gets its own
-        # reported state rather than being folded into the quiet allow below
-        # (fleet-config#835). `warn()` exits 0, so the tool call proceeds.
+        # reported state rather than being folded into the quiet allow below.
+        # `warn()` exits 0, so the tool call proceeds.
         _lib.warn(
             "AskUserQuestion allowed but UNVERIFIED: this session is launcher-spawned "
             f"({_lib.launcher_session_id()}) and the chief-managed registry at "

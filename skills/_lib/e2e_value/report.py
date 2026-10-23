@@ -97,7 +97,7 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
     done = [(p, r) for p, runs in logs for r in runs if r["complete"]]
     if not done:
         return {"status": "unknown", "reason": "no completed gate run in any checkout's log", "source": g["source"]}
-    # A later backend-only run or surface slice is not the suite (fleet-config#1134): prefer the latest
+    # A later backend-only run or surface slice is not the suite: prefer the latest
     # full-tier run that ran e2e nodes, as `time_budget` does, and say so when only a slice is on record.
     with_e2e = [(p, r) for p, r in done if executed_e2e(r, test_dirs)]
     full = [(p, r) for p, r in with_e2e if r.get("routed_tier") in (None, "full")]

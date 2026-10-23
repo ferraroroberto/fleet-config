@@ -97,18 +97,18 @@ INTERACTIVE_SELECTOR = (
 FORM_CONTROL_SELECTOR = "button, input, select, textarea"
 # COLOR-03 measures only the controls design.md gives a drawn boundary (`control-border`: input,
 # select, the switch's track). A text-labelled button or tab is identified by its label, WCAG
-# 1.4.11's exception, and the nav draws inactive tabs without one by design (#996).
+# 1.4.11's exception, and the nav draws inactive tabs without one by design.
 BOUNDARY_CONTROL_SELECTOR = (
     "input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])"
     ":not([type=button]):not([type=submit]):not([type=reset]):not([type=image]), "
     "select, textarea, [role=switch]"
 )
 GLYPH_ICON_RE = GLYPH_ICON_RENDERED_RE
-# A control's label is "short" up to this many characters; a glyph at either end of a longer run is punctuation (#1261).
+# A control's label is "short" up to this many characters; a glyph at either end of a longer run is punctuation.
 GLYPH_LABEL_MAX_CHARS = 24
-# A text run in a control is a label up to this many characters; a longer one is prose that may wrap (#1325).
+# A text run in a control is a label up to this many characters; a longer one is prose that may wrap.
 LABEL_FIT_MAX_CHARS = 40
-# Sub-pixel slack on label fit and container overflow: a 0.4px rounding spill is not a finding (#1325).
+# Sub-pixel slack on label fit and container overflow: a 0.4px rounding spill is not a finding.
 FIT_TOLERANCE_PX = 1.5
 
 # `__GEOMETRY__` is replaced by `build_script`. The script is one arrow
@@ -1232,7 +1232,7 @@ _MEASURE_JS = r"""
 """
 
 
-# Which theme did the page render? (fleet-config#1216) The walk stamps `data-theme` and sets the context's
+# Which theme did the page render? The walk stamps `data-theme` and sets the context's
 # color scheme, but an app that picks its theme from something else after load re-applies its own choice. Read
 # the attribute as it stands now and the relative luminance of the canvas the page is painted on: `body`'s
 # background composited down through its ancestors over white. `luminance` is null when a layer is not plain
@@ -1255,7 +1255,7 @@ RENDERED_THEME_JS = """
 }
 """
 
-# The glance card's height across its late reads (fleet-config#1354). design.md's glance card contract: the first card
+# The glance card's height across its late reads. design.md's glance card contract: the first card
 # under the page header never changes size as late reads land. One snapshot after a fixed settle cannot see that, so an
 # init script (`walk.py` adds it to every page) samples the card every frame from the first one of the load, and
 # `GLANCE_READ_JS` reads it once the tab's requests have gone quiet. It only reads: no click, scroll, focus or write.

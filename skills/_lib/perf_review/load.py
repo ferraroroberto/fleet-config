@@ -54,8 +54,8 @@ PAINT_JS = """() => {
 
 
 # Chromium inherits Windows "Automatically detect settings", and an HTTPS hostname is no implicit proxy
-# bypass (a bare loopback address is), so a cold autoproxy cache stalls the first request ~2.7 s on WPAD
-# (fleet-config#1139). A phone has no such step. Only `direct://` takes effect: in a net log
+# bypass (a bare loopback address is), so a cold autoproxy cache stalls the first request ~2.7 s on WPAD.
+# A phone has no such step. Only `direct://` takes effect: in a net log
 # `--no-proxy-server` and `--proxy-bypass-list` still report "auto detect, from system".
 CHROMIUM_ARGS = ["--proxy-server=direct://"]
 SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint metrics, not the poll-interval window

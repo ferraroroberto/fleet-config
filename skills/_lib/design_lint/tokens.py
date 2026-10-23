@@ -68,18 +68,18 @@ ALIASES: Dict[str, List[str]] = {
 
 # tokens whose absence is *not* a finding (optional adoptions)
 OPTIONAL_ROLES = {
-    "rounded.sm",  # home-automation deliberately dropped it (#361)
+    "rounded.sm",  # home-automation deliberately dropped it
     "icons.size.inline", "icons.size.title", "icons.size.feature",
     "colors.tile-green", "colors.tile-blue", "colors.tile-purple",
     "colors.tile-orange", "colors.tile-yellow",
-    # accent derivatives — only apps that ship a tint tier define them (#296)
+    # accent derivatives — only apps that ship a tint tier define them
     "colors.accent-soft", "colors.accent-border-soft",
     "colors.accent-border-strong",
-    # contrast-safe roles (#963) — optional until each app adopts them in its own lane
+    # contrast-safe roles — optional until each app adopts them in its own lane
     "colors.accent-fill", "colors.accent-text", "colors.success-text",
     "colors.danger-text", "colors.attention-text", "colors.control-border",
     "colors.neutral-soft",
-    # type roles added with the whole-pixel scale (#964) — optional until adopted
+    # type roles added with the whole-pixel scale — optional until adopted
     "typography.heading-md.fontSize", "typography.body-sm.fontSize",
     "typography.overline.fontSize",
 }

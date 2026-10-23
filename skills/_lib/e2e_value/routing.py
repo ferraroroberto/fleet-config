@@ -308,7 +308,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
         for hit in seen | files:
             imported[hit] = imported.get(hit, 0) + 1
     # A test-support helper (a `.py` under a `tests/` directory) is part of the suite: follow what it imports, to any depth
-    # (parking-manager#58: `mockup_seed.seed_live` imports `tests.burst_fixture` in its body). App source is never walked.
+    # (e.g. `mockup_seed.seed_live` imports `tests.burst_fixture` in its body). App source is never walked.
     queue = [f for f in imported if "tests" in f.split("/")[:-1] and f.endswith(".py")]
     walked: set = set()
     while queue:
@@ -407,7 +407,7 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         if not files:
             # GitHub answers 422 for a diff it cannot generate and `gh` returns `files: []`; `classify([])` fails
             # safe to `full`, which counted every such PR as a full-tier one. No file list is no evidence of a tier
-            # -- its own count, in no tier and no counterfactual (fleet-config#1138).
+            # -- its own count, in no tier and no counterfactual.
             unreadable_prs += 1
             continue
         slashed = {f.replace("\\", "/") for f in files}
@@ -448,9 +448,9 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     return {
         "status": "ok",
         "prs": len(pr_list),
-        # PRs `gh` returned with no file list: counted in `prs`, in no tier below (fleet-config#1138).
+        # PRs `gh` returned with no file list: counted in `prs`, in no tier below.
         "prs_unreadable": unreadable_prs,
-        # Whether the gate runs this routing at all: a `not-consumed` table saves the gate nothing (fleet-config#1134).
+        # Whether the gate runs this routing at all: a `not-consumed` table saves the gate nothing.
         "gate": {"verdict": gate, "reason": gate_reason, "readers": [{"file": f, "split": sp} for f, sp in readers]},
         "config": str(config_path or (repo_root / ".fleet.toml")), "config_source": config.source,
         "tiers": {k: tiers.get(k, 0) for k in ("skip", "static", "surface", "full")},

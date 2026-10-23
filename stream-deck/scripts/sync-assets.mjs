@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Build-time cross-check + asset sync for the Fleet Coding Stream Deck plugin
-// (fleet-config#370, #574). Hard-fails (non-zero exit, all problems reported
+// Build-time cross-check + asset sync for the Fleet Coding Stream Deck plugin.
+// Hard-fails (non-zero exit, all problems reported
 // together) on any drift between registry/targets.json and the fleet's real
 // hooks/projects.toml, a missing/undersized icon, or a malformed http-action
 // entry — "fail clearly when a configured target is missing/broken" per the
@@ -97,7 +97,7 @@ function validateTrayTarget(target, projects, io, errors) {
   };
 }
 
-// The apps an http-action key may call: the runtime list behind src/types.ts's ActionApp (fleet-config#1006).
+// The apps an http-action key may call: the runtime list behind src/types.ts's ActionApp.
 const ACTION_APPS = ["home-automation", "facilitation-suite"];
 
 function validateHttpActionTarget(target, errors) {

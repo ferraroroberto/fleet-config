@@ -147,7 +147,7 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
             low = body.lower()
             if low.startswith("design spec applies:"):
                 # The leading word is the answer; a note after it (`yes (the app, not the stage)`)
-                # is the author's, not a `no` (#1087).
+                # is the author's, not a `no`.
                 val = body.split(":", 1)[1].split("#")[0].strip().lower()
                 spec_applies = re.match(r"(yes|true)\b", val) is not None
                 current = None
@@ -270,7 +270,7 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     if changed is None:
         # The diff itself failed. "The UX surface was not touched" is a claim
         # this run has no evidence for, so it does not make it — the gate reads
-        # `unknown` as touched (fleet-config#681).
+        # `unknown` as touched.
         print("TOUCHED=unknown")
         print("MATCHED=")
         print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]

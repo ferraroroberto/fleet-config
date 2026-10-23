@@ -146,7 +146,7 @@ class RepoFacts(NamedTuple):
     leftover_dirs: Tuple[LeftoverDir, ...] = ()
 
 
-# Re-exported, not redefined (fleet-config#677) -- see `git_run.Unreadable` for
+# Re-exported, not redefined -- see `git_run.Unreadable` for
 # why an unreadable repo gets no verdict at all rather than a manufactured one.
 # `except repo_preflight.Unreadable` at any call site still resolves here.
 Unreadable = git_run.Unreadable
@@ -242,7 +242,7 @@ def scan_leftovers(repo_path: Path, registered: Tuple[str, ...]) -> Tuple[Leftov
 
 
 # Stripped stdout, or `Unreadable` -- never an empty string standing in for a
-# fact. Shared with `dirty_tree_check` (fleet-config#677): the two copies were
+# fact. Shared with `dirty_tree_check`: the two copies were
 # byte-identical, and the comment that used to justify keeping them apart ("the
 # two helpers report through different vocabularies") described the *callers*,
 # which each still render the caught exception their own way.

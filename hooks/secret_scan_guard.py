@@ -78,7 +78,7 @@ def _staged_diff(repo_cwd: Path) -> str:
 
 
 # `gh pr review` publishes a body too; `gh api` / `gh gist` / releases are out of
-# scope (fleet-config#959), and `gh issue view` / `gh pr list` never match.
+# scope, and `gh issue view` / `gh pr list` never match.
 GH_PUBLISH_RE = re.compile(r"\bgh\s+(?:issue|pr)\s+(?:create|comment|edit|review)\b")
 
 # Enough for any real issue body; a larger file is scanned up to this prefix.

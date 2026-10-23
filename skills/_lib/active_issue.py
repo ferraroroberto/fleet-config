@@ -45,7 +45,7 @@ _WIN_STILL_ACTIVE = 259
 _WIN_ERROR_ACCESS_DENIED = 5
 _WIN_ERROR_INVALID_PARAMETER = 87
 
-# Optional owner fields on a claim row (fleet-config#852). Rows written before
+# Optional owner fields on a claim row. Rows written before
 # them, or by a writer with no resolvable owner, simply omit the field.
 OWNER_SESSION_FIELD = "owner_session_id"
 OWNER_PID_FIELD = "owner_pid"
@@ -273,7 +273,7 @@ def state_lock(
 
 def _remote_repo_name(repo_path: Path) -> Optional[str]:
     # `git_run.run_git` owns the explicit UTF-8 decode and `NO_WINDOW` this used
-    # to hand-roll (fleet-config#561).
+    # to hand-roll.
     result = git_run.run_git(["-C", str(repo_path), "remote", "get-url", "origin"])
     if result.returncode != 0:
         return None

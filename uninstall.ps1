@@ -10,13 +10,13 @@
 
     Also removes the three pieces of state install.ps1 writes OUTSIDE the
     junction/symlink manifest, none of which a manifest-only uninstall would
-    ever reach (fleet-config#681):
-      - the OTel project-attribution $PROFILE block (fleet-config#310), from
+    ever reach:
+      - the OTel project-attribution $PROFILE block, from
         both the pwsh and Windows PowerShell 5.1 profile files;
       - the agy context-filter plugin under
-        ~/.gemini/config/plugins/fleet-context-filter (fleet-config#546);
+        ~/.gemini/config/plugins/fleet-context-filter;
       - the Copilot CLI context-filter hook at
-        ~/.copilot/hooks/fleet-context-filter.json (fleet-config#547).
+        ~/.copilot/hooks/fleet-context-filter.json.
     Each mirrors its Install-* counterpart and removes only what that function
     writes -- a hook file this repo did not author is left alone.
 
@@ -178,7 +178,7 @@ foreach ($prop in $manifest.PSObject.Properties) {
     # Remove the link itself, not the target. The .NET delete call is type-specific:
     # Directory::Delete handles junctions and directory symlinks; File::Delete handles
     # file symlinks and hardlinks. Using Directory::Delete on a file reparse point throws
-    # "The directory name is invalid." (see #136), so branch on the type we already fetched.
+    # "The directory name is invalid.", so branch on the type we already fetched.
     if ($info.PSIsContainer) { [System.IO.Directory]::Delete($target, $false) }
     else                     { [System.IO.File]::Delete($target) }
     Write-Host "REMOVED $target ($entryKind)" -ForegroundColor Cyan

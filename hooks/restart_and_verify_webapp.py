@@ -196,7 +196,7 @@ def _start_tray(tray_cmd: str, cwd: Path) -> None:
         ["cmd", "/c", "start", "", tray_cmd],
         cwd=str(cwd),
         # NEW_PROCESS_GROUP so the tray survives this hook's own console going
-        # away; NO_WINDOW so a console-less parent doesn't flash one (#409).
+        # away; NO_WINDOW so a console-less parent doesn't flash one.
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | _lib.NO_WINDOW,
     )
 
@@ -343,7 +343,7 @@ def main() -> int:
         time.sleep(POLL_INTERVAL_S)
 
     # The endpoint answered but never named a build: `unknown`, not success and
-    # not a mismatch — the caller must be able to tell those apart (#562).
+    # not a mismatch — the caller must be able to tell those apart.
     if last_payload is not None and not str(last_payload.get("git_sha") or ""):
         print(
             "[restart-webapp] UNCONFIRMED: " + api_path + " reported no git_sha within "

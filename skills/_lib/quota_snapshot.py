@@ -206,7 +206,7 @@ def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:
             stream.flush()
             os.fsync(stream.fileno())
         # Windows readers can briefly deny replacement (native concurrent-I/O
-        # probe, #751). Retry only that sharing/access condition, bounded <1s.
+        # probe). Retry only that sharing/access condition, bounded <1s.
         for attempt in range(6):
             try:
                 os.replace(temporary, target)

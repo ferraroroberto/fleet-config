@@ -32,7 +32,7 @@ def _check_form_font_inherit(ctx: _ContractsCtx) -> List[dict]:
     #     button/input/select/textarea their own font, so without a global
     #     `font: inherit` they render in the platform default (Arial on Windows
     #     Chrome). The vendored scaffold base ships the rule
-    #     (project-scaffolding#266), so css_all — vendored included — counts.
+    #     so css_all — vendored included — counts.
     if not ctx.css_all.strip():
         return [_result("form-font-inherit", "NA", "no CSS found")]
     covered: set = set()
@@ -61,8 +61,8 @@ def _check_form_font_inherit(ctx: _ContractsCtx) -> List[dict]:
 
 def _check_uppercase_role(ctx: _ContractsCtx) -> List[dict]:
     # 26. caps only through the spec's legal role — design.md Typography
-    #     makes `overline` (list group headers) the one uppercase use
-    #     (fleet-config#964). Any other `text-transform: uppercase` WARNs.
+    #     makes `overline` (list group headers) the one uppercase use.
+    #     Any other `text-transform: uppercase` WARNs.
     #     App-authored CSS only: a bundled library's labels aren't the app's.
     legal = [k.split(".")[1] for k, v in ctx.spec_light.items()
              if k.startswith("typography.") and k.endswith(".textTransform") and v == "uppercase"]

@@ -41,13 +41,13 @@ VERSION = 1
 
 LANE_STATUSES = ("building", "gate", "idle", "waiting")
 QUEUE_STATUSES = ("queued", "building", "gate", "merged", "parked", "waiting-roberto")
-# The model a lane or build item runs on, picked per task by docs/model-tiers.md (fleet-config#1101).
+# The model a lane or build item runs on, picked per task by docs/model-tiers.md.
 MODELS = ("opus", "sonnet")
 
 # "One short line" -- long enough for a real title, short enough for a phone chip row.
 MAX_TEXT = 200
 # A question's prose (question, detail, recommendation) is still one line, but
-# it is read on the Board's answer sheet, not in a chip row (fleet-config#1049).
+# it is read on the Board's answer sheet, not in a chip row.
 MAX_PROSE = 1000
 MAX_LABEL = 80
 MAX_OPTIONS = 4

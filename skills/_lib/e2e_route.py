@@ -188,7 +188,7 @@ def files_identical(a: Path, b: Path) -> bool:
     return ha is not None and ha == hb
 
 
-# ---- gate contract: does the repo's gate honour the classifier's targets? (fleet-config#1134) ----------
+# ---- gate contract: does the repo's gate honour the classifier's targets? ----------
 
 TARGET_KEY = "E2E_PYTEST_TARGET"
 GATE_GLOBS = ("scripts/*.ps1", "scripts/*.sh", "scripts/*.bat", "*.ps1", "*.bat", "*.sh",

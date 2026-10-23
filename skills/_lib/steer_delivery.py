@@ -40,8 +40,8 @@ from typing import Any, Dict, Optional
 DEFAULT_VERIFY_POLL_INTERVAL = 2.0
 DEFAULT_RECENT_OUTPUT_WINDOW = 2 * DEFAULT_VERIFY_POLL_INTERVAL
 
-# Input-outcome reasons the session-host reports (app-launcher#760/#763,
-# `src/session_host.py:194-207`). Mirrored here as literals rather than
+# Input-outcome reasons the session-host reports
+# (`src/session_host.py:194-207`). Mirrored here as literals rather than
 # imported — this file is stdlib-only and must never depend on app-launcher's
 # tree. The `reason` field, not the HTTP status, is the documented contract
 # (`src/session_client.py:159-163`), so a 202 is recognised by `deferred`
@@ -57,7 +57,7 @@ INPUT_NEGATIVE_REASONS = frozenset({
     "defer_timeout",    # never went quiet within the watcher's cap
     "defer_vanished",   # went quiet, but the payload had gone
     "defer_unclear",    # quiet with the payload present — and a dialog too
-    "defer_failed",     # the watcher raised before writing any CR (app-launcher#1548)
+    "defer_failed",     # the watcher raised before writing any CR
 })
 # The watcher's one terminal *success*: it pressed Enter and saw the submit
 # land, recorded as `reason: ok` with `submit_confirmed: true, deferred: true`.

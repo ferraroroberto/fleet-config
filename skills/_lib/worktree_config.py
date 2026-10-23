@@ -116,7 +116,7 @@ import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from hooks_state import state_dir  # noqa: E402
 # The read-modify-write transaction primitives for a shared `hooks/state/`
-# JSON file are `active_issue.py`'s (fleet-config#816/#852/#864) -- the lock,
+# JSON file are `active_issue.py`'s -- the lock,
 # the target-named atomic temp and the tolerant read. Reused rather than
 # re-derived: a ninth hand-rolled copy is exactly what `hooks_state.py`'s own
 # docstring says goes wrong. `active_issue` imports neither this module nor
@@ -128,7 +128,7 @@ from active_issue import read_rows, state_lock, write_rows  # noqa: E402
 # of worktree_claim.py, per the module docstring above.
 from worktree_residue import WT_SEP  # noqa: E402
 
-# Band a worktree's copied runtime-config ports are repointed into (#537).
+# Band a worktree's copied runtime-config ports are repointed into.
 # Rationale for these exact bounds is in `worktree_port`'s docstring.
 WT_PORT_BASE = 8500
 WT_PORT_SPAN = 500
@@ -151,7 +151,7 @@ def _port_is_free(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
-# ---- machine-global port reservations (fleet-config#937) -------------------
+# ---- machine-global port reservations -------------------
 
 # One registry for the whole machine, not per repo: the 8500-8999 band is
 # shared by every fleet repo's worktrees, so two lanes in *different* repos can

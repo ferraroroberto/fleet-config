@@ -60,7 +60,7 @@ from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # descriptions are always-on in *every* repo's sessions, not just its own.
 USER_TIER_REPO = "fleet-config"
 
-DEFAULT_CAP = 50  # words; the ~50-word skill-description prose cap (#137).
+DEFAULT_CAP = 50  # words; the ~50-word skill-description prose cap.
 # Deliberate one-offs that do NOT derive from project-scaffolding — drift vs the
 # scaffold master is expected and should not be flagged. Tag, don't penalize.
 DEFAULT_IGNORE = {"fleet-config", "project-scaffolding"}

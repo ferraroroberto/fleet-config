@@ -71,14 +71,14 @@ class ProjectConfig:
 class GlobalConfig:
     never_kill_ports: Sequence[int]
     telegram_chat: Optional[str] = None
-    # Per-category chats (issue #139). A ping carries a category — "attention"
+    # Per-category chats. A ping carries a category — "attention"
     # ("come look": blocked / awaiting input / ready-to-validate) vs "log"
     # (activity record: filed / shipped / merged / digests). When the category's
     # chat is unset, routing falls back to `telegram_chat`, so a single chat
     # keeps working and the split can roll out one chat at a time.
     telegram_chat_attention: Optional[str] = None
     telegram_chat_log: Optional[str] = None
-    # Base URL for the app-launcher Fleet Board (fleet-config#242), e.g. a
+    # Base URL for the app-launcher Fleet Board, e.g. a
     # Tailscale address so a phone tap resolves outside the LAN. Unset by
     # default — notify_on_idle omits the board deep-link line entirely until
     # this is configured (see resolve_board_url).
@@ -195,8 +195,8 @@ def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optio
     return _match_project(_strip_worktree_suffix(cwd_norm), reg.projects)
 
 
-# A ping's intent category → the projects.toml chat key that routes it
-# (issue #139). Both keys are valid as a [global] entry and as a per-project
+# A ping's intent category → the projects.toml chat key that routes it.
+# Both keys are valid as a [global] entry and as a per-project
 # override. An unset category chat falls back to `telegram_chat`.
 NOTIFY_CATEGORY_KEYS = {
     "attention": "telegram_chat_attention",

@@ -14,8 +14,7 @@ from ._ctx import _ContractsCtx, _evidence, _result
 def _check_chart_tick_budget(ctx: _ContractsCtx) -> List[dict]:
     # 22. chart tick budget — Chart.js axes cap their label count
     #     (maxTicksLimit / autoSkip) with zero rotation so phone-width
-    #     x-axes never collide or rotate (design.md Charts;
-    #     home-automation#409).
+    #     x-axes never collide or rotate (design.md Charts).
     markup_all = ctx.markup_all
     if not re.search(r"\bnew\s+Chart\s*\(", markup_all):
         return [_result("chart-tick-budget", "NA", "no Chart.js usage found")]
@@ -36,8 +35,7 @@ def _check_chart_tick_budget(ctx: _ContractsCtx) -> List[dict]:
 def _check_chart_noncolor_cue(ctx: _ContractsCtx) -> List[dict]:
     # 23. non-colour series cue — every colour-distinguished Chart.js series
     #     carries a second visual channel (borderDash / pointStyle / fill
-    #     treatment), per WCAG 2.2 Use of Color (design.md Charts;
-    #     home-automation#409).
+    #     treatment), per WCAG 2.2 Use of Color (design.md Charts).
     markup_all = ctx.markup_all
     if not re.search(r"\bnew\s+Chart\s*\(", markup_all):
         return [_result("chart-noncolor-cue", "NA", "no Chart.js usage found")]

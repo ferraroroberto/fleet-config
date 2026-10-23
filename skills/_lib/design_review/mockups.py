@@ -225,7 +225,7 @@ def _t_wide_desktop(rule: dict, v: Values) -> Mockup:
         return (f'<div class="mk-desktop"><span class="mk-column" style="width:{w}%"><span class="mk-title">Content column</span></span>'
                 f'<span class="mk-note">{_esc(note)}</span></div>')
     if v.get("arm") == "stretched":
-        # A one-dimensional view stretched past the measure (#1113): the fix is a narrower column.
+        # A one-dimensional view stretched past the measure: the fix is a narrower column.
         content_w = _int(v.get("content_w"), inner_w)
         measure = _int(v.get("measure"), 772)
         return {"now": frame(content_w / inner_w, f"{content_w}px of a {inner_w}px viewport"),

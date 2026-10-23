@@ -48,7 +48,7 @@ def kind_of(relpath: str) -> Optional[str]:
     return None
 
 
-# ---- skill references (fleet-config#1126) ----------------------------------------
+# ---- skill references ------------------------------------------------------------
 
 _MD_LINK = re.compile(r"\]\(([^)\s]+)")
 _TICKED = re.compile(r"`([^`\s]+)`")

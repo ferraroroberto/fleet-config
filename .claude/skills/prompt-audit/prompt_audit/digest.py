@@ -133,7 +133,7 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     scan_ran = bool(run.get("scan_ran"))
     scan = "dry-run" if run.get("dry_run") else ("posted" if scan_ran else "not-run")
     # Machine-readable, ASCII, near the top so the comment-size cap never cuts it:
-    # the scheduled job's delivery_check.py reads it (fleet-config#834).
+    # the scheduled job's delivery_check.py reads it.
     stamp = (f"<!-- {STAMP_PREFIX} run={run.get('date') or 'unknown'} status={status} scan={scan} "
              f"guides={guides} update-issue={run.get('update_issue') or 'none'} -->")
 
@@ -147,7 +147,7 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         f"{v} {len(by_verdict[v])}" for v in VERDICTS))
     for s in stale + by_verdict["not-checked"]:
         out.append(f"- `{s.get('id')}` **{s.get('VERDICT')}** — {s.get('reason', '')}")
-    # Coverage (#1128): incomplete rules are reported, never a reason to stop or mark the scan
+    # Coverage: incomplete rules are reported, never a reason to stop or mark the scan
     # provisional. A run that never ran the check says so instead of implying 0 uncovered.
     cov = run.get("coverage")
     if isinstance(cov, list) and cov:
@@ -155,9 +155,9 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     else:
         out.append("- coverage: not-checked")
     out.append("")
-    # Leads (#1129): an unverified claim is reported for a human, never a rule or a prompt-drift item.
+    # Leads: an unverified claim is reported for a human, never a rule or a prompt-drift item.
     out += lead_digest_lines(run.get("leads")) + [""]
-    # Skill evals (#1131): their own job's result, reported here; never part of this run's status.
+    # Skill evals: their own job's result, reported here; never part of this run's status.
     out += eval_digest_lines(run.get("evals")) + [""]
     ref = run.get("update_issue") or "(update issue not filed)"
     if not scan_ran:

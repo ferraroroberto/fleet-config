@@ -13,7 +13,7 @@ from .lint import body_start
 from .dedup import dedup, norm_line
 
 
-# ---- prompt-drift cleanup issues (fleet-config#833) -----------------------------
+# ---- prompt-drift cleanup issues ------------------------------------------------
 
 OWNER = LEDGER_REPO.split("/", 1)[0]
 DRIFT_KIND = "prompt-drift"
@@ -22,7 +22,7 @@ DRIFT_LABEL = "prompt-drift"
 DRIFT_LABEL_COLOR = "5319e7"
 DRIFT_LABEL_DESC = "Instruction file drifts from current prompting guidance"
 # Only violations become cleanup work. A `consider` is advisory by definition, and
-# the first fleet run (#882) put 152 of its 255 considers on one rule: filed, they
+# the first fleet run put 152 of its 255 considers on one rule: filed, they
 # would be dozens of low-value rewrites of the instruction surface. They stay in the digest.
 DRIFT_VERDICTS = ("violation",)
 # Rewriting either file changes what every sister or every agent reads: always a human review.

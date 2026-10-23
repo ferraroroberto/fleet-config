@@ -31,7 +31,7 @@ from utf8_stdio import ensure_utf8_stdio as ensure_utf8_stdio  # noqa: E402
 
 SOURCES_TOML = SKILL_DIR / "sources.toml"
 RULES_MD = SKILL_DIR / "rules.md"
-# Repo-relative, never the ~/.claude junction (fleet-config#502): a run from a
+# Repo-relative, never the ~/.claude junction: a run from a
 # `-wt-N` worktree must drive its own checkout's helper.
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
 

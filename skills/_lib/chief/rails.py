@@ -16,8 +16,8 @@ import fleet_repo_scan
 
 # Worker cap used when the launcher's /api/board/chief/settings carries no
 # `worker_cap`. The 3 is the default the /chief SKILL.md documents ("default
-# cap 3") and has been in this helper since it was extracted (#447). An
-# explicit 0 is a real setting and fails closed (#709), so this applies only
+# cap 3") and has been in this helper since it was extracted. An
+# explicit 0 is a real setting and fails closed, so this applies only
 # to an absent value.
 DEFAULT_WORKER_CAP = 3
 
@@ -32,7 +32,7 @@ LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
 # `channel_profiles.py`). Named here, not imported, for the same reason.
 CHANNEL_SESSION_LABEL_PREFIX = "telegram:"
 
-# Scheduled launcher jobs whose scope is the whole fleet (fleet-config#1078).
+# Scheduled launcher jobs whose scope is the whole fleet.
 # Every fleet repo is in their scope, so any dispatch while one runs can
 # collide with it: on 2026-09-27 a `/propagate-vendored` lane's worktrees
 # halted a running cleanup-fleet-all after 9 of 50 issues.

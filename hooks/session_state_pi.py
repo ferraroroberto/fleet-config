@@ -45,7 +45,7 @@ def _payload_from_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "session_id": event.get("session_id"),
         "cwd": event.get("cwd"),
         "transcript_path": event.get("transcript_path"),
-        # The final reply text, for the chief-inbox excerpt (fleet-config#1455).
+        # The final reply text, for the chief-inbox excerpt.
         "last_assistant_message": event.get("last_assistant_message"),
     }
 
@@ -68,8 +68,7 @@ def main() -> None:
                     default_agent="pi",
                     allow_reopen=name == "input",
                 )
-        # Pi's turn-end and exit, in the inbox's harness-neutral vocabulary
-        # (fleet-config#999).
+        # Pi's turn-end and exit, in the inbox's harness-neutral vocabulary.
         inbox_event = {"agent_settled": "Stop", "session_shutdown": "SessionEnd"}.get(name)
         if inbox_event:
             import chief_inbox

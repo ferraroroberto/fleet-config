@@ -517,7 +517,7 @@ def scan_fleet(
             "undeclared_carriers": len({str(c["repo"]) for c in carriers}),
             "carriers_unknown": sorted(unreadable),
             "catalog_known": catalog_error is None,
-            # Behind adopters whose pin has selectors the tip dropped: the wave must stop for these (fleet-config#1227).
+            # Behind adopters whose pin has selectors the tip dropped: the wave must stop for these.
             "contract_breaking": [
                 {"repo": a["repo"], "component": a["component"], "pinned_sha": a["pinned_sha"],
                  "removed_selectors": a["contract"]["removed_selectors"]}

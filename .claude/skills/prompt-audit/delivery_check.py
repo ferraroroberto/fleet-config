@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Repo-relative (fleet-config#502), matching audit.py.
+# Repo-relative, matching audit.py.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import digest_delivery  # noqa: E402
 

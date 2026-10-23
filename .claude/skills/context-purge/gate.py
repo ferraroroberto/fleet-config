@@ -67,7 +67,7 @@ from audit_issue_client import run_audit_issue  # noqa: E402
 from fleet_repo_scan import ignored_repos, is_linked_worktree  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-# Repo-relative (fleet-config#502), matching every other _lib cross-reference
+# Repo-relative, matching every other _lib cross-reference
 # in the tree (e.g. .claude/skills/learning-log/gather.py's HELPER) — the
 # home-junction form would execute whatever's junctioned into ~/.claude
 # rather than the checkout this script itself lives in, so a run from one of
@@ -83,7 +83,7 @@ LEDGER_REPO = "ferraroroberto/fleet-config"
 KIND = "context-purge"
 TITLE = "context-purge ledger"
 BLOCK_MARKER = "<!-- context-purge-ledger -->"
-# fleet-config#757: the only signal tying a ledger entry back to the PR that
+# The only signal tying a ledger entry back to the PR that
 # assessed it — the ledger itself records no PR/branch metadata, so this
 # prefix (the one `/context-purge`'s SKILL.md commits every purge branch to)
 # is how `reconcile()` finds candidate PRs at all.
@@ -138,7 +138,7 @@ def select_assessed(current: dict[str, str], only: list[str] | None) -> dict[str
     return {k: current[k] for k in only}
 
 
-# ---- PR reconciliation (fleet-config#757) ----------------------------------
+# ---- PR reconciliation -----------------------------------------------------
 #
 # `advance` upserts unconditionally, with no reference to whether the PR that
 # assessed a file ever reached `main` — a purge PR that is abandoned still

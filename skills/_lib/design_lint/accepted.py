@@ -116,7 +116,7 @@ def load_accepted(root: Path) -> Tuple[List[dict], List[dict]]:
             problems.append(_row(f"{label} is not a table"))
             continue
         if "rule" in entry and "check" not in entry:
-            # A `/design-review` rubric-rule exception (fleet-config#974):
+            # A `/design-review` rubric-rule exception:
             # read by `design_review.filing.load_accepted_rules`, not a
             # `design_lint` contract finding — neither a match nor a problem here.
             continue

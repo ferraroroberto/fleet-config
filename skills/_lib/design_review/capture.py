@@ -258,7 +258,7 @@ def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[D
     script = measure.default_params(
         hit_min=float(resolved.get("hit_min") or 44.0),
         primary_min=float(resolved.get("primary_min") or 48.0),
-        # action-row's budget besides the row itself: leading toggle + extra action + trailing accessory (#996)
+        # action-row's budget besides the row itself: leading toggle + extra action + trailing accessory
         row_controls_max=int(sum(float(resolved.get(k) or 0) for k in
                                  ("row_leading_toggles", "row_extra_actions", "row_trailing_accessories"))),
         exclude_selectors=exclude_selectors(review or {}),
@@ -485,10 +485,10 @@ def _measure(doc: Dict[str, object], target: Target, run_dir: Path, devices: Lis
     return _write(doc, run_dir)
 
 
-# ---- measure --e2e: the target's own e2e suite in surface-capture mode (#1498, #1383 Step 3/6) ----------------
+# ---- measure --e2e: the target's own e2e suite in surface-capture mode ----------------
 #
-# The walk opens tabs, the Settings gear, details and declared extra steps; overlays nothing opens stay invisible
-# (#1353). The target's e2e suite already opens most of them on its own disposable server, and project-scaffolding's
+# The walk opens tabs, the Settings gear, details and declared extra steps; overlays nothing opens stay invisible.
+# The target's e2e suite already opens most of them on its own disposable server, and project-scaffolding's
 # vendored `tests/e2e/_surface.py` hook captures each one a test names with `surface(page, name)` once
 # `DESIGN_SURFACE_CAPTURE=<dir>` is set. The directory is the whole contract (the hook imports nothing from here):
 # `script.js` -- the walk's own page script, emitted by `walk.py --emit-script` under the target interpreter

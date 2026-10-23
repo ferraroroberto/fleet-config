@@ -81,8 +81,8 @@ from no_window import NO_WINDOW  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
 
-# Re-exported: `is_fleet_repo` now lives beside the crawl that uses it
-# (fleet-config#561), but this module is where the unit tests and
+# Re-exported: `is_fleet_repo` now lives beside the crawl that uses it,
+# but this module is where the unit tests and
 # `design_sweep_scan` have always reached for it.
 is_fleet_repo = fleet_repo_scan.is_fleet_repo
 
@@ -186,8 +186,8 @@ def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
         # Before anything reads the repo: a stranded `.git/index.lock` blocks
         # every write while leaving every read exiting 0, so `status`/`fetch`/
         # `pull` below would all pass and file this repo as healthy while it is
-        # in fact frozen — nine repos spent fifteen days in exactly that state
-        # (fleet-config#667). Its own bucket, never auto-deleted.
+        # in fact frozen — nine repos spent fifteen days in exactly that state.
+        # Its own bucket, never auto-deleted.
         lock = index_lock.inspect(d)
         if lock["verdict"] in index_lock.REPORTABLE_VERDICTS:
             results["stale_lock"].append({
@@ -225,7 +225,7 @@ def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
 
         if not dry_run:
             # Guarded: a plain pull deletes every live file an incoming merge
-            # untracks, ignored or not (fleet-config#1086).
+            # untracks, ignored or not.
             ff = untrack_guard.guarded_fast_forward(Path(repo_path), "@{u}")
             if not ff.ok:
                 results["skipped"].append({"repo": name, "reason": "non-ff"})
@@ -254,8 +254,7 @@ def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
             # An AUDIT the gate was *forced* into because it couldn't read the
             # ledger must stay distinguishable from an AUDIT earned by real
             # change — it is a broken ledger to repair, not organic churn, and
-            # it re-bills a full Opus pass every week until someone sees it
-            # (fleet-config#566, #567).
+            # it re-bills a full Opus pass every week until someone sees it.
             if outcome.get("reason") in audit_issue.BROKEN_LEDGER_REASONS:
                 entry["reason"] = outcome["reason"]
                 if outcome.get("baseline_sha"):
@@ -269,7 +268,7 @@ def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
     return results
 
 
-# ---- detached launch + sentinel publish (fleet-config#609) -----------------
+# ---- detached launch + sentinel publish -----------------
 
 def _default_out_dir() -> Path:
     """`E:/tmp` when it exists (this codebase's usual shared scratch location,

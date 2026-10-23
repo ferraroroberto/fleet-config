@@ -655,7 +655,7 @@ def freshness(dest_root: Path, cfg: BackupConfig,
         # The newest snapshot is mid-write (or died mid-write): whatever the
         # previous snapshot's manifest says, it does NOT describe this directory.
         # Reporting "unknown" here — rather than silently falling through to an
-        # older manifest — is the whole point of #607: a check that cannot
+        # older manifest — is the whole point: a check that cannot
         # establish the fact must say so, never fold it into "ok".
         return FRESHNESS_UNKNOWN, {
             "snapshot": newest.name,

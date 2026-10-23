@@ -477,7 +477,7 @@ def orphans_report(repo: Path) -> Report:
     return Report([], orphans, VERDICT_COMPLETE, "", [])
 
 
-# ---- delete (explicit act, fleet-config#1528) ----------------------------------
+# ---- delete (explicit act) -----------------------------------------------------
 
 LookupsFactory = Callable[[], Tuple[IssueStateFn, OpenPrHeadsFn]]
 
