@@ -155,7 +155,8 @@ Pick the smallest mode that genuinely covers the change:
 
 If the project has its own launch skill (e.g. app-launcher's project `verify`),
 prefer that — it knows how to launch the app. Fall back to Claude Code's
-built-in `run` skill otherwise; there is no user-scope `verify` skill.
+built-in `run` skill otherwise *(Claude Code only — skip on other agents)*;
+there is no user-scope `verify` skill.
 
 **3f. Sanity sweep for unintended damage.** Read `git diff main...HEAD`.
 Anything outside the change's stated scope — revert that hunk or stop and ask. Watch for: unintended dependency bumps, removed tests, weakened

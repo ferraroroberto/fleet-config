@@ -358,66 +358,11 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
 
 ## Incoming worker notifications (fleet-config#443, #1456)
 
-When a **chief-dispatched** worker hits a real "blocked, needs input"
-moment (a permission gate or an `AskUserQuestion` — not the routine 💤 idle
-nag, which stays silent), it arrives as a `kind=needs-input` event in your
-mailbox batch (`chief_ops.py inbox`, or the fallback `wait-event` digest),
-never as text typed into your session:
-
-```
-- <repo>#<n>: needs input (<agent>) sid=<8> age=<age> kind=needs-input id=<id> dispatch=<id|->
-  excerpt (prompt, <n> chars):
-  | Codex in <project> awaits approval to edit files
-```
-
-The excerpt is the hook's one-line classification, not the worker's words;
-`exchange` has the detail. Like every event it waits until your turn ends,
-then rings (or wakes the waiter).
-A session the user started manually still pings the user directly — this
-only reroutes your own dispatches.
-
-On one of these:
-
-- Read that worker's state (`chief_ops.py exchange <sid>`) and decide.
-  Most should be absorbed here: nudge it back to work
-  (`chief_ops.py say <sid> --file <path>`) with no user-facing notification
-  at all.
-- Escalate to Roberto (`chief_ops.py escalate`) only when the worker is
-  asking something only he can decide — don't relay every absorbed nudge
-  upward, and don't let a genuine "I need Roberto" blend in with routine
-  status (that's exactly the distinct-priority ping `escalate` exists for).
-- With no live chief, or if the mailbox write fails, the notification goes
-  to the human Telegram chat instead of being dropped — that fallback is not
-  a bug to route around.
-
-A worker's turn ending — finished, a question asked in plain text (its
-`AskUserQuestion` is blocked), or gave up — reaches you the same way, as a
-mailbox event (see "Waking"). So does a worker that died without firing any
-hook: the launcher's reaper records it as a `session-end`. No worker event is
-a typed message; the only line ever typed for them is the fixed, data-free
-doorbell, and only while your input line is empty, so none collides with
-Roberto typing through the same input channel.
+A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn ending and a reaped worker's `session-end` all arrive as events in your mailbox batch (`chief_ops.py inbox`), never as typed text. **Read [worker-notifications.md](worker-notifications.md) whenever a batch carries a `kind=needs-input` event**: the event shape, when to absorb or escalate, and the Telegram fallback.
 
 ## A Job failed (fleet-config#1539)
 
-A failed app-launcher Job reaches you as a `kind=job-failed` event in the same mailbox batch, never as typed text:
-
-```
-- job <job_name> failed exit=<n|-> run=<run_id> repo=<repo|-> kind=job-failed id=<id> dispatch=-
-  job_id=<id> trigger=<schedule|manual|chain|webhook|…> script=<path>
-  excerpt (job-output, <n> chars):
-  | <last lines of the run's output>
-```
-
-`exit=-` is a reaped run with no exit code; `outcome=not-confirmed` on the head line means the launcher could not establish the result, so say "not confirmed", never "failed". The event is a job, not a worker: it has no `sid` and no `exchange`.
-
-- **Investigate.** Read the excerpt, then the run's full `output.log`, the job definition and the owning script. Decide whether it is transient (a one-off network or device blip, already green on a later run) or a real defect or gap.
-- **Dedupe.** An open issue that already covers the failure gets a dated comment and nothing new is filed. Investigate a job at most once per day: a red daily job does not restart the investigation every morning, so later events for the same `job_id` that day are acked with no new work.
-- **Fix through the normal plan.** File the issue in the owning repo (`repo=`), then follow the lane cap, the plan gate and `plan ask` exactly as for any other work: a `bug` gets a build lane, a shape decision gets a plan-only lane and a `plan ask`. A transient failure is one drawer line and no issue.
-- **Never re-run a Job to test it.** A Job may send mail, touch live stores or drive real devices. A re-run is Roberto's "Run now", not yours; verify a fix by reading the next scheduled run.
-- **Private data stays out of issues, comments and briefs.** Job output can hold private data (Life OS above all) and this repo is public. Name the job, the exit code and the mechanism; never quote the output.
-
-Ack the event once handled, like any other.
+**Read [job-failed.md](job-failed.md) whenever a batch carries a `kind=job-failed` event**: investigate, dedupe, fix through the normal plan, never re-run the Job, keep its output out of public text.
 
 ## Verify before you trust a worker's report
 

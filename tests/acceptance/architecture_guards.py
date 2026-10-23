@@ -699,7 +699,9 @@ def _chief_wait_event_check() -> Tuple[int, int]:
     check("chief wake: self-compact needs an armed waiter only in waiter mode",
           "Make sure the `wait-event` waiter is armed." not in compact and "WAKE=waiter" in compact)
     check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
-    incoming = skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]
+    # The section body lives in its on-demand doc; SKILL.md keeps the pointer.
+    incoming = (skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]
+                + (REPO / ".claude" / "skills" / "chief" / "worker-notifications.md").read_text(encoding="utf-8"))
     check("chief wake: incoming notifications arrive through the mailbox batch, not a timed catch-all",
           "inbox" in incoming and "periodic Board poll is unaffected" not in incoming)
     check("chief wake: no stale pointer to the old 'Polling on a cadence' section",
