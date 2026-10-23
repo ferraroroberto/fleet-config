@@ -459,11 +459,6 @@ def render_stamp(run: dict, delivery_state: str) -> str:
 
 # ---- markdown ---------------------------------------------------------------
 
-def _tok(value: Any) -> str:
-    n = _num(value)
-    return "not recorded" if n is None else f"{n:,}"
-
-
 def _delta(f: dict) -> str:
     before, after = _num(f.get("tokens_before")), _num(f.get("tokens_after"))
     if before is None or after is None:

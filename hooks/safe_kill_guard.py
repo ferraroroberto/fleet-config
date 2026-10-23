@@ -192,7 +192,17 @@ def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
 
 
 def _parse_forced_push(cmd: str) -> Optional[tuple[list[str], Optional[str]]]:
-    """`(refspecs, -C dir)` of a forced `git push`, or ``None`` when `cmd` isn't one."""
+    """`(refspecs, -C dir)` of a forced `git push`, or ``None`` when `cmd` isn't one.
+
+    An **empty refspec list** means the push named no refspec (`git push --force`,
+    `git push -f origin`), so the destination is whatever branch is checked
+    out — the caller resolves that separately rather than guessing.
+
+    With no force flag, a refspec with a leading `+` is still forced, for that
+    refspec alone (`git push origin +HEAD:main`), so only those refspecs are
+    returned. Git's global options before `push` (`-C <dir>`, `-c k=v`,
+    `--git-dir`, `--work-tree`) don't hide it.
+    """
     for segment in re.split(r"[\n;|&]+", cmd):
         parsed = _push_args(segment)
         if parsed is None:
@@ -206,23 +216,6 @@ def _parse_forced_push(cmd: str) -> Optional[tuple[list[str], Optional[str]]]:
         if plus:
             return plus, git_dir
     return None
-
-
-def forced_push_refspecs(cmd: str) -> Optional[list[str]]:
-    """Refspecs of a forced `git push`, or ``None`` when `cmd` isn't one.
-
-    An **empty list** means the push named no refspec (`git push --force`,
-    `git push -f origin`), so the destination is whatever branch is checked
-    out — the caller resolves that separately rather than guessing.
-
-    With no force flag, a refspec with a leading `+` is still forced, for that
-    refspec alone (`git push origin +HEAD:main`, fleet-config#960), so only
-    those refspecs are returned. Git's global options before `push`
-    (`-C <dir>`, `-c k=v`, `--git-dir`, `--work-tree`) don't hide it
-    (fleet-config#1275).
-    """
-    parsed = _parse_forced_push(cmd)
-    return None if parsed is None else parsed[0]
 
 
 def _current_branch(cwd_path: Path) -> str:

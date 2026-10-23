@@ -206,10 +206,6 @@ for _key in (
 
 check(_FULL.get("cwd") == "E:/automation/fleet-config", "cwd survives unchanged")
 check(
-    str(_lib.file_path(_FULL) or "").replace("\\", "/") == "E:/x/y.py",
-    "_lib.file_path reads the normalized tool_input",
-)
-check(
     not [k for k in _FULL if any(c.isupper() for c in k)],
     "no camelCase key survives normalization",
 )

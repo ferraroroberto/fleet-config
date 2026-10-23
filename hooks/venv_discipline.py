@@ -160,7 +160,7 @@ def _is_path_scoped(cmd: str) -> bool:
     return any(re.search(p, cmd, re.IGNORECASE) for p in PATH_SCOPED_HINTS)
 
 
-# Same clause separators safe_kill_guard.py's forced_push_refspecs already
+# Same clause separators safe_kill_guard.py's _parse_forced_push already
 # splits on. Path-scoping must be judged per clause, not over the whole
 # command string — otherwise a compound command that pairs a correctly
 # venv-scoped invocation with a later bare `python`/`pip` clause passes

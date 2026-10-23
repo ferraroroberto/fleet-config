@@ -198,6 +198,7 @@ with tempfile.TemporaryDirectory() as _td:
           f"scan: a locked repo is NOT reported as clean/dirty/skipped/errored, got {_res!r}")
     check(_res["accounting"]["balanced"] is True,
           "scan: the new bucket is accounted for — the repo is not lost from the walk")
+    check(_res["broken_ledgers"] == [], "scan: emits broken_ledgers, empty when no ledger forced an audit")
     check(_lock.exists(), "scan: REPORTS ONLY — the lock is never auto-deleted")
 
     # ...and a fresh lock is a different, non-alarming state: an in-flight git

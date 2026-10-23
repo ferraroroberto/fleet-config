@@ -132,11 +132,11 @@ def _conversation_index_unit_checks() -> Tuple[int, int]:
     check = _Checker()
 
     # ---- config resolution / opt-in gate ----
-    lo = cc.resolve_capture_config({"cwd": "E:/automation/life-os"})
+    lo = cc.capture_config_from_project(cc._lib.detect_project(Path("E:/automation/life-os")))
     check("capture_config: life-os -> skills routing",
           lo is not None and lo.routing == "skills" and lo.active_marker == ".active-skill")
     check("capture_config: non-opted project -> None",
-          cc.resolve_capture_config({"cwd": "E:/automation/app-launcher"}) is None)
+          cc.capture_config_from_project(cc._lib.detect_project(Path("E:/automation/app-launcher"))) is None)
 
     # ---- conversations_dirs: flat -> one dir labelled by project ----
     flat = cc.CaptureConfig(root=Path(tempfile.gettempdir()) / "proj", routing="flat",

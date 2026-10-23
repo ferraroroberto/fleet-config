@@ -71,15 +71,6 @@ def capture_config_from_project(project) -> Optional[CaptureConfig]:
     )
 
 
-def resolve_capture_config(payload: dict) -> Optional[CaptureConfig]:
-    """The capture config for the session's project, or ``None`` if it opted out.
-
-    Detects the project by the payload ``cwd`` (longest ``cwd_prefix`` match in
-    ``projects.toml``). A project with no ``capture = true`` is a silent no-op.
-    """
-    return capture_config_from_project(_lib.detect_project(_lib.cwd(payload)))
-
-
 def scan_known_skills(skills_root: Path) -> set:
     """Direct child folders of ``skills_root``, minus ``_``-prefixed scaffolding."""
     if not skills_root.is_dir():

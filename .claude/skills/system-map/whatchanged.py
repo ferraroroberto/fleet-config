@@ -52,16 +52,6 @@ def parse_fleet(js_text: str) -> Dict[str, dict]:
     }
 
 
-def diff_fleet(prev_js: str, cur_js: str) -> dict:
-    """Return ``{'added': [...], 'removed': [...], 'updated': [...]}`` (sorted).
-
-    * ``added`` / ``removed`` — repos present in only the new / only the old snapshot.
-    * ``updated`` — repos in both snapshots whose card content changed (a tweaked
-      description, port, layer move within a section, …).
-    """
-    return snapshot_diff.diff_entries(parse_fleet(prev_js), parse_fleet(cur_js))
-
-
 def format_line(diff: dict) -> str:
     """One-line human summary, e.g. ``+a, −b, 3 repos updated``.
 

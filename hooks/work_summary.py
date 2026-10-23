@@ -23,7 +23,7 @@ a ``changeType`` (``ADDED`` / ``MODIFIED`` / ``RENAMED`` / ``DELETED`` …) plus
 ``additions`` / ``deletions`` / ``changedFiles``.
 
 Contract mirrors ``notify_complete``: never raises. Any gh / parse error yields
-an empty string from :func:`block_for` / :func:`table_for`, so a caller degrades
+an empty string from :func:`block_for`, so a caller degrades
 to a block-less message instead of crashing a finish.
 """
 
@@ -155,11 +155,6 @@ def _gh_pr(ref: str) -> Dict:
 def block_for(ref: str) -> str:
     """The roll-up block for a PR ``ref`` (number or URL). ``""`` on error."""
     return format_block(_gh_pr(ref))
-
-
-def table_for(ref: str) -> str:
-    """The chat per-file table for a PR ``ref`` (number or URL). ``""`` on error."""
-    return format_table(_gh_pr(ref))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
