@@ -74,7 +74,6 @@ import re
 import socket
 import ssl
 import sys
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -85,6 +84,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fleet_repo_scan  # noqa: E402
 import fleet_toml  # noqa: E402
 import wide_views  # noqa: E402
+from worktree_residue import WT_SEP  # noqa: E402
 
 LOOPBACK = "127.0.0.1"
 
@@ -201,14 +201,10 @@ def load_review_block(root: Optional[Path]) -> Dict[str, object]:
     """
     if root is None:
         return {}
-    toml_path = Path(root) / ".fleet.toml"
-    if not toml_path.is_file():
-        return {}
-    try:
-        data = tomllib.loads(toml_path.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError as exc:
-        return {"error": f"unparseable .fleet.toml: {exc}"}
-    design = data.get("design")
+    data, error = fleet_toml.load_checked(Path(root))
+    if error:
+        return {"error": f"unparseable .fleet.toml: {error}"}
+    design = (data or {}).get("design")
     if not isinstance(design, dict):
         return {}
     review = design.get("review")
@@ -223,14 +219,10 @@ def load_no_chat_surface(root: Optional[Path]) -> tuple:
     """
     if root is None:
         return False, None
-    path = Path(root) / ".fleet.toml"
-    if not path.is_file():
-        return False, None
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError as exc:
-        return False, f"unparseable .fleet.toml: {exc}"
-    design = data.get("design")
+    data, error = fleet_toml.load_checked(Path(root))
+    if error:
+        return False, f"unparseable .fleet.toml: {error}"
+    design = (data or {}).get("design")
     if not isinstance(design, dict) or "no_chat_surface" not in design:
         return False, None
     raw = design["no_chat_surface"]
@@ -293,7 +285,7 @@ def resolve_target(
         root = as_path.resolve()
         name = root.name
         # A `<repo>-wt-<N>` worktree measures the repo it belongs to.
-        stem = name.rsplit("-wt-", 1)[0]
+        stem = name.rsplit(WT_SEP, 1)[0]
         if stem in tables:
             name = stem
     else:

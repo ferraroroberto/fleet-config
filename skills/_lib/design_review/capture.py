@@ -23,7 +23,7 @@ and owns everything that is *not* browser code:
     different words;
   * the **vendored-component catalog** (#1497): project-scaffolding's
     `.fleet.toml` `[components]` table, read once from the scaffold checkout
-    (`tomllib`, no cross-repo import) and turned into each web component's
+    (`fleet_toml`, no cross-repo import) and turned into each web component's
     root and part classes, which ride into the script's params so the
     `inventory` section can tell a vendored control from a bespoke one. No
     scaffold or no catalog → `componentsError`, and every control reads
@@ -60,13 +60,13 @@ import subprocess
 import sys
 import threading
 import time
-import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import browser_verify  # noqa: E402
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -215,10 +215,10 @@ def vendored_components(scaffold_root: Optional[str]) -> Dict[str, object]:
     if not scaffold_root:
         return {"components": None, "error": "no scaffold checkout"}
     root = Path(scaffold_root)
-    try:
-        table = tomllib.loads((root / ".fleet.toml").read_text(encoding="utf-8")).get("components")
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        return {"components": None, "error": f"no catalog at {root / '.fleet.toml'}: {exc}"}
+    data, error = fleet_toml.load_checked(root)
+    if data is None:
+        return {"components": None, "error": f"no catalog at {root / '.fleet.toml'}: {error or 'file not found'}"}
+    table = data.get("components")
     if not isinstance(table, dict) or not table:
         return {"components": None, "error": f"no [components] table in {root / '.fleet.toml'}"}
     uses: Dict[str, Dict[str, bool]] = {}

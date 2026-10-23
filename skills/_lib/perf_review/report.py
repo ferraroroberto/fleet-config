@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import re
 import statistics
 import sys
-import tempfile
 import tomllib
 from pathlib import Path
 from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
+import fleet_toml  # noqa: E402
 import hooks_state  # noqa: E402
 from .http_probe import SKIPPED_STREAM  # noqa: E402
 
@@ -69,13 +68,13 @@ def load_budgets(override: Optional[dict] = None) -> dict:
 
 def load_review_block(root: Optional[Path]) -> dict:
     """The target's optional `[perf.review]` table; `{"error": ...}` when its .fleet.toml does not parse."""
-    path = Path(root) / ".fleet.toml" if root else None
-    if path is None or not path.is_file():
+    if not root:
         return {}
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError as exc:
-        return {"error": f"unparseable .fleet.toml: {exc}"}
+    data, error = fleet_toml.load_checked(Path(root))
+    if error:
+        return {"error": f"unparseable .fleet.toml: {error}"}
+    if data is None:
+        return {}
     block = data.get("perf", {}).get("review", {}) if isinstance(data.get("perf"), dict) else {}
     return dict(block) if isinstance(block, dict) else {}
 
@@ -350,10 +349,8 @@ def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Opti
     entries = [e for e in load_ledger(target) if e.get("run_id") != run_id] + [entry]
     path = ledger_path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".ledger-", suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries[-LEDGER_KEEP:]}, fh, indent=1)
-    os.replace(tmp, path)
+    hooks_state.atomic_write_text(
+        path, json.dumps({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries[-LEDGER_KEEP:]}, indent=1))
     return entry
 
 

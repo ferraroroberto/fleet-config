@@ -34,6 +34,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import branch_residue as br  # noqa: E402
+import worktree_residue as wr  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -76,10 +77,10 @@ rows = [br.Row(br.Ref("a", "local", "0" * 40), 1, c, "") for c in
 check(br.summarize(rows) == {"landed": 2, "unlanded": 1, "keep": 5, "unknown": 1},
       "summarize: unknown is counted on its own, never folded into landed or keep")
 
-check(br.classify_orphan(True, True)[0] == "orphan-with-git-file"
-      and br.classify_orphan(False, True)[0] == "orphan-has-content"
-      and br.classify_orphan(False, False)[0] == "orphan-empty"
-      and br.classify_orphan(False, None)[0] == br.UNKNOWN,
+check(wr.classify_orphan(True, True)[0] == "orphan-with-git-file"
+      and wr.classify_orphan(False, True)[0] == "orphan-has-content"
+      and wr.classify_orphan(False, False)[0] == "orphan-empty"
+      and wr.classify_orphan(False, None)[0] == br.UNKNOWN,
       "classify_orphan: .git entry, content, empty, and unreadable are four distinct classes")
 
 

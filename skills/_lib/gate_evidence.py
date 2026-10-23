@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hooks_state  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
@@ -146,9 +147,7 @@ def _load(path: Path) -> Dict[str, dict]:
 
 
 def _store(path: Path, data: Dict[str, dict]) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    hooks_state.atomic_write_text(path, json.dumps(data, indent=2))
 
 
 def _handle(stream) -> Optional[int]:

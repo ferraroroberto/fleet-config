@@ -127,13 +127,10 @@ def _command_index(tokens: list[str]) -> Optional[int]:
 
 def _git_bypass_in_tokens(tokens: list[str], start: int) -> Optional[str]:
     """The bypass flag among the arguments of the `git` at `tokens[start]`, if any."""
-    i = start + 1
-    while i < len(tokens) and tokens[i].startswith("-"):
-        opt = tokens[i]
-        if opt == "-c" and i + 1 < len(tokens) and tokens[i + 1].lower() == GIT_BYPASS_CONFIG:
-            return "-c " + GIT_BYPASS_CONFIG
-        i += 2 if opt in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
-    for j in range(i + 1, len(tokens)):
+    parsed = _lib.git_globals(tokens, start + 1)
+    if any(value.lower() == GIT_BYPASS_CONFIG for value in parsed.config):
+        return "-c " + GIT_BYPASS_CONFIG
+    for j in range(parsed.subcommand + 1, len(tokens)):
         low = tokens[j].lower()
         if low in GIT_BYPASS_FLAGS:
             return low
@@ -181,20 +178,16 @@ def destination_branch(refspec: str) -> str:
 
 def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
     """For a `git [global options] push …` segment: the tokens after `push` and
-    the `-C` directory (``None`` when absent; several `-C`s compose, as in git).
-    ``None`` when the segment isn't a push."""
+    the directory its global options name (``None`` when absent; several `-C`s
+    compose, as in git). ``None`` when the segment isn't a push."""
     tokens = [t.strip("\"'") for t in _lib.shell_tokens(segment)]
     for start, token in enumerate(tokens):
         if not _lib.GIT_TOKEN_RE.search(token):
             continue
-        i, git_dir = start + 1, None
-        while i < len(tokens) and tokens[i].startswith("-"):
-            opt = tokens[i]
-            if opt == "-C" and i + 1 < len(tokens):
-                git_dir = tokens[i + 1] if git_dir is None else str(Path(git_dir) / tokens[i + 1])
-            i += 2 if opt in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
+        parsed = _lib.git_globals(tokens, start + 1)
+        i = parsed.subcommand
         if i < len(tokens) and tokens[i].lower() == "push":
-            return tokens[i + 1:], git_dir
+            return tokens[i + 1:], parsed.workdir or None
     return None
 
 

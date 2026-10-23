@@ -61,13 +61,13 @@ import datetime as _dt
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import git_run  # noqa: E402
+from design_lint.accepted import accepted_array  # noqa: E402
 
 from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 from .report import SEVERITY_ORDER, worst_screen  # noqa: E402
@@ -105,23 +105,9 @@ def load_accepted_rules(root: Optional[Path]) -> Tuple[Dict[str, dict], List[str
     entry. Entries with a `check` key are `design_lint`'s and are skipped;
     a missing file or `design` table is `({}, [])`.
     """
-    if root is None:
-        return {}, []
-    path = Path(root) / ".fleet.toml"
-    if not path.is_file():
-        return {}, []
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        return {}, [f"could not read .fleet.toml, so no accepted rule applies: {exc}"]
-    design = data.get("design")
-    if not isinstance(design, dict):
-        return {}, []
-    raw = design.get("accepted")
-    if raw is None:
-        return {}, []
-    if not isinstance(raw, list):
-        return {}, ["[design] must hold an array of [[design.accepted]] tables"]
+    raw, problem = accepted_array(root, "rule")
+    if problem:
+        return {}, [problem]
     out: Dict[str, dict] = {}
     problems: List[str] = []
     for index, entry in enumerate(raw, start=1):

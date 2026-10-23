@@ -80,6 +80,7 @@ from acceptance.checks_cross_agent import (  # noqa: E402
     _hook_transport_utf8_check,
     _session_state_agent_adapter_unit_checks,
 )
+from acceptance.checks_git_globals import _git_globals_unit_checks  # noqa: E402
 from acceptance.checks_guards import (  # noqa: E402
     _bash_cmdexe_syntax_guard_unit_checks,
     _block_askuserquestion_chief_unit_checks,
@@ -127,6 +128,7 @@ from acceptance import gate_routing  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
 from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
+from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
     _no_window_unit_check,
@@ -137,6 +139,9 @@ from acceptance.structure_ratchet_gate import _structure_ratchet_check  # noqa: 
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 _RATCHET_CHECKS = (_static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check)
+# One named home per shared behaviour, no private copies (#1556): the single-home
+# scan and the git global-option walk it points at.
+_SINGLE_HOME_CHECKS = (_single_home_unit_check, _git_globals_unit_checks)
 
 
 def main() -> int:
@@ -381,7 +386,7 @@ def main() -> int:
     # markers (#1542), file/function/directory size + root layout (#1549) ----
     # run_unit, not run_unit3: exit 3 (could not establish the count) is a failure
     # here, never a skip -- see static_ratchet_gate's docstring.
-    for _ratchet in _RATCHET_CHECKS:
+    for _ratchet in (*_SINGLE_HOME_CHECKS, *_RATCHET_CHECKS):
         run_unit(_ratchet)
 
     # ---- fleet enumeration routes obey the dormant switch or are allow-listed (#1548) ----

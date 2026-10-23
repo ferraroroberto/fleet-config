@@ -124,9 +124,9 @@ from hooks_state import state_dir  # noqa: E402
 # unaffected.
 from active_issue import read_rows, state_lock, write_rows  # noqa: E402
 
-# Mirrors worktree_claim.WT_SEP -- duplicated (not imported) so this module
-# stays import-free of worktree_claim.py, per the module docstring above.
-_WT_SEP = "-wt-"
+# worktree_residue is a leaf (git_run only), so this module stays import-free
+# of worktree_claim.py, per the module docstring above.
+from worktree_residue import WT_SEP  # noqa: E402
 
 # Band a worktree's copied runtime-config ports are repointed into (#537).
 # Rationale for these exact bounds is in `worktree_port`'s docstring.
@@ -399,7 +399,7 @@ def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
     # `bool` is an `int` subclass — exclude it explicitly, a `true` is not a port.
     if not isinstance(port_value, int) or isinstance(port_value, bool):
         return None
-    port = _allocate_port(wt.name.rpartition(_WT_SEP)[2], taken, wt, dst.name)
+    port = _allocate_port(wt.name.rpartition(WT_SEP)[2], taken, wt, dst.name)
     raw["port"] = port
     dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return port

@@ -77,6 +77,22 @@ def load_state(repo: Path) -> Tuple[Optional[Dict[str, Any]], str]:
         return None, "invalid"
 
 
+def load_checked(repo: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """`(data, error)` for callers that surface why the file did not load.
+
+    An absent file (or a directory of that name) is `(None, None)` -- the normal
+    case, nothing to report. An unreadable or malformed file is `(None, text)`
+    with the exception text, so a typo in a repo-authored list is reported
+    instead of read as empty."""
+    path = repo / FILENAME
+    if not path.is_file():
+        return None, None
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8", errors="replace")), None
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return None, str(exc)
+
+
 def load(repo: Path) -> Optional[Dict[str, Any]]:
     """The repo's parsed `.fleet.toml`, or `None` when absent, unreadable or invalid."""
     return load_state(repo)[0]

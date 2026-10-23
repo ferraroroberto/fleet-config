@@ -26,7 +26,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence
 
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
@@ -459,6 +459,50 @@ GIT_GLOBAL_OPTS_WITH_VALUE = {
     "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
     "--super-prefix", "--config-env", "--attr-source",
 }
+
+
+class GitGlobals(NamedTuple):
+    """Where `git [global options] <subcommand>` puts its subcommand and what the
+    global options before it say."""
+
+    subcommand: int  # index of the subcommand token; `len(tokens)` when there is none
+    workdir: str  # `-C` / `--work-tree` directories composed in order, `""` when none
+    config: List[str]  # each `-c <key=value>` value
+
+
+def join_workdir(base: str, raw: str) -> str:
+    """`raw` against a `git -C` directory, kept as a string.
+
+    Joined with `/` rather than `Path`: an MSYS `-C /e/automation/x` must reach
+    a path resolver still MSYS-shaped, or its drive translation never fires.
+    """
+    if not base or re.match(r"^(?:[A-Za-z]:)?[\\/]", raw):
+        return raw
+    return base.rstrip("\\/") + "/" + raw
+
+
+def git_globals(tokens: Sequence[str], start: int) -> GitGlobals:
+    """Walk git's global options from `tokens[start]` (the token after `git`).
+
+    The one walk behind every guard that has to find the subcommand
+    (`runs_git_commit`, `safe_kill_guard`, `venv_discipline`, `context_filter`),
+    so a global-option form taught here reaches all of them. Several `-C`s
+    compose, as in git, and `--work-tree[=]<dir>` composes the same way.
+    """
+    i, workdir, config = start, "", []
+    while i < len(tokens) and tokens[i].startswith("-"):
+        opt = tokens[i]
+        has_next = i + 1 < len(tokens)
+        if opt == "-C" and has_next:
+            workdir = join_workdir(workdir, tokens[i + 1])
+        elif opt == "--work-tree" and has_next:
+            workdir = join_workdir(workdir, tokens[i + 1])
+        elif opt.startswith("--work-tree="):
+            workdir = join_workdir(workdir, opt.split("=", 1)[1])
+        elif opt == "-c" and has_next:
+            config.append(tokens[i + 1])
+        i += 2 if opt in GIT_GLOBAL_OPTS_WITH_VALUE else 1
+    return GitGlobals(min(i, len(tokens)), workdir, config)
 # Shell tokenisers (fleet-config#1304). The guards split a command three ways,
 # and each split is load-bearing for the guard reading it, so the splits live
 # here side by side instead of one private copy per hook:
@@ -592,9 +636,7 @@ def runs_git_commit(cmd: str, _nested: bool = False) -> bool:
                     if arg[:1] in "\"'" and runs_git_commit(arg.strip("\"'"), _nested=True):
                         return True
             continue
-        j = i + 1
-        while j < len(tokens) and tokens[j].startswith("-"):
-            j += 2 if tokens[j] in GIT_GLOBAL_OPTS_WITH_VALUE else 1
+        j = git_globals(tokens, i + 1).subcommand
         if j < len(tokens) and tokens[j].lower() == "commit":
             return True
     return False

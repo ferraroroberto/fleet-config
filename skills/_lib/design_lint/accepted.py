@@ -56,12 +56,12 @@ import hashlib
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 # Sibling top-level module in skills/_lib, reached as `files.py` reaches it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 
 
@@ -77,27 +77,36 @@ def _row(detail: str) -> dict:
     return {"id": ROW_ID, "status": "WARN", "detail": detail, "evidence": ".fleet.toml"}
 
 
+def accepted_array(root: Optional[Path], what: str) -> Tuple[List[object], Optional[str]]:
+    """The raw `[[design.accepted]]` array of a repo's `.fleet.toml`, plus the one
+    problem that stopped it loading (`what` names the kind of entry in the text).
+
+    The one reader both `/design-sync` (`load_accepted`) and `/design-review`
+    (`design_review.filing.load_accepted_rules`) parse their entries from, so a
+    change to where the array lives lands in both. A missing file, `design`
+    table or `accepted` key is `([], None)`."""
+    if root is None:
+        return [], None
+    data, error = fleet_toml.load_checked(Path(root))
+    if error:
+        return [], f"could not read .fleet.toml, so no accepted {what} applies: {error}"
+    design = (data or {}).get("design")
+    raw = design.get("accepted") if isinstance(design, dict) else None
+    if raw is None:
+        return [], None
+    if not isinstance(raw, list):
+        return [], "[design] must hold an array of [[design.accepted]] tables"
+    return raw, None
+
+
 def load_accepted(root: Path) -> Tuple[List[dict], List[dict]]:
     """Valid `[[design.accepted]]` entries, plus a WARN row per unusable one.
 
     No `.fleet.toml`, or one without a `design` table, is `([], [])` — a repo
     that declares nothing behaves exactly as before."""
-    path = root / ".fleet.toml"
-    if not path.is_file():
-        return [], []
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        return [], [_row(f"could not read .fleet.toml, so no accepted exception "
-                         f"applies: {exc}")]
-    design = data.get("design")
-    if design is None:
-        return [], []
-    raw = design.get("accepted") if isinstance(design, dict) else None
-    if raw is None:
-        return [], []
-    if not isinstance(raw, list):
-        return [], [_row("[design] must hold an array of [[design.accepted]] tables")]
+    raw, problem = accepted_array(root, "exception")
+    if problem:
+        return [], [_row(problem)]
 
     entries: List[dict] = []
     problems: List[dict] = []

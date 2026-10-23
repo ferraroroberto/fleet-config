@@ -17,23 +17,22 @@ turn every view into a measured one, nor a typo into an exemption.
 """
 from __future__ import annotations
 
-import tomllib
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 
 
 def load_wide_views(root: Optional[Path]) -> Tuple[List[str], Optional[str]]:
     """`(view ids, error)` from `<root>/.fleet.toml`; the error is a one-line reason or None."""
     if root is None:
         return [], None
-    path = Path(root) / ".fleet.toml"
-    if not path.is_file():
-        return [], None
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError as exc:
-        return [], f"unparseable .fleet.toml: {exc}"
-    design = data.get("design")
+    data, error = fleet_toml.load_checked(Path(root))
+    if error:
+        return [], f"unparseable .fleet.toml: {error}"
+    design = (data or {}).get("design")
     if not isinstance(design, dict) or "wide_views" not in design:
         return [], None
     raw = design["wide_views"]

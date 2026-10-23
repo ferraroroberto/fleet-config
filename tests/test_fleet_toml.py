@@ -55,6 +55,41 @@ class FleetTomlTests(unittest.TestCase):
         for bad in (True, False, "7", 0, -1, 1.5, None):
             self.assertIsNone(fleet_toml.positive_int(bad), repr(bad))
 
+    def test_load_checked_separates_absent_from_a_failure_with_its_text(self) -> None:
+        holder, repo = _repo(None)
+        with holder:
+            self.assertEqual(fleet_toml.load_checked(repo), (None, None))
+            (repo / ".fleet.toml").mkdir()
+            self.assertEqual(fleet_toml.load_checked(repo), (None, None))
+        holder, repo = _repo("[design\n")
+        with holder:
+            data, error = fleet_toml.load_checked(repo)
+            self.assertIsNone(data)
+            self.assertTrue(error)
+        holder, repo = _repo("")
+        with holder:
+            self.assertEqual(fleet_toml.load_checked(repo), ({}, None))
+
+    def test_accepted_array_is_one_reader_for_both_design_tools(self) -> None:
+        from design_lint import accepted
+        from design_review import filing
+
+        text = '[[design.accepted]]\ncheck = "c"\nreason = "r"\n[[design.accepted]]\nrule = "R-1"\nreason = "why"\n'
+        holder, repo = _repo(text)
+        with holder:
+            raw, problem = accepted.accepted_array(repo, "rule")
+            self.assertEqual((len(raw), problem), (2, None))
+            self.assertEqual(len(accepted.load_accepted(repo)[0]), 1)
+            self.assertEqual(filing.load_accepted_rules(repo), ({"R-1": {"reason": "why", "record": None}}, []))
+        holder, repo = _repo("[design]\naccepted = 3\n")
+        with holder:
+            self.assertEqual(accepted.accepted_array(repo, "rule")[1], "[design] must hold an array of [[design.accepted]] tables")
+        holder, repo = _repo("[design\n")
+        with holder:
+            self.assertIn("no accepted rule applies", filing.load_accepted_rules(repo)[1][0])
+            self.assertIn("no accepted exception applies", accepted.load_accepted(repo)[1][0]["detail"])
+        self.assertEqual(accepted.accepted_array(None, "rule"), ([], None))
+
     def test_worktree_readers_share_the_degrade_contract(self) -> None:
         holder, repo = _repo("[worktree]\nprimary_instance_ok = true\n")
         with holder:

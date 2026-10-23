@@ -215,4 +215,29 @@ check(buf.getvalue().startswith("VERDICT=unknown") and "REASON=no such path" in 
 # Nothing was removed: the helper never touches a worktree.
 check(nav.exists() and ff.exists() and detached.exists(), "the helper never removes a worktree")
 
+# ---- the one `<repo>-wt-*` scanner (fleet-config#1556) --------------------------
+scan_base = base / "scan"
+scan_base.mkdir()
+scan_primary = scan_base / "Gamma"
+scan_primary.mkdir()
+registered = scan_base / "Gamma-wt-1"
+with_git = scan_base / "gamma-wt-2"
+full = scan_base / "gamma-wt-name"
+empty = scan_base / "GAMMA-wt-4"
+other_repo = scan_base / "delta-wt-1"
+a_file = scan_base / "gamma-wt-5"
+for d in (registered, with_git, full, empty, other_repo):
+    d.mkdir()
+(with_git / ".git").write_text("gitdir: x\n")
+(full / "f.txt").write_text("x")
+a_file.write_text("x")
+found = wr.unregistered_siblings(scan_primary, [str(registered).replace("\\", "/")])
+check([p.name for p in found] == ["gamma-wt-2", "GAMMA-wt-4", "gamma-wt-name"],
+      f"unregistered_siblings: this repo's unlisted dirs only, any suffix, case-insensitive (got {[p.name for p in found]})")
+check(wr.dir_facts(with_git).has_git and not wr.dir_facts(full).has_git, "dir_facts: a .git entry is seen")
+check(wr.dir_facts(full).empty is False and wr.dir_facts(empty).empty is True, "dir_facts: empty reads the top level")
+check(wr.dir_facts(scan_base / "missing") == wr.DirFacts(False, None, None), "dir_facts: an unreadable folder is None, never empty")
+check(wr.unregistered_siblings(scan_base / "no" / "such", []) == [], "unregistered_siblings: an unreadable parent is no hit")
+check(wr.WT_SEP == "-wt-" and wr.classify_orphan(False, True)[0] == "orphan-has-content", "WT_SEP and classify_orphan live here")
+
 _h.report_and_exit("test_worktree_residue")

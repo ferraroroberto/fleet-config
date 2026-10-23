@@ -134,7 +134,7 @@ check(cls(found, 7) == cs.IN_USE and "live session cwd" in found["work-wt-7"].ev
       "in-use: a live session's cwd inside the worktree")
 check(cls(found, 8) == cs.FINISHED, "finished: a gitignored copied config does not make the tree dirty")
 check(cls(found, 9) == cs.ORPHAN_EMPTY, "orphan-empty: an empty non-git folder")
-check(cls(found, 10) == cs.UNKNOWN and "1 entries" in found["work-wt-10"].evidence,
+check(cls(found, 10) == cs.UNKNOWN and "not empty" in found["work-wt-10"].evidence,
       "unknown: a non-empty non-git folder is not removed on a guess")
 check(cls(found, 11) == cs.IN_USE and "work#11" in found["work-wt-11"].evidence,
       "in-use: a live active-issue marker names the worktree")
