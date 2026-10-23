@@ -24,7 +24,8 @@ no per-repo `git`/`gh` tool calls needed for the gating step at all.
 The output also carries `enumerated` (repos walked) and an `accounting` block
 asserting the buckets sum back to it, so a repo can never silently drop out of
 every bucket the way an unresolvable ledger baseline used to
-(fleet-config#567).
+(fleet-config#567). `broken_ledgers` lists the `to_audit` entries forced by an
+unreadable ledger, so the orchestrator reads the filter instead of re-deriving it.
 
 CLI
 ---
@@ -264,6 +265,7 @@ def _scan_gates(root: str, only: str | None, dry_run: bool) -> dict:
             results["to_audit"].append(entry)
 
     results["accounting"] = accounting(results)
+    results["broken_ledgers"] = broken_ledgers(results)
     return results
 
 

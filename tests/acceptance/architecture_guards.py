@@ -807,7 +807,7 @@ def _system_map_whatchanged_check() -> Tuple[int, int]:
     prev = 'window.FLEET = {"web":[{"nm":"a","ds":"x"},{"nm":"b","ds":"y"}],"pipe":[{"nm":"c","ds":"z"}]};'
     # add d, remove b, edit a's description, c unchanged.
     cur = 'window.FLEET = {"web":[{"nm":"a","ds":"X2"},{"nm":"d","ds":"w"}],"pipe":[{"nm":"c","ds":"z"}]};'
-    diff = wc.diff_fleet(prev, cur)
+    diff = wc.snapshot_diff.diff_entries(wc.parse_fleet(prev), wc.parse_fleet(cur))
     check("system_map_whatchanged: detects an added repo", diff["added"] == ["d"])
     check("system_map_whatchanged: detects a removed repo", diff["removed"] == ["b"])
     check("system_map_whatchanged: counts edited cards, ignores unchanged", diff["updated"] == ["a"])
@@ -816,7 +816,8 @@ def _system_map_whatchanged_check() -> Tuple[int, int]:
     repo_prev = 'window.FLEET = {"web":[{"nm":"grocery","repo":"grocery-shopping-automation","ds":"x"}]};'
     repo_cur = 'window.FLEET = {"web":[]};'
     check("system_map_whatchanged: keys cards by repo-or-nm",
-          wc.diff_fleet(repo_prev, repo_cur)["removed"] == ["grocery-shopping-automation"])
+          wc.snapshot_diff.diff_entries(wc.parse_fleet(repo_prev), wc.parse_fleet(repo_cur))["removed"]
+          == ["grocery-shopping-automation"])
 
     check("system_map_whatchanged: format_line composes named adds/removes + count",
           wc.format_line(diff) == "+d, −b, 1 repo updated")
@@ -894,7 +895,7 @@ def _config_map_check() -> Tuple[int, int, int]:
     # add skill c, remove skill b, edit a's description, hook h1 unchanged.
     cur = ('window.CONFIG = {"skills_universal":[{"nm":"a","ds":"X2"},{"nm":"c","ds":"w"}],'
            '"hooks":[{"nm":"h1","ds":"z"}]};')
-    diff = wc.diff_config(prev, cur)
+    diff = wc.snapshot_diff.diff_entries(wc.parse_config(prev), wc.parse_config(cur))
     check("config_map_whatchanged: detects an added entry", diff["added"] == ["skill:c"])
     check("config_map_whatchanged: detects a removed entry", diff["removed"] == ["skill:b"])
     check("config_map_whatchanged: counts edited entries, ignores unchanged", diff["updated"] == ["skill:a"])
@@ -905,7 +906,7 @@ def _config_map_check() -> Tuple[int, int, int]:
     rp = 'window.CONFIG = {"skills_repo":[{"repo":"life-os","items":["j1","j2"]}]};'
     rc = 'window.CONFIG = {"skills_repo":[{"repo":"life-os","items":["j1"]}]};'
     check("config_map_whatchanged: keys repo skills by path, labels by short name",
-          wc.format_line(wc.diff_config(rp, rc)) == "−j2")
+          wc.format_line(wc.snapshot_diff.diff_entries(wc.parse_config(rp), wc.parse_config(rc))) == "−j2")
 
     check("config_map_whatchanged: empty diff reads 'no config changes'",
           wc.format_line({"added": [], "removed": [], "updated": []}) == "no config changes")

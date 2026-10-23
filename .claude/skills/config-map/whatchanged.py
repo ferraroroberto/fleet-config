@@ -67,16 +67,6 @@ def _short(key: str) -> str:
     return name.rsplit("/", 1)[-1]
 
 
-def diff_config(prev_js: str, cur_js: str) -> dict:
-    """Return ``{'added': [...], 'removed': [...], 'updated': [...]}`` (sorted keys).
-
-    * ``added`` / ``removed`` — entries present in only the new / only the old snapshot.
-    * ``updated`` — entries in both whose content changed (a tweaked description,
-      a re-wired matrix cell, a flipped scheduled/blocking flag, …).
-    """
-    return snapshot_diff.diff_entries(parse_config(prev_js), parse_config(cur_js))
-
-
 def format_line(diff: dict) -> str:
     """One-line human summary, e.g. ``+config-map, −old-hook, 3 updated``.
 

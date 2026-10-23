@@ -802,7 +802,7 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: flagless + only forces its own refspec: plain main beside +feature -> allowed (#960)",
           not blocked(f"{push} origin main +feature/x"))
     check("force-push: flagless push reports only the +refspecs (#960)",
-          skg.forced_push_refspecs(f"{push} origin main +HEAD:feature/x") == ["+HEAD:feature/x"])
+          skg._parse_forced_push(f"{push} origin main +HEAD:feature/x") == (["+HEAD:feature/x"], None))
 
     # Git's global options sit between `git` and `push` (fleet-config#1275).
     gpush = "git -C /some/repo " + "push"
@@ -817,9 +817,9 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: -C <dir> to a branch NAMED *-main-* -> allowed (#562 holds)",
           not blocked(f"{gpush} --force origin feature/main-thing"))
     check("force-push: -C <dir> with no force flag -> not a forced push",
-          skg.forced_push_refspecs(f"{gpush} origin main") is None)
+          skg._parse_forced_push(f"{gpush} origin main") is None)
     check("force-push: a force flag on another git subcommand is not a push",
-          skg.forced_push_refspecs("git -C /r checkout -f main") is None)
+          skg._parse_forced_push("git -C /r checkout -f main") is None)
 
     check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
     check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
@@ -829,12 +829,12 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: a src-side 'main' pushed onto a feature ref -> allowed",
           not blocked(f"{push} --force origin main:feature/staging-main"))
     check("force-push: no force flag -> not a forced push at all",
-          skg.forced_push_refspecs(f"{push} origin main") is None)
+          skg._parse_forced_push(f"{push} origin main") is None)
     check("force-push: --foo is not the short -f (no false positive)",
-          skg.forced_push_refspecs(f"{push} --foo origin main") is None)
+          skg._parse_forced_push(f"{push} --foo origin main") is None)
 
     check("force-push: refspec-less push reports an empty list, not a guess",
-          skg.forced_push_refspecs(f"{push} --force origin") == [])
+          skg._parse_forced_push(f"{push} --force origin") == ([], None))
     check("destination_branch: strips + and refs/heads/, keeps the dst side",
           skg.destination_branch("+refs/heads/main") == "main"
           and skg.destination_branch("HEAD:refs/heads/master") == "master"

@@ -123,7 +123,6 @@ KIND_COMPONENT: Dict[str, str] = {
 }
 
 # Choices: what they choose (masked option or control labels), and design.md's control per option count.
-CHOICE_KINDS = ("select", "combobox", "segmented", "range-tab")
 GROUP_CHOICE_KINDS = ("segmented", "range-tab")
 CHOICE_VOCAB: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("time range", re.compile(r"\b(day|days|week|weeks|month|months|year|years|today|yesterday|hour|hours|range|period)\b"

@@ -793,14 +793,6 @@ def command_string(payload: Dict[str, Any]) -> str:
     return str(tool_input(payload).get("command") or "")
 
 
-def file_path(payload: Dict[str, Any]) -> Optional[Path]:
-    """Pull the file path out of an Edit/Write tool_input, if present."""
-    raw = tool_input(payload).get("file_path")
-    if isinstance(raw, str) and raw:
-        return Path(raw)
-    return None
-
-
 # --------------------------------------------------------- Shared edit events
 #
 # EditTarget/EditEvent/edit_event() moved to edit_events.py (fleet-config#819)

@@ -36,7 +36,7 @@ def _git_globals_unit_checks() -> Tuple[int, int]:
     check("git_globals: options with no subcommand end at len(tokens)", walk(["-C"], 0).subcommand == 1)
 
     wt = "git --work-tree=/r push --force"
-    check("push guard: --work-tree=<dir> before push is read like -C", skg.forced_push_refspecs(wt) == [])
+    check("push guard: --work-tree=<dir> before push is read like -C", skg._parse_forced_push(wt) == ([], "/r"))
     check("push guard: the --work-tree directory is carried to the branch lookup",
           skg._push_args("git --work-tree=/r push -f")[1] == "/r")
     check("bypass guard: a -c bypass behind --work-tree= is still found",
