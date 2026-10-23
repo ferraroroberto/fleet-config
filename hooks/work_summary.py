@@ -140,12 +140,6 @@ def _gh_pr(ref: str) -> Dict:
 
     ``ref`` is a PR number or a full URL (URL works from any CWD). Returns ``{}``
     on a missing gh, a non-zero exit, or unparseable output — never raises.
-
-    Used to carry its own ~20-line gh shell-out, copied from
-    ``notify_complete.gh_json`` because importing it would have closed a cycle
-    (``notify_complete`` imports this module). The helper now lives in ``_lib``,
-    which both modules already import and neither imports back, so the cycle
-    that motivated the copy is gone (fleet-config#561).
     """
     return _lib.gh_json(
         ["pr", "view", str(ref), "--json", "files,additions,deletions,changedFiles"]

@@ -566,6 +566,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "throwaway git tree: a line appended to a baselined file or a new "
      "101-line function fails with the teaching message and reverting "
      "passes, an unparseable Python file is exit 3 (fleet-config#1549)"),
+    ("comment_ratchet_gate", "acceptance/test_comment_ratchet_gate.py",
+     "the comment ratchet stage's exit-code mapping -- 3 (could not scan) "
+     "fails as NOT CONFIRMED instead of landing in SKIP the way "
+     "`shared.SKIP_EXIT` would read it -- and the acceptance criteria on a "
+     "throwaway git tree: a new issue reference in a comment fails by name "
+     "and reverting passes, one inside a string does not count, a Python "
+     "file that does not tokenize is exit 3"),
     ("skip_delta", "test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "

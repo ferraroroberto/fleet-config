@@ -52,16 +52,16 @@ def _regex_literal_ok(last_sig: Optional[str]) -> bool:
 def _strip_js_comments(text: str, *, blank_regex_literals: bool = False) -> str:
     """Blank out `//` line comments and `/* */` block comments, tracking
     string/template-literal state so a `//` inside a URL or quoted string
-    (e.g. `'see https://example.com'`) isn't mistaken for a comment opener
-    (fleet-config#394 — a bare per-line regex was over-flagging emoji sites
-    inside `//` comments as rendered-text glyphs).
+    (e.g. `'see https://example.com'`) isn't mistaken for a comment opener.
+    A bare per-line regex would flag emoji inside `//` comments as
+    rendered-text glyphs.
 
     Regex literals (`/[^`]/g`) are skipped wholesale rather than fed through
     the quote/backtick tracker above — a quote or backtick inside a regex's
     character class would otherwise open a phantom string that swallows
     every real comment for the rest of the file. `blank_regex_literals` also
     drops the literal from the output, for callers reading the source as
-    rendered text (#416).
+    rendered text.
     """
     out: List[str] = []
     i, n = 0, len(text)
