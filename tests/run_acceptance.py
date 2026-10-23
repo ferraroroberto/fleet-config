@@ -65,9 +65,9 @@ from acceptance.architecture_guards import (  # noqa: E402
     _settings_sync_split_check,
     _settings_template_sync_check,
     _skill_git_rules_check,
-    _system_map_coverage_check,
     _system_map_whatchanged_check,
 )
+from acceptance.system_map_coverage import _system_map_coverage_check  # noqa: E402
 from acceptance.checks_capture import (  # noqa: E402
     _conversation_capture_unit_checks,
     _conversation_index_unit_checks,
@@ -292,7 +292,7 @@ def main() -> int:
     run_unit(_learning_log_unit_checks)
 
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
-    run_unit(_system_map_coverage_check)
+    run_unit3(_system_map_coverage_check)
 
     # ---- system-map: per-repo .fleet.toml aggregation + anti-staleness ----
     # run_unit3: only fleet-config's own card is gated here. The fleet-wide
