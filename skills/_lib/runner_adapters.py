@@ -28,7 +28,7 @@ class ProgressEvent:
     # are deliberately different things -- "unknown" is a record shape this
     # parser has not been taught (counted and named, no verdict), "unverified"
     # is a surface it recognises and cannot confirm completed, which keeps the
-    # run out of a green verdict (fleet-config#810).
+    # run out of a green verdict.
     kind: str
     id: str = ""
     # Tool/child name on a lifecycle event; on an "unknown"/"unverified" event,
@@ -38,7 +38,7 @@ class ProgressEvent:
     failed: bool = False
     # Deliberately stopped, which is not a failure and must never be reported as
     # one: an orchestrator that cancels its own background task has made a
-    # decision, not hit a fault (fleet-config#808). Kept separate from `failed`
+    # decision, not hit a fault. Kept separate from `failed`
     # rather than folded into it so the two stay tellable apart downstream.
     cancelled: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -48,8 +48,8 @@ class ProgressEvent:
     # stream-kind: a skill invocation is delivered back into the conversation
     # as a fresh user-role text block (the SKILL.md body), not a tool_result
     # tied to the Skill call — indistinguishable from real assistant text at
-    # the block level, but never something the run itself asserted
-    # (fleet-config#829). Only a genuinely model-authored block may ever set
+    # the block level, but never something the run itself asserted.
+    # Only a genuinely model-authored block may ever set
     # a delivery-failure verdict.
     role: str = "assistant"
 
@@ -67,7 +67,7 @@ RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-message
 # exposed this recorded `input_tokens: 2` against 52,603 cached ones. A skill
 # whose text opens with an imperative still gets executed. One that opens with
 # descriptive prose reads as reference material, and the model answers "Ready --
-# what would you like to do?" and stops (fleet-config#689).
+# what would you like to do?" and stops.
 #
 # So the adapter stops depending on slash expansion and asks for the skill by
 # name. Appending the instruction *after* the slash command is not an option:
@@ -86,7 +86,7 @@ CLAUDE_SKILL_PROMPT_TEMPLATE = (
 # Codex has no Skill tool -- its own build_command used to render the Claude
 # template above and then rewrite one substring in it (`.replace(" via the
 # Skill tool", ...)`), which would silently stop matching the moment the
-# Claude wording changed (fleet-config#1065). A separate template says the
+# Claude wording changed. A separate template says the
 # same thing in Codex's own words instead of patching Claude's.
 CODEX_SKILL_PROMPT_TEMPLATE = (
     "Run the {name} skill now using its discovered SKILL.md and available native "
@@ -146,13 +146,13 @@ def error_category(text: str) -> str:
 # not been taught, not quietly wave it through.
 #
 # Pinned against Claude Code **2.1.269** (captured 2026-09-12). The last two
-# entries are the fleet-config#841 fix: `--output-format stream-json` began
+# entries cover a drift: `--output-format stream-json` began
 # emitting the background-task *store* alongside the task lifecycle, so every
 # backgrounded tool call produced three records the parser had never seen. With
 # `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` -- which this runner sets, so every
 # slow shell command becomes a background task -- that reddened literally every
 # scheduled run, and exit 122 stopped carrying information. Teaching the parser
-# each new subtype is still the right fix, and fleet-config#810 removed the
+# each new subtype is still the right fix, but the runner no longer has a
 # deadline on doing it: an unknown record no longer decides a run on its own,
 # so the next drift costs a log line rather than a week of false reds. Neither
 # record is evidence of anything:
@@ -215,7 +215,7 @@ class ClaudeAdapter:
                 # `stopped` is what `TaskStop` reports, and the run that exposed
                 # this used it exactly as intended: a background disk scan
                 # pointed at the wrong volume, cancelled the moment the agent
-                # noticed (fleet-config#808). Reporting that as `failed` was
+                # noticed. Reporting that as `failed` was
                 # both a wrong render (`✗ task failed`) and, downstream, a
                 # wrong verdict. Only `failed` is a failure here.
                 return [ProgressEvent(mapped, id=task_id, name="task", metadata=event,
@@ -369,6 +369,5 @@ class CodexAdapter:
         # the one adapter site that is not schema drift: a collaboration item
         # registers no tool and no child, so nothing downstream would notice it
         # never finished. `unverified`, not `unknown` -- it must not disappear
-        # into a green turn the way an unrecognised record now may
-        # (fleet-config#810).
+        # into a green turn the way an unrecognised record now may.
         return [ProgressEvent("unverified", name=describe_record(kind, item_type))]

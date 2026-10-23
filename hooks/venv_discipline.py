@@ -98,8 +98,8 @@ import _lib  # noqa: E402
 # `venv`'s own flags (`--clear`, `--upgrade`, `--system-site-packages`, …) sit
 # between the module and the directory, and are NOT a directory name: the
 # original pattern read the first token after `venv` unconditionally and
-# refused `python -m venv --clear .venv` as if `--clear` were a bad name
-# (fleet-config#847). Flags are consumed, and the captured name may not itself
+# refused `python -m venv --clear .venv` as if `--clear` were a bad name.
+# Flags are consumed, and the captured name may not itself
 # start with `-`, so a flags-only fragment matches nothing at all.
 #
 # The `.exe` in the invocation prefix matters for rule 4: the fleet's own
@@ -164,8 +164,7 @@ def _is_path_scoped(cmd: str) -> bool:
 # splits on. Path-scoping must be judged per clause, not over the whole
 # command string — otherwise a compound command that pairs a correctly
 # venv-scoped invocation with a later bare `python`/`pip` clause passes
-# whole, because `_is_path_scoped` is satisfied by the first clause
-# (fleet-config#709).
+# whole, because `_is_path_scoped` is satisfied by the first clause.
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 
 
@@ -173,8 +172,8 @@ _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 #
 # `cat > notes.md <<'EOF' … EOF` writes a file; its body is text, never a
 # command. Matching guard patterns inside it produces a refusal for *writing
-# about* the hazard — which is how this hook blocked fleet-config#847 from
-# being filed, on the phrase the issue was quoting.
+# about* the hazard — which is how this hook once blocked its own bug report from
+# being filed, on the phrase the report was quoting.
 #
 # The discriminator is the *consuming command*, not the redirect alone: a body
 # is stripped only where that command cannot execute it. `cat`/`tee` into a
@@ -231,7 +230,7 @@ def strip_nonexecuted_heredoc_bodies(cmd: str) -> str:
 
 # A cmd.exe switch (`/s`, `/q`) vs. a Git Bash absolute path (`/e/automation/…`)
 # — both start with `/`, and treating the second as a flag would drop the
-# operand from the exact command that caused fleet-config#847.
+# operand from the very command the guard exists to catch.
 _CMD_SWITCH_RE = re.compile(r"^/[A-Za-z]{1,3}$")
 
 # PowerShell resolves any unambiguous prefix of a parameter name, so `-r`,
@@ -331,7 +330,7 @@ def primary_venv_under(target: Path) -> Optional[Path]:
 # at. A guard that refuses its own remedy is the expensive kind of wrong.
 VENV_BUILD_VERB = "python -m venv"
 
-# `git clean` with the ignore rules off (fleet-config#867). `-x` drops them and
+# `git clean` with the ignore rules off. `-x` drops them and
 # `-X` deletes *only* ignored paths, and every fleet repo ignores `.venv`, so in
 # a primary checkout either one deletes the real venv outright. Rule 4 must not
 # answer it: inside a worktree git unlinks the `.venv` junction without
@@ -524,14 +523,14 @@ def _clauses_for(verb: str, operands: List[str], base: Path) -> List[Clause]:
 
 # ------------------------------------------ directory changes between clauses
 #
-# fleet-config#871: agents prefix almost every command with `cd <repo> &&`,
+# Agents prefix almost every command with `cd <repo> &&`,
 # because the Bash tool resets cwd between calls, so judging every operand
 # against the payload cwd let `cd <primary> && git clean -xfd` through from
 # anywhere else. The clause split itself is unchanged — the same segments reach
 # `destructive_operands` — it only keeps its separators now, so a directory
 # change can be carried into the clauses that actually run after it.
 #
-# Every doubt keeps the previous base, which is exactly the pre-#871 reading,
+# Every doubt keeps the previous base, which is exactly the reading from before directory changes were tracked,
 # so this can only add a judgment where the new directory is certain: a target
 # that is a variable, `~`, a glob, a command substitution or not an existing
 # directory; a
@@ -753,7 +752,7 @@ def main() -> None:
     if not cmd:
         _lib.allow()
 
-    # Documentation about a hazard is not the hazard (fleet-config#847).
+    # Documentation about a hazard is not the hazard.
     cmd = strip_nonexecuted_heredoc_bodies(cmd)
 
     # 1) Wrong-name venv creation
@@ -778,7 +777,7 @@ def main() -> None:
     # 3) Bare python/pip when a project .venv is present. Evaluated per
     # clause (see _SEGMENT_SPLIT_RE) so a compound command can't launder a
     # bare invocation behind an earlier, correctly-scoped one. A quoted
-    # `a|python|b` alternation is not a clause (fleet-config#885).
+    # `a|python|b` alternation is not a clause.
     hit_verb = None
     chain = _chain(cmd)
     for index, (segment, _separator, _quoted, _starts) in enumerate(chain):
@@ -807,8 +806,8 @@ def main() -> None:
     # is otherwise fine.
     #
     # Every clause is recorded before anything is refused, because `_lib.block`
-    # does not return: an unrecorded block is exactly the blind spot #828 was
-    # filed about, one rung further up.
+    # does not return: an unrecorded block is exactly the blind spot of a block that
+    # leaves no trace, one rung further up.
     clauses = destructive_clauses(cmd, _lib.cwd(payload))
     hazard = next((c for c in clauses if c.rule), None)
     for clause in clauses:

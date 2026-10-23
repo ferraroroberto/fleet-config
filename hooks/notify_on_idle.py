@@ -46,7 +46,7 @@ import notify_send  # noqa: E402
 
 logger = logging.getLogger("notify_on_idle")
 
-# fleet-config#443: hooks/ and skills/_lib/ are two independent trees by
+# hooks/ and skills/_lib/ are two independent trees by
 # convention (a hook must stay importable with nothing but its own directory
 # on sys.path), so chief_ops.py is reached via subprocess here, never a
 # Python import -- same cross-tier pattern chief_ops.py's own `escalate`
@@ -62,7 +62,7 @@ _CHIEF_OPS_TIMEOUT_S = 10.0
 # reads differently from an idle wait; anything else falls back to the bell.
 _ICONS = {"permission_prompt": "🔔", "idle_prompt": "💤"}
 
-# Sub-types that never warrant a phone push (fleet-config#274): the idle nag,
+# Sub-types that never warrant a phone push: the idle nag,
 # plus the background sub-agent lifecycle events a Claude Code update added
 # (fired once per Task/Agent-tool spawn) — only the parent session's own
 # permission_prompt is worth surfacing.
@@ -155,7 +155,7 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
 
 # The four outcomes of `chief_managed_state()`. Three are *determinations*; the
 # fourth says the question could not be answered, and is deliberately not
-# spelled the same as any of them (fleet-config#835).
+# spelled the same as any of them.
 CHIEF_MANAGED = "managed"                     # launcher-spawned AND dispatched by chief
 CHIEF_NOT_LAUNCHER = "not-launcher-spawned"   # no APP_LAUNCHER_SESSION_ID -> an ordinary session
 CHIEF_NOT_DISPATCHED = "not-dispatched"       # launcher-spawned, but chief did not dispatch it
@@ -253,12 +253,12 @@ def chief_live() -> bool:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         # Couldn't even invoke chief_ops.py -- distinct from "no chief found"
-        # below, since the board was never reached to check (fleet-config#456).
+        # below, since the board was never reached to check.
         logger.warning("chief_live: chief-sid lookup failed to run (%s) -- falling back to the human ping", exc)
         return False
     if sid_proc.returncode == 1:
         # cmd_chief_sid's own "board reachable, no live chief-labeled session"
-        # exit -- this is the routing-miss case fleet-config#456 is about: a
+        # exit -- this is the routing-miss case this check exists for: a
         # chief-managed worker is blocked and chief-sid genuinely found
         # nothing wearing the chief label. Distinguishable at a glance from
         # the rc==2 branch below (couldn't even query the board) and from
@@ -343,7 +343,7 @@ def main() -> None:
     if payload.get("stop_hook_active"):
         _lib.allow()
 
-    # Persist the board state row (fleet-config#91) before any opt-in gating —
+    # Persist the board state row before any opt-in gating —
     # a blocked session must surface on the Fleet Board even for projects with
     # pings off, and a persistence failure must never touch the ping.
     #
@@ -352,12 +352,12 @@ def main() -> None:
     # idle_prompt fires ~60s later while nothing has changed. Writing "idle"
     # here silently downgraded that needs-you row until the user replied or a
     # fresh permission_prompt fired, dropping a genuinely-waiting session off
-    # the Board's "Your turn" column (fleet-config#354). agent_needs_input and
+    # the Board's "Your turn" column. agent_needs_input and
     # agent_completed are the same shape of non-event, but for the *parent*
     # row: they fire per Task/Agent sub-agent spawn, not for the parent
     # session's own state, so persisting "needs-you" here stamped a mid-turn
-    # parent row as blocked on evidence that says nothing about the parent
-    # (fleet-config#718). All three are no-ops here, same as the ping
+    # parent row as blocked on evidence that says nothing about the parent.
+    # All three are no-ops here, same as the ping
     # side already treats them (_NOOP_TYPES below).
     if payload.get("notification_type") not in _NOOP_TYPES:
         try:
@@ -367,9 +367,9 @@ def main() -> None:
             pass
 
     # A chief-dispatched worker's "come look, I'm blocked" is chief's problem
-    # first, not the human's (fleet-config#443) — chief wrote the brief and
+    # first, not the human's — chief wrote the brief and
     # can usually unblock it without paging Roberto. It goes to the chief's
-    # mailbox as a needs-input event (fleet-config#1456), never typed into the
+    # mailbox as a needs-input event, never typed into the
     # chief's terminal. Tried *before* the chat-configured check below, since
     # this path doesn't need Telegram at all. Falls through to the normal human
     # ping on any failure (no live chief, mailbox write failed) — never
@@ -377,7 +377,7 @@ def main() -> None:
     #
     # Keyed on the launcher session id from the environment, not the payload's
     # `session_id` — those are different id spaces, and the payload spelling
-    # meant this branch had never once been taken (fleet-config#835).
+    # meant this branch had never once been taken.
     if payload.get("notification_type") == "permission_prompt":
         # The cheap sub-type test stays first so the state read costs nothing on
         # the no-op notification types.
@@ -406,7 +406,7 @@ def main() -> None:
     # idle nag and the background sub-agent lifecycle events are noise — a
     # session left idle is rarely something you need to run back to, and a
     # sub-agent needing input or completing isn't the parent session asking
-    # for you — so no-op on all of them (fleet-config#274).
+    # for you — so no-op on all of them.
     if payload.get("notification_type") in _NOOP_TYPES:
         _lib.allow()
 

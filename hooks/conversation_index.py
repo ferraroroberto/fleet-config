@@ -72,12 +72,12 @@ logger = logging.getLogger("conversation_index")
 
 INDEX_NAME = "index.md"
 # Machine-readable twin of index.md, written by the same function from the same
-# entries (fleet-config#586) so the two can't drift. index.md stays the
+# entries so the two can't drift. index.md stays the
 # skill-facing surface a SKILL.md reads; index.json is the API for the search
 # CLI and for app-launcher's Life OS conversation browser.
 INDEX_JSON_NAME = "index.json"
-# The owner's own name for a conversation, ``{capture filename: title}``
-# (fleet-config#1348). A sidecar rather than an ``<!-- idx -->`` attr or a
+# The owner's own name for a conversation, ``{capture filename: title}``.
+# A sidecar rather than an ``<!-- idx -->`` attr or a
 # capture-header field because every one of those is rewritten by something:
 # the capture hook re-renders the whole capture on each turn of a resumed
 # conversation, a re-digest replaces the index entry, ``--force`` rebuilds
@@ -131,7 +131,7 @@ class Entry:
     turns: int
     body: str
     # Resume identity, lifted from the capture's own header. Optional by
-    # design: captures written before fleet-config#586 have no header, and the
+    # design: captures written before the header carried resume identity have none, and the
     # healer leaves a capture sid-less when its transcript is gone rather than
     # inventing one. Consumers must treat "" as "searchable, not resumable".
     sid: str = ""
@@ -304,7 +304,7 @@ def render_index(label: str, entries: "dict[str, Entry]", tail: str = "") -> str
     for e in sorted(entries.values(), key=lambda e: e.file, reverse=True):
         date, slug = _split_name(e.file)
         # Attrs are *extended*, never reshaped — `_recap` and life-os's
-        # `_shared/bootstrap.md` both parse this grammar (fleet-config#586).
+        # `_shared/bootstrap.md` both parse this grammar.
         extra = "".join(
             f' {k}="{v}"' for k, v in (("sid", e.sid), ("agent", e.agent)) if v
         )
@@ -366,7 +366,7 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
             # missing (a legacy entry, or one whose capture the healer has since
             # backfilled with a preserved mtime). Refreshing that is a file read,
             # not an LLM call, so it happens here instead of forcing a re-digest
-            # of the whole archive (fleet-config#586).
+            # of the whole archive.
             head = _read_header(path)
             if head and (prior.sid, prior.agent) != (head.get("sid", ""), head.get("agent", "")):
                 prior.sid = head.get("sid", "")
@@ -438,7 +438,7 @@ def index_project(cfg: CaptureConfig, *, force: bool = False) -> int:
     for conv_dir, label in conversations_dirs(cfg):
         total += index_dir(conv_dir, label, force=force)
     # Keep the search index current off the back of the run that already walked
-    # these dirs (fleet-config#586) — no second schedule, and the db is a pure
+    # these dirs — no second schedule, and the db is a pure
     # derivative, so a failure here is logged and never fails the index run.
     try:
         import conversation_search

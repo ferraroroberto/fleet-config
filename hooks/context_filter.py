@@ -37,7 +37,7 @@ SIGNAL_RE = re.compile(
 )
 
 # One definition of "what a credential looks like" for the hooks tier, shared
-# with `secret_scan_guard`'s commit blocker (fleet-config#561) — extending
+# with `secret_scan_guard`'s commit blocker — extending
 # coverage is a one-line change in `_lib.SECRET_PATTERNS`, not two edits that
 # can drift apart.
 SECRET_RE = _lib.SECRET_RE
@@ -46,13 +46,13 @@ SECRET_RE = _lib.SECRET_RE
 # worktree_claim.py, the design_lint package, ...) prints one payload its
 # caller reads whole, often JSON, so compressing or truncating it has no upside
 # and a wrapper-timeout truncation is strictly worse than the command timing
-# out on its own terms (fleet-config#424). Some are long-running by design:
+# out on its own terms. Some are long-running by design:
 # `.claude/skills/fleet-health/capture.py` blocks for `POLL_CHUNK_S = 540`
-# seconds, 60s under the 600s wrapper cap (fleet-config#427), and `design_lint`
-# is an extension-less package directory (fleet-config#564).
+# seconds, 60s under the 600s wrapper cap, and `design_lint`
+# is an extension-less package directory.
 #
 # Matched only where a python interpreter *runs* something under a skill
-# directory (fleet-config#1268). The former pattern matched any
+# directory. The former pattern matched any
 # `skills/<dir>/<file>.py` anywhere in the command, so reading a helper's
 # source (`sed -n`, `grep -n`, `cat`) was excluded as if it were a sweep.
 SKILL_HELPER_RUN_RE = re.compile(
@@ -60,7 +60,7 @@ SKILL_HELPER_RUN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Leading `cd <dir> &&` / `cd <dir>;` segments (fleet-config#1268). The
+# Leading `cd <dir> &&` / `cd <dir>;` segments. The
 # harness's shell persists its cwd between tool calls, so the hook leaves these
 # in the outer shell and wraps only what follows them; the wrapper then runs in
 # the directory the prefix moved to.
@@ -92,7 +92,7 @@ COMPOUND_RE = re.compile(r"(?<!\|)\|(?!\|)|&&|\|\||;|\n")
 # the payload, so there is nothing a summary can faithfully stand in for. The
 # floor for these commands is therefore the whole char budget — under it the
 # output comes back verbatim, over it byte-truncated with an explicit marker
-# naming how many lines were withheld (fleet-config#837).
+# naming how many lines were withheld.
 #
 # What this replaces: a `cat`/`tail` used to come back as only the lines
 # matching SIGNAL_RE, which turned a 433-line source file into ten lines
@@ -103,10 +103,10 @@ COMPOUND_RE = re.compile(r"(?<!\|)\|(?!\|)|&&|\|\||;|\n")
 # cannot tell from an empty result.
 CONTENT_COMMANDS = {"cat", "tail"}
 # A diff is file content on the same terms: every hunk is the payload, and the
-# generic head/signal/tail pick kept 33 of a 201-line `git diff` (fleet-config#1303).
+# generic head/signal/tail pick kept 33 of a 201-line `git diff`.
 DIFF_SUBCOMMANDS = {"git": {"diff", "show"}, "gh": {"pr diff"}}
 
-# JSON output is payload on the same terms (fleet-config#1269). It used to come
+# JSON output is payload on the same terms. It used to come
 # back as `JSON object: 3 top-level keys; keys: body, number, title` -- the
 # values gone, and a single-line output got no retrieve footer either, so
 # `gh issue view --json body` read as an issue with no body.
@@ -208,8 +208,7 @@ def _prune_old_blobs(target_dir: Path) -> None:
 def cache_raw_output(command: str, raw: str) -> str:
     """Persist raw output locally and return its content-addressed key."""
     # Deferred: loading OpenSSL costs ~7 ms, and this module is imported by the
-    # hook on every shell call while only a withheld output reaches here
-    # (fleet-config#1272).
+    # hook on every shell call while only a withheld output reaches here.
     import hashlib
 
     stamp = str(time.time_ns())
@@ -223,7 +222,7 @@ def cache_raw_output(command: str, raw: str) -> str:
 
 
 # Telemetry log cap: at ~45 MB/year observed growth this triggers roughly every
-# five months; one prior generation (shadow.jsonl.1) is kept (fleet-config#549).
+# five months; one prior generation (shadow.jsonl.1) is kept.
 SHADOW_LOG_MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -591,7 +590,7 @@ def compress_output(
     shaping = effective_command(command)
 
     # Compound output (a pipeline's last stage, or several statements) is
-    # returned like content (fleet-config#1268): `git status && git log` read
+    # returned like content: `git status && git log` read
     # through the status summariser would drop every log line.
     if is_content_command(shaping) or is_compound(command) or _is_json(safe_raw):
         compressed = _verbatim(safe_raw, len(lines), max_chars)
@@ -629,7 +628,7 @@ def compress_output(
 
     withheld = compressed.strip() != safe_raw.strip()
     # Only output with something withheld has anything to retrieve; most
-    # wrapped calls come back whole (fleet-config#1268).
+    # wrapped calls come back whole.
     raw_key = None
     if cache_raw and withheld and not secret_like and normalized:
         raw_key = cache_raw_output(command, normalized)

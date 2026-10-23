@@ -90,7 +90,7 @@ LOOPBACK = "127.0.0.1"
 
 # Device profiles: name -> (engine, Playwright device descriptor name or None,
 # viewport for the descriptor-less desktop). The names are part of every
-# screen id (`iphone-light-board`), so they are stable API for #972–#974.
+# screen id (`iphone-light-board`), so they are stable API for downstream consumers of the plan.
 DEVICES: Dict[str, dict] = {
     "iphone": {"engine": "webkit", "descriptor": "iPhone 13"},
     "android": {"engine": "chromium", "descriptor": "Pixel 7"},
@@ -108,11 +108,11 @@ class Target:
     root: Optional[Path]
     base_url: str
     review: Dict[str, object] = field(default_factory=dict)
-    # `[design] wide_views` (#1113): tab ids exempt from the 772px measure; the error is
+    # `[design] wide_views`: tab ids exempt from the 772px measure; the error is
     # a malformed declaration, which the evaluation reports rather than guesses around.
     wide_views: List[str] = field(default_factory=list)
     wide_views_error: Optional[str] = None
-    # `[design] no_chat_surface` (#1443): the app renders no chat transcript, so COMP-18 is n/a; the error is a
+    # `[design] no_chat_surface`: the app renders no chat transcript, so COMP-18 is n/a; the error is a
     # malformed declaration, which the evaluation reports rather than reads as an opt-out.
     no_chat_surface: bool = False
     no_chat_surface_error: Optional[str] = None
@@ -122,7 +122,7 @@ class PlanError(Exception):
     """A target that cannot be resolved — reported, never guessed around."""
 
 
-# The base URL a synthetic target starts with: replaced by the URL its launcher prints (#995).
+# The base URL a synthetic target starts with: replaced by the URL its launcher prints.
 SYNTHETIC_URL = "synthetic:pending"
 SYNTHETIC_STARTUP_S = 120.0
 
@@ -158,7 +158,7 @@ def synthetic_block(target: "Target") -> Dict[str, object]:
     }
 
 
-# `measure --e2e` (#1498): the suite's argv after the target's venv python, its bound, and the vendored hook it needs.
+# `measure --e2e`: the suite's argv after the target's venv python, its bound, and the vendored hook it needs.
 E2E_DEFAULT_COMMAND = ("-m", "pytest", "tests/e2e")
 E2E_TIMEOUT_S = 900.0
 E2E_HOOK = ("tests", "e2e", "_surface.py")
@@ -315,7 +315,7 @@ def resolve_target(
                   no_chat_surface=no_chat, no_chat_surface_error=no_chat_error)
 
 
-# The view name of the built-in Settings-gear screen (#1217): never a tab's id, so a Settings tab cannot collide with it.
+# The view name of the built-in Settings-gear screen: never a tab's id, so a Settings tab cannot collide with it.
 SETTINGS_GEAR_VIEW = "gear-settings"
 
 

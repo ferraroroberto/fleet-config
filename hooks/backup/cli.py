@@ -128,7 +128,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     else:
         # The marker goes down before the first file write, so a death anywhere
         # between here and the manifest write below leaves `.run-in-progress`
-        # behind as unambiguous proof the tree is torn (fleet-config#607). A
+        # behind as unambiguous proof the tree is torn. A
         # marker already sitting here belongs to an earlier run for this same
         # date that never finished — self-healing: this run overwrites the
         # directory and clears it on success, but the report names it first.
@@ -208,12 +208,12 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     # The manifest now describes this directory (even a "failed" one) — the
-    # marker's job, proving the tree is torn, is done (fleet-config#607).
+    # marker's job, proving the tree is torn, is done.
     clear_run_marker(snapshot_dir)
     logger.info("⏳ %s: updating latest/ and pruning old snapshots", leg)
     # A full rebuild is the only correct move with nothing to diff against — no
     # `latest/` yet, or no readable previous manifest — and is always available
-    # as an explicit repair path via `force_rebuild_latest` (fleet-config#721).
+    # as an explicit repair path via `force_rebuild_latest`.
     if force_rebuild_latest or not (dest_root / LATEST_DIR).is_dir() or not prev_manifest.get("groups"):
         manifest["latest_files"] = rebuild_latest(dest_root, snapshot_dir)
         manifest["latest_mode"] = "full"
@@ -271,7 +271,7 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
     codes: List[int] = []
     manifests: List[Dict[str, Any]] = []
 
-    # Breadcrumbs from the first second (fleet-config#1418): every leg is
+    # Breadcrumbs from the first second: every leg is
     # selected before the first one is written, so without these a healthy run
     # printed nothing for ~5 minutes and a wedged one nothing at all until the
     # launcher's no-output watchdog killed it. Each long wait names itself
@@ -319,7 +319,7 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                              cfg.runtime_data_src, cfg.runtime_data_dest))
             else:
                 # A skip, not a failure: the fleet's move to this root
-                # (project-scaffolding#243) is still in flight, so an absent
+                # is still in flight, so an absent
                 # directory means "nothing has migrated yet", not "the backup
                 # broke". Said out loud, because a leg that quietly does nothing
                 # is indistinguishable from one that quietly stopped working.
@@ -342,8 +342,7 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
             report(manifest)
             if dry_run:
                 # A dry run takes the real SQLite snapshots (see above), so a
-                # database it could not snapshot must not exit green
-                # (fleet-config#1422).
+                # database it could not snapshot must not exit green.
                 if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
                     codes.append(EXIT_REPO_FAILURE)
                 continue
@@ -380,7 +379,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                              "reconcile — the repair path if latest/ is ever suspect.")
     args = parser.parse_args(argv)
 
-    # stdout, line-buffered, for the app-launcher Jobs pane (fleet-config#605).
+    # stdout, line-buffered, for the app-launcher Jobs pane.
     # Two separate defects, both invisible until a run went through the real
     # scheduler path: `logging.basicConfig` defaults to **stderr**, and the Jobs
     # pane captured 0 bytes for a 35-minute run (stdout 0 / stderr 1615, measured);

@@ -2,7 +2,7 @@
 # Reads the status JSON from stdin and prints one line.
 # Format: 4%c - 5%s - 10%w | sonnet | app-launcher (main)   (ctx/session/weekly used; ctx+session+weekly color-coded)
 
-# UTF-8 on both legs (fleet-config#913, same recipe as run-hook.ps1 / #912).
+# UTF-8 on both legs (same recipe as run-hook.ps1).
 # `[Console]::In` decodes with the OEM code page (ibm850), so a non-ASCII cwd
 # became mojibake: it still *printed* right only because Write-Host re-encoded
 # it with the same code page, but `Test-Path` missed and the branch vanished.
@@ -55,7 +55,7 @@ if ($data.model -and $data.model.display_name) {
 # $env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (falls back to Claude Code's own ~83%
 # default when unset/unparseable) — red fires 15 points before that threshold,
 # yellow 20 points before, so the indicator self-recalibrates whenever the
-# override changes instead of silently desyncing (fleet-config#503).
+# override changes instead of silently desyncing.
 $autocompact_pct = 83
 $parsed_override = 0
 if ($env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE -and [int]::TryParse($env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, [ref]$parsed_override) -and $parsed_override -gt 0) {
@@ -113,7 +113,7 @@ $stdout = [Console]::OpenStandardOutput()
 $stdout.Write($line_bytes, 0, $line_bytes.Length)
 $stdout.Flush()
 
-# --- rate-limits cache (app-launcher#326 / fleet-config#259) ---
+# --- rate-limits cache ---
 # Pure additive side effect: cache the same 5h/7d numbers this script just
 # printed (plus each window's reset epoch, which the printed line omits) to
 # a shared JSON file so a non-statusline process (the app-launcher Board /
@@ -154,8 +154,8 @@ try {
     # Move-Item below or the catch's own Remove-Item (the statusline is
     # re-rendered constantly and can be killed mid-write on the harness
     # timeout) — nothing else ever cleans these up, so they accumulate
-    # unbounded (fleet-config#709: 1081 orphaned files, ~30/day, dated
-    # 2026-07-19 through 2026-08-25). Age-gated so a tmp file another
+    # unbounded (once measured at 1081 orphaned files, ~30/day,
+    # over five weeks). Age-gated so a tmp file another
     # concurrent session is actively writing right now is never touched.
     $tmpCutoffUtc = (Get-Date).ToUniversalTime().AddMinutes(-5)
     Get-ChildItem -LiteralPath $stateDir -Filter 'rate-limits.json.tmp.*' -ErrorAction SilentlyContinue |
@@ -207,8 +207,7 @@ try {
         # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList, so the
         # argv is quoted by hand: double any trailing backslashes, or a path
         # written the ordinary Windows way (`...\state\`) escapes its own
-        # closing quote and the producer silently gets a malformed argv
-        # (fleet-config#800, #930).
+        # closing quote and the producer silently gets a malformed argv.
         $quotedState = $stateDir -replace '(\\+)$', '$1$1'
         $start.Arguments = '"' + $quotaScript + '" claude --state-dir "' + $quotedState + '"'
         $start.UseShellExecute = $false
