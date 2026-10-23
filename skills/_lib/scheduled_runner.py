@@ -53,7 +53,8 @@ STALL_FLAG = "--stall-timeout"
 # An outer, adapter-side post-condition, checked after the child exits and
 # whatever its exit code was. Every detector in this file pattern-matches a
 # *symptom* of a run that delivered nothing, and each one has been a separate
-# incident (#314, #506, #519, #560). The fact that actually matters is not
+# incident (a false success from a run that never ran, a sub-agent kill, a
+# background-wait ceiling, a truncated stream). The fact that actually matters is not
 # "was the stream clean" but "did the run deliver", and for a scheduled skill
 # that is usually verifiable from outside the child — a digest comment dated
 # today, a file written, a row inserted. One check on the fact catches every
@@ -64,8 +65,8 @@ DELIVERY_CHECK_TIMEOUT_SECONDS = 120.0
 DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
 
 # A wedged run is worse than a failed one: it holds the job slot, reports
-# nothing, and is only noticed when a human looks (fleet-config#411 sat idle for
-# eight hours). 45 minutes is far above any legitimate quiet stretch — every
+# nothing, and is only noticed when a human looks (a stalled run once sat idle
+# for eight hours). 45 minutes is far above any legitimate quiet stretch — every
 # Bash/PowerShell call is itself bounded by the context-filter wrapper's own
 # timeout, and observed gaps between stream events run to a few minutes at most.
 DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
@@ -80,19 +81,19 @@ STALL_POLL_MIN_SECONDS = 1.0
 STALL_POLL_MAX_SECONDS = 30.0
 
 # Claude Code's own background-task ceiling (currently 600s) kills any sub-agent
-# still in flight and exits 0 regardless — the exact false-success shape #314
-# already fixed for this adapter's own Bash/Monitor calls, just one layer up in
-# the child process itself (fleet-config#506). Detected by substring rather
+# still in flight and exits 0 regardless — the same false-success shape as
+# the adapter's own Bash/Monitor background calls, just one layer up in the
+# child process itself. Detected by substring rather
 # than an exact-wording regex so a ceiling/wording tweak upstream doesn't
 # silently stop tripping this.
 KILL_SIGNATURE_TERMS = ("background tasks still running", "terminat")
 BACKGROUND_KILL_EXIT_CODE = 125
 
-# Detection is not prevention: #506 made the kill visible, but the sub-agents'
-# work was still lost. The CLI's own stderr names the cure — "Set
+# Detection is not prevention: spotting the kill makes it visible, but the
+# sub-agents' work is still lost. The CLI's own stderr names the cure — "Set
 # CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely" — so this adapter
 # sets it for every scheduled skill from the one place that owns the spawn
-# (fleet-config#519). Verified against the shipped CLI rather than taken on
+# Verified against the shipped CLI rather than taken on
 # faith: the binary reads this exact name (`env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS
 # ?? <default>`) and gates the sweep on `ceiling > 0 && ...`, so `0` makes
 # "ceiling exceeded" permanently false — it disables the kill, it does not make
@@ -107,7 +108,7 @@ BG_WAIT_CEILING_UNLIMITED = "0"
 # the content (zero repos audited, no digest, no ping), not in the exit code.
 # The adapter cannot judge "no work" for an arbitrary skill, so the skill
 # asserts its own delivery and prints this marker when the assertion fails;
-# the adapter owns turning that into a non-zero exit (fleet-config#519).
+# the adapter owns turning that into a non-zero exit.
 # Deliberately not 124/125/127 — those already name stall/kill/spawn-failure.
 SELF_REPORTED_FAILURE_MARKER = "SCHEDULED-RUN-FAILED"
 SELF_REPORTED_FAILURE_EXIT_CODE = 123
@@ -116,15 +117,13 @@ SELF_REPORTED_FAILURE_EXIT_CODE = 123
 # stopped mid-conversation: the child was cut off, and whether it delivered
 # anything is unknown.
 #
-# This was wired informational-only because it was the *secondary* symptom of
-# the kill `KILL_SIGNATURE_TERMS` already caught. #519 then set the wait
-# ceiling to `0` for every scheduled run, which disables the kill — and with it
-# the kill *message*. That promoted this detector from secondary symptom to the
-# only remaining signal while it was still hard-wired never to fail anything,
-# so on 2026-08-06 `/audit-fleet` printed this exact warning and then `✅
-# completed · exit 0` on the very next line, having audited zero repos
-# (fleet-config#560, the fourth variant of the headless background-and-wait
-# class after #314/#506/#519).
+# It is the *secondary* symptom of the kill `KILL_SIGNATURE_TERMS` catches, but
+# the wait ceiling is set to `0` for every scheduled run (`BG_WAIT_CEILING_ENV`),
+# which disables the kill — and with it the kill *message*. That makes this
+# detector the only remaining signal, so it must be able to fail the run:
+# otherwise `/audit-fleet` can print this exact warning and then `✅
+# completed · exit 0` on the very next line, having audited zero repos (the
+# headless background-and-wait class of false success).
 #
 # It is deliberately *not* reported as a failure: a truncated stream does not
 # prove the run failed, it proves delivery was never confirmed — which the
@@ -140,8 +139,8 @@ SELF_REPORTED_FAILURE_EXIT_CODE = 123
 # red meant a fully delivered run went `not confirmed` the week upstream
 # shipped a new subtype, with no defect anywhere. On 2026-09-09
 # `fleet-health-weekly` delivered its digest, its ledger entry and its Telegram
-# ping under `150 unknown stream record(s)` and would still have exited 122
-# (fleet-config#810). That is the inverse of the class this file exists to
+# ping under `150 unknown stream record(s)` and would still have exited 122.
+# That is the inverse of the class this file exists to
 # prevent: it manufactures a red rather than hiding one, and a schedule that
 # cries wolf on a timetable is how a real red gets ignored.
 #
@@ -162,7 +161,7 @@ TRUNCATED_STREAM_EXIT_CODE = 122
 # The fifth shape, and the one none of the four above can see: a run that
 # starts, answers in prose, and ends its turn normally -- never having invoked a
 # single tool. On 2026-08-20 `/cleanup-fleet-all` did exactly that in 5.3s and
-# reported `exit 0` (fleet-config#689); the stream was complete, nothing was
+# reported `exit 0`; the stream was complete, nothing was
 # killed, no watchdog fired, and the skill printed no failure marker, because
 # from the CLI's point of view nothing went wrong. The job card was green.
 #
@@ -182,7 +181,7 @@ NO_TOOL_USE_EXIT_CODE = 120
 # API answered `529 Overloaded` three minutes into a run, the CLI printed its own
 # "usually temporary -- try again in a moment" and exited 1, and the weekly
 # `/context-purge` job lost the entire week because 01:03 is not a time anyone is
-# awake to try again (fleet-config#700). Re-running it by hand the same morning
+# awake to try again. Re-running it by hand the same morning
 # worked with nothing changed.
 #
 # Every detector above answers "did this run deliver?" and each is terminal by
@@ -311,7 +310,7 @@ def _tool_summary(tool_input: object) -> str:
 # only bar this file mints a new rung for (see `saw_kill_signature`, where a
 # failed child was denied one for exactly that reason). So no rung is minted;
 # what has to be tellable apart is carried by the verdict line, which names
-# which half fired (fleet-config#811).
+# which half fired.
 #
 # The shape is `❓ not confirmed`, not `❌ failed`, and that is the second half
 # of the decision. On 2026-09-06 `weekly-recap-draft` swept, rewrote and
@@ -739,7 +738,7 @@ class ProgressFormatter:
         # conversation verbatim rather than as a tool_result. That body is
         # allowed (expected, even) to carry a worked example of the marker at
         # column 0 to teach the model the contract; it is never something the
-        # run itself asserted, so it must never be scored (fleet-config#829).
+        # run itself asserted, so it must never be scored.
         # Still emitted below for log visibility, same as any other text.
         if from_model:
             # Scanned before the dedup guard: the same final report arrives twice
@@ -768,7 +767,7 @@ class ProgressFormatter:
         if self._unverified:
             # Its own line, never folded into the "ignored" one above: these are
             # the records that did decide the verdict, and a reader who sees
-            # "not confirmed" needs to be told which ones (fleet-config#810).
+            # "not confirmed" needs to be told which ones.
             self.emit(
                 f"⚠ {self._unverified} record(s) left this run unverified "
                 f"· {self.unverified_summary()}"
@@ -846,7 +845,7 @@ class ProgressFormatter:
             # Not "failed" — unconfirmed. The stream stopped mid-conversation,
             # so whether the run delivered anything is a fact nobody
             # established, and folding that into ✅ is what let a zero-repo
-            # audit report success (fleet-config#560).
+            # audit report success.
             status = (
                 f"❓ not confirmed · stream truncated near shutdown ({recent_unknown} "
                 "unknown record(s)) — the run was cut off mid-flight and delivery "
@@ -991,7 +990,7 @@ def _watch_for_stall(
         # Kill first, announce second. Announcing first put this thread inside a
         # `print()` on a backpressured stdout and the kill below never ran, so
         # the watchdog meant to un-wedge a jammed run wedged with it and the job
-        # read `running` for five hours (fleet-config#514). Killing the tree also
+        # read `running` for five hours. Killing the tree also
         # stops the child writing into the shared pipe chain, which is what lets
         # the downstream backpressure drain in the first place.
         confirmed = _kill_process_tree(process)
@@ -1045,13 +1044,13 @@ def run_process(
     child_env = os.environ.copy()
     # Applied after the inherited copy so a stale ambient ceiling can never
     # silently reinstate the 600s sub-agent kill, and before the caller's own
-    # `env` so an explicit override still wins (fleet-config#519).
+    # `env` so an explicit override still wins.
     child_env.update(progress.adapter.environment())
     # Nobody attends a run launched here, so the rate gate must not treat a
-    # missing statusline signal as "proceed" (fleet-config#825).
+    # missing statusline signal as "proceed".
     child_env[UNATTENDED_ENV] = "1"
     # A silent rate-gate wait emits no stream record, so the gate caps its wait
-    # under this run's actual watchdog rather than a guessed one (fleet-config#891).
+    # under this run's actual watchdog rather than a guessed one.
     child_env[STALL_TIMEOUT_ENV] = str(max(0.0, float(stall_timeout)))
     if env:
         child_env.update(env)
@@ -1114,7 +1113,7 @@ def run_process(
                     orphaned = active is not None and active > 0 and not stopping
                     orphan_count = active if orphaned else 0
                     if orphaned:
-                        # Named now: the teardown below kills them (fleet-config#911).
+                        # Named now: the teardown below kills them.
                         orphan_members = scope.describe_active()
                     # This runner stopped watching before the run was over, so
                     # its outcome is a fact nobody established: verdict-bearing,
@@ -1174,7 +1173,7 @@ def run_process(
         progress.emit_best_effort("unfinished owned descendants after provider exit")
         # Handed to the formatter as well as the log: the verdict line is what
         # the job card and the Telegram alert carry, and a breadcrumb printed
-        # three lines above it is not in either (fleet-config#811).
+        # three lines above it is not in either.
         progress._mark_owned_orphans(orphan_count)
         exit_code = INCOMPLETE_WORK_EXIT_CODE
     elif exit_code != 0 and progress.saw_transient_api_error:

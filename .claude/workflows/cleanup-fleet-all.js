@@ -19,7 +19,7 @@ export const meta = {
 // lookup on each agent's own schema-validated verdict, not a re-interpretation
 // of their reasoning.
 //
-// STRICT SERIALITY (fleet-config#518). One bucket at a time, and one issue at a
+// STRICT SERIALITY. One bucket at a time, and one issue at a
 // time inside it. The 2026-07-30 run fanned every repo in a bucket out with
 // `parallel(...)`; combined with an escalation path that never tore anything
 // down, that produced 11 simultaneous stray worktrees, two primaries left off
@@ -37,7 +37,7 @@ export const meta = {
 // there rather than starting the next lane. Continuing past an unclean lane is
 // precisely how one forgotten worktree became a cascade.
 //
-// REPORTED BUT NOT HALTING (fleet-config#534). Three conditions found on
+// REPORTED BUT NOT HALTING. Three conditions found on
 // 2026-08-01 are real, must reach a human, and are *not* residue: a stale
 // `.git/index.lock` left by a crashed git (which silently blocks every pull, so
 // a later verification reads a stale working copy and calls shipped work
@@ -47,7 +47,7 @@ export const meta = {
 // reboot, and it halted four runs in one day). Teardown reports all three; only
 // `residue` gates the run.
 //
-// FOREIGN WORKTREES DEFER, NEVER HALT (fleet-config#1077). Pre-flight skips a
+// FOREIGN WORKTREES DEFER, NEVER HALT. Pre-flight skips a
 // repo that already holds a worktree, but one can appear mid-run: on
 // 2026-09-27 a chief-dispatched lane created one ~10 minutes in, and the next
 // teardown in that repo read it as this run's residue and halted with 41
@@ -72,7 +72,7 @@ const BUILD_RESULT_SCHEMA = {
     retryable: { type: 'boolean' },
     reason: { type: 'string' },
     summary: { type: 'string' },
-    // The orchestrator's own step-5 pre-dispatch check (fleet-config#623) can
+    // The orchestrator's own step-5 pre-dispatch check can
     // still miss a closure that happens mid-run, hours into a serial sweep.
     // /issue-start's own "closed → stop" check is the last line of defense,
     // and this flag is how that specific reason reaches teardown -- so it can
@@ -95,7 +95,7 @@ const VALIDATE_RESULT_SCHEMA = {
 }
 
 // Two ship-gate invariants no JSON-schema `enum`/`required` above can express
-// (fleet-config#1065): a self-contradictory agent reply must never let a lane
+// a self-contradictory agent reply must never let a lane
 // ship. This script is the decision source both the native Workflow path and
 // the interactive skills/_lib/cleanup_workflow.cjs bridge execute, so enforcing
 // them here covers both. Before, only the bridge checked them, which let the
@@ -111,7 +111,7 @@ function inconsistentValidate(verdict) {
   return verdict.pass && verdict.verification !== 'PASS'
 }
 
-// fleet-config#1520: a recurring bucket's cleanup must also ship a structural
+// A recurring bucket's cleanup must also ship a structural
 // check, judged by `audit_issue.py structural-gate`. Recurrence is read here
 // from the issue body's stamp, the same way `recurrence_state_of` reads it, so
 // the model never decides whether the gate applies. This matches the stamp
@@ -137,19 +137,19 @@ const EXECUTE_RESULT_SCHEMA = {
     mergeSha: { type: 'string' },
     reason: { type: 'string' },
     // land-primary's RESTORED_UNTRACKED=/KEPT_ASIDE= lines, verbatim: live
-    // files the merge untracked, kept through the fast-forward (fleet-config#1086).
+    // files the merge untracked, kept through the fast-forward.
     restoredUntracked: { type: 'string' },
   },
 }
 
-// fleet-config#534. The last four properties are *reported*, never gating: a
+// The last four properties are *reported*, never gating: a
 // stale index.lock, a primary behind origin, and inert zombie-pinned empty
 // shells are all real conditions a human must see, and none of them is residue
 // in the worktree/branch sense. They deliberately do not feed the halt gate in
 // processIssue -- only `residue` does. Each has an explicit `unknown` member
 // because a probe that could not establish its fact must say so rather than
-// fold into the passing value (global CLAUDE.md, and #526's principle applied
-// to a second check).
+// fold into the passing value (global CLAUDE.md: an unestablished fact is its
+// own state, never the passing one).
 const TEARDOWN_RESULT_SCHEMA = {
   type: 'object',
   required: ['residue', 'detail'],
@@ -170,7 +170,7 @@ const TEARDOWN_RESULT_SCHEMA = {
 }
 
 // Every dispatched agent gets these two rules verbatim. Both are live-incident
-// scars, not style preferences (fleet-config#515).
+// scars, not style preferences.
 const ISOLATION_RULES = `HARD RULES — both are live-incident scars, never work around them:
 
 - **Never work a primary checkout.** Build in an isolated sibling worktree, always, for every repo. \`/issue-start\` claims the primary whenever nothing else holds the claim, but a *running* app is not a claim holder: on 2026-07-30 a build agent legitimately won MODE=primary in E:\\automation\\app-launcher and live-edited the files the running launcher webapp was serving, breaking it mid-run. Force worktree mode explicitly:
@@ -204,7 +204,7 @@ The full issue text is already read by /issue-start. If needed, fetch the curren
 Report via the required schema, including \`branch\` and the absolute \`worktree\` path you worked in (a later agent needs it to tear down; report it even when the build failed, and report an empty string only if no worktree was ever created). If verification is FAIL or SKIPPED, judge \`retryable\` yourself: true only if a second attempt has a real chance of fixing it (e.g. a straightforward bug in your own change); false for anything structural (no verification gate exists for this repo, the issue itself is unclear or unreproducible, or the real scope is bigger than one retry can close).`
 }
 
-// fleet-config#833: an instruction-file rewrite can pass every repo gate while
+// An instruction-file rewrite can pass every repo gate while
 // silently dropping a directive, so a prompt-drift lane's validator also runs
 // /context-purge's preservation harness. A failure here is a rejection like any
 // other: the fixed gate below retries once, then escalates.
@@ -214,7 +214,7 @@ function preservationStep(bucket) {
 7. This is a \`prompt-drift\` lane, so it also carries a preservation gate that the leniency rule below does not soften. From the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>\`. Any \`FAIL\` line or exit code other than 0 (exit 3 is UNKNOWN: the diff could not be taken) → \`pass: false\`, quoting the failing lines as feedback. Then, for each instruction file the diff edited, list the directives in its old text (every rule, prohibition, path, command, threshold and quoted trigger) and confirm the new text still discharges each; an undischarged directive → \`pass: false\` naming it.`
 }
 
-// fleet-config#1520: the script, not this agent, decides whether the line
+// The script, not this agent, decides whether the line
 // gates (`structuralBlocked`); the agent only runs the helper and reports.
 function structuralStep(issue, bucket) {
   if (recurrenceOf(issue) !== 'recurring') return ''
@@ -259,7 +259,7 @@ If anything fails, do not force it through — leave the branch and PR (if any) 
 Report via the required schema.`
 }
 
-// The terminal step of every lane. fleet-config#518: the durable artifact of a
+// The terminal step of every lane. The durable artifact of a
 // lane that did not ship is the GitHub issue plus a comment on it, never a
 // branch or a worktree left lying around for a human to find days later.
 function teardownPrompt(issue, lane, own) {
@@ -367,7 +367,7 @@ async function processIssue(bucket, issue) {
       lane.worktree = build.worktree || lane.worktree
     }
 
-    // Ship-gate invariant #1 (fleet-config#1065): a PASS build must claim
+    // Ship-gate invariant 1: a PASS build must claim
     // status 'built'. A self-contradictory reply is never trusted as PASS,
     // regardless of what else it claims (including its own `retryable`).
     if (build && inconsistentBuild(build)) {
@@ -391,14 +391,14 @@ async function processIssue(bucket, issue) {
       schema: VALIDATE_RESULT_SCHEMA,
     })
 
-    // Ship-gate invariant #2 (fleet-config#1065): pass requires verification
+    // Ship-gate invariant 2: pass requires verification
     // PASS. A `pass: true` / `verification: FAIL` verdict is never trusted.
     if (verdict && inconsistentValidate(verdict)) {
       verdict.pass = false
       verdict.feedback = verdict.feedback || 'validator requires a consistent pass/verification verdict'
     }
 
-    // fleet-config#1520: on a recurring bucket, a gate line other than
+    // On a recurring bucket, a gate line other than
     // pass/n/a (fail, unknown, or none reported) is never trusted as a pass.
     if (verdict) lane.structural = verdict.structural
     if (verdict && verdict.pass && structuralBlocked(issue, verdict)) {
@@ -429,14 +429,14 @@ async function processIssue(bucket, issue) {
     break
   }
 
-  // Terminal step of every lane, no exceptions (fleet-config#518).
+  // Terminal step of every lane, no exceptions.
   const teardown = await agent(teardownPrompt(issue, lane, ownWorktrees(issue.repo, lane)), {
     phase: 'Teardown',
     label: `${bucket}:teardown:${issue.repo}#${issue.number}`,
     schema: TEARDOWN_RESULT_SCHEMA,
   })
 
-  // fleet-config#534: the two reported-only probes default to 'unknown', never
+  // The two reported-only probes default to 'unknown', never
   // to their passing value, when the teardown agent died or omitted them — a
   // check that could not establish its fact must surface as unknown.
   return {
@@ -452,7 +452,7 @@ async function processIssue(bucket, issue) {
     foreignBranches: teardown ? teardown.foreignBranches : undefined,
     foreignWorktrees: teardown ? teardown.foreignWorktrees : undefined,
     // Both fast-forwards can keep a live file (land-primary at ship, check 6
-    // at teardown); the lane result reports every one (fleet-config#1086).
+    // at teardown); the lane result reports every one.
     restoredUntracked: [lane.restoredUntracked, teardown && teardown.restoredUntracked]
       .filter(v => v && v.trim()).join('; ') || undefined,
   }
@@ -467,7 +467,7 @@ const issuesByBucket = (rawArgs && rawArgs.issuesByBucket) || {}
 const bucketNames = Object.keys(issuesByBucket)
 const allResults = []
 let halted = null
-// fleet-config#1077: issues not started because a foreign worktree appeared in
+// Issues not started because a foreign worktree appeared in
 // their repo mid-run. Same item shape as step 5's skipped set, so the retry
 // pass (step 7b) re-gates both through repo_preflight.py together.
 const deferred = []
@@ -524,7 +524,7 @@ for (const bucket of bucketNames) {
     ;(runLanes[issue.repo] = runLanes[issue.repo] || []).push({ worktree: r.worktree, branch: r.branch })
     log(`${bucket} [${i + 1}/${issues.length}]: ${issue.repo}#${issue.number} → ${r.status}, teardown ${r.residue}`)
 
-    // Reported-only probes (#534) — surfaced in the stream so an overnight run
+    // Reported-only probes — surfaced in the stream so an overnight run
     // is diagnosable from the log alone, never folded into the halt decision.
     if (r.indexLock !== 'none') log(`  index.lock: ${r.indexLock} — ${r.indexLockDetail || 'no detail reported'}`)
     if (r.behindOrigin !== 'current') log(`  behind origin: ${r.behindOrigin} — ${r.behindOriginDetail || 'no detail reported'}`)
@@ -552,10 +552,10 @@ for (const bucket of bucketNames) {
       break
     }
 
-    // fleet-config#1077: a foreign, clean, merged worktree is not this run's
+    // A foreign, clean, merged worktree is not this run's
     // mess and never halts, but the repo is no longer the one pre-flight
     // cleared -- defer the rest of its work instead of building beside it.
-    // fleet-config#1453: the field is free text and agents write prose in it
+    // The field is free text and agents write prose in it
     // ("None -- VERDICT=clean ..."). Only a real `WORKTREE=` line is evidence.
     const foreignLines = String(r.foreignWorktrees || '').split(/\r?\n/).map(s => s.trim()).filter(s => s.startsWith('WORKTREE='))
     if (foreignLines.length) {

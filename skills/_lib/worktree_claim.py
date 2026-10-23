@@ -238,7 +238,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-# The live-service capability lives in its own module (fleet-config#680) --
+# The live-service capability lives in its own module --
 # "is this repo's declared service listening, and at which sha?" is a generic
 # question `/issue-finish` and any health sweep want, not part of the claim
 # FSM. `land-primary` is only its first caller, so it imports the one verdict
@@ -248,13 +248,12 @@ from untrack_guard import guarded_fast_forward, report_lines as untrack_report_l
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from worktree_residue import WT_SEP as WT_SEP  # noqa: E402
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
-# lives in its own module (fleet-config#731) -- including, since
-# fleet-config#1065, the side-instance preflight's own config discovery and
+# lives in its own module -- including the side-instance preflight's own
+# config discovery and
 # re-verification (`check_provisioned_configs`), which reuses that module's
 # own candidate discovery and blanking helpers rather than reaching into them
 # from here. Only public names are imported; the public ones are also what
-# tests address as `worktree_claim.<name>`. Import only what has a caller
-# (fleet-config#929).
+# tests address as `worktree_claim.<name>`. Import only what has a caller.
 from worktree_config import (  # noqa: E402
     WT_PORT_BASE as WT_PORT_BASE,
     WT_PORT_SPAN as WT_PORT_SPAN,
@@ -738,8 +737,7 @@ def worktree_junction_targets(repo: Path) -> list:
     targets = [".venv"]
     # An unreadable .fleet.toml (a partially-deleted/leftover worktree: permission
     # error, vanished mid-read, ...) reads as absent: remove_worktree must still
-    # strip .venv rather than crash before it gets the chance to (fleet-config#620
-    # teardown-safety follow-up).
+    # strip .venv rather than crash before it gets the chance to.
     table = fleet_toml.table(fleet_toml.load(repo), "worktree")
     if table is None:
         return targets
@@ -769,7 +767,7 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     # and emits cp850 here, which is not valid UTF-8. Under bare text=True the
     # decode yields empty output, so setup_worktree aborted with
     # "Failed to junction <rel> into the worktree:" and an *empty* reason
-    # (fleet-config#679). Same rule listening_ports() below already documents.
+    # Same rule listening_ports() below already documents.
     res = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(target)],
         capture_output=True, encoding="oem", errors="replace",
@@ -789,7 +787,7 @@ def _strip_junction(path: Path) -> None:
     """
     if path.exists() or path.is_symlink():
         # encoding="oem" for the same reason as _junction: cmd's own error text
-        # is OEM-encoded and bare text=True silently blanks it (fleet-config#679).
+        # is OEM-encoded and bare text=True silently blanks it.
         subprocess.run(
             ["cmd", "/c", "rmdir", str(path)],
             capture_output=True, encoding="oem", errors="replace",
@@ -803,7 +801,7 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
         # NEVER recommend `git worktree remove` here. A stale worktree still
         # holds its `.venv` junction, and git's recursive delete follows it
         # into the primary's real venv -- which is exactly how this message
-        # destroyed task-os's venv under a live app (fleet-config#847): the
+        # destroyed task-os's venv under a live app: the
         # lane did what the helper told it to. `remove-worktree` strips the
         # junction with a reparse-safe `rmdir` first.
         # Forward slashes throughout: this line exists to be pasted, and Git
@@ -852,8 +850,8 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     for rel in worktree_junction_targets(repo):
         src = repo / rel
         if not src.is_dir():
-            # Declared-but-absent must not break setup (fleet-config#620
-            # acceptance) -- .venv itself is optional the same way today.
+            # Declared-but-absent must not break setup:
+            # .venv itself is optional the same way today.
             continue
         link = wt / rel
         ok, err = _junction(link, src)
@@ -971,7 +969,7 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     # target and destroys it. `.fleet.toml` is a tracked file, so it was
     # already checked out into `wt` by `git worktree add` -- reading targets
     # from `wt` itself (not the primary) needs no git and degrades safely if
-    # the worktree is already deregistered (fleet-config#526/#620).
+    # the worktree is already deregistered.
     for rel in worktree_junction_targets(wt):
         _strip_junction(wt / rel)
 
@@ -1002,7 +1000,7 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     # boot and bind, so handing its ports back here would invite exactly the
     # collision the reservation exists to prevent. `_live_rows` would prune
     # these eventually anyway -- this just makes the port reusable now
-    # instead of at the next reader (fleet-config#937).
+    # instead of at the next reader.
     released = release_ports(wt)
     if released:
         print(f"PORTS_RELEASED={len(released)}: "
@@ -1075,7 +1073,7 @@ def worktree_forced(argv_flag: bool, env: "Mapping[str, str]") -> Tuple[bool, st
     return False, ""
 
 
-# ---- side-instance preflight (fleet-config#937) ---------------------------
+# ---- side-instance preflight ---------------------------
 
 SIDE_OK = "ok"
 SIDE_REFUSED = "refused"
@@ -1190,8 +1188,7 @@ def cmd_side_instance_preflight(args: argparse.Namespace) -> int:
 
     # Discovery, the unsafe-key re-check and the port-reservation loop all
     # live next to `copy_runtime_config`/`copy_root_config` now, so the
-    # checked configs can never drift from what a real setup provisions
-    # (fleet-config#1065).
+    # checked configs can never drift from what a real setup provisions.
     config_failures, config_unknowns = check_provisioned_configs(
         checkout, declared_keys, read_safe_keys)
     failures.extend(config_failures)
@@ -1234,7 +1231,7 @@ def cmd_acquire(args: argparse.Namespace) -> int:
             print(f"# forced to worktree mode by {why}", file=sys.stderr)
     if getattr(args, "force_worktree", False):
         # No claim attempt at all: unattended fanout must never touch a primary
-        # checkout, even an unclaimed one (fleet-config#515 — a live app or a
+        # checkout, even an unclaimed one (a live app or a
         # live junction is not a claim holder). Deliberately does not publish a
         # claim either, so the primary stays free for a human session.
         print("MODE=worktree")
@@ -1280,7 +1277,7 @@ def cmd_release(args: argparse.Namespace) -> int:
 
 
 def cmd_remove_worktree(args: argparse.Namespace) -> int:
-    # Tolerate the bare sibling-name form (fleet-config#165). When nothing
+    # Tolerate the bare sibling-name form. When nothing
     # resolves, hand the literal resolved path to remove_worktree so it prints
     # its honest "already gone" message rather than exiting.
     resolved = _resolve_path_arg(args.worktree_path)
@@ -1351,11 +1348,11 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
         return 1
     if behind == 0:
         # Nothing to fast-forward -- the tree is already what the merge
-        # produced, so there is no pull to run and no service to skew (#671).
+        # produced, so there is no pull to run and no service to skew.
         print(format_primary_state(True, reason, 0))
         return 0
     # A plain `pull --ff-only` deletes every live file the merge untracks,
-    # ignored or not -- the guard keeps and reports them (fleet-config#1086).
+    # ignored or not -- the guard keeps and reports them.
     ff = guarded_fast_forward(repo, ref)
     if not ff.ok:
         print(format_primary_state(False, f"fast-forward failed: {ff.detail}"))

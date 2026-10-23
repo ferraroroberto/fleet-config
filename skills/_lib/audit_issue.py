@@ -107,12 +107,12 @@ _MARKER_RE = re.compile(
     r"^[ \t]*<!--[ \t]*audit-managed:[ \t]*kind=([\w-]+)[ \t]*-->[ \t]*$", re.MULTILINE
 )
 
-# The one managed `/design-review` issue per repo (fleet-config#974): rendered
+# The one managed `/design-review` issue per repo: rendered
 # findings keyed by rubric id in an app repo; the spec- or scaffold-owned list
 # in fleet-config / project-scaffolding. Stable title, no count suffix.
 DESIGN_REVIEW_TITLE = "design-review: rendered findings"
 
-# The one managed `/perf-review` issue per repo (fleet-config#1121): phone-load
+# The one managed `/perf-review` issue per repo: phone-load
 # budgets vs measured, a hand-curated Fixes checklist, a run log.
 PERF_REVIEW_TITLE = "perf-review: phone-load findings"
 
@@ -123,8 +123,7 @@ PERF_REVIEW_TITLE = "perf-review: phone-load findings"
 # fix-merge (unlike the other buckets, which stay open as living backlogs): the
 # self-fix check in `evaluate_repo` re-adopts a closed referenced issue by its
 # `audit: security findings` title, so its own auto-fix PR is recognized as
-# self-fix churn and never triggers a needless re-audit next week
-# (fleet-config#361).
+# self-fix churn and never triggers a needless re-audit next week.
 BUCKET_KINDS = (
     "duplication",
     "stale",
@@ -136,7 +135,7 @@ BUCKET_KINDS = (
     "documentation",
 )
 
-# `<!-- audit-snapshot -->` column -> managed bucket kind (fleet-config#1513).
+# `<!-- audit-snapshot -->` column -> managed bucket kind.
 # `sec` and `total` are deliberately absent: security is self-healed and closed
 # on merge, never a cleanup bucket, and `total` is a sum. Bucket kinds with no
 # column (`security`, and non-audit cleanup kinds) have no recurrence to report.
@@ -164,7 +163,7 @@ _LEDGER_MARKER = "<!-- audit-ledger -->"
 # comment with the data inside it, so the block stays hidden in rendered
 # markdown. Both forms hide the data and nothing at authoring time
 # distinguishes them, so the parser accepts either and every write normalizes
-# back to the closed form (fleet-config#566 — three repos drifted, one of them
+# back to the closed form (three repos once drifted, one of them
 # a ledger created fresh by the very run that then failed to parse it).
 _LEDGER_MARKER_OPEN = "<!-- audit-ledger"
 _LEDGER_SHA_RE = re.compile(r"^last-audited-sha:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
@@ -354,7 +353,7 @@ def normalize_ledger_body(body: str) -> str:
     )
 
 
-# ---- bucket recurrence (fleet-config#1513) ---------------------------------
+# ---- bucket recurrence ---------------------------------
 # A bucket that is non-zero in two consecutive audit snapshots keeps regrowing,
 # so its cleanup must ship a structural check (lint rule, static test, ratchet)
 # or say why it can't. Snapshots are counts only, so recurrence is per bucket,
@@ -547,14 +546,12 @@ def structural_verdict(recurrence: Optional[str], commit_messages: str, changed_
 # A ledger the gate cannot read is not "this repo changed" — it is a broken
 # ledger, and an AUDIT bought by one costs a full Opus whole-repo pass every
 # week until someone notices. Both reasons stay distinguishable from organic
-# change all the way out to the sweep JSON and the plan line
-# (fleet-config#566, #567).
+# change all the way out to the sweep JSON and the plan line.
 UNPARSEABLE_LEDGER = "unparseable-ledger"
 
 # A baseline SHA that git cannot resolve is NOT "nothing changed" and NOT a
 # transient error to bury — it is a repo whose change-since-last-audit is
-# unknown, and the safe answer to unknown is a full whole-repo audit
-# (fleet-config#567).
+# unknown, and the safe answer to unknown is a full whole-repo audit.
 UNRESOLVABLE_BASELINE = "unresolvable-baseline"
 
 # An AUDIT carrying one of these was not earned by change — the gate simply
@@ -773,14 +770,14 @@ def ledger_decision(
 # ---- gh plumbing ----------------------------------------------------------
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:
-    # Shared plumbing (fleet-config#728): UTF-8 decoding, NO_WINDOW, and the
+    # Shared plumbing: UTF-8 decoding, NO_WINDOW, and the
     # encoding/console-flash gotchas are all owned by git_run.run_gh now.
     return git_run.run_gh(args)
 
 
 # A 5xx / timeout-shaped gh failure is the server or the network, not our
 # request — retrying once after a short backoff clears it in practice (seen
-# for pdf-to-markdown during a fleet sweep, fleet-config#506). A genuine 4xx
+# for pdf-to-markdown during a fleet sweep). A genuine 4xx
 # (auth, not-found, bad args) is never transient, so it still fails on the
 # first attempt.
 _TRANSIENT_GH_RE = re.compile(
@@ -900,7 +897,7 @@ def _upsert_issue(
     # `delete=False` means nothing reclaims this but us. One weekly /audit-fleet
     # pass upserts a ledger plus up to eight bucket issues across ~39 repos, so
     # an un-unlinked temp file here is hundreds of orphaned `.md` files in
-    # %TEMP% every week, forever (fleet-config#681). `finally`, not a trailing
+    # %TEMP% every week, forever. `finally`, not a trailing
     # unlink: `gh` raising must not be what decides whether we clean up.
     try:
         if label:
@@ -943,13 +940,13 @@ def cmd_upsert(
     # A ledger is a machine contract, so it is validated and normalized here
     # rather than trusted from the caller's markdown — `--kind ledger` through
     # this path used to accept anything, which is how an unreadable block
-    # reached three repos (fleet-config#566).
+    # reached three repos.
     if kind == "ledger":
         body = normalize_ledger_body(body)
     if verify_quotes is not None:
         # The one content check this helper runs, and only on request: a
         # finding whose verbatim quote isn't in the named file is refused
-        # before anything is written (fleet-config#960). The check itself
+        # before anything is written. The check itself
         # lives in `audit_quote.py`.
         import audit_quote
         bad = [v for v in audit_quote.check_body(body, Path(verify_quotes)) if v.status != "VERIFIED"]

@@ -36,12 +36,12 @@ STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 # carries the id of *its own* launcher session even when a launcher session
 # spawns another. It is the only identifier a hook shares with the launcher:
 # the harness's own `payload["session_id"]` lives in a different namespace
-# entirely (fleet-config#835).
+# entirely.
 LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
 
 # Claude Code sets this in its own process env -- `cli` for an interactive
 # session, `sdk-*` for print mode / the Agent SDK -- overwriting an inherited
-# value (probed live, fleet-config#1281). app-launcher scrubs it from every
+# value (probed live). app-launcher scrubs it from every
 # session it spawns, so in a launcher lane it is always the harness's own.
 ENTRYPOINT_ENV_VAR = "CLAUDE_CODE_ENTRYPOINT"
 
@@ -61,12 +61,12 @@ def state_dir() -> Path:
 
 
 # An abrupt death between mkstemp and os.replace runs no Python handler, so a
-# writer's own except-branch unlink never fires and the temp is stranded
-# (fleet-config#816). Nothing inside the dead process can clean up, so temps
+# writer's own except-branch unlink never fires and the temp is stranded.
+# Nothing inside the dead process can clean up, so temps
 # are named after their target and expired by age by the next writer instead.
 # An hour is orders of magnitude beyond a real write's duration, so the sweep
 # cannot race a live writer's temp. Mirrored for skills/_lib in
-# `hooks_state.py` (the tree boundary forbids importing across) (fleet-config#864).
+# `hooks_state.py` (the tree boundary forbids importing across).
 ATOMIC_TMP_SWEEP_AFTER_SECONDS = 3600.0
 
 
@@ -172,7 +172,7 @@ def own_launcher_session_id() -> str:
 # `skills/_lib/scheduled_runner.py` stamps this into the environment of every
 # scheduled child it launches, and the harness passes it on to hook
 # subprocesses (probed live: scheduled Claude run -> Git Bash -> PowerShell ->
-# Python, fleet-config#911). Mirrors `rate_gate.UNATTENDED_ENV`; the tree
+# Python). Mirrors `rate_gate.UNATTENDED_ENV`; the tree
 # boundary forbids importing it, so a test holds the two spellings together.
 SCHEDULED_RUN_ENV_VAR = "FLEET_SCHEDULED_RUN"
 
@@ -192,7 +192,7 @@ def is_scheduled_run() -> bool:
 # ------------------------------------------------------- credential patterns
 
 # The one definition of "what a live credential looks like" for this tier
-# (fleet-config#561). Two independent copies used to exist — `context_filter`'s
+# Two independent copies used to exist — `context_filter`'s
 # four-family redaction regex and `secret_scan_guard`'s one-family commit
 # blocker — and the *narrower* one was the copy wired into the guard that
 # actually refuses a commit. So the guard blocked a leaked Telegram bot token and
@@ -214,10 +214,10 @@ def is_scheduled_run() -> bool:
 # `xoxa-` app token's second group is a single digit — but the trailing secret
 # must be 8+. Without the three-group requirement a *test fixture* naming a
 # plausible-looking fake token becomes uncommittable, which is how this pattern
-# first blocked its own repo (fleet-config#561).
+# first blocked its own repo.
 SECRET_PATTERNS: tuple[tuple[str, str], ...] = (
     ("Slack token (xox…-)", r"\bxox[baprs]-[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]{8,}"),
-    # Telegram bot token: `<bot_id>:<35-char secret>` (fleet-config#540). Added
+    # Telegram bot token: `<bot_id>:<35-char secret>`. Added
     # rather than swapping out the Slack entry — this tuple is the tier's general
     # credential list, not a Slack list, and the `xoxb-` token stays live until
     # the workspace is actually decommissioned. The secret half is exactly 35
@@ -246,7 +246,7 @@ def scan_for_secret(text: str) -> Optional["tuple[str, str]"]:
 
 # Pass this as `creationflags=` on **every** subprocess spawn in this directory,
 # per the global CLAUDE.md convention "Subprocess spawns must suppress the
-# console window (Windows)" (fleet-config#399): a parent with no console of its
+# console window (Windows)": a parent with no console of its
 # own — pythonw, a tray app, a scheduled task, a daemon — otherwise gets a
 # console window flashed on screen for each spawn. Hooks fire under exactly such
 # parents, including the headless `claude -p` of every scheduled fleet job.
@@ -257,7 +257,7 @@ def scan_for_secret(text: str) -> Optional["tuple[str, str]"]:
 # are junctioned into the agent homes independently, and a hook must stay
 # importable with nothing but its own directory on `sys.path`);
 # `tests/run_acceptance.py` asserts the two agree. Never combine this with
-# `DETACHED_PROCESS` — mutually exclusive (`local-llm-hub`#282).
+# `DETACHED_PROCESS` — mutually exclusive.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
@@ -265,7 +265,7 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 # Free text that reaches a hook as a **command-line argument** has crossed the
 # harness → shell → CreateProcess boundary, and on Windows that boundary is not
-# UTF-8 safe end to end. Reproduced on this host (fleet-config#507): a BOM-less
+# UTF-8 safe end to end. Reproduced on this host: a BOM-less
 # UTF-8 command handed to Windows PowerShell 5.1 is decoded with the ANSI
 # codepage, so the two UTF-8 bytes of `·` (0xC2 0xB7) arrive as the two
 # characters `Â·`; a further narrowing to an OEM codepage that has neither turns
@@ -307,8 +307,8 @@ def repair_mojibake(text: Optional[str]) -> Optional[str]:
 # ------------------------------------------------------- multi-harness wire
 #
 # Foreign-harness payload normalization (inbound) and the per-harness
-# block/warn/rewrite/allow dialects (outbound) moved to harness_wire.py
-# (fleet-config#931) — re-exported here so `_lib.read_stdin_json`,
+# block/warn/rewrite/allow dialects (outbound) moved to harness_wire.py,
+# re-exported here so `_lib.read_stdin_json`,
 # `_lib.block`, `_lib.normalize_payload`, etc. keep working unchanged for every
 # existing hook import. harness_wire.py has no dependency on `_lib`, so this
 # import carries no ordering hazard. The `_ACTIVE_AGENT` / `_ACTIVE_EVENT`
@@ -450,8 +450,8 @@ def git_env(base: Optional[dict] = None) -> dict:
 
 # Recognising a git invocation inside a shell command (`safe_kill_guard`'s
 # force-push check, `pre_commit_no_ai_trailer`'s commit check). Git's global
-# options may sit between `git` and the subcommand (`git -C <dir> push …`,
-# fleet-config#1275), so callers walk them token by token rather than trusting a
+# options may sit between `git` and the subcommand (`git -C <dir> push …`),
+# so callers walk them token by token rather than trusting a
 # `git\s+<sub>` adjacency regex.
 GIT_TOKEN_RE = re.compile(r"(?:^|[\\/])git(?:\.exe)?$", re.IGNORECASE)
 # Global options that consume the next token unless written `--opt=value`.
@@ -503,7 +503,7 @@ def git_globals(tokens: Sequence[str], start: int) -> GitGlobals:
             config.append(tokens[i + 1])
         i += 2 if opt in GIT_GLOBAL_OPTS_WITH_VALUE else 1
     return GitGlobals(min(i, len(tokens)), workdir, config)
-# Shell tokenisers (fleet-config#1304). The guards split a command three ways,
+# Shell tokenisers. The guards split a command three ways,
 # and each split is load-bearing for the guard reading it, so the splits live
 # here side by side instead of one private copy per hook:
 # - `shell_tokens`: every quoted string or bare non-space run is one token,
@@ -540,8 +540,8 @@ def shell_words(text: str) -> list[str]:
     ]
 
 
-# Directory-changing verbs, Bash and PowerShell spellings, compared lowercased
-# (fleet-config#1304). `secret_scan_guard` and `venv_discipline` each follow a
+# Directory-changing verbs, Bash and PowerShell spellings, compared lowercased.
+# `secret_scan_guard` and `venv_discipline` each follow a
 # chain's `cd`s with their own tracker, since they differ on purpose about a
 # push and a pop, but they agree on which words move the directory.
 CD_VERBS = frozenset({"cd", "chdir", "set-location", "sl"})
@@ -564,7 +564,7 @@ def msys_to_drive(text: str) -> str:
 # A heredoc opener: `<<EOF`, `<<'EOF'`, `<<"EOF"`, `<<-EOF`, `<< EOF`. Not a
 # `<<<word` here-string, which has no body, and not a delimiter that starts
 # with a digit or has an unclosed quote. Every heredoc-aware hook reads this one
-# pattern, so the guards agree on where a body is (fleet-config#1304).
+# pattern, so the guards agree on where a body is.
 HEREDOC_RE = re.compile(
     r"""(?<!<)<<(?P<dash>-)?\s*(?P<quote>['"]?)(?P<delim>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)"""
 )
@@ -584,7 +584,7 @@ def strip_heredoc_bodies(command: str) -> str:
     return "\n".join(kept)
 
 
-# Whether a `git … commit` actually runs (fleet-config#1288). The old test was
+# Whether a `git … commit` actually runs. The old test was
 # `"git" in cmd and "commit" in cmd`, so a `gh issue create` whose body quoted a
 # trailer and said "git commit" was refused. Now `git` must sit at a command
 # position (statement start, after `&&`/`;`/`|`/`&`/`(`, env assignments or a
@@ -593,7 +593,7 @@ def strip_heredoc_bodies(command: str) -> str:
 # dropped first: their text is data, not commands. Callers that scan the
 # message (`pre_commit_no_ai_trailer`) still read the whole command for it,
 # since that is where a heredoc commit message lives. Shared by both commit
-# guards so the two cannot disagree about what a commit is (fleet-config#1304).
+# guards so the two cannot disagree about what a commit is.
 # The one place a quoted string *is* a command is a nested shell's argument
 # (`bash -c "git commit …"`, `powershell -Command "…"`), so those arguments are
 # re-read once, as `safe_kill_guard` does for its git checks.
@@ -605,7 +605,7 @@ _PS_HERE_STRING_RE = re.compile(r"@(['\"])\r?\n.*?\r?\n\1@", re.DOTALL)
 # Words that run another command (`env git …`, `sudo git …`, `xargs git …`) or
 # introduce one (`if git …`, `! git …`), so the command that follows them is still
 # in command position. The one vocabulary behind both `runs_git_commit` and
-# `safe_kill_guard._command_index` (fleet-config#1440): they were two lists, and
+# `safe_kill_guard._command_index`: they were once two lists, and
 # the shorter one let `if git commit -m "…Co-Authored-By…"` slip past the trailer guard.
 COMMAND_PREFIX_WORDS = {
     "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",
@@ -795,8 +795,8 @@ def command_string(payload: Dict[str, Any]) -> str:
 
 # --------------------------------------------------------- Shared edit events
 #
-# EditTarget/EditEvent/edit_event() moved to edit_events.py (fleet-config#819)
-# — re-exported here so `_lib.EditEvent`, `_lib.edit_event`, etc. keep working
+# EditTarget/EditEvent/edit_event() moved to edit_events.py,
+# re-exported here so `_lib.EditEvent`, `_lib.edit_event`, etc. keep working
 # unchanged for every existing hook import. Placed after tool_name/tool_input/
 # payload_agent above: edit_events.py reaches those back via `import _lib`
 # inside its own function bodies (never at its module scope), which is what
@@ -813,8 +813,8 @@ from edit_events import (  # noqa: E402
 # ----------------------------------------------------------- projects.toml
 #
 # ProjectConfig/GlobalConfig/Registry/load_registry/detect_project/
-# resolve_notify_target/resolve_board_url moved to registry.py
-# (fleet-config#819) — re-exported here so `_lib.load_registry`,
+# resolve_notify_target/resolve_board_url moved to registry.py,
+# re-exported here so `_lib.load_registry`,
 # `_lib.detect_project`, etc. keep working unchanged for every existing hook
 # import. registry.py has no dependency on `_lib`, so this import carries no
 # ordering hazard.

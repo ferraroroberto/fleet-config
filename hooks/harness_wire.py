@@ -49,8 +49,8 @@ class Collected(SystemExit):
         super().__init__(0)
 
 
-# `hook_dispatch.py` sets this to a list while one hook's `main()` runs
-# (fleet-config#1274). `None`, which is how every one-hook process runs, leaves
+# `hook_dispatch.py` sets this to a list while one hook's `main()` runs.
+# `None`, which is how every one-hook process runs, leaves
 # the four emitters below byte-for-byte what they were.
 _COLLECTOR: Optional[List[Verdict]] = None
 
@@ -76,7 +76,7 @@ def _collect(verdict: Optional[Verdict]) -> None:
 # PascalCase (`PreToolUse`). The result was a double mismatch that made the hooks
 # fire and silently do nothing: 6 of 7 guards A/B-tested blocked under a Claude
 # payload and allowed the identical dangerous command under a Grok one, while
-# still looking healthy in `/hooks` (fleet-config#491).
+# still looking healthy in `/hooks`.
 #
 # Normalizing here — the one entry point every hook already routes through —
 # fixes all of them at once, rather than duplicating a translation in each hook
@@ -155,7 +155,7 @@ _GROK_KEYS = {
     "lastAssistantMessage": "last_assistant_message",
 }
 
-# Copilot CLI tool ids → Claude tool names (fleet-config#547). Unlike Codex
+# Copilot CLI tool ids → Claude tool names. Unlike Codex
 # and agy, Copilot's toolName truthfully names the executing shell (verified
 # live on 1.0.77: toolName "powershell" ran PowerShell), so no shell-ambiguity
 # marker and no platform override are needed downstream.
@@ -166,7 +166,7 @@ _COPILOT_TOOLS = {
     "sh": "Bash",
 }
 
-# Antigravity's `agy` CLI tool ids → Claude tool names (fleet-config#546).
+# Antigravity's `agy` CLI tool ids → Claude tool names.
 # `run_command` is shell-agnostic like Grok's `run_terminal_command`; the live
 # probe proved agy executes CommandLine under PowerShell on Windows, but that
 # is the *hook body's* platform decision (see context_filter_hook), not a
@@ -188,7 +188,7 @@ _ACTIVE_AGENT: Optional[str] = None
 # payload is in Claude's shape. Same one-payload-one-process lifetime argument
 # as `_ACTIVE_AGENT` above — it exists so `warn()` can pick the stdout dialect
 # the event actually delivers to the model, without threading the payload
-# through every `_lib.warn(...)` call site (fleet-config#681).
+# through every `_lib.warn(...)` call site.
 _ACTIVE_EVENT: Optional[str] = None
 
 
@@ -243,7 +243,7 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
         if field == "path":
             # Pi's own write/edit resolver supplies the target. Raw aliases are
-            # not filesystem paths (e.g. @docs/... writes docs/..., #746).
+            # not filesystem paths (e.g. @docs/... writes docs/...).
             resolved = payload.get("fleet_resolved_path")
             if (not isinstance(resolved, str) or "\0" in resolved
                     or not Path(resolved).is_absolute()):
@@ -255,15 +255,15 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             out["_fleet_edit_outcome"] = "failed" if flag is True else "success" if flag is False else "unknown"
         return out
 
-    # Antigravity's `agy` CLI (fleet-config#546): its PreToolUse payload is
+    # Antigravity's `agy` CLI: its PreToolUse payload is
     # `{"toolCall": {"name", "args": {"CommandLine", "Cwd", ...}},
     #   "conversationId", "stepIdx", ...}` — the `toolCall` envelope is the
     # reliable tell (Claude and Grok never send it; verified live against
     # agy 1.1.8). Translated here, once, same contract as the Grok branch.
-    # Copilot CLI (fleet-config#547): camelCase envelope with NO event name —
+    # Copilot CLI: camelCase envelope with NO event name —
     # `{"sessionId", "timestamp", "cwd", "toolName", "toolArgs": {...}}`.
     # `toolArgs` was a JSON-encoded string through 1.0.77 and is an object
-    # from 1.0.83 (both verified live, fleet-config#918), so both shapes are
+    # from 1.0.83 (both verified live), so both shapes are
     # accepted. `toolArgs` with no hookEventName and no toolCall is the tell:
     # Claude sends tool_input, Grok sends hookEventName, agy sends toolCall.
     # The full args dict is kept in tool_input because Copilot's modifiedArgs
@@ -313,7 +313,7 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "hookEventName" not in payload:
         # Codex uses Claude-shaped input. The invoked entry point is provenance;
         # resolving junctions would erase .codex, and inherited launcher/env
-        # hints can describe an ancestor rather than this hook's caller (#759).
+        # hints can describe an ancestor rather than this hook's caller.
         entry = Path(sys.argv[0]).absolute() if sys.argv else None
         if (entry is not None and entry.parent.name.lower() == "hooks"
                 and entry.parent.parent.name.lower() == ".codex"
@@ -384,9 +384,9 @@ def read_stdin_json() -> Dict[str, Any]:
     _ACTIVE_EVENT = None
     _ACTIVE_AGENT = None
     # Decode the raw bytes as UTF-8: a piped stdin's text layer defaults to
-    # cp1252 on Windows and turns an em dash into mojibake (fleet-config#912).
+    # cp1252 on Windows and turns an em dash into mojibake.
     # `utf-8-sig` drops a leading BOM, which `json.loads` rejects outright — a
-    # shim writing through a UTF-8 console's encoding emits one (fleet-config#920).
+    # shim writing through a UTF-8 console's encoding emits one.
     buffer = getattr(sys.stdin, "buffer", None)
     raw = buffer.read().decode("utf-8-sig", errors="replace") if buffer is not None else sys.stdin.read()
     if not raw or not raw.strip():
@@ -461,7 +461,7 @@ def block(reason: str) -> "NoReturn":
         }}), flush=True)
         sys.exit(0)
     if _ACTIVE_AGENT == "codex" and _ACTIVE_EVENT == "PostToolUse":
-        # Codex 0.153.3 drops stderr/exit-2 after apply_patch (#744). The edit
+        # Codex 0.153.3 drops stderr/exit-2 after apply_patch. The edit
         # already ran: deliver compiler feedback through the existing context
         # channel, without pretending this can deny or undo the completed edit.
         warn(reason)
@@ -474,11 +474,11 @@ def block(reason: str) -> "NoReturn":
 # Events whose exit-0 **plain-text** stdout Claude Code adds to the model's
 # context. Every other event writes it to the debug log only — which is what
 # made all seven `warn()` call sites invisible to the model they were written
-# to advise (fleet-config#681). Per code.claude.com/docs/en/hooks: "For most
+# to advise. Per code.claude.com/docs/en/hooks: "For most
 # events, stdout is written to the debug log but not shown in the transcript.
 # The exceptions are UserPromptSubmit, UserPromptExpansion, and SessionStart."
-# `SessionStart` is carved out below into `_ADDITIONAL_CONTEXT_EVENTS` instead
-# (fleet-config#818) — Claude honors both channels for that event, and the
+# `SessionStart` is carved out below into `_ADDITIONAL_CONTEXT_EVENTS` instead:
+# Claude honors both channels for that event, and the
 # wrapped form is the one `chief_handover_sessionstart` already ships in
 # production, so routing through it here preserves that hook's verified
 # behaviour instead of silently switching it to the other equally-documented
@@ -487,12 +487,12 @@ _STDOUT_IS_CONTEXT_EVENTS = frozenset({"UserPromptExpansion"})
 
 # Events carrying a `hookSpecificOutput.additionalContext` field — "text added
 # to the conversation as context Claude sees" (same reference). `SessionStart`
-# joined this set in fleet-config#818 so `chief_handover_sessionstart` could
+# joined this set so `chief_handover_sessionstart` could
 # stop hand-rolling the identical envelope: without it, a non-Claude harness
 # — e.g. Grok, which loads this repo's hooks by default — received a Claude
 # JSON envelope it never parses, and the handover log silently never reached
-# the model (the exact failure class fleet-config#491 centralised this dialect
-# table to prevent). Routing through `warn()` gives every SessionStart nudge
+# the model (the exact failure class this centralised dialect
+# table exists to prevent). Routing through `warn()` gives every SessionStart nudge
 # the same per-harness fallback every other event already gets: foreign
 # harnesses fall through to the plain-stdout branch below instead.
 _ADDITIONAL_CONTEXT_EVENTS = frozenset({
