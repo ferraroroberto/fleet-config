@@ -150,6 +150,9 @@ SHAPES = {
     "skills-governance": Shape(("skills", "tests"), ("hooks", "scripts", "architecture")),
     "node": Shape(("src",), ("test", "scripts")),
     "static-site": Shape((), ("css", "js", "assets", "games")),
+    "agent-workspace": Shape((), ("scripts",)),
+    # No layer pair: the service in src/ mounts its admin app, so src imports app_web by design.
+    "service": Shape(("src", "tests", "app_web", "tray"), ("scripts", "config", "launchers", "assets")),
 }
 
 
