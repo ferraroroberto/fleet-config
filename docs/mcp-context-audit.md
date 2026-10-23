@@ -1,6 +1,6 @@
 # MCP connector audit — context cost vs. actual usage
 
-**Audit date:** 2026-06-15 · **Issue:** [#128](https://github.com/ferraroroberto/fleet-config/issues/128) · **First migration:** [life-os#29](https://github.com/ferraroroberto/life-os/issues/29)
+**Audit date:** 2026-06-15 · **First migration:** the `life-os` daily journal
 
 The question this answers: *how many MCP servers feed my sessions, how much context do they cost, how often is each actually used across the whole `E:\automation` fleet, and what should move off MCP onto plain scripts/CLI?*
 
@@ -49,7 +49,7 @@ Ordered by value-for-effort:
 
 1. **Disable the five zero-use connectors now** (Google Drive, Spotify, Supabase, Uber Eats, Zoom) in claude.ai → Connectors. Removes 53 tool schemas for zero functional loss. No code, no migration — pure win.
 2. **Disable Slack, Gmail, Calendar as default connectors.** Automation doesn't depend on them; re-enable interactively when genuinely needed. Slack's automation path (the Python helper) is unaffected.
-3. **Migrate the journal off the Notion MCP** ([life-os#29](https://github.com/ferraroroberto/life-os/issues/29)) onto a Notion REST script, reusing the proven `inspiration-system/src/notion_client.py` pattern (`NOTION_API_TOKEN` integration). Once it's proven, disable the Notion connector too. This converts the only real connector dependency into a script and reclaims the last 14 schemas.
+3. **Migrate the journal off the Notion MCP** (in `life-os`) onto a Notion REST script, reusing the proven `inspiration-system/src/notion_client.py` pattern (`NOTION_API_TOKEN` integration). Once it's proven, disable the Notion connector too. This converts the only real connector dependency into a script and reclaims the last 14 schemas.
 4. **Leave `mcp-personal-onedrive` as-is.** It serves the claude.ai web/mobile gap (consumer OneDrive) and is not loaded into Claude Code, so it costs nothing here.
 
 End state: **zero account connectors enabled by default**, the journal running on a script, and any interactive need met by toggling a connector on for that session. Estimated reclaim: the full ~20–30K-token connector tax (confirm via `/context`).
@@ -58,7 +58,7 @@ End state: **zero account connectors enabled by default**, the journal running o
 
 > For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector. Reserve connectors for genuinely interactive, exploratory use, and keep the **default** session connector set minimal — every enabled connector is a fleet-wide, every-session context cost regardless of whether a given session uses it.
 
-This mirrors the existing fleet rules ("don't duplicate hub functionality" / Slack-via-Python-helper) and is routed up to `project-scaffolding` so the whole fleet inherits it: [project-scaffolding#65](https://github.com/ferraroroberto/project-scaffolding/issues/65).
+This mirrors the existing fleet rules ("don't duplicate hub functionality" / Slack-via-Python-helper) and is routed up to `project-scaffolding` so the whole fleet inherits it.
 
 ## Working rules (behind `global-CLAUDE.md`)
 

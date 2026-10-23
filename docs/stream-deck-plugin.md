@@ -1,4 +1,4 @@
-# Stream Deck plugin (`stream-deck/`, fleet-config#370)
+# Stream Deck plugin (`stream-deck/`)
 
 ## Why this exists
 
@@ -17,8 +17,8 @@ touches this next.
 
 `registry/targets.json` is the only committed source of truth for every
 target, a discriminated union by `kind`: `tray` (`id`/`label`/
-`projectsTomlKey`/`iconSource`, deliberately carrying **no** launch path) and,
-since fleet-config#574, `http-action` (`id`/`label`/`actionId` — an
+`projectsTomlKey`/`iconSource`, deliberately carrying **no** launch path) and
+`http-action` (`id`/`label`/`actionId` — an
 authenticated `POST` against home-automation's `POST
 /api/actions/{action_id}` alias endpoint, carrying no URL/token of its own;
 those live in the gitignored plugin-bundle `.env`, see the README's
@@ -48,7 +48,7 @@ hand in the app and exported into
 step-by-step. This is a standing constraint, not a TODO: re-do it only when
 the physical key layout changes, never for target/icon/registry code changes.
 
-The exported file itself is **gitignored, not committed** (fleet-config#596)
+The exported file itself is **gitignored, not committed**
 — an export embeds the physical device's own `Device.UUID`/`Model`, which has
 no reason to be in this public repo. It only ever needs to exist on the local
 machine that runs `streamdeck link`/`npm run package`; see
@@ -116,7 +116,7 @@ machine that runs `streamdeck link`/`npm run package`; see
   in the Stream Deck app's own Profiles settings, not in this plugin.
 - **A freshly-dragged `Call Action` key that flashes a warning on first press
   is almost always an unset Property Inspector dropdown, not a code bug.**
-  Confirmed live (fleet-config#591/#593): placing the key alone doesn't set
+  Confirmed live: placing the key alone doesn't set
   `targetId` — its Action dropdown has to be explicitly clicked to a specific
   option, and that selection has to actually persist. When it hasn't,
   `com.ferraroroberto.fleetcoding.sdPlugin/logs/com.ferraroroberto.fleetcoding.<N>.log`

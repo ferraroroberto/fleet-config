@@ -1,11 +1,11 @@
 # Fleet Board session-state capability matrix
 
-`sessions-state.json` (`hooks/session_state.py`, fleet-config#91) is the one
+`sessions-state.json` (`hooks/session_state.py`) is the one
 writer behind the app-launcher Board's "what needs me now" column. Four
 agents write rows into it today, each through its own event surface — this
 is the per-agent map of which semantic states each can actually *prove*
 without inferring from process age, transcript text, or directory alone
-(explicitly out of scope, fleet-config#349).
+(inference of that kind is explicitly out of scope).
 
 | Semantic state | Claude Code | Codex | Pi | Grok |
 |---|---|---|---|---|
@@ -56,14 +56,14 @@ an explicit new prompt clears that marker because it proves a real resume.
   PascalCase (`hook_event_name: "UserPromptSubmit"`), so the writer saw an
   unrecognized event and silently wrote nothing. `_lib.normalize_payload()`
   translates once, at the single `read_stdin_json()` entry point every hook
-  shares (fleet-config#491). A fourth adapter would have duplicated wiring that
+  shares. A fourth adapter would have duplicated wiring that
   already existed.
 
 The Codex and Pi adapters pass a `default_agent` (`"codex"` / `"pi"`) into
 `session_state.upsert_from_payload()`; Grok instead carries its identity in the
 normalized payload itself. Attribution precedence is `APP_LAUNCHER_AGENT` →
 payload harness hint → `default_agent` → `claude`, so a launcher-injected agent
-value always wins, exactly as it already does for Claude (fleet-config#345), and
+value always wins, exactly as it already does for Claude, and
 a session opened outside App Launcher still reports its real harness. That middle
 term is load-bearing precisely because Grok arrives through *Claude's* own
 wiring: without it, every external Grok row would confidently claim to be a

@@ -1,6 +1,6 @@
 # Token-reduction tooling evaluation (chop, RTK, Context Mode, token-optimizer-mcp)
 
-Evaluation spike for [#219](https://github.com/ferraroroberto/fleet-config/issues/219): can any third-party "context/token reduction" tool beat the fleet's own native `context_filter` hook layer on **native Windows + PowerShell**, without re-adding the standing MCP surface the fleet deliberately trimmed? All numbers below are measured on this machine (2026-07-20); no vendor claims are reproduced as data.
+Evaluation spike: can any third-party "context/token reduction" tool beat the fleet's own native `context_filter` hook layer on **native Windows + PowerShell**, without re-adding the standing MCP surface the fleet deliberately trimmed? All numbers below are measured on this machine (2026-07-20); no vendor claims are reproduced as data.
 
 ## Method
 
@@ -8,7 +8,7 @@ Evaluation spike for [#219](https://github.com/ferraroroberto/fleet-config/issue
 - **Token metric:** `context_filter.estimate_tokens` (chars ÷ 4, ceiling) applied uniformly to raw and compressed output.
 - **Hook firing test:** per candidate, hook installed globally, then a headless `claude -p` session (Sonnet, `bypassPermissions`) instructed to run `git log --oneline -3` via the Bash tool; firing was judged by the candidate's own tracking DB recording the interception AND the session returning correct output. `~/.claude/settings.json` backed up before and hash-verified restored after every test.
 - **Trust gate:** pinned-version source audit + all-runs network capture through a local logging proxy (`HTTP(S)_PROXY` → 127.0.0.1 listener recording every CONNECT; Go/Rust HTTP clients honor proxy env). No live `curl|sh` / `irm|iex` was ever executed.
-- **Live A/B session benchmark:** one fixed, revertible task ([home-automation#489](https://github.com/ferraroroberto/home-automation/issues/489) — add `started_at` to `/api/version` + test) implemented end-to-end by a fresh headless Sonnet session per condition, full `/issue-start 489 now` ceremony through the green backend gate, stopping before ship, fully reverted between conditions. Per-session tokens isolated via `OTEL_RESOURCE_ATTRIBUTES=project.name=ab-<condition>` and read from local-llm-hub's telemetry (`/admin/api/telemetry/claude-code/usage`). Identical prompt file for every condition (recorded below). An independent judge agent scored the outcomes afterward.
+- **Live A/B session benchmark:** one fixed, revertible `home-automation` task (add `started_at` to `/api/version` + test, issue 489) implemented end-to-end by a fresh headless Sonnet session per condition, full `/issue-start 489 now` ceremony through the green backend gate, stopping before ship, fully reverted between conditions. Per-session tokens isolated via `OTEL_RESOURCE_ATTRIBUTES=project.name=ab-<condition>` and read from local-llm-hub's telemetry (`/admin/api/telemetry/claude-code/usage`). Identical prompt file for every condition (recorded below). An independent judge agent scored the outcomes afterward.
 
 ## Static corpus results
 
@@ -37,11 +37,11 @@ Reading the table honestly:
 
 | candidate | auto-installs hook? | hook fires when wired? | conditions |
 |---|---|---|---|
-| **chop** | yes (`chop init --global`, forward-slash path) | **yes — verified empirically** | binary dir must be on PATH for Claude Code's Git Bash (official installer does this; an audited manual install must add it). Fired despite 5 competing fleet Bash hooks — claude-code#15897 did **not** manifest on the current build. |
-| **RTK** | **no** — non-interactive `rtk init -g` prompts to patch settings.json and defaults to No (rtk-ai/rtk#671); instead it **silently appends `@RTK.md` to the global CLAUDE.md** (which on this machine dirties `fleet-config/global-CLAUDE.md` through the symlink) | **yes — verified empirically** when the `rtk hook claude` block is added to settings.json by hand (v0.43.0's hook is a native subcommand, not the old `.sh`) | rtk on PATH; same manual-wiring caveat |
+| **chop** | yes (`chop init --global`, forward-slash path) | **yes — verified empirically** | binary dir must be on PATH for Claude Code's Git Bash (official installer does this; an audited manual install must add it). Fired despite 5 competing fleet Bash hooks — the known bug where an `updatedInput` rewrite is ignored when several PreToolUse hooks run did not manifest on the current build. |
+| **RTK** | **no** — non-interactive `rtk init -g` prompts to patch settings.json and defaults to No; instead it **silently appends `@RTK.md` to the global CLAUDE.md** (which on this machine dirties `fleet-config/global-CLAUDE.md` through the symlink) | **yes — verified empirically** when the `rtk hook claude` block is added to settings.json by hand (v0.43.0's hook is a native subcommand, not the old `.sh`) | rtk on PATH; same manual-wiring caveat |
 | native `context_filter` | wired in settings.json via `run-hook.ps1`; mode set by the machine-wide mode file or `FLEET_CONTEXT_FILTER_MODE` | yes (fleet-proven mechanism) | none |
 
-The empirical result supersedes the issue's expectation: **both** third-party hooks mechanically work on native Windows — RTK's #671 gap is only its *installer* (no auto-patch + CLAUDE.md injection), not the hook mechanism.
+The empirical result contradicts the expectation that a third-party hook would not work here: **both** third-party hooks mechanically work on native Windows — RTK's gap is only its *installer* (no auto-patch + CLAUDE.md injection), not the hook mechanism.
 
 ## Trust gate
 
@@ -68,11 +68,11 @@ Measured from source (`git clone --depth 1`, tool schemas extracted and token-es
 | Telemetry / network | none found in source; the hosted "Insight dashboard" is an explicit opt-in tool call that opens a browser, not a beacon | no telemetry SDK; its summarization features call api.anthropic.com / Google APIs with the user's own key; generated HTML reports load Google Charts from CDN |
 | Install behavior | plugin-marketplace or explicit CLI step; bare `npm install` does not rewrite settings.json | **red flag:** `npm install -g` postinstall auto-writes 4 hook entries into `~/.claude/settings.json` with no opt-in step |
 
-Reconciliation with the minimal-MCP doctrine (global CLAUDE.md; [#128](https://github.com/ferraroroberto/fleet-config/issues/128) measured 97% of injected tool surface unused across 945 transcripts): both candidates charge a standing per-session context tax to *maybe* save output tokens later — the exact trade the fleet already rejected. token-optimizer-mcp's ~29k/session is larger than the entire raw static corpus above and disqualifying on its own, before the settings.json-mutating postinstall. Context Mode is the honest version of the approach (verified counts, no phone-home, real bundle-integrity checks) but still costs ~6k/session against a native filter whose standing cost is ~0. **Both: pass on doctrine, now with numbers.**
+Reconciliation with the minimal-MCP doctrine (global CLAUDE.md; [`mcp-context-audit.md`](mcp-context-audit.md) measured 97% of injected tool surface unused across 945 transcripts): both candidates charge a standing per-session context tax to *maybe* save output tokens later — the exact trade the fleet already rejected. token-optimizer-mcp's ~29k/session is larger than the entire raw static corpus above and disqualifying on its own, before the settings.json-mutating postinstall. Context Mode is the honest version of the approach (verified counts, no phone-home, real bundle-integrity checks) but still costs ~6k/session against a native filter whose standing cost is ~0. **Both: pass on doctrine, now with numbers.**
 
 ## Live A/B session benchmark
 
-Fixed task: [home-automation#489](https://github.com/ferraroroberto/home-automation/issues/489). Worker prompt (verbatim, identical per condition):
+Fixed task: the `home-automation` change above (issue 489). Worker prompt (verbatim, identical per condition):
 
 ```
 /issue-start 489 now
@@ -84,7 +84,7 @@ Session constraints (benchmark run — follow exactly):
 - End with a short summary: files changed, and the last 5 lines of the gate output.
 ```
 
-All three sessions completed the full ceremony (claim → branch → implement → commit) and reported the gate green (484 passed); every branch was verified unpushed and then discarded, the claim released and the Board marker removed between conditions, and [home-automation#489](https://github.com/ferraroroberto/home-automation/issues/489) closed not-planned at the end.
+All three sessions completed the full ceremony (claim → branch → implement → commit) and reported the gate green (484 passed); every branch was verified unpushed and then discarded, the claim released and the Board marker removed between conditions, and the benchmark issue was closed not-planned at the end.
 
 Sonnet main-loop telemetry per condition (hub OTel rows, `project=ab-<condition>`):
 

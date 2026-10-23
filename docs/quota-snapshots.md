@@ -64,4 +64,4 @@ App-server is experimental, so the collector currently admits only the locally p
 
 Local verification used native Codex account reads without a model turn and matched the Claude native /usage display to the actual fresh legacy cache, with reset display times converted from UTC to the host's real timezone. The PowerShell integration test drives the real statusline into disposable state and compares both shared windows to the unchanged legacy fields. Sanitized tests cover malformed/missing fields, source/schema drift, different and shared accounts, UTC/future/stale clocks, nullable windows/resets, unsupported adapters, unreadable files, failed replacements and concurrent processes/readers. Raw account values and native transcripts remain local and are not fixtures or publication artifacts.
 
-The app-launcher UI/consumer migration is separate (app-launcher#847); current readers continue using rate-limits.json. The Codex footer remains independently configured by codex_statusline.py (#752).
+The app-launcher UI/consumer migration is separate; current readers continue using rate-limits.json. The Codex footer remains independently configured by codex_statusline.py.

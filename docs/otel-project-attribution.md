@@ -11,11 +11,10 @@ The **only current consumer** of this attribute is `local-llm-hub`
 ([`ferraroroberto/local-llm-hub`](https://github.com/ferraroroberto/local-llm-hub)):
 its `src/claude_code_otel.py` receiver parses Claude Code's own OTel metrics
 export and surfaces a "Claude Code (host CLI)" panel in its admin SPA, with a
-Project column (added in
-[local-llm-hub#234](https://github.com/ferraroroberto/local-llm-hub/issues/234)).
-That panel was only ever going to show a project for sessions where
+Project column.
+That panel only shows a project for sessions where
 `OTEL_RESOURCE_ATTRIBUTES=project.name=<repo>` was set by hand — which never
-happened in practice — so this repo (`fleet-config`#310) automates the
+happened in practice — so this repo automates the
 tagging at the shell level instead.
 
 **This is not a generic fleet requirement.** Nothing about `project.name`
@@ -104,8 +103,7 @@ curl http://127.0.0.1:8000/admin/api/telemetry/claude-code/usage?period=today
   succeed) when you launch `claude`; outside a repo the function
   deliberately clears the attribute rather than sending a stale value.
 - **Scripts/tasks/CI invoking `claude` directly never get tagged** — this is
-  a known, accepted limitation (see the constraints note in
-  [fleet-config#310](https://github.com/ferraroroberto/fleet-config/issues/310)):
+  a known, accepted limitation:
   the hook only fires in interactive PowerShell sessions where `$PROFILE`
   loads. It was not extended to non-interactive invocations because there's
   no single host-level layer to intercept that keeps the "only when actually

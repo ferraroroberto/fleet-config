@@ -48,7 +48,7 @@ If `list()` is still `[]` after a restart with the plugin enabled, the in-app ba
 
 ## Playwright fallback when `iab` stays `[]`
 
-A missing `iab` backend used to force the agent onto non-browser verification, which **cannot** satisfy `/issue-finish`'s (and `/issue-yolo`'s) visual leg — the design-conformance gate needs an actual render. The fleet ships a working Playwright + real-Chrome stack, so `iab` absence is a *fallback*, not a dead end (fleet-config#351).
+A missing `iab` backend used to force the agent onto non-browser verification, which **cannot** satisfy `/issue-finish`'s (and `/issue-yolo`'s) visual leg — the design-conformance gate needs an actual render. The fleet ships a working Playwright + real-Chrome stack, so `iab` absence is a *fallback*, not a dead end.
 
 The decision is deterministic and single-sourced in [`skills/_lib/browser_verify.py`](../skills/_lib/browser_verify.py). Preflight `iab`; when it's unavailable, drive Playwright with real Chrome against the live feature-branch app:
 
