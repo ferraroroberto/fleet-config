@@ -20,29 +20,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from acceptance.shared import REPO, _Checker, gate_projects_toml
-
-
-# A card row is a markdown table row whose FIRST cell names the project, in
-# bold, optionally after an icon: `| 🚀 **app-launcher** | ... |`. Anchoring to
-# the first cell is the whole point — a bare `r in doc` substring test passed
-# for `mcp-personal-onedrive` purely because the External-integrations table
-# mentions it in prose in a *second* cell, so the guard could not detect the
-# one thing it exists to detect: a mapped repo with no card of its own
-# (fleet-config#681). Non-repo rows (`**Telegram**`, `**GPU**`) also match and are
-# harmless: the set is only ever tested for membership of known repo names.
-_CARD_ROW_RE = re.compile(r"^\|[^|]*?\*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\*[^|]*\|", re.MULTILINE)
-
-
-def _repo_tables(toml: dict) -> set:
-    return {
-        name for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-    }
-
-
-def _architecture_card_repos(doc: str) -> set:
-    """Project names carrying their own card row in ARCHITECTURE.md."""
-    return set(_CARD_ROW_RE.findall(doc))
+from acceptance.system_map_coverage import _repo_tables
 
 
 # A tree-entry line names exactly one path token right after its box-drawing
@@ -52,7 +30,7 @@ def _architecture_card_repos(doc: str) -> set:
 # matches `~/.codex/hooks` and `~/.codex/prompts` named in *other* entries'
 # comment prose, so a directory with no tree entry of its own anywhere in the
 # block can still read as present (fleet-config#820, same shape as
-# `_CARD_ROW_RE` above).
+# `_CARD_ROW_RE` in system_map_coverage.py).
 _TREE_ENTRY_RE = re.compile(r"^[\s│├└─]*(\S+)", re.MULTILINE)
 
 
@@ -73,69 +51,6 @@ def _layout_top_dirs(layout: str) -> set:
     spellings while still requiring a real tree entry, not a comment mention.
     """
     return {token.split("/", 1)[0] for token in _layout_tree_entries(layout) if "/" in token}
-
-
-def _system_map_coverage_check() -> Tuple[int, int]:
-    """The system map must cover exactly the fleet, and the doc must agree.
-
-    Guards the `/system-map` single source of truth (architecture/fleet.data.js)
-    against drift, mechanically:
-      1. every declared repo is on the map or switched off in an
-         `architecture_ignore` list (the local file's or the example's);
-      2. no map entry is a stale/typo'd repo that is not declared;
-      3. every mapped repo also appears in ARCHITECTURE.md (data ↔ doc agree).
-    The committed map is a snapshot of one machine's switch, so a repo
-    flipped either way since the last regeneration is tolerated; a new repo
-    left off the map is not. Returns the failure count.
-    """
-    import json
-    import tomllib
-
-    check = _Checker()
-
-    arch = REPO / "architecture"
-    declared: set = set()
-    ignore: set = set()
-    for path in {gate_projects_toml(), REPO / "hooks" / "projects.toml.example"}:
-        toml = tomllib.loads(path.read_text(encoding="utf-8"))
-        declared |= _repo_tables(toml)
-        ignore |= set(toml.get("global", {}).get("architecture_ignore", []))
-
-    # fleet.data.js holds `window.FLEET = { ...strict JSON... };` — slice the object out.
-    raw = (arch / "fleet.data.js").read_text(encoding="utf-8")
-    data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
-    mapped = {
-        e.get("repo", e["nm"])
-        for section in ("governance", "enabling", "web", "pipe")
-        for e in data.get(section, [])
-    }
-
-    missing = declared - ignore - mapped
-    stale = mapped - declared
-    check(f"system_map: every fleet repo is on the map (missing: {sorted(missing) or 'none'})", not missing)
-    check(f"system_map: no stale map entries (stale: {sorted(stale) or 'none'})", not stale)
-
-    doc = (arch / "ARCHITECTURE.md").read_text(encoding="utf-8")
-    carded = _architecture_card_repos(doc)
-    doc_missing = sorted(r for r in mapped if r not in carded)
-    check(f"system_map: every mapped repo has a card row in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
-
-    # The matcher itself, against the shape that defeated the old substring
-    # test: `mcp-personal-onedrive` named in prose in a *second* cell of the
-    # External-integrations table, with no card row of its own anywhere.
-    _prose_only = (
-        "| Service | Reached from | For |\n"
-        "|---|---|---|\n"
-        "| 📁 **OneDrive** | apps: email-archiver, ghost-repo | file browsing |\n"
-    )
-    check("system_map: the card matcher ignores a repo named only in another cell's prose",
-          "ghost-repo" not in _architecture_card_repos(_prose_only))
-    check("system_map: the card matcher accepts a real icon+bold first-cell card row",
-          "ghost-repo" in _architecture_card_repos("| 📁 **ghost-repo** | what it is | pipeline | — |\n"))
-    check("system_map: the card matcher accepts a bold first cell with no icon",
-          "ghost-repo" in _architecture_card_repos("| **ghost-repo** | what it is |\n"))
-
-    return check.failures, check.total
 
 
 _REGEN_HINT = (

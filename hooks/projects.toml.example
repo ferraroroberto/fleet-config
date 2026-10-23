@@ -285,6 +285,17 @@ telegram_chat_log       = "-1004387099086"   # activity record and weekly digest
 architecture_ignore = [
   "externalrisk",           # out of scope for the personal-fleet map
   "arboldelossuenos",       # out of scope for the personal-fleet map
+  "pdf-to-markdown",
+  "gitlab-to-github-migrator",
+  "mathgamesforkids",
+  "social-media-analytics",
+  "illustration-color-edit",
+  "closed-company-accounting",
+  "facilitation-shuffle",
+  "inspiration-system",
+  "mass-html-to-markdown",
+  "mcp-personal-onedrive",
+  "pvgis",
 ]
 
 # ---- Daily fleet-private backup ------------------------------------------------
