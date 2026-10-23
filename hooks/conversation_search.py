@@ -102,26 +102,32 @@ def resume_command(agent: str, sid: str) -> str:
 
 # ------------------------------------------------------------------ schema
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversations (
-    id         INTEGER PRIMARY KEY,
-    skill      TEXT NOT NULL,
-    file       TEXT NOT NULL,
-    path       TEXT NOT NULL UNIQUE,
-    date       TEXT NOT NULL DEFAULT '',
-    slug       TEXT NOT NULL DEFAULT '',
-    sid        TEXT NOT NULL DEFAULT '',
-    agent      TEXT NOT NULL DEFAULT '',
-    title      TEXT NOT NULL DEFAULT '',
-    topic      TEXT NOT NULL DEFAULT '',
-    summary    TEXT NOT NULL DEFAULT '',
-    decisions  TEXT NOT NULL DEFAULT '',
-    open_loops TEXT NOT NULL DEFAULT '',
-    turns      INTEGER NOT NULL DEFAULT 0,
-    mtime      REAL NOT NULL DEFAULT 0
-);
-CREATE VIRTUAL TABLE IF NOT EXISTS conv_fts USING fts5(title, topic, digest, body);
-"""
+# Bump on any change to the tables below: `connect` drops and recreates both on a
+# mismatch, and the next `sync` repopulates them from the captures.
+SCHEMA_VERSION = 1
+
+_SCHEMA = (
+    """
+    CREATE TABLE conversations (
+        id         INTEGER PRIMARY KEY,
+        skill      TEXT NOT NULL,
+        file       TEXT NOT NULL,
+        path       TEXT NOT NULL UNIQUE,
+        date       TEXT NOT NULL DEFAULT '',
+        slug       TEXT NOT NULL DEFAULT '',
+        sid        TEXT NOT NULL DEFAULT '',
+        agent      TEXT NOT NULL DEFAULT '',
+        title      TEXT NOT NULL DEFAULT '',
+        topic      TEXT NOT NULL DEFAULT '',
+        summary    TEXT NOT NULL DEFAULT '',
+        decisions  TEXT NOT NULL DEFAULT '',
+        open_loops TEXT NOT NULL DEFAULT '',
+        turns      INTEGER NOT NULL DEFAULT 0,
+        mtime      REAL NOT NULL DEFAULT 0
+    )
+    """,
+    "CREATE VIRTUAL TABLE conv_fts USING fts5(title, topic, digest, body)",
+)
 
 
 def db_path(cfg: CaptureConfig) -> Path:
@@ -129,89 +135,33 @@ def db_path(cfg: CaptureConfig) -> Path:
     return cfg.root / cfg.conversations_dir / DB_NAME
 
 
+def _schema_current(conn: sqlite3.Connection) -> bool:
+    return conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-    conn.executescript(_SCHEMA)
-    # A db built before the user-title column (fleet-config#1348) gains it here;
-    # its rows start at "" and `sync` re-reads any whose sidecar title differs.
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
-    if "title" not in columns:
-        conn.execute("ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT ''")
-    # Likewise the one-paragraph digest summary (fleet-config#1373); old rows
-    # keep their decisions / open_loops and read "" here.
-    if "summary" not in columns:
-        conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
-    _migrate_fts_title(conn)
-    _migrate_fts_topic(conn)
+    if not _schema_current(conn):
+        # The db is a pure derivative, so a stale or fresh one is rebuilt rather
+        # than migrated. BEGIN IMMEDIATE plus the re-check makes a search and a
+        # sync that open it together reset it exactly once.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if not _schema_current(conn):
+                conn.execute("DROP TABLE IF EXISTS conv_fts")
+                conn.execute("DROP TABLE IF EXISTS conversations")
+                for statement in _SCHEMA:
+                    conn.execute(statement)
+                conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                logger.info("ℹ️ search db schema reset to v%d; the next sync repopulates it",
+                            SCHEMA_VERSION)
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
     return conn
-
-
-def _migrate_fts_title(conn: sqlite3.Connection) -> None:
-    """Upgrade a ``conv_fts(digest, body)`` index to ``(title, digest, body)`` in place.
-
-    fleet-config#1419 gave the owner's title its own column. An old index is
-    copied across — its digest text still carries the title, which only
-    double-counts it — so queries keep working the instant it is opened, and
-    every row's ``mtime`` is zeroed so the next ``sync`` re-reads each capture
-    and writes it in the new shape. ``BEGIN IMMEDIATE`` plus the re-check makes a
-    search and a sync that open it together migrate it exactly once.
-    """
-    def has_title() -> bool:
-        return "title" in {row[1] for row in conn.execute("PRAGMA table_info(conv_fts)")}
-
-    if has_title():
-        return
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        if not has_title():
-            conn.execute("CREATE VIRTUAL TABLE conv_fts_new USING fts5(title, digest, body)")
-            conn.execute(
-                "INSERT INTO conv_fts_new (rowid, title, digest, body) "
-                "SELECT f.rowid, COALESCE(c.title, ''), f.digest, f.body "
-                "FROM conv_fts f LEFT JOIN conversations c ON c.id = f.rowid"
-            )
-            conn.execute("DROP TABLE conv_fts")
-            conn.execute("ALTER TABLE conv_fts_new RENAME TO conv_fts")
-            conn.execute("UPDATE conversations SET mtime = 0")
-            logger.info("ℹ️ search index upgraded in place: owner title is now its own column")
-        conn.commit()
-    except sqlite3.Error:
-        conn.rollback()
-        raise
-
-
-def _migrate_fts_topic(conn: sqlite3.Connection) -> None:
-    """Upgrade a ``conv_fts(title, digest, body)`` index to ``(title, topic, digest, body)``.
-
-    fleet-config#1521 gave the digest topic its own column so it can rank as the
-    visible title. Same shape as :func:`_migrate_fts_title`: rows are copied
-    across with an empty topic (the topic text still sits in their digest, so
-    queries keep working at once), and every ``mtime`` is zeroed so the next
-    ``sync`` rewrites each row in the new shape.
-    """
-    def has_topic() -> bool:
-        return "topic" in {row[1] for row in conn.execute("PRAGMA table_info(conv_fts)")}
-
-    if has_topic():
-        return
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        if not has_topic():
-            conn.execute("CREATE VIRTUAL TABLE conv_fts_new USING fts5(title, topic, digest, body)")
-            conn.execute(
-                "INSERT INTO conv_fts_new (rowid, title, topic, digest, body) "
-                "SELECT rowid, title, '', digest, body FROM conv_fts"
-            )
-            conn.execute("DROP TABLE conv_fts")
-            conn.execute("ALTER TABLE conv_fts_new RENAME TO conv_fts")
-            conn.execute("UPDATE conversations SET mtime = 0")
-            logger.info("ℹ️ search index upgraded in place: digest topic is now its own column")
-        conn.commit()
-    except sqlite3.Error:
-        conn.rollback()
-        raise
 
 
 # ------------------------------------------------------------------- sync

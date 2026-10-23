@@ -23,7 +23,6 @@ import io
 import json
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 import time
@@ -183,15 +182,6 @@ try:
     check((conv / ci.TITLES_NAME).read_text(encoding="utf-8") == "[not, a, map",
           "corrupt sidecar left untouched for the owner to inspect")
     (conv / ci.TITLES_NAME).unlink()
-
-    # ---- an existing search db gains the column ------------------------
-    legacy_db = tmp / "legacy.db"
-    with sqlite3.connect(str(legacy_db)) as old:
-        old.executescript(cs._SCHEMA.replace("    title      TEXT NOT NULL DEFAULT '',\n", ""))
-    conn = cs.connect(legacy_db)
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)")}
-    conn.close()
-    check("title" in cols, "connect: a pre-#1348 search db is migrated, not rebuilt")
 
     # ---- the CLI call shape the launcher uses ----------------------------
     def _cli(*argv: str) -> "tuple[int, str, str]":

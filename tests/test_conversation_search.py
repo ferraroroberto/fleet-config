@@ -277,17 +277,29 @@ try:
     check(cs.search(cfg, "   ") == [],
           "search: whitespace-only query -> empty, never a SQL error")
 
-    # A db built before the summary column existed gains it on connect.
+    # A db stamped with an older schema is dropped and recreated on connect, once;
+    # a current one is left alone.
     _legacy_db = tmp / "legacy.db"
     _c = sqlite3.connect(str(_legacy_db))
     _c.execute("CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT, file TEXT,"
                " path TEXT UNIQUE, title TEXT NOT NULL DEFAULT '', topic TEXT)")
+    _c.execute("INSERT INTO conversations (skill, file, path) VALUES ('s', 'f', 'p')")
     _c.commit()
     _c.close()
-    _c = cs.connect(_legacy_db)
-    check("summary" in {r[1] for r in _c.execute("PRAGMA table_info(conversations)")},
-          "connect: pre-summary db gains the summary column")
-    _c.close()
+    for _pass in ("stale", "current"):
+        _c = cs.connect(_legacy_db)
+        check("summary" in {r[1] for r in _c.execute("PRAGMA table_info(conversations)")}
+              and _c.execute("PRAGMA user_version").fetchone()[0] == cs.SCHEMA_VERSION,
+              f"connect: a {_pass} db carries the current schema and version")
+        if _pass == "stale":
+            check(_c.execute("SELECT COUNT(*) FROM conversations").fetchone()[0] == 0,
+                  "connect: a stale db is rebuilt empty, for sync to repopulate")
+            _c.execute("INSERT INTO conversations (skill, file, path) VALUES ('s', 'f', 'p')")
+            _c.commit()
+        else:
+            check(_c.execute("SELECT COUNT(*) FROM conversations").fetchone()[0] == 1,
+                  "connect: a current db is not reset again")
+        _c.close()
 
     # The db is a pure derivative: deleting it must always be recoverable.
     cs.db_path(cfg).unlink()
@@ -382,32 +394,25 @@ try:
           and all(h["file"] != titled for h in cs.search(cfg, "migration")),
           "title rank: a digest-only query is unaffected by the title column")
 
-    # A db built before the title column existed (digest, body) upgrades in place on
-    # connect, keeps answering queries, and `sync` re-reads every row to settle it.
+    # A db from before the schema stamp is rebuilt on connect, and `sync` repopulates it.
     cs.db_path(cfg).unlink()
     _old = sqlite3.connect(str(cs.db_path(cfg)))
     _old.executescript(
         "CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT NOT NULL, file TEXT NOT NULL,"
-        " path TEXT NOT NULL UNIQUE, date TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '',"
-        " sid TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',"
-        " topic TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',"
-        " decisions TEXT NOT NULL DEFAULT '', open_loops TEXT NOT NULL DEFAULT '',"
-        " turns INTEGER NOT NULL DEFAULT 0, mtime REAL NOT NULL DEFAULT 0);"
+        " path TEXT NOT NULL UNIQUE, mtime REAL NOT NULL DEFAULT 0);"
         "CREATE VIRTUAL TABLE conv_fts USING fts5(digest, body);"
-        f"INSERT INTO conversations (id, skill, file, path, title, mtime)"
-        f" VALUES (1, 'journal-daily', 'legacy.md', 'legacy-path', '{WORD}', 1);"
+        "INSERT INTO conversations (id, skill, file, path, mtime)"
+        " VALUES (1, 'journal-daily', 'legacy.md', 'legacy-path', 1);"
         f"INSERT INTO conv_fts (rowid, digest, body) VALUES (1, '{WORD} legacy digest', 'legacy body');")
     _old.commit()
     _old.close()
     _c = cs.connect(cs.db_path(cfg))
     check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "topic", "digest", "body"],
-          "title rank: a pre-title index gains the title (and topic) column in place")
+          "title rank: a pre-stamp index is recreated with the current columns")
     _c.close()
-    check([h["file"] for h in cs.search(cfg, "legacy")] == ["legacy.md"],
-          "title rank: the upgraded index still answers before any re-sync")
+    check(not cs.search(cfg, "legacy"), "title rank: the reset drops the stale rows")
     check(cs.sync(cfg) == 10 and cs.search(cfg, WORD)[0]["file"] == titled,
-          "title rank: the next sync settles the upgraded index, title first")
-    check(not cs.search(cfg, "legacy"), "title rank: the upgrade's stale row is pruned by sync")
+          "title rank: the next sync repopulates the index, title first")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -460,32 +465,6 @@ try:
     check(cs.search(cfg, f'"{WORD}" OR zzzabsent')[0]["file"] == owner_titled,
           "visible-title tier: holds for a raw FTS5 operator query")
 
-    # A db whose conv_fts predates the topic column upgrades in place, idempotently,
-    # keeps answering before any re-sync, and the next sync settles it.
-    cs.db_path(cfg).unlink()
-    _old = sqlite3.connect(str(cs.db_path(cfg)))
-    _old.executescript(
-        "CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT NOT NULL, file TEXT NOT NULL,"
-        " path TEXT NOT NULL UNIQUE, date TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '',"
-        " sid TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',"
-        " topic TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',"
-        " decisions TEXT NOT NULL DEFAULT '', open_loops TEXT NOT NULL DEFAULT '',"
-        " turns INTEGER NOT NULL DEFAULT 0, mtime REAL NOT NULL DEFAULT 0);"
-        "CREATE VIRTUAL TABLE conv_fts USING fts5(title, digest, body);"
-        "INSERT INTO conversations (id, skill, file, path, mtime) VALUES (1, 'journal-daily', 'old.md', 'old-path', 1);"
-        f"INSERT INTO conv_fts (rowid, title, digest, body) VALUES (1, '', '{WORD} errands', 'old body');")
-    _old.commit()
-    _old.close()
-    for _ in range(2):
-        _c = cs.connect(cs.db_path(cfg))
-        check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "topic", "digest", "body"],
-              "visible-title tier: a pre-topic index gains the topic column in place (idempotent)")
-        _c.close()
-    check([h["file"] for h in cs.search(cfg, WORD)] == ["old.md"],
-          "visible-title tier: the upgraded index still answers before any re-sync")
-    check(cs.sync(cfg) == 12 and cs.search(cfg, WORD)[0]["file"] == owner_titled
-          and not [h for h in cs.search(cfg, WORD) if h["file"] == "old.md"],
-          "visible-title tier: the next sync settles the upgraded index, title first")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
