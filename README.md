@@ -17,7 +17,7 @@ work in this repo doesn't cost the whole catalogue:
   in `hooks/`, what it blocks or nudges, its `projects.toml` keys, and why it
   exists. Also the tooling that ships in that tier: the context filter, the
   Telegram notify transport and the deterministic completion ping, the
-  conversation-memory engine, and the Pi usage bridge.
+  conversation-memory engine.
 - **[`docs/skills.md`](docs/skills.md)** — the three skill tiers (global
   `skills/`, fleet-only `.claude/skills/`, and a subsystem's own
   directory-scoped `.claude/skills/`), the full per-skill inventory, the
