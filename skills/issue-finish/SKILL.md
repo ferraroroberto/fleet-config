@@ -212,6 +212,15 @@ Decision below is driven by the project's `## CI expectations` block
   to the conservative behavior: always `--watch` (skip nothing)**, subject to
   the local-e2e-proof rule below. Do not invent thresholds or surface paths the
   block doesn't state.
+- **Sync with the default branch before the evidence check.** The squash lands
+  on whatever `origin/<default>` is *now*, so a gate that passed on a behind
+  branch proved a tree the merge never produces. `git fetch origin`, then
+  `git rev-list --count HEAD..origin/<default>` (`<default>` per
+  `git symbolic-ref refs/remotes/origin/HEAD`). `0` → `BEHIND=0`, nothing else
+  runs. `n > 0` → `git merge origin/<default>` (never rebase), `git push`,
+  `BEHIND=<n> merged`; the tree changed, so the check below prints `STALE` and
+  its single re-run covers the merged tree. A conflict → `git merge --abort`,
+  stop and report; never resolve it unreviewed.
 - **Evidence first.** Every skip below requires
   `gate_evidence.py check --label gate` to print `FRESH` *now*, just before
   the merge. `STALE` / `MISSING` / `UNKNOWN` → re-run the gate once through
@@ -437,7 +446,8 @@ After step 6, **read [deploy-coverage.md](deploy-coverage.md) and run its `deplo
 ### 7. Report
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
-gate result with its evidence state at merge time (`gate: FRESH` / re-run /
+the step-5 `BEHIND=` line (`BEHIND=0` or `BEHIND=<n> merged`), gate result
+with its evidence state at merge time (`gate: FRESH` / re-run /
 `STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion
 listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
