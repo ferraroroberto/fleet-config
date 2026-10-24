@@ -33,6 +33,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "tests"))
 from acceptance import conventions_ratchet_gate as gate  # noqa: E402
+from acceptance.shared import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -55,7 +56,7 @@ def _ratchet(root: Path, *args: str) -> tuple[int, str]:
     proc = subprocess.run(
         [sys.executable, str(gate.SCRIPT), "--root", str(root), *args],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.DEVNULL, creationflags=gate.NO_WINDOW, timeout=120,
+        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, timeout=120,
     )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 

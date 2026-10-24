@@ -101,6 +101,7 @@ import dir_holders  # noqa: E402
 import git_run  # noqa: E402
 import worktree_residue  # noqa: E402
 
+# no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
 DEFAULT_FLEET_ROOT = Path("E:/automation")
 
 # The one state that dispatches. Everything else defers.

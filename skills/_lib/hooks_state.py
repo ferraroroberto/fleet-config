@@ -44,6 +44,9 @@ def state_dir() -> Path:
     return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
 
 
+# The atomic-write helpers below mirror hooks/_lib.py's copy on purpose: the tree
+# boundary forbids either tier importing the other, so the duplication check skips them.
+# jscpd:ignore-start
 def atomic_tmp_prefix(path: Path) -> str:
     """Writer-identifying `mkstemp` prefix for `path`'s write temporaries.
 
@@ -108,3 +111,4 @@ def atomic_write_text(
             except OSError:
                 pass
         raise
+# jscpd:ignore-end

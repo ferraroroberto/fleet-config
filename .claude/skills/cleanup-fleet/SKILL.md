@@ -5,7 +5,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, `/design-sweep` files an eighth (`design-drift`) and `/prompt-audit` a ninth (`prompt-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
@@ -118,7 +118,7 @@ Render one table and the headline counts:
   skipped (dirty/off-branch): website
 ```
 
-The `model` column shows `sonnet` for easy-tier and `opus` for hard-tier on Claude Code today — the tier split drives both *execution shape* (full-autonomy vs. review-gated) and model choice; see `docs/model-tiers.md`.
+The `model` column shows `sonnet` for easy-tier and `opus` for hard-tier (Claude Code only, today) — the tier split drives both *execution shape* (full-autonomy vs. review-gated) and model choice; see `docs/model-tiers.md`.
 
 - **`hard` mode:** present this plan and **wait for explicit approval** before spawning. The user may deselect issues or retier them. Do **not** spawn until approved.
 - **`easy`/`silent` mode:** print the plan to stdout (run-log record), **skip the approval gate**, and proceed with **only the easy-tier rows**. List the hard-tier rows as "left for a hard run" — never spawn them.
@@ -136,7 +136,7 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 
 ### 8. Fan out — one background sub-agent per selected issue
 
-**Re-verify state first, in one batch.** Step 3's fetch is not proven immune to every staleness source (see its caveat), and `hard` mode's approval wait can itself take long enough for an issue to close meanwhile. Build one JSON array of every still-selected issue (`[{"repo": ..., "number": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`, never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo produces a doubled-owner `gh` argv that fails with a network-sounding error unrelated to the network, fleet-config#706) and pipe it through:
+**Re-read state first, in one batch.** Step 3's fetch is not proven immune to every staleness source (see its caveat), and `hard` mode's approval wait can itself take long enough for an issue to close meanwhile. Build one JSON array of every still-selected issue (`[{"repo": ..., "number": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`, never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo produces a doubled-owner `gh` argv that fails with a network-sounding error unrelated to the network, fleet-config#706) and pipe it through:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
@@ -377,7 +377,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 
 - One agent per repo, period. A bucket is at most one issue per repo by construction; a repo with extras defers them — never two agents on one checkout.
 - Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR. Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode.
-- Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt. On Claude Code today hard-tier resolves to Opus. Refill as each capped agent returns; never a single-message fan-out of many Opus agents at once (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
+- Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt. Claude Code only, today: hard-tier resolves to Opus. Refill as each capped agent returns; never a single-message fan-out of many Opus agents at once (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
 - `easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work. Hard-tier rows are listed only — the unattended-safety guarantee.
 - Hard-tier review is by rationale summary, not diff. Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10).
 - The orchestrator never edits source, commits, pushes, or merges. Every write happens inside a spawned agent.

@@ -162,7 +162,7 @@ log); the shape stays the same: wait, one digest, exit.
 
 ## Managing your own context — self-compact at a quiet tick (fleet-config#1052)
 
-One chief session is meant to run indefinitely. Don't wait for Claude Code's
+One chief session is meant to run indefinitely. Don't wait for the harness's
 own auto-compact near the limit, where attention is most diluted and nothing
 guarantees the handover was refreshed. Compact yourself earlier, on your own
 terms:
@@ -453,7 +453,7 @@ instead:
    mutation (start/dispatch/nudge/stop) happens only on an explicit
    direction in the user's message.
 7. Models: pass `"sonnet"` unless the user names a tier (`opus`, `fable`,
-   `gpt5.6` → Codex). Your own model is not yours to change.
+   `gpt5.6` (Codex only)). Your own model is not yours to change.
 8. **Destructive-scope steers always need a human echo — permanent floor,
    independent of any steer mechanism (fleet-config#509, #622).** Routine
    steers (correct the approach, narrow the scope, answer a question, unstick

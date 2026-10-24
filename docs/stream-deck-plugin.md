@@ -22,7 +22,7 @@ target, a discriminated union by `kind`: `tray` (`id`/`label`/
 authenticated `POST` against home-automation's `POST
 /api/actions/{action_id}` alias endpoint, carrying no URL/token of its own;
 those live in the gitignored plugin-bundle `.env`, see the README's
-"Configuring the home-automation connection"). `scripts/sync-assets.mjs` (a
+"Configuring the home-automation connection"). `stream-deck/scripts/sync-assets.mjs` (a
 `prebuild` step) validates each kind differently — a `tray` entry is
 cross-checked against `hooks/projects.toml` (must have `tray_cmd` +
 `cwd_prefix`, launcher file must exist) and its icon copied in; an

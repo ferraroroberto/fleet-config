@@ -47,6 +47,7 @@ from hooks_state import state_dir  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 GITHUB = "https://github.com/ferraroroberto"
+# no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
 DEFAULT_ROOT = Path("E:/automation")
 DEFAULT_MIN_COMMITS = 20
 DEFAULT_DAYS = 60

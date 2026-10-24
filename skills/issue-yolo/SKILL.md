@@ -5,7 +5,7 @@ description: One-shot the GitHub-issue workflow end-to-end — file the issue, c
 
 # issue-yolo
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** idea → merged-and-closed in one unbroken run — `/issue-add` →
 `/issue-start now` → build → **validate hard** → `/issue-finish`. No approval
@@ -127,7 +127,7 @@ Pick the smallest mode that genuinely covers the change:
   local scratch path; **never attach it to the PR body, an issue, or a
   comment** (assume every repo is public — a screenshot is an information
   breach). Text-only result line in the PR instead.
-  **Browser-backend preflight (Codex — no live `iab`):** same preflight as
+  **Browser-backend preflight (Codex only — no live `iab`):** same preflight as
   `/issue-finish` step 3b — see that step, don't restate here.
   When this is a **web-app UX diff**, also run the **design-conformance gate**
   (`project-scaffolding#83`):

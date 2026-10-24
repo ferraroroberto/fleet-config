@@ -74,6 +74,7 @@ from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 
+# no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
 DEFAULT_SCAFFOLD = Path("E:/automation/project-scaffolding")
 CLASSIFIER_REL = Path("scripts/classify_e2e.py")
 SUITE_REL = Path("tests/e2e")

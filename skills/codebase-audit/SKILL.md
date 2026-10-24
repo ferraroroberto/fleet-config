@@ -37,7 +37,7 @@ of (security is not a checklist bucket — see step 8b):
    a bare numeric literal that sets a timeout, retry count, cap, threshold,
    sleep or backoff, with neither a named constant nor an adjacent comment
    saying why that value. The next reader cannot tell a measured value from a
-   guess, so nobody dares change it (Anthropic's skill-authoring guide calls
+   guess, so nobody dares change it (the vendor's skill-authoring guide calls
    these "voodoo constants", fleet-config#1230). Example and counter-example:
    [not-a-finding.md](not-a-finding.md), Maintainability.
 5. **Bugs** — actual correctness issues spotted while reading. Off-by-one,
@@ -152,8 +152,8 @@ Read both CLAUDE.md files in full:
 - Project: `<repo-root>/CLAUDE.md`. If absent, note it and continue — the
   audit still runs, just without project-specific drift checks.
 
-Extract the **specific, checkable rules** from each (e.g. "no `Co-Authored-By:
-Claude` trailer", "tests must hit a real database", "use `.venv` not `venv`",
+Extract the **specific, checkable rules** from each (e.g. "no AI-attribution
+trailer", "tests must hit a real database", "use `.venv` not `venv`",
 "forward slashes in `settings.json` commands"). These are the inputs to
 bucket 3.
 

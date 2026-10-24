@@ -1,21 +1,5 @@
 {
   "version": 1,
   "tools": {"jscpd": "5.4.0", "ruff": "0.17.1"},
-  "entries": [
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/conventions_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/conventions_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/dead_code_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/dead_code_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/doc_refs_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/doc_refs_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/docs_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/docs_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/instruction_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/instruction_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/static_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/static_ratchet_gate.py"]},
-    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/structure_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/structure_ratchet_gate.py"]},
-    {"key": "dup:4142de0c9bd6:tests/test_docs_ratchet_gate.py|tests/test_static_ratchet_gate.py", "files": ["tests/test_docs_ratchet_gate.py", "tests/test_static_ratchet_gate.py"]},
-    {"key": "dup:8195c09528f8:hooks/_lib.py|skills/_lib/hooks_state.py", "files": ["hooks/_lib.py", "skills/_lib/hooks_state.py"]},
-    {"key": "dup:9092cbace3d9:tests/acceptance/test_comment_ratchet_gate.py|tests/acceptance/test_dead_code_ratchet_gate.py", "files": ["tests/acceptance/test_comment_ratchet_gate.py", "tests/acceptance/test_dead_code_ratchet_gate.py"]},
-    {"key": "dup:9092cbace3d9:tests/acceptance/test_comment_ratchet_gate.py|tests/acceptance/test_doc_refs_ratchet_gate.py", "files": ["tests/acceptance/test_comment_ratchet_gate.py", "tests/acceptance/test_doc_refs_ratchet_gate.py"]},
-    {"key": "dup:9092cbace3d9:tests/acceptance/test_comment_ratchet_gate.py|tests/acceptance/test_instruction_ratchet_gate.py", "files": ["tests/acceptance/test_comment_ratchet_gate.py", "tests/acceptance/test_instruction_ratchet_gate.py"]},
-    {"key": "dup:9092cbace3d9:tests/acceptance/test_comment_ratchet_gate.py|tests/test_docs_ratchet_gate.py", "files": ["tests/acceptance/test_comment_ratchet_gate.py", "tests/test_docs_ratchet_gate.py"]},
-    {"key": "dup:c33a84fcfc16:hooks/_lib.py|skills/_lib/hooks_state.py", "files": ["hooks/_lib.py", "skills/_lib/hooks_state.py"]},
-    {"key": "dup:de56b4edb5d0:tests/test_docs_ratchet_gate.py|tests/test_static_ratchet_gate.py", "files": ["tests/test_docs_ratchet_gate.py", "tests/test_static_ratchet_gate.py"]}
-  ]
+  "entries": []
 }

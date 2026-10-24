@@ -51,6 +51,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("root", help="target repo root")
     ap.add_argument("--spec", help="override light spec path (tests)")
     ap.add_argument("--spec-dark", help="override dark spec path (tests)")
+    # no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
     ap.add_argument("--scaffold", default="E:/automation/project-scaffolding",
                     help="project-scaffolding root for the vendored byte-compare")
     args = ap.parse_args(argv)

@@ -16,12 +16,9 @@ Never path-routed: it is cheap, and a rule added to `rules` must see the whole t
 """
 from __future__ import annotations
 
-import subprocess
-import sys
 from typing import Tuple
 
-from acceptance.shared import REPO, _Checker
-from _lib import NO_WINDOW
+from acceptance.shared import REPO, run_ratchet_script
 
 SCRIPT = REPO / "scripts" / "conventions_ratchet.py"
 
@@ -44,19 +41,4 @@ def classify_exit(code: int) -> Tuple[bool, str]:
 
 
 def _conventions_ratchet_check() -> Tuple[int, int]:
-    check = _Checker()
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(SCRIPT)],
-            cwd=REPO, capture_output=True, text=True, encoding="utf-8",
-            errors="replace", stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
-            timeout=RUN_TIMEOUT_S, check=False,
-        )
-        code, output = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except subprocess.TimeoutExpired:
-        code, output = 3, f"conventions_ratchet.py did not finish in {RUN_TIMEOUT_S}s"
-    except OSError as exc:
-        code, output = 3, f"conventions_ratchet.py could not start: {exc}"
-    ok, label = classify_exit(code)
-    check(f"conventions_ratchet: {label}", ok, output)
-    return check.failures, check.total
+    return run_ratchet_script(SCRIPT, RUN_TIMEOUT_S, classify_exit)
