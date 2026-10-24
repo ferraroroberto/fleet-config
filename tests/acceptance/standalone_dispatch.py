@@ -609,6 +609,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "throwaway git tree: a new uncalled function fails naming the file and "
      "the function and reverting passes, a called one does not count, an "
      "unparseable tracked file is exit 3"),
+    ("conventions_ratchet_gate", "acceptance/test_conventions_ratchet_gate.py",
+     "the conventions ratchet stage's exit-code mapping -- 3 (could not "
+     "scan) fails as NOT CONFIRMED instead of landing in SKIP the way "
+     "`shared.SKIP_EXIT` would read it -- and the acceptance criteria on a "
+     "throwaway git tree: a new spawn without creationflags, `print` in "
+     "library code, drive-path literal or raw git spawn fails naming the "
+     "file and the rule and reverting passes, an unparseable tracked file "
+     "is exit 3"),
     ("skip_delta", "test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "
