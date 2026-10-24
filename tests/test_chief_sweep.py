@@ -18,6 +18,7 @@ import io
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -40,9 +41,12 @@ check = _h.check
 upstream, work = make_upstream_and_clone(TMP, check)
 
 
-def add_worktree(n: int) -> Path:
+def add_worktree(n: int, age_s: float = 3600) -> Path:
+    """A real worktree whose `.git` file is backdated, so it is past the sweep's grace period."""
     wt = TMP / f"work-wt-{n}"
     run_git(work, "worktree", "add", "-q", "-b", f"feat/{n}", str(wt), "origin/main", check=check)
+    stamp = time.time() - age_s
+    os.utime(wt / ".git", (stamp, stamp))
     return wt
 
 
@@ -87,6 +91,8 @@ wt8 = add_worktree(8)                                   # only a gitignored file
 wt11 = add_worktree(11)                                 # clean, a live active-issue marker names it
 wt12 = add_worktree(12)                                 # commits, no PR at all
 commit(wt12)
+wt13 = add_worktree(13, age_s=30)                       # clean, no marker, created seconds ago
+wt14 = add_worktree(14)                                 # clean, no marker, a chief-managed lane is on work#14
 (TMP / "work-wt-9").mkdir()                             # empty, not a worktree
 (TMP / "work-wt-10").mkdir()                            # not a worktree, not empty
 (TMP / "work-wt-10" / "left.txt").write_text("x", encoding="utf-8")
@@ -95,12 +101,15 @@ commit(wt12)
 LIVE_MARKER = {"work#11": {"owner_host": "box", "owner_pid": 4242, "owner_session_id": "s11"}}
 
 
-def sweep(dirs=(), markers=None, session_ids=frozenset(), pid_probe=lambda _p: False):
+MANAGED = {"lane14": {"repo": "work", "number": 14}}
+
+
+def sweep(dirs=(), markers=None, session_ids=frozenset(), pid_probe=lambda _p: False, managed=MANAGED):
     found = cs.scan(
         TMP,
         dirs=None if dirs is None else [cs._norm(d) for d in dirs],
         markers=LIVE_MARKER if markers is None else markers,
-        session_ids=session_ids, pr_lookup=pr_lookup, host="box", pid_probe=pid_probe,
+        session_ids=session_ids, pr_lookup=pr_lookup, host="box", pid_probe=pid_probe, managed=managed,
     )
     return {f.name: f for f in found}
 
@@ -141,6 +150,18 @@ dead = sweep(markers=LIVE_MARKER, pid_probe=lambda _p: False)
 check(cls(dead, 11) == cs.FINISHED, "finished: a marker whose owner is dead no longer holds the worktree")
 unknown_owner = sweep(markers={"work#11": {"owner_host": "elsewhere", "owner_pid": 1}})
 check(cls(unknown_owner, 11) == cs.UNKNOWN, "unknown: a marker owner on another host cannot be called dead")
+
+check(cls(found, 13) == cs.IN_USE and "younger than 10 min" in found["work-wt-13"].evidence,
+      "in-use: a tree younger than the grace period is never finished, marker or not")
+check(cls(found, 14) == cs.FINISHED,
+      "finished: a chief-managed row whose session is not live does not hold the tree")
+live_lane = sweep(session_ids=frozenset({"lane14"}), pid_probe=lambda _p: True)
+check(cls(live_lane, 14) == cs.IN_USE and "live session lane14" in live_lane["work-wt-14"].evidence,
+      "in-use: a live chief-managed session for the tree's repo#N holds it without a marker")
+check(cls(sweep(session_ids=frozenset({"lane14"}), managed={"lane14": {"repo": "work", "number": 15}}), 14) == cs.FINISHED,
+      "finished: a live chief-managed session on a different issue does not hold the tree")
+check(cs.classify_worktree(wt13, dirs=[], markers={}, session_ids=set(), pr_lookup=pr_lookup, grace_s=0).cls == cs.FINISHED,
+      "finished: the same fresh tree past a zero grace period, so only the grace period held it")
 
 blind = sweep(dirs=None)
 check(cls(blind, 1) == cs.UNKNOWN and "live sessions not established" in blind["work-wt-1"].evidence,
