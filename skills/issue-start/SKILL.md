@@ -5,7 +5,7 @@ description: Start work on a GitHub issue — pick it, sync main, cut a feature 
 
 # issue-start
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** Get cleanly onto a fresh feature branch for one GitHub issue, then hand
 off to the implementation. This skill sets up — it does **not** implement.

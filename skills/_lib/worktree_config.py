@@ -359,6 +359,7 @@ def _allocate_port(issue: str, taken: "set", wt: Path, config_name: str) -> int:
         try:
             holder = reserve_port(port, wt, config_name)
         except (OSError, TimeoutError) as exc:
+            # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
             print(f"WORKTREE_PORT_RESERVE=unavailable ({exc.__class__.__name__}): "
                   f"{port} used without a reservation ({config_name})", file=sys.stderr)
             return port
@@ -684,16 +685,20 @@ def _provision_copied_config(dst: Path, wt: Path, assigned: "set",
     port = _repoint_config_port(dst, wt, assigned)
     if port is not None:
         assigned.add(port)
+        # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
         print(f"WORKTREE_PORT={port} ({dst.name})", file=sys.stderr)
     removed = remove_secret_config(dst, secret_keys)
     if removed:
+        # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
         print(f"WORKTREE_CONFIG_SECRETS_REMOVED={len(removed)}: "
               f"{', '.join(removed)} ({dst.name})", file=sys.stderr)
     blanked = blank_machine_bound_config(dst, declared_keys, read_safe_keys)
     if blanked:
+        # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
         print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
               f"{', '.join(blanked)} ({dst.name})", file=sys.stderr)
     if read_safe_keys:
+        # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
         print(f"WORKTREE_CONFIG_READ_SAFE={len(read_safe_keys)}: "
               f"{', '.join(read_safe_keys)} ({dst.name})", file=sys.stderr)
 
@@ -798,6 +803,7 @@ def check_provisioned_configs(checkout: Path, declared_keys: Optional[list],
         if unsafe:
             failures.append(f"{rel} holds machine-bound values for undeclared keys: "
                             f"{', '.join(unsafe)}")
+            # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
             print(f"CONFIG_UNSAFE={rel}: {', '.join(unsafe)}")
         if not isinstance(port, int) or isinstance(port, bool):
             continue
@@ -809,6 +815,7 @@ def check_provisioned_configs(checkout: Path, declared_keys: Optional[list],
         # somebody else does and that is a real collision.
         row = reservations.get(port)
         if row is not None and row.get("worktree") != held:
+            # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
             print(f"PORT={port} config={rel} reservation=HELD BY {row.get('worktree')}")
             failures.append(f"{rel}'s port {port} is reserved by "
                             f"{row.get('worktree')} — two instances would collide")
@@ -816,18 +823,21 @@ def check_provisioned_configs(checkout: Path, declared_keys: Optional[list],
         try:
             holder = reserve_port(port, checkout, rel)
         except (OSError, TimeoutError) as exc:
+            # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
             print(f"PORT={port} config={rel} reservation=unavailable "
                   f"({exc.__class__.__name__})")
             unknowns.append(f"{rel}'s port {port} could not be reserved, so "
                             f"exclusivity is not established")
             continue
         if holder is not None:
+            # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
             print(f"PORT={port} config={rel} reservation=HELD BY {holder}")
             failures.append(f"{rel}'s port {port} is reserved by {holder} — "
                             f"two instances would collide")
             continue
         claimed = "" if row is not None else "  (claimed now)"
         listening = "" if _port_is_free(port) else "  (already listening)"
+        # logging-not-print-exempt: KEY=value line that the calling skill parses from this stream
         print(f"PORT={port} config={rel} reservation=this checkout{claimed}{listening}")
     return failures, unknowns
 

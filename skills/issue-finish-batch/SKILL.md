@@ -5,7 +5,7 @@ description: Ship reviewed branches in parallel — fan out one easy-tier agent 
 
 # issue-finish-batch
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** `/cleanup-fleet` and `/issue-batch` *build and stop* — one reviewed branch per issue, each needing a manual, sequential `/issue-finish`. Finishing is purely mechanical (push, PR, CI-as-advisory, merge, delete branch, land on main, tray restart). This skill fans out **one background easy-tier agent per branch**, each running the existing `/issue-finish` flow end-to-end one-shot, and reports back **only** on a genuine blocker it cannot resolve. It composes `/issue-finish` rather than re-implementing it — that skill owns the acceptance/gate/CI-advisory/merge/tray choreography per project; this one owns only branch resolution, fan-out, and aggregate.
 
@@ -14,7 +14,7 @@ description: Ship reviewed branches in parallel — fan out one easy-tier agent 
 `/issue-finish-batch [<issue/branch list>] [<model>]`
 
 - **Issue/branch list** — space-separated, order-independent. Each token is either `<repo>#<N>` (e.g. `app-launcher#71`), a bare issue number `<N>` (single-repo case — resolved against the current repo), or a branch name. Resolves to one `(repo, issue, branch, worktree-path?)` per token in step 2.
-- **Model token** — `easy` (default), `hard`, or `extreme`, resolved through `docs/model-tiers.md`. Claude-only legacy aliases `sonnet`/`opus` mean easy/hard; never send them to another host. Unsupported explicit model/effort requests require clarification, not silent substitution.
+- **Model token** — `easy` (default), `hard`, or `extreme`, resolved through `docs/model-tiers.md`. Legacy aliases `sonnet`/`opus` mean easy/hard (Claude Code only); never send them to another host. Unsupported explicit model/effort requests require clarification, not silent substitution.
 - **No list given** → if the immediately-preceding turn was a `/cleanup-fleet` or `/issue-batch` fan-out, offer its build-and-stop branches as the candidate set and confirm; otherwise ask which branches to finish and stop.
 
 ## Hard rules (read before running any command)

@@ -5,7 +5,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 # audit-fleet
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip unchanged ones, audit changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), collect results into **one diff-based digest**: GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout, with a Telegram ping via `notify_complete.py --kind audit`.
 
@@ -121,7 +121,7 @@ If `to_audit` is empty, jump to step 5 with an empty result set (digest still go
 
 ### 3. Audit each repo — a bounded window, self-paced against the live session budget
 
-Process the to-audit list through a **bounded concurrency window of up to 3 sub-agents** — session-token-budget pacing default and the live Opus burst-limiter cap: audit sub-agents run at **`hard` tier** (`docs/model-tiers.md`), which resolves to `model: "opus"` on Claude Code today.
+Process the to-audit list through a **bounded concurrency window of up to 3 sub-agents** — session-token-budget pacing default and the live Opus burst-limiter cap: audit sub-agents run at **`hard` tier** (`docs/model-tiers.md`), which resolves to `model: "opus"` (Claude Code only, today).
 
 Before each dispatch/refill, call `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70` and branch on `DECISION`:
 
@@ -323,7 +323,7 @@ One concise block: the plan line from step 2, per-repo results, where the digest
 - **The ledger gate is one shared Python implementation, not prose.** Step 2's `fleet_audit_scan.py` and `/codebase-audit`'s own step 2 both call `audit_issue.py`'s `evaluate_repo` — exactly one implementation of the skip/audit/self-fix decision. Unit-tested independent of `gh`/`git` in `tests/test_audit_issue.py`.
 - **Read-only on source — except a sub-agent's step-8b security self-heal** (redacted issue + auto-fix + auto-merge, gated: claim, mandatory regression test, generic artifacts, green-gate-only merge, escalate on failure). Every other write is an audit issue, the per-repo ledger, the digest-state issue, the digest comment, or the cross-fleet practices ledger in `project-scaffolding` (the one issue-write target outside `fleet-config` — still an issue, never source).
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, `hard` tier (Opus on Claude Code today), through a ≤3 sliding window.** Refill as each returns. No worktrees (audits don't collide). Don't read repo source in the orchestrator.
+- **One sub-agent per repo, `hard` tier (Opus — Claude Code only, today), through a ≤3 sliding window.** Refill as each returns. No worktrees (audits don't collide). Don't read repo source in the orchestrator.
 - **Block on `TaskOutput` for every in-flight sub-agent, same turn, always.** `run_in_background: true` + ending the turn is never valid here (`fleet-config#506`); step 3's loop never returns control until the to-audit list is fully drained. `claude_progress.py` hands the CLI `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` so an in-flight task is waited on rather than killed (`fleet-config#519`) — not a licence to end the turn.
 - **A run that delivered nothing must exit non-zero.** Step 6's delivery assertion runs before the Telegram ping on every run; on failure it prints the literal `SCHEDULED-RUN-FAILED` marker, mapped by `claude_progress.py` to exit `123`.
 - **And the assertion can't save a run that never reaches it.** An orchestrator cut off mid-flight never prints the marker and the job records `success`/exit 0 with zero repos audited. The launcher therefore also passes `--delivery-check .claude/skills/audit-fleet/delivery_check.py`, an outer post-condition `claude_progress.py` runs *after* the child exits: resolves this skill's digest ledger issue the same way step 5 does (never a hardcoded id), fails the job (exit `121`) unless a digest comment landed within the last 12 hours (fleet-config#560). If step 6's shape changes, that check changes with it.

@@ -19,8 +19,6 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_static_ratc
 
 from __future__ import annotations
 
-import contextlib
-import io
 import os
 import shutil
 import subprocess
@@ -32,71 +30,19 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tests"))
 from acceptance import static_ratchet_gate as gate  # noqa: E402
-from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from ratchet_gate_fixtures import assert_check_function, assert_exit_mapping  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
 
 
-# ---- 1. exit-code mapping ----
+# ---- 1. exit-code mapping, 2. the check function with the script's run stubbed ----
 
-check(gate.classify_exit(0)[0], "exit 0 passes")
-for _code in (1, 2, 3, 4, -1):
-    check(not gate.classify_exit(_code)[0], f"exit {_code} fails")
-check("NOT CONFIRMED" in gate.classify_exit(3)[1], "exit 3 is labelled NOT CONFIRMED")
-check("SKIP" not in gate.classify_exit(3)[1].upper(), "exit 3 is never labelled a skip")
-# The collision this module exists for: the gate's own SKIP code is the
-# ratchet's NOT CONFIRMED code, so only a dedicated mapping keeps it a failure.
-check(SKIP_EXIT == gate.EXIT_NOT_CONFIRMED, "shared.SKIP_EXIT is the ratchet's exit 3 (why the check is dedicated)")
-check(not gate.classify_exit(SKIP_EXIT)[0], "shared.SKIP_EXIT fails through the dedicated mapping")
-
-
-# ---- 2. the check function, script run stubbed ----
-
-def _run_check_with(result: object) -> tuple[tuple[int, int], str]:
-    """`_static_ratchet_check()` with `subprocess.run` replaced by `result` --
-    a CompletedProcess to return, or an exception to raise."""
-    real = gate.subprocess.run
-
-    def fake(*_a: object, **_k: object) -> object:
-        if isinstance(result, BaseException):
-            raise result
-        return result
-
-    buf = io.StringIO()
-    gate.subprocess.run = fake  # type: ignore[assignment]
-    try:
-        with contextlib.redirect_stdout(buf):
-            counts = gate._static_ratchet_check()
-    finally:
-        gate.subprocess.run = real  # type: ignore[assignment]
-    return counts, buf.getvalue()
-
-
-def _done(code: int, out: str = "") -> subprocess.CompletedProcess:
-    return subprocess.CompletedProcess(args=[], returncode=code, stdout=out, stderr="")
-
-
-counts, out = _run_check_with(_done(0))
-check(counts == (0, 1) and out.startswith("OK"), f"exit 0 -> one passing check, got {counts} {out!r}")
-
-counts, out = _run_check_with(_done(1, "new: unused:F401:x.py:os"))
-check(counts == (1, 1) and out.startswith("FAIL") and "unused:F401:x.py:os" in out,
-      f"exit 1 -> failing check that echoes the script's finding, got {counts} {out!r}")
-
-counts, out = _run_check_with(_done(3, "ruff could not start"))
-check(counts == (1, 1), f"exit 3 counts as a failure, not a skip, got {counts}")
-check("NOT CONFIRMED" in out and "SKIP" not in out and "ruff could not start" in out,
-      f"exit 3 prints NOT CONFIRMED plus the script's reason, got {out!r}")
-
-counts, out = _run_check_with(subprocess.TimeoutExpired(cmd="x", timeout=1))
-check(counts == (1, 1) and "NOT CONFIRMED" in out, f"a timed-out run is NOT CONFIRMED, got {counts} {out!r}")
-
-counts, out = _run_check_with(OSError("no interpreter"))
-check(counts == (1, 1) and "NOT CONFIRMED" in out, f"an unstartable run is NOT CONFIRMED, got {counts} {out!r}")
+assert_exit_mapping(gate, check)
+assert_check_function(gate, "_static_ratchet_check", check, finding="new: unused:F401:x.py:os")
 
 
 # ---- 3. end to end, real ruff + jscpd on a throwaway tree ----

@@ -25,9 +25,9 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 import tempfile
+from functools import partial
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -37,7 +37,7 @@ from acceptance import doc_refs_ratchet_gate as gate  # noqa: E402
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 from git_fixtures import run_git  # noqa: E402
-from ratchet_gate_fixtures import assert_check_function, assert_exit_mapping  # noqa: E402
+from ratchet_gate_fixtures import assert_check_function, assert_exit_mapping, run_ratchet  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -51,13 +51,7 @@ assert_check_function(gate, "_doc_refs_ratchet_check", check, finding="docs/a.md
 
 # ---- 3. end to end, the real script on a throwaway git tree ----
 
-def _ratchet(root: Path, *args: str) -> tuple[int, str]:
-    proc = subprocess.run(
-        [sys.executable, str(gate.SCRIPT), "--root", str(root), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.DEVNULL, timeout=120,
-    )
-    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+_ratchet = partial(run_ratchet, gate)
 
 
 tmp = Path(tempfile.mkdtemp(prefix="doc-refs-ratchet-gate-"))

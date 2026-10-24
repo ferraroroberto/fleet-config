@@ -131,5 +131,8 @@ baseline = ".dead-code-ratchet-baseline.json"
 enabled      = true
 baseline     = ".conventions-ratchet-baseline.json"
 rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper"]
+# tests/ is exempt from the NO_WINDOW rule (CLAUDE.md) and every other rule already
+# skips test modules, so nothing under it is scanned.
+exclude      = ["tests/**"]
 print_paths  = ["skills/_lib/"]
 git_wrappers = ["hooks/_lib.py", "skills/_lib/git_run.py"]

@@ -208,7 +208,7 @@ plus the prompt file — nothing from this session:
 > no fence, no commentary.
 
 Keep at most the host's concurrent hard-tier cap in flight (`docs/model-tiers.md`;
-Claude: three) and **collect every judge's terminal reply within this
+three on Claude Code only) and **collect every judge's terminal reply within this
 turn** — poll a background worker to completion, never end the turn
 expecting a wake-up. Save each reply verbatim as `<RUN_DIR>/judge-<n>.json`
 (a stray ```` ```json ```` fence is tolerated; anything else that is not one

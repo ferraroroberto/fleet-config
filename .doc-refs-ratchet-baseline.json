@@ -1,7 +1,4 @@
 {
   "version": 1,
-  "entries": [
-    {"key": "docs/rate-gate.md", "refs": ["skills/_lib/audit_retry.py"]},
-    {"key": "docs/stream-deck-plugin.md", "refs": ["scripts/sync-assets.mjs"]}
-  ]
+  "entries": []
 }

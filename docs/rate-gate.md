@@ -3,7 +3,7 @@
 ## Why this replaced the dead-man's switch
 
 `/audit-fleet` used to survive the rolling 5-hour session rate limit with a
-"dead-man's switch" (`skills/_lib/audit_retry.py`): before the heavy dispatch
+"dead-man's switch": before the heavy dispatch
 phase it armed a one-shot Windows Scheduled Task ~4h out, so if the process died
 mid-sweep from hitting the limit, the task relaunched the audit as a `resume`
 continuation, and the idempotent per-repo ledger gate skipped work already done.
@@ -24,7 +24,7 @@ itself. `rate_gate.py` reads that cache and lets a skill
 ## `skills/_lib/rate_gate.py` contract
 
 Pure logic, unit-tested in `tests/test_rate_gate.py` (same discipline as
-`audit_issue.py` / the retired `audit_retry.py`: correctness-critical decisions
+`audit_issue.py`: correctness-critical decisions
 live in Python, not the model):
 
 ```

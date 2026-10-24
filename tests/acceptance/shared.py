@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 REPO = Path(__file__).resolve().parent.parent.parent
 HOOKS = REPO / "hooks"
@@ -26,7 +26,7 @@ sys.path.insert(0, str(HOOKS))
 # Imported for the constant rather than re-spelled as a literal here: the env
 # var name is the hooks' own contract (fleet-config#835), and a rename must
 # break this import instead of silently un-scrubbing the suite's environment.
-from _lib import LAUNCHER_SESSION_ID_ENV_VAR  # noqa: E402
+from _lib import LAUNCHER_SESSION_ID_ENV_VAR, NO_WINDOW  # noqa: E402
 
 # The exit code a standalone `tests/test_*.py` suite uses to say "I could not
 # establish my facts" -- distinct from 0 (ran, all passed) and from any other
@@ -207,6 +207,33 @@ class _Checker:
         print(f"SKIP  {case}")
         for line in (detail or "").strip().splitlines():
             print(f"        | {line}")
+
+
+def run_ratchet_script(
+    script: Path, timeout_s: int, classify: Callable[[int], Tuple[bool, str]],
+) -> Tuple[int, int]:
+    """Run one vendored ratchet script and report it as one check.
+
+    `classify` maps the exit code to `(ok, label)`. A run that times out or
+    cannot start is exit 3 (NOT CONFIRMED), the state the ratchets use for "the
+    facts could not be established", so it fails and is never a skip.
+    """
+    check = _Checker()
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=REPO, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+            timeout=timeout_s, check=False,
+        )
+        code, output = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except subprocess.TimeoutExpired:
+        code, output = 3, f"{script.name} did not finish in {timeout_s}s"
+    except OSError as exc:
+        code, output = 3, f"{script.name} could not start: {exc}"
+    ok, label = classify(code)
+    check(f"{script.stem}: {label}", ok, output)
+    return check.failures, check.total
 
 
 def _subprocess_unit_check(label: str, test_file: str, routed_out: str | None = None) -> Tuple[int, int, int]:

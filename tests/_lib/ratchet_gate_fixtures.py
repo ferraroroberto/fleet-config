@@ -18,6 +18,8 @@ from __future__ import annotations
 import contextlib
 import io
 import subprocess
+import sys
+from pathlib import Path
 from typing import Callable
 
 from acceptance.shared import SKIP_EXIT
@@ -39,7 +41,7 @@ def assert_exit_mapping(gate: object, check: Callable[[bool, str], None]) -> Non
 def _run_check_with(gate: object, fn_name: str, result: object) -> tuple[tuple[int, int], str]:
     """`gate.<fn_name>()` with `subprocess.run` replaced by `result` -- a
     CompletedProcess to return, or an exception to raise."""
-    real = gate.subprocess.run
+    real = subprocess.run
 
     def fake(*_a: object, **_k: object) -> object:
         if isinstance(result, BaseException):
@@ -47,12 +49,12 @@ def _run_check_with(gate: object, fn_name: str, result: object) -> tuple[tuple[i
         return result
 
     buf = io.StringIO()
-    gate.subprocess.run = fake  # type: ignore[assignment]
+    subprocess.run = fake  # type: ignore[assignment]
     try:
         with contextlib.redirect_stdout(buf):
             counts = getattr(gate, fn_name)()
     finally:
-        gate.subprocess.run = real  # type: ignore[assignment]
+        subprocess.run = real  # type: ignore[assignment]
     return counts, buf.getvalue()
 
 
@@ -80,3 +82,13 @@ def assert_check_function(gate: object, fn_name: str, check: Callable[[bool, str
 
     counts, out = _run_check_with(gate, fn_name, OSError("no interpreter"))
     check(counts == (1, 1) and "NOT CONFIRMED" in out, f"an unstartable run is NOT CONFIRMED, got {counts} {out!r}")
+
+
+def run_ratchet(gate: object, root: Path, *args: str) -> tuple[int, str]:
+    """The stage's real script against `root`, a throwaway tree: `(exit code, output)`."""
+    proc = subprocess.run(
+        [sys.executable, str(gate.SCRIPT), "--root", str(root), *args],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, timeout=120,
+    )
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")

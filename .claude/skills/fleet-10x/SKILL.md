@@ -36,7 +36,7 @@ $H rundir
 $H select --run-dir <RUN_DIR> [--repos …] [--min-commits N] [--days N]
 ```
 
-`rundir` prints `RUN_DIR=` and stamps `run.json` with the start time and the Claude quota reading. A second run on the same day reuses the folder: researcher files already there count as done, so a crashed run resumes. Pass a different `--date` to keep a separate run. `select` prints one `ACTIVE=` line per selected repo, one `QUIET=` line per quieter `.fleet.toml` repo, and `SELECTED=…|RULE=…`. It writes `selection.json`. An `ERROR=` line means an unknown `--repos` name: stop and report it.
+`rundir` prints `RUN_DIR=` and stamps `run.json` with the start time and the session quota reading. A second run on the same day reuses the folder: researcher files already there count as done, so a crashed run resumes. Pass a different `--date` to keep a separate run. `select` prints one `ACTIVE=` line per selected repo, one `QUIET=` line per quieter `.fleet.toml` repo, and `SELECTED=…|RULE=…`. It writes `selection.json`. An `ERROR=` line means an unknown `--repos` name: stop and report it.
 
 ### 2. Render the briefs
 

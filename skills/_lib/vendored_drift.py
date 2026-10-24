@@ -602,6 +602,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_scan = sub.add_parser("scan", help="whole-fleet [vendored] drift report (JSON)")
+    # no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
     p_scan.add_argument("--scaffold", default="E:/automation/project-scaffolding",
                          help="project-scaffolding root (the canonical source)")
     p_scan.add_argument("--component", default=None, help="restrict to one component name")

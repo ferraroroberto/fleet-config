@@ -9,7 +9,7 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 **Goal:** surface the learning journey and productivity shape hidden inside individual PRs/issues. Weekly: read every merged PR and closed issue across the `ferraroroberto` fleet since the last run, then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one easy-tier sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
 
-**Journey + productivity lens only.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
+**Journey + productivity lens only.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not coding-agent usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
 
 **Scatter-gather, like `/audit-fleet`.** Deterministic Python (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **easy-tier** sub-agents (one per bucket), each returning a **fixed format**. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
 

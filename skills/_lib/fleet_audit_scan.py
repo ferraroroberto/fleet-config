@@ -290,6 +290,7 @@ def _default_out_dir() -> Path:
     e.g. the `audit-practices-ledger.md` convention in the skill docs),
     falling back to the system temp dir so this stays portable off this one
     machine (tests, a future non-Windows box)."""
+    # no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
     fleet_tmp = Path("E:/tmp")
     return fleet_tmp if fleet_tmp.is_dir() else Path(tempfile.gettempdir())
 

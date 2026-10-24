@@ -208,14 +208,14 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
         return Path(os.path.expanduser(str(table.get(key) or default)))
 
     return BackupConfig(
-        source_root=_path("source_root", "E:/automation"),
-        dest=_path("dest", "C:/Users/rober/backup/fleet-private"),
+        source_root=_path("source_root", "E:/automation"),  # no-drive-path-exempt: machine default, overridable in [backup]
+        dest=_path("dest", "C:/Users/rober/backup/fleet-private"),  # no-drive-path-exempt: machine default, overridable in [backup]
         transcripts_src=_path("transcripts_src", "~/.claude/projects"),
-        transcripts_dest=_path("transcripts_dest", "E:/backup/claude-transcripts"),
+        transcripts_dest=_path("transcripts_dest", "E:/backup/claude-transcripts"),  # no-drive-path-exempt: machine default, overridable in [backup]
         codex_sessions_src=_path("codex_sessions_src", "~/.codex"),
-        codex_sessions_dest=_path("codex_sessions_dest", "E:/backup/codex-sessions"),
-        runtime_data_src=_path("runtime_data_src", "C:/sqlite"),
-        runtime_data_dest=_path("runtime_data_dest", "E:/backup/fleet-runtime-data"),
+        codex_sessions_dest=_path("codex_sessions_dest", "E:/backup/codex-sessions"),  # no-drive-path-exempt: machine default, overridable in [backup]
+        runtime_data_src=_path("runtime_data_src", "C:/sqlite"),  # no-drive-path-exempt: machine default, overridable in [backup]
+        runtime_data_dest=_path("runtime_data_dest", "E:/backup/fleet-runtime-data"),  # no-drive-path-exempt: machine default, overridable in [backup]
         keep_daily=int(table.get("keep_daily", 14)),
         keep_weekly=int(table.get("keep_weekly", 8)),
         max_file_bytes=_mb("max_file_mb", 10 * 1024 * 1024),

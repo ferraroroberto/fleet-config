@@ -5,7 +5,7 @@ description: Fan out a byte-for-byte re-vendor of one project-scaffolding compon
 
 # propagate-vendored
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** Turn a `project-scaffolding` component fix into a one-command,
 Dependabot-style distribution wave instead of N hand-filed issues + N hand-built
@@ -42,7 +42,7 @@ No component argument → stop: "Pass a component name, e.g.
 ## Rules (read before running anything)
 
 - **Model tier: `easy`** (per `docs/model-tiers.md`) — narrow, mechanical,
-  zero design decisions. On Claude Code that's Sonnet at high effort, fanned
+  zero design decisions. Claude Code only: Sonnet at high effort, fanned
   out **all at once** (Sonnet is exempt from the Opus concurrency cap).
 - **One sub-agent per adopter repo**, never two against the same checkout.
   Respect `skills/_lib/worktree_claim.py` exactly as `/issue-batch` does — a
@@ -58,8 +58,8 @@ No component argument → stop: "Pass a component name, e.g.
   grows to cover the real nav + tray consumers.
 - **State coverage; a partial wave must never read as a complete one.** The
   adopter list comes from the adopters' own `[vendored]` entries, so a repo
-  carrying the component without declaring it is invisible to it. Always report
-  both numbers — declared adopters propagated *and* undeclared carriers found —
+  carrying the component without declaring it is invisible to it. Report
+  both numbers on every run — declared adopters propagated *and* undeclared carriers found —
   and report a repo whose manifest could not be read, or a scaffold with no
   `[components]` catalog, as its own **unknown** rather than folding either into
   the clean count (project-scaffolding#230).

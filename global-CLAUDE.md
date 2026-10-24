@@ -28,7 +28,7 @@ Always ask before assuming: file/module location for new code; data shape or sch
 - Re-read any file before modifying it; for files >500 LOC, read in chunks.
 - When renaming a symbol, search separately for: direct calls, type references, string literals, dynamic imports, re-exports, and tests.
 - Reproduce before fixing: any non-trivial bug gets a repro (script, failing test, or documented sequence) first.
-- Re-verify the issue's premise: confirm the symptom still reproduces and the code matches the issue before starting.
+- Re-read the issue's premise: confirm the symptom still reproduces and the code matches the issue before starting.
 - `git log -- <file>` the area first — prior attempts at the same fix are the cheapest source of truth.
 
 ### While fixing
@@ -176,7 +176,7 @@ For unattended/automation workflows, prefer a thin Python script (standard SDK o
 
 ### Showing the owner a file (launcher sessions)
 
-To show the owner a screenshot, chart or report in their chat view instead of only naming a path: Claude uses `SendUserFile`; every other harness runs `E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/send_file.py <path> [--caption "..."]` and reads its one line — `SENT=<id>`, `REFUSED=<reason>` (the launcher said no — relay it) or `UNAVAILABLE=<reason>` (not sent). Only files under the session's project folder or `%TEMP%\claude`. A report can go as self-contained `.html` (inline CSS, `data:` images; shows without scripts), not converted to PDF or zipped. Never secrets, never anything bound for GitHub.
+To show the owner a screenshot, chart or report in their chat view instead of only naming a path: `SendUserFile` (Claude Code only); every other harness runs `E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/send_file.py <path> [--caption "..."]` and reads its one line — `SENT=<id>`, `REFUSED=<reason>` (the launcher said no — relay it) or `UNAVAILABLE=<reason>` (not sent). Only files under the session's project folder or `%TEMP%\claude`. A report can go as self-contained `.html` (inline CSS, `data:` images; shows without scripts), not converted to PDF or zipped. Never secrets, never anything bound for GitHub.
 
 ## Recurring gotchas
 

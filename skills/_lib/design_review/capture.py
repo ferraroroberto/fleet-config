@@ -79,6 +79,7 @@ from .plan import (  # noqa: E402
 from .rubric import Rubric, resolve_params  # noqa: E402
 
 WALK_PY = Path(__file__).resolve().parent / "walk.py"
+# no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
 DEFAULT_SCAFFOLD = "E:/automation/project-scaffolding"
 PROBE_TIMEOUT_S = 5.0
 WALK_TIMEOUT_S = 1800.0
