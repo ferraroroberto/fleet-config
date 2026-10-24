@@ -209,7 +209,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
 
   subgraph tests["tests/ — run_acceptance.py (thin dispatcher) + acceptance/ package (fleet-config#502)"]
     TESTS["run_acceptance.py\nsums + prints the summary line"]
-    ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner · single_home_gate · dead_function_gate ·\ntree_boundary · static_ratchet_gate (vendored scripts/static_ratchet.py vs .static-ratchet-baseline.json; exit 3 = NOT CONFIRMED, fails) · instruction_ratchet_gate (vendored scripts/instruction_ratchet.py vs .instruction-ratchet-baseline.json) · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers ·\nhook_cases/ (hook-matrix case data) · context_filter_sections/ (context-filter sections + tables)"]
+    ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner · single_home_gate · dead_function_gate ·\ntree_boundary · static_ratchet_gate (vendored scripts/static_ratchet.py vs .static-ratchet-baseline.json; exit 3 = NOT CONFIRMED, fails) · instruction_ratchet_gate (vendored scripts/instruction_ratchet.py vs .instruction-ratchet-baseline.json) · doc_refs_ratchet_gate (vendored scripts/doc_refs_ratchet.py vs .doc-refs-ratchet-baseline.json) · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers ·\nhook_cases/ (hook-matrix case data) · context_filter_sections/ (context-filter sections + tables)"]
     TESTS --> ACCPKG
     SUITES["design_lint/ · design_review/\nthe two design suites split by subject, one standalone_dispatch row per file"]
     TESTS --> SUITES
