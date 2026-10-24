@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "entries": [
+    {"key": ".claude/skills/audit-fleet/SKILL.md", "hits": {"R-17": 3}},
+    {"key": ".claude/skills/chief/SKILL.md", "hits": {"R-17": 2}},
+    {"key": ".claude/skills/cleanup-fleet-all/SKILL.md", "hits": {"R-03": 1, "R-17": 4}},
+    {"key": ".claude/skills/cleanup-fleet/SKILL.md", "hits": {"R-03": 1, "R-17": 3}},
+    {"key": ".claude/skills/context-audit/SKILL.md", "hits": {"R-17": 1}},
+    {"key": ".claude/skills/design-sweep/SKILL.md", "hits": {"R-17": 1}},
+    {"key": ".claude/skills/fleet-10x/SKILL.md", "hits": {"R-17": 1}},
+    {"key": ".claude/skills/learning-log/SKILL.md", "hits": {"R-17": 1}},
+    {"key": "global-CLAUDE.md", "hits": {"R-03": 1, "R-17": 1}},
+    {"key": "skills/codebase-audit/SKILL.md", "hits": {"R-17": 2}},
+    {"key": "skills/design-review/SKILL.md", "hits": {"R-17": 1}},
+    {"key": "skills/design-sync/SKILL.md", "hits": {"R-16": 1}},
+    {"key": "skills/issue-add/SKILL.md", "hits": {"R-17": 1}},
+    {"key": "skills/issue-batch/SKILL.md", "hits": {"R-17": 1}},
+    {"key": "skills/issue-finish-batch/SKILL.md", "hits": {"R-17": 2}},
+    {"key": "skills/issue-start/SKILL.md", "hits": {"R-17": 1}},
+    {"key": "skills/issue-yolo/SKILL.md", "hits": {"R-17": 2}},
+    {"key": "skills/propagate-vendored/SKILL.md", "hits": {"R-16": 1, "R-17": 2}}
+  ]
+}
