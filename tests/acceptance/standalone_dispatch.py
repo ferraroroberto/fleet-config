@@ -380,6 +380,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`UNCONFIRMED=timeout` and `UNREACHABLE=` lines and exit codes with no "
      "traceback, and `stop` resolving a timed-out POST from one board read -- "
      "is testable on its own against a loopback stand-in (fleet-config#1581)"),
+    ("chief_ops_digest_channels", "acceptance/test_chief_ops_digest_channels.py",
+     "the chief board digest lists a standing `telegram:*` channel session "
+     "as one `channels` line rather than a worker, through the predicate "
+     "`repo_occupancy` uses, and marks the caller's own card "
+     "(fleet-config#1613)"),
     ("dirty_tree_check", "test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "
