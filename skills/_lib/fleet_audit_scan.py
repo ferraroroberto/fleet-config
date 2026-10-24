@@ -78,6 +78,8 @@ import git_run  # noqa: E402
 import index_lock  # noqa: E402
 import untrack_guard  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from gate_coverage import reader as gate_reader  # noqa: E402
+from gate_coverage import section as gate_section  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
 
@@ -162,10 +164,23 @@ def structure_report(root: str, only: str | None, load_state=_load_digest_state)
     return structure_section.build(entries, load_state(), time.strftime("%Y-%m-%d"))
 
 
+def gate_report(root: str, only: str | None, load_state=_load_digest_state) -> dict:
+    """The gate-coverage section: enabled ratchets, conventions rules and baselined hits per repo.
+
+    Read from each repo's `origin/<default>` like `structure_report`; a repo with no enabled
+    ratchet table is `not adopted` and one that cannot be read is `unknown`, never a zero.
+    """
+    entries = [{"repo": d.name, **gate_reader.read_repo(str(d))}
+               for d in fleet_repo_scan.iter_fleet_repos(root, only)]
+    return gate_section.build(entries, load_state(), time.strftime("%Y-%m-%d"))
+
+
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
-    """The gate sweep (`_scan_gates`) plus the structure-debt section, both inside this one process."""
+    """The gate sweep (`_scan_gates`) plus the structure-debt and gate-coverage sections, all in this one process."""
     results = _scan_gates(root, only, dry_run)
-    results["structure"] = structure_report(root, only)
+    state = _load_digest_state()
+    results["structure"] = structure_report(root, only, lambda: state)
+    results["gate_coverage"] = gate_report(root, only, lambda: state)
     return results
 
 

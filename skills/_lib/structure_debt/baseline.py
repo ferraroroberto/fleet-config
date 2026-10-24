@@ -31,7 +31,7 @@ class Unknown(Exception):
     """A fact this read could not establish; the message is the reason."""
 
 
-def _read_default_branch_file(repo: Path, ref: str, path: str) -> str | None:
+def read_ref_file(repo: Path, ref: str, path: str) -> str | None:
     """The file's text on `ref`, or None when the path is absent there. Raises `Unknown` on a git failure."""
     listing = git_run.run_git(["-C", str(repo), "ls-tree", "--name-only", ref, "--", path])
     if listing.returncode != 0:
@@ -47,7 +47,7 @@ def _read_default_branch_file(repo: Path, ref: str, path: str) -> str | None:
 
 def _structure_config(repo: Path, ref: str) -> tuple[str, int, int]:
     """(baseline path, max file lines, max function lines) from the repo's `[structure_ratchet]` table."""
-    text = _read_default_branch_file(repo, ref, FLEET_TOML)
+    text = read_ref_file(repo, ref, FLEET_TOML)
     if text is None:
         return DEFAULT_BASELINE, DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_FUNCTION_LINES
     try:
@@ -104,7 +104,7 @@ def read_repo(repo_path: str) -> dict:
         return {"state": "unknown", "reason": "no origin default branch ref"}
     try:
         path, max_file, max_fn = _structure_config(repo, ref)
-        text = _read_default_branch_file(repo, ref, path)
+        text = read_ref_file(repo, ref, path)
         if text is None:
             return {"state": "not_adopted"}
         return {"state": "adopted", **count_entries(text, max_file, max_fn)}

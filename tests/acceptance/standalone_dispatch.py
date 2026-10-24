@@ -35,6 +35,16 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`not adopted` and `unknown` as their own states, a grown baseline in the "
      "headline and a shrunk one not, and the numbers read from origin's default "
      "branch while the working tree differs (fleet-config#1552)"),
+    ("gate_coverage", "acceptance/test_gate_coverage.py",
+     "the digest's gate-coverage section -- enabled ratchets, conventions "
+     "rules and baselined hits per repo, `not adopted` and `unknown` as their "
+     "own states, week-over-week change, and the numbers read from origin's "
+     "default branch while the working tree differs (fleet-config#1619)"),
+    ("structural_scope", "acceptance/test_structural_scope.py",
+     "the structural check's scope (repo-specific, generalizable, "
+     "scaffold-owned, n/a; an unreadable scaffold catalog is unknown) and the "
+     "deduped scaffold promotion issue per rule name, against a fake gh "
+     "(fleet-config#1619)"),
     ("fleet_scope", "test_fleet_scope.py",
      "the architecture_ignore switch across both enumerators and both fleet "
      "sweeps, the loud missing-registry error, and the writer's byte-exact "

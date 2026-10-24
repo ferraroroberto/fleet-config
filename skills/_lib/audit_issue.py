@@ -41,10 +41,16 @@ Subcommands (plus `gate` and `ledger-write`, documented on their functions):
          `BUCKET=<kind> STATE=recurring|not-recurring|unknown` line each.
          Exit 0 ok, 2 unknown.
 
-  structural-gate --repo-path P --base REF --issue-body-file F
+  structural-gate --repo-path P --base REF --issue-body-file F [--scaffold DIR]
          For a recurring bucket's cleanup branch: `STRUCTURAL=pass|fail|n/a|
          unknown` from the `Structural-check:` line(s) in the branch's
-         commit bodies. Exit 0 pass/n/a, 1 fail, 2 unknown.
+         commit bodies, with the check's `SCOPE=` (`structural.scope`).
+         Exit 0 pass/n/a, 1 fail, 2 unknown.
+
+  promote-check --name RULE --repo-pr REPO#PR --path P
+         One deduped project-scaffolding issue per generalizable rule name:
+         `PROMOTION=created|commented|unknown URL=` (`structural.promotion`).
+         Exit 0 created/commented, 2 unknown.
 
   close  --repo OWNER/NAME --kind KIND --comment TEXT
          Closes the open managed issue for that kind with the comment, so an
@@ -75,6 +81,9 @@ from typing import Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from structural import promotion  # noqa: E402
+from structural import scope as structural_scope  # noqa: E402
+from structural.scope import structural_verdict  # noqa: E402
 
 KINDS = (
     "ledger",
@@ -155,8 +164,6 @@ _RECURRENCE_BLOCK_RE = re.compile(
     r"^[ \t]*<!--[ \t]*audit-recurrence:[^\n]*-->[ \t]*(?:\n>[^\n]*)*\n*", re.MULTILINE
 )
 _RECURRENCE_STATE_RE = re.compile(r"<!--[ \t]*audit-recurrence:[ \t]*state=([\w-]+)")
-# A `not encodable` reason shorter than this is a shrug, not a reason.
-MIN_NOT_ENCODABLE_WORDS = 8
 
 _LEDGER_MARKER = "<!-- audit-ledger -->"
 # The marker an agent hand-authoring a ledger actually tends to write: an OPEN
@@ -501,46 +508,6 @@ def recurrence_state_of(body: str) -> Optional[str]:
     rest = _MARKER_RE.sub("", (body or "").replace("\r\n", "\n"), count=1).lstrip()
     m = _RECURRENCE_STATE_RE.match(rest)
     return m.group(1) if m else None
-
-
-_DECLARATION_RE = re.compile(r"^[ \t]*Structural-check:[ \t]*(.*?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
-_NOT_ENCODABLE_RE = re.compile(r"^not[ \t]+encodable[ \t]*:?[ \t]*(.*)$", re.IGNORECASE)
-
-
-def _normalize_decl_path(raw: str) -> str:
-    p = raw.strip().strip("`").strip().replace("\\", "/")
-    return p[2:] if p.startswith("./") else p
-
-
-def structural_verdict(recurrence: Optional[str], commit_messages: str, changed_paths: list[str]) -> dict:
-    """The deterministic structural-gate verdict from already-read inputs.
-
-    Pass on any one valid `Structural-check:` declaration in the branch's
-    commit bodies: a path present in the branch diff, or `not encodable:` with
-    a reason of at least `MIN_NOT_ENCODABLE_WORDS` words. An `unknown`
-    recurrence stays `unknown`, never `n/a`.
-    """
-    if recurrence is None or recurrence == "not-recurring":
-        return {"state": "n/a"}
-    if recurrence != "recurring":
-        return {"state": "unknown", "reason": "recurrence-unknown"}
-    decls = [m.group(1) for m in _DECLARATION_RE.finditer(commit_messages or "")]
-    if not decls:
-        return {"state": "fail", "reason": "no-declaration"}
-    changed = {_normalize_decl_path(p) for p in changed_paths}
-    first_failure = None
-    for decl in decls:
-        ne = _NOT_ENCODABLE_RE.match(decl.strip())
-        if ne:
-            if len(ne.group(1).split()) >= MIN_NOT_ENCODABLE_WORDS:
-                return {"state": "pass", "kind": "not-encodable"}
-            first_failure = first_failure or "empty-reason"
-            continue
-        path = _normalize_decl_path(decl)
-        if path and path in changed:
-            return {"state": "pass", "kind": "check", "path": path}
-        first_failure = first_failure or "path-not-in-diff"
-    return {"state": "fail", "reason": first_failure}
 
 
 # A ledger the gate cannot read is not "this repo changed" — it is a broken
@@ -1011,26 +978,33 @@ def cmd_recurrence(repo: str, as_json: bool) -> int:
     return 0 if result["state"] == "ok" else 2
 
 
-def structural_gate(repo_path: str, base: str, issue_body: str) -> dict:
+def structural_gate(repo_path: str, base: str, issue_body: str,
+                    scaffold: Path = structural_scope.DEFAULT_SCAFFOLD) -> dict:
     recurrence = recurrence_state_of(issue_body)
     if recurrence is None or recurrence == "not-recurring":
         return {"state": "n/a"}
     log = git_run.run_git(["-C", repo_path, "log", "--format=%B", f"{base}..HEAD"])
     diff = git_run.run_git(["-C", repo_path, "diff", "--name-only", f"{base}...HEAD"])
-    if log.returncode != 0 or diff.returncode != 0:
+    switched_on = structural_scope.branch_switched_on(repo_path, base)
+    if log.returncode != 0 or diff.returncode != 0 or switched_on is None:
         return {"state": "unknown", "reason": "git-error"}
-    return structural_verdict(recurrence, log.stdout or "", (diff.stdout or "").splitlines())
+    catalog, _reason = structural_scope.read_catalog(scaffold)
+    return structural_verdict(recurrence, log.stdout or "", (diff.stdout or "").splitlines(),
+                              catalog, switched_on)
 
 
-def cmd_structural_gate(repo_path: str, base: str, issue_body: str) -> int:
-    v = structural_gate(repo_path, base, issue_body)
-    line = f"STRUCTURAL={v['state']}"
-    if v["state"] == "pass":
-        line += f" KIND={v['kind']}" + (f" PATH={v['path']}" if "path" in v else "")
-    elif "reason" in v:
-        line += f" REASON={v['reason']}"
-    print(line)
+def cmd_structural_gate(repo_path: str, base: str, issue_body: str,
+                        scaffold: Path = structural_scope.DEFAULT_SCAFFOLD) -> int:
+    v = structural_gate(repo_path, base, issue_body, scaffold)
+    print(structural_scope.verdict_line(v))
     return {"pass": 0, "n/a": 0, "fail": 1}.get(v["state"], 2)
+
+
+def cmd_promote_check(name: str, repo_pr: str, path: str) -> int:
+    """File or extend the one scaffold promotion issue for a generalizable check (`structural.promotion`)."""
+    result = promotion.promote(name, repo_pr, path, gh)
+    print(promotion.result_line(result))
+    return 0 if result["state"] in ("created", "commented") else 2
 
 
 def dry_run_lines(repo: str, kind: str, title: str, body: str) -> list[str]:
@@ -1274,6 +1248,13 @@ def main(argv: list[str] | None = None) -> None:
     sg.add_argument("--repo-path", required=True)
     sg.add_argument("--base", required=True, help="e.g. origin/main")
     sg.add_argument("--issue-body-file", required=True)
+    sg.add_argument("--scaffold", type=Path, default=structural_scope.DEFAULT_SCAFFOLD,
+                    help="project-scaffolding checkout whose origin default branch holds the catalog")
+
+    pc = sub.add_parser("promote-check")
+    pc.add_argument("--name", required=True, help="the generalizable check's rule name")
+    pc.add_argument("--repo-pr", required=True, help="<repo>#<pr> that merged the check")
+    pc.add_argument("--path", required=True, help="the check's repo-relative path")
 
     args = ap.parse_args(argv)
     if args.cmd == "get":
@@ -1294,7 +1275,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "structural-gate":
         with open(args.issue_body_file, encoding="utf-8") as fh:
             body = fh.read()
-        sys.exit(cmd_structural_gate(args.repo_path, args.base, body))
+        sys.exit(cmd_structural_gate(args.repo_path, args.base, body, args.scaffold))
+    elif args.cmd == "promote-check":
+        sys.exit(cmd_promote_check(args.name, args.repo_pr, args.path))
 
 
 if __name__ == "__main__":

@@ -905,38 +905,66 @@ check(ai.structural_verdict("recurring", "Structural-check: not encodable: too h
 _sg = Path(tempfile.mkdtemp(prefix="test_audit_issue_1513_"))
 try:
     _sup, _swork = make_upstream_and_clone(_sg, check)
+    # A scaffold whose origin/main publishes one component and the conventions rules.
+    (_sg / "scaf").mkdir()
+    _cup, _scaf = make_upstream_and_clone(_sg / "scaf", check)
+    (_cup / "scripts").mkdir()
+    (_cup / ".fleet.toml").write_text('[components]\ngeometry = { src = "tests/e2e/_geometry.py" }\n', encoding="utf-8")
+    (_cup / "scripts" / "conventions_ratchet.py").write_text('RULES = ("no-window", "logging-not-print")\n', encoding="utf-8")
+    run_git(_cup, "add", ".", check=check)
+    run_git(_cup, "commit", "-q", "-m", "catalog", check=check)
+    run_git(_scaf, "fetch", "-q", "origin", check=check)
 
     def _sgit(*a):
         return run_git(_swork, *a, check=check)
 
     _sgit("checkout", "-q", "-b", "fix/1-dup")
-    (_swork / "tests").mkdir(exist_ok=True)
-    (_swork / "tests" / "test_no_dup.py").write_text("x = 1\n", encoding="utf-8")
-    _sgit("add", "tests/test_no_dup.py")
-    _sgit("commit", "-q", "-m", "fix: dedupe\n\nStructural-check: `tests\\test_no_dup.py`")
+    for _rel, _text in (("tests/test_no_dup.py", "x = 1\n"), ("tests/e2e/_geometry.py", "y = 1\n"),
+                        (".fleet.toml", '[conventions_ratchet]\nenabled = true\nrules = ["no-window"]\n')):
+        (_swork / _rel).parent.mkdir(parents=True, exist_ok=True)
+        (_swork / _rel).write_text(_text, encoding="utf-8")
+        _sgit("add", _rel)
+    _CHECK = "fix: dedupe\n\nStructural-check: `tests\\test_no_dup.py`"
+    _sgit("commit", "-q", "-m", _CHECK)
     _rec_body = _stamped
 
-    def _gate(body=_rec_body):
-        return ai.structural_gate(str(_swork), "origin/main", body)
+    def _gate(body=_rec_body, scaffold=_scaf):
+        return ai.structural_gate(str(_swork), "origin/main", body, scaffold)
 
-    check(_gate() == {"state": "pass", "kind": "check", "path": "tests/test_no_dup.py"},
-          f"structural-gate: a declared path in the branch diff passes ({_gate()})")
+    def _amend(msg):
+        _sgit("commit", "-q", "--amend", "-m", msg)
+
+    _decl = {"kind": "check", "path": "tests/test_no_dup.py"}
+    check(_gate() == {"state": "fail", "reason": "no-scope", **_decl},
+          f"structural-gate: a check with no Structural-scope: line fails no-scope ({_gate()})")
+    _amend(_CHECK + "\nStructural-scope: generalizable: NoDupBlocks")
+    check(_gate() == {"state": "pass", "scope": "generalizable", "name": "no-dup-blocks", **_decl},
+          f"structural-gate: a generalizable scope passes with its kebab-case name ({_gate()})")
+    _amend(_CHECK + "\nStructural-scope: repo-specific: only this repo renders its own legacy report tables")
+    check(_gate() == {"state": "pass", "scope": "repo-specific", **_decl}, "structural-gate: a repo-specific scope passes")
+    check(_gate(scaffold=_sg / "no-such-scaffold") == {"state": "unknown", "reason": "catalog-unknown", "scope": "unknown", **_decl},
+          "structural-gate: an unreadable scaffold catalog is unknown, never a pass")
+    _amend("fix: dedupe\n\nStructural-check: tests/e2e/_geometry.py")
+    check(_gate() == {"state": "pass", "kind": "check", "path": "tests/e2e/_geometry.py", "scope": "scaffold-owned"},
+          "structural-gate: a scaffold-published component is scaffold-owned with no scope line")
+    _amend("fix: dedupe\n\nStructural-check: .fleet.toml")
+    check(_gate() == {"state": "pass", "kind": "check", "path": ".fleet.toml", "scope": "scaffold-owned"},
+          "structural-gate: switching on an existing conventions rule is scaffold-owned")
     check(_gate(_cleared) == {"state": "n/a"}, "structural-gate: a non-recurring body is n/a")
-    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe\n\nStructural-check: tests/missing.py")
+    _amend("fix: dedupe\n\nStructural-check: tests/missing.py")
     check(_gate() == {"state": "fail", "reason": "path-not-in-diff"},
           "structural-gate: a declared path outside the diff fails")
-    _sgit("commit", "-q", "--amend", "-m", f"fix: dedupe\n\nStructural-check: not encodable: {_LONG}")
-    check(_gate() == {"state": "pass", "kind": "not-encodable"}, "structural-gate: a real reason passes")
-    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe\n\nStructural-check: not encodable:")
+    _amend(f"fix: dedupe\n\nStructural-check: not encodable: {_LONG}")
+    check(_gate() == {"state": "pass", "kind": "not-encodable", "scope": "n/a"},
+          "structural-gate: a real not-encodable reason passes and needs no scope")
+    _amend("fix: dedupe\n\nStructural-check: not encodable:")
     check(_gate() == {"state": "fail", "reason": "empty-reason"}, "structural-gate: an empty reason fails")
-    _sgit("commit", "-q", "--amend", "-m", "fix: dedupe")
+    _amend("fix: dedupe")
     check(_gate() == {"state": "fail", "reason": "no-declaration"}, "structural-gate: no declaration fails")
-    check(ai.structural_gate(str(_swork), "origin/no-such-branch", _rec_body)
+    check(ai.structural_gate(str(_swork), "origin/no-such-branch", _rec_body, _scaf)
           == {"state": "unknown", "reason": "git-error"}, "structural-gate: a git failure is unknown, not fail")
-    _bf = _sg / "body.md"
-    _bf.write_text(_rec_body, encoding="utf-8")
     with contextlib.redirect_stdout(io.StringIO()) as _o:
-        _code = ai.cmd_structural_gate(str(_swork), "origin/main", _rec_body)
+        _code = ai.cmd_structural_gate(str(_swork), "origin/main", _rec_body, _scaf)
     check(_code == 1 and _o.getvalue().strip() == "STRUCTURAL=fail REASON=no-declaration",
           "cmd_structural_gate: fail prints its line and exits 1")
 finally:
