@@ -124,8 +124,26 @@ function recurrenceOf(issue) {
   return m[1] === 'recurring' ? 'recurring' : 'unknown'
 }
 
+// A pass must also carry the check's scope (`SCOPE=`), and a generalizable
+// one its rule name, so a gate line without them never ships.
 function structuralBlocked(issue, verdict) {
-  return recurrenceOf(issue) === 'recurring' && !/^STRUCTURAL=(pass|n\/a)(\s|$)/.test((verdict.structural || '').trim())
+  if (recurrenceOf(issue) !== 'recurring') return false
+  const line = (verdict.structural || '').trim()
+  if (/^STRUCTURAL=n\/a(\s|$)/.test(line)) return false
+  return !/^STRUCTURAL=pass\s.*\bSCOPE=(repo-specific|scaffold-owned|n\/a|generalizable\s+NAME=\S+)(\s|$)/.test(line)
+}
+
+// The post-flight promotion the invoking skill files (`audit_issue.py
+// promote-check`): only a merged lane whose gate line says SCOPE=generalizable.
+// `repoPr` is null when the PR number cannot be read from the lane's `pr`; the
+// skill reports that as PROMOTION=unknown rather than skipping it.
+function promotionOf(lane) {
+  const line = lane.status === 'merged' ? (lane.structural || '').trim() : ''
+  const name = /\bSCOPE=generalizable\s+NAME=(\S+)/.exec(line)
+  const path = /\bPATH=(\S+)/.exec(line)
+  if (!/^STRUCTURAL=pass\s/.test(line) || !name || !path) return null
+  const pr = /(\d+)\D*$/.exec(String(lane.pr || ''))
+  return { repo: lane.issue.repo, issue: lane.issue.number, name: name[1], path: path[1], repoPr: pr ? `${lane.issue.repo}#${pr[1]}` : null }
 }
 
 const EXECUTE_RESULT_SCHEMA = {
@@ -183,7 +201,7 @@ function buildPrompt(issue, priorFeedback) {
     ? `\n\nThis is a retry on the same branch, in the same worktree. Your previous attempt was rejected:\n"${priorFeedback}"\nFix this specific problem — do not start over from scratch.`
     : ''
   const structuralNote = recurrenceOf(issue) === 'recurring'
-    ? `\n\nThis issue's audit bucket is **recurring** (findings in two consecutive audits), so fixing the findings is not enough: also ship one structural check that would have caught this class of finding (a lint rule, a static test, a ratchet), and declare it on its own line in a commit body on the branch: \`Structural-check: <repo-relative path of that check>\`. Prove it fails on the pre-fix code if you can. If no check can encode the class, write \`Structural-check: not encodable: <why, at least 8 words>\` instead. The validator runs \`audit_issue.py structural-gate\` on the branch, and a missing or invalid declaration rejects it (fleet-config#1520).`
+    ? `\n\nThis issue's audit bucket is **recurring** (findings in two consecutive audits), so fixing the findings is not enough: also ship one structural check that would have caught this class of finding (a lint rule, a static test, a ratchet), and declare it on its own line in a commit body on the branch: \`Structural-check: <repo-relative path of that check>\`. Prove it fails on the pre-fix code if you can. If no check can encode the class, write \`Structural-check: not encodable: <why, at least 8 words>\` instead. A real check also needs its scope on another commit-body line: \`Structural-scope: repo-specific: <why only this repo needs it, at least 8 words>\`, or \`Structural-scope: generalizable: <rule-name>\` when every fleet repo could carry the same rule (one identifier, e.g. \`no-raw-sql\`; a merged generalizable check files a project-scaffolding promotion issue). A check that is a scaffold-published component, or that only switches on an existing \`[conventions_ratchet]\` rule, needs no scope line: the gate decides that itself. The validator runs \`audit_issue.py structural-gate\` on the branch, and a missing or invalid declaration rejects it (fleet-config#1520).`
     : ''
   return `You are building GitHub issue #${issue.number} in the ${issue.repo} repo, then STOPPING before shipping it. Repo root: E:\\automation\\${issue.repo}. You are the only agent touching this repo right now.
 
@@ -220,7 +238,7 @@ function structuralStep(issue, bucket) {
   if (recurrenceOf(issue) !== 'recurring') return ''
   const n = bucket === 'prompt-drift' ? 8 : 7
   return `
-${n}. This issue's bucket is **recurring**, so it also carries a structural gate that the leniency rule below does not soften. Write the current issue body to a file outside the worktree (\`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo} --json body --jq .body\` into a file under your temp directory), then from the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py structural-gate --repo-path . --base origin/<default-branch> --issue-body-file <that file>\`. Copy its one \`STRUCTURAL=\` line verbatim into \`structural\`. \`STRUCTURAL=fail\` or \`STRUCTURAL=unknown\` → \`pass: false\`, quoting the line and telling the builder to add a \`Structural-check:\` line to a commit body (a path in the diff, or \`not encodable: <why, at least 8 words>\`). Leniently, also check that a declared check would fail on the pre-fix code; mention it in feedback if not, but do not fail on that alone.`
+${n}. This issue's bucket is **recurring**, so it also carries a structural gate that the leniency rule below does not soften. Write the current issue body to a file outside the worktree (\`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo} --json body --jq .body\` into a file under your temp directory), then from the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py structural-gate --repo-path . --base origin/<default-branch> --issue-body-file <that file>\`. Copy its one \`STRUCTURAL=\` line verbatim into \`structural\`, including its \`SCOPE=\` and \`NAME=\` fields. \`STRUCTURAL=fail\` or \`STRUCTURAL=unknown\` → \`pass: false\`, quoting the line and telling the builder what it names: a missing \`Structural-check:\` line (a path in the diff, or \`not encodable: <why, at least 8 words>\`), or \`REASON=no-scope\`, a missing \`Structural-scope: repo-specific: <why>\` or \`Structural-scope: generalizable: <rule-name>\` line. Leniently, also check that a declared check would fail on the pre-fix code, and that a declared scope is plausible (a generalizable rule another repo could really carry, a repo-specific reason that holds); mention either in feedback if not, but do not fail on that judgement alone.`
 }
 
 function validatePrompt(issue, build, bucket) {
@@ -244,7 +262,7 @@ Report via the required schema. Always fill in \`feedback\` — briefly even on 
 
 function executePrompt(issue, build, verdict) {
   const structuralSection = recurrenceOf(issue) === 'recurring'
-    ? `\n   The PR body must carry a \`## Structural check\` section: the branch's \`Structural-check:\` commit line(s), copied verbatim, and the validator's gate line \`${verdict.structural}\` (fleet-config#1520).`
+    ? `\n   The PR body must carry a \`## Structural check\` section: the branch's \`Structural-check:\` and \`Structural-scope:\` commit line(s), copied verbatim, and the validator's gate line with its \`SCOPE=\` \`${verdict.structural}\` (fleet-config#1520).`
     : ''
   return `You are shipping an already-built, already-validated GitHub issue #${issue.number} in the ${issue.repo} repo, on branch ${build.branch}, in the worktree ${build.worktree || `E:\\automation\\${issue.repo}-wt-${issue.number}`}. You are the only agent touching this repo right now.
 
@@ -403,7 +421,7 @@ async function processIssue(bucket, issue) {
     if (verdict) lane.structural = verdict.structural
     if (verdict && verdict.pass && structuralBlocked(issue, verdict)) {
       verdict.pass = false
-      verdict.feedback = `structural gate did not pass (${verdict.structural || 'no STRUCTURAL= line reported'}): this bucket is recurring, so add a Structural-check: line to a commit body naming a check in the diff, or "not encodable: <why, at least 8 words>"`
+      verdict.feedback = `structural gate did not pass (${verdict.structural || 'no STRUCTURAL= line reported'}): this bucket is recurring, so add a Structural-check: line to a commit body naming a check in the diff, or "not encodable: <why, at least 8 words>", plus a Structural-scope: line (repo-specific: <why>, or generalizable: <rule-name>) unless the gate reports the check scaffold-owned`
     }
 
     if (verdict && verdict.pass) {
@@ -472,6 +490,8 @@ let halted = null
 // pass (step 7b) re-gates both through repo_preflight.py together.
 const deferred = []
 const deferredRepos = {}
+// Merged generalizable checks, for the skill's post-flight promote-check step.
+const promotions = []
 
 // Everything this run created, or would create, per repo: `<repo>-wt-<N>` for
 // every issue it holds there, plus every worktree and branch a lane reported.
@@ -534,6 +554,11 @@ for (const bucket of bucketNames) {
     if (r.alreadyClosed) log(`  already closed mid-run (fleet-config#623) — no teardown comment posted`)
     if (r.recurrence === 'unknown') log(`  ❓ recurrence unknown — structural check not required (fleet-config#1520)`)
     else if (r.recurrence === 'recurring') log(`  structural gate: ${r.structural || 'no STRUCTURAL= line reported'}`)
+    const promo = promotionOf(r)
+    if (promo) {
+      promotions.push(promo)
+      log(`  scaffold promotion queued: rule ${promo.name} from ${promo.repoPr || `${promo.repo} (PR number unreadable)`}`)
+    }
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the
     // whole run — serial lanes mean exactly one repo is affected, and starting
@@ -572,4 +597,4 @@ for (const bucket of bucketNames) {
   allResults.push({ bucket, results })
 }
 
-return { buckets: allResults, halted, deferred }
+return { buckets: allResults, halted, deferred, promotions }

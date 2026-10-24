@@ -198,13 +198,15 @@ HARD RULES — both are live-incident scars, never work around them:
    PASS/FAIL lines in the PR body's Validation section.
    Recurring issues only (body carries `<!-- audit-recurrence:
    state=recurring`): Phase 2 also ships one structural check and declares it
-   in a commit body, per the Hard rules' structural-check rule. Phase 3 runs,
-   from the worktree root, with the issue body saved to a file outside the
-   worktree:
+   in a commit body, with its Structural-scope: line, per the Hard rules'
+   structural-check rule. Phase 3 runs, from the worktree root, with the
+   issue body saved to a file outside the worktree:
      E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py structural-gate --repo-path . --base origin/<default-branch> --issue-body-file <file>
-   and quotes its STRUCTURAL= line in the PR body's Validation section.
-   STRUCTURAL=fail or STRUCTURAL=unknown is a Phase 3 failure. A body stamped
-   `state=unknown` is not gated: say `❓ recurrence unknown` in Validation.
+   and quotes its STRUCTURAL= line, SCOPE= included, in the PR body's
+   Validation section and in the Structural line of your report.
+   STRUCTURAL=fail (REASON=no-scope included) or STRUCTURAL=unknown is a
+   Phase 3 failure. A body stamped `state=unknown` is not gated: say
+   `❓ recurrence unknown` in Validation.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, and
    report the failure. YOLO means "no plan gate", not "no safety". Then clean
    up after yourself — the open issue is the durable record, the branch is not
@@ -226,6 +228,7 @@ Report back, in this exact shape:
   - Result: MERGED (<merge-sha>) | FAILED (<phase + one-line reason>)
   - PR: <url or n/a>
   - Validation: <one line — what you ran in Phase 3>
+  - Structural: <the STRUCTURAL= line verbatim, recurring issues only; else n/a>
 ```
 
 #### 8b. Hard-tier prompt
@@ -257,9 +260,10 @@ HARD RULES — both are live-incident scars, never work around them:
      E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>
    Recurring issues only (body carries `<!-- audit-recurrence:
    state=recurring`): ship one structural check and declare it in the commit
-   body (step 5), per the Hard rules' structural-check rule, then before STOP
-   run the structural-gate exactly as prompt 8a states and quote its
-   STRUCTURAL= line in your summary. STRUCTURAL=fail or STRUCTURAL=unknown is
+   body (step 5) with its Structural-scope: line, per the Hard rules'
+   structural-check rule, then before STOP run the structural-gate exactly
+   as prompt 8a states and quote its STRUCTURAL= line, SCOPE= included, in
+   your summary. STRUCTURAL=fail or STRUCTURAL=unknown is
    Verification: FAIL. A `state=unknown` body is not gated: say
    `❓ recurrence unknown`.
 5. Commit your work on the branch — git add the files you changed and git
@@ -314,6 +318,14 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
 
 This check only reports — it never blocks the run, never auto-commits, and never auto-fixes. A per-repo failure never stops the aggregation of the rest.
 
+**Then file scaffold promotions for merged generalizable checks.** For every easy-tier `MERGED` report whose `Structural:` line is `STRUCTURAL=pass ... PATH=<path> SCOPE=generalizable NAME=<rule-name>`, the orchestrator (never the agent) runs:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py promote-check --name <rule-name> --repo-pr <repo>#<pr-number> --path <path>
+```
+
+It prints `PROMOTION=created|commented|unknown URL=<url>`: one project-scaffolding issue per rule name, deduped by a hidden marker, so a second repo writing the same rule comments instead of filing again ([intake contract](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/conventions-ratchet.md#adding-a-rule-from-a-promotion-issue)). Report each line as its own `🧱` summary line. `PROMOTION=unknown` (a `gh` failure, or a PR number you could not read from the report) is `❓`, never dropped. A hard-tier review row whose summary carries `SCOPE=generalizable` shows the same command for the human to run after its `/issue-finish`; this run never files for an unmerged branch.
+
 As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for easy-tier; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for hard-tier. **For every hard-tier report, surface its "What I did & why" and "Why I believe this is correct" text directly, right next to the `📋 ready for review` line** — the user's approve/ship decision is made from that summary, not by opening the diff, so don't just point at a branch name.
 
 When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the easy-tier agents already fired are kept; this is *in addition*:
@@ -341,6 +353,8 @@ Cleanup complete — <bucket> (<mode> mode)
               …
   ❌ failed:  <repo>#<N> — <reason> (commented on the issue; branch + worktree torn down)
   ❌ RESIDUE: <repo> — <what survived teardown> → <one-line recovery command>
+  🧱 promotion: rule no-raw-sql from <repo>#<pr> — PROMOTION=created URL=<url>
+  ❓ promotion: rule <name> from <repo>#<pr> — PROMOTION=unknown REASON=<reason>
   deferred:  <repo>#<N> (next run)
 
 Next: read each review row's summary above, then /issue-finish the ones you approve.
@@ -371,7 +385,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 - Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10) — only corrects the reported status, never blocks/auto-commits/auto-fixes.
 - Keep per-issue pings. Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
 - Degrade, don't block. A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
-- **Recurring buckets ship a structural check (fleet-config#1520).** An issue whose body is stamped `<!-- audit-recurrence: state=recurring ... -->` (findings in two consecutive audits, fleet-config#1513) must also ship one structural check that would have caught the class — a lint rule, a static test, a ratchet — declared on its own line in a branch commit body as `Structural-check: <repo-relative path>`, or, when no check can encode it, `Structural-check: not encodable: <why, at least 8 words>`. `skills/_lib/audit_issue.py structural-gate` judges the declaration (`STRUCTURAL=pass|fail|n/a|unknown`); prompts 8a and 8b run it. A `state=unknown` stamp never gates and is reported as `❓ recurrence unknown`, never as fine.
+- **Recurring buckets ship a structural check (fleet-config#1520).** An issue whose body is stamped `<!-- audit-recurrence: state=recurring ... -->` (findings in two consecutive audits, fleet-config#1513) must also ship one structural check that would have caught the class — a lint rule, a static test, a ratchet — declared on its own line in a branch commit body as `Structural-check: <repo-relative path>`, or, when no check can encode it, `Structural-check: not encodable: <why, at least 8 words>`. A real check also declares its scope on a commit-body line: `Structural-scope: repo-specific: <why, at least 8 words>` or `Structural-scope: generalizable: <rule-name>`; a check the scaffold already publishes (its `[components]` catalog), or one that only switches on an existing `[conventions_ratchet]` rule, is `scaffold-owned` and needs none. `skills/_lib/audit_issue.py structural-gate` judges the declaration and the scope (`STRUCTURAL=pass|fail|n/a|unknown` with `SCOPE=repo-specific|generalizable|scaffold-owned|n/a`; a missing scope is `REASON=no-scope`, an unreadable scaffold catalog is `unknown`); prompts 8a and 8b run it. A merged generalizable check gets one deduped project-scaffolding promotion issue from step 10's `promote-check`, run by the orchestrator. A `state=unknown` stamp never gates and is reported as `❓ recurrence unknown`, never as fine.
 - No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 
 ## Notes

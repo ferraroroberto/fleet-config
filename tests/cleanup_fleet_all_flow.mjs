@@ -633,7 +633,48 @@ const structuralRun = (body, structural) => {
     'a recurring lane whose gate could not read git never ships')
 }
 {
-  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py'
+  // A pass line must carry the check's scope; one from before scopes existed, a
+  // generalizable scope with no rule name, and an unknown scope never ship.
+  for (const line of [
+    'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py',
+    'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py SCOPE=generalizable',
+    'STRUCTURAL=unknown KIND=check PATH=tests/test_no_dupes.py SCOPE=unknown REASON=catalog-unknown',
+    'STRUCTURAL=fail KIND=check PATH=tests/test_no_dupes.py REASON=no-scope',
+  ]) {
+    const { sink, r } = await structuralRun(RECURRING, line)
+    check(!sink.order.includes('bug:execute:charlie#3') && r.status === 'escalated', `a gate line without an established scope never ships: ${line}`)
+  }
+}
+{
+  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py SCOPE=repo-specific'
+  const { sink, r, res } = await structuralRun(RECURRING, LINE)
+  check(res.promotions.length === 0, 'a repo-specific check queues no scaffold promotion')
+  check(/Structural-scope: repo-specific: /.test(sink.prompts['bug:build:charlie#3']) && /Structural-scope: generalizable: <rule-name>/.test(sink.prompts['bug:build:charlie#3']),
+    'the build brief asks a recurring lane for the check\'s scope')
+  check(/REASON=no-scope/.test(sink.prompts['bug:validate:charlie#3']) && /declared scope is plausible/.test(sink.prompts['bug:validate:charlie#3']),
+    'the validator explains no-scope and judges the declared scope leniently')
+}
+{
+  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_raw_sql.py SCOPE=generalizable NAME=no-raw-sql'
+  const { r, res } = await structuralRun(RECURRING, LINE)
+  check(r.status === 'merged', 'a generalizable check with a rule name ships')
+  check(res.promotions.length === 1 && res.promotions[0].name === 'no-raw-sql' && res.promotions[0].path === 'tests/test_no_raw_sql.py'
+    && res.promotions[0].repoPr === 'charlie#1', `a merged generalizable check queues exactly one promotion, got ${JSON.stringify(res.promotions)}`)
+}
+{
+  // Not merged: the same generalizable line on a lane whose ship failed queues nothing.
+  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_raw_sql.py SCOPE=generalizable NAME=no-raw-sql'
+  const { sink, agentImpl } = promptSpy(l => {
+    if (l.includes(':validate:')) return { pass: true, feedback: 'ok', verification: 'PASS', structural: LINE }
+    if (l.includes(':execute:')) return { result: 'FAILED', reason: 'CI red' }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: { bug: [{ repo: 'charlie', number: 3, title: 'c', body: RECURRING }] } }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.buckets[0].results[0].status === 'failed' && res.promotions.length === 0, 'a generalizable check that never merged queues no promotion')
+}
+{
+  const LINE = 'STRUCTURAL=pass KIND=check PATH=tests/test_no_dupes.py SCOPE=scaffold-owned'
   const { sink, r } = await structuralRun(RECURRING, LINE)
   check(r.status === 'merged', 'a recurring branch whose gate line is pass ships')
   check(r.recurrence === 'recurring' && r.structural === LINE, 'the lane result carries the recurrence and the gate line')
@@ -680,6 +721,8 @@ const structuralRun = (body, structural) => {
     const txt = readFileSync(join(REPO, ...rel), 'utf8').replace(/\s+/g, ' ')
     check(/structural-gate/.test(txt) && /Structural-check: not encodable: /.test(txt) && /fleet-config#1520/.test(txt),
       `${rel[2]} SKILL.md states the structural-check rule and its not-encodable escape`)
+    check(/Structural-scope: generalizable: <rule-name>/.test(txt) && /audit_issue\.py promote-check --name /.test(txt) && /PROMOTION=unknown/.test(txt),
+      `${rel[2]} SKILL.md states the scope line and files promotions through promote-check`)
   }
   const all = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
   check(/❓ recurrence unknown/.test(all), 'cleanup-fleet-all SKILL.md renders unknown recurrence in the final summary')

@@ -180,6 +180,8 @@ try:
 
         # scan() carries the section inside the one sweep, as its own key.
         with mock.patch.object(fas, "_scan_gates", return_value={"enumerated": 0}), \
+                mock.patch.object(fas, "_load_digest_state", return_value=""), \
+                mock.patch.object(fas, "gate_report", return_value={"lines": ["g"]}), \
                 mock.patch.object(fas, "structure_report", return_value={"lines": ["x"]}) as _sr:
             _scanned = fas.scan(str(_tmp), None, True)
         check(_scanned.get("structure") == {"lines": ["x"]} and _sr.called,

@@ -59,7 +59,7 @@
     {"key": "fn:tests/run_acceptance.py:main", "lines": 255},
     {"key": "fn:tests/test_scheduled_runner.py:ScheduledRunnerTests.test_orphan_pipe_matrix_and_unconfirmed_cleanup_are_bounded", "lines": 109},
     {"key": "size:.claude/skills/context-purge/digest.py", "lines": 1073},
-    {"key": "size:skills/_lib/audit_issue.py", "lines": 1304},
+    {"key": "size:skills/_lib/audit_issue.py", "lines": 1284},
     {"key": "size:skills/_lib/design_review/measure.py", "lines": 1517},
     {"key": "size:skills/_lib/scheduled_runner.py", "lines": 1303},
     {"key": "size:skills/_lib/worktree_claim.py", "lines": 1483},
