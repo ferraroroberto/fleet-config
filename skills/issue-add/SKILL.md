@@ -94,7 +94,13 @@ no padding.
     alternatives only when they matter. Don't design the whole implementation.
   - **Acceptance criteria** — a short checklist of "done". Each criterion must
     be decidable pass/fail by a reader with the repo in hand; "works
-    correctly" / "is robust" is not a criterion.
+    correctly" / "is robust" is not a criterion. Visual sameness is proved by
+    the agent through the repo's screenshot baseline (phone and desktop, light
+    and dark), quoted in the PR body. Write a "validate on a real device"
+    criterion only for behaviour a desktop browser engine cannot reproduce
+    (installed home-screen PWA navigation repaint, microphone, on-screen
+    keyboard, haptics); a move-only refactor never gets one. A repo without a
+    baseline yet keeps its device check until it adopts one.
   - **How to verify** — the concrete steps/commands that prove the acceptance
     criteria hold, when they aren't self-evident from the checklist alone.
   - **Out of scope** — only if needed to head off scope creep.
