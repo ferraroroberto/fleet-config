@@ -53,10 +53,6 @@ def commit(wt: Path, name: str = "x.txt") -> str:
     return run_git(wt, "rev-parse", "HEAD", check=check)
 
 
-def no_prs(_remote, _branch):
-    raise AssertionError("no PR lookup expected for this worktree")
-
-
 MERGED_OID = {}
 
 

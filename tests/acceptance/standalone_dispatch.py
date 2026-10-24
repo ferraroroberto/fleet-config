@@ -587,6 +587,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "throwaway git tree: a new reference to a missing path in a doc fails "
      "naming the doc and the path and reverting passes, one inside a code "
      "fence does not count, an unclosed fence is exit 3"),
+    ("dead_code_ratchet_gate", "acceptance/test_dead_code_ratchet_gate.py",
+     "the dead-code ratchet stage's exit-code mapping -- 3 (could not "
+     "resolve) fails as NOT CONFIRMED instead of landing in SKIP the way "
+     "`shared.SKIP_EXIT` would read it -- and the acceptance criteria on a "
+     "throwaway git tree: a new uncalled function fails naming the file and "
+     "the function and reverting passes, a called one does not count, an "
+     "unparseable tracked file is exit 3"),
     ("skip_delta", "test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "

@@ -17,7 +17,8 @@ the README-size and docs history-marker ratchet (`docs_ratchet_gate`), the
 file/function/directory-size and root-layout ratchet (`structure_ratchet_gate`), the
 issue-reference-in-comment ratchet (`comment_ratchet_gate`), the instruction-file
 lint ratchet (`instruction_ratchet_gate`), the stale-doc-reference ratchet
-(`doc_refs_ratchet_gate`), the
+(`doc_refs_ratchet_gate`), the unreferenced-definition ratchet
+(`dead_code_ratchet_gate`), the
 fleet-scope enumeration guard (`fleet_scope_guard`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
@@ -130,6 +131,7 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
 from acceptance import gate_routing  # noqa: E402
 from acceptance.dead_function_gate import _dead_function_unit_check  # noqa: E402
 from acceptance.comment_ratchet_gate import _comment_ratchet_check  # noqa: E402
+from acceptance.dead_code_ratchet_gate import _dead_code_ratchet_check  # noqa: E402
 from acceptance.doc_refs_ratchet_gate import _doc_refs_ratchet_check  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
@@ -147,7 +149,7 @@ from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 _RATCHET_CHECKS = (
     _static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check, _comment_ratchet_check,
-    _instruction_ratchet_check, _doc_refs_ratchet_check,
+    _instruction_ratchet_check, _doc_refs_ratchet_check, _dead_code_ratchet_check,
 )
 # One named home per shared behaviour, no private copies: the single-home scan and
 # the git global-option walk it points at. The dead-function scan keeps the home
