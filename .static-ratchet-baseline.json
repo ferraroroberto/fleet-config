@@ -2,6 +2,7 @@
   "version": 1,
   "tools": {"jscpd": "5.4.0", "ruff": "0.17.1"},
   "entries": [
+    {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/conventions_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/conventions_ratchet_gate.py"]},
     {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/dead_code_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/dead_code_ratchet_gate.py"]},
     {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/doc_refs_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/doc_refs_ratchet_gate.py"]},
     {"key": "dup:103aa3944943:tests/acceptance/comment_ratchet_gate.py|tests/acceptance/docs_ratchet_gate.py", "files": ["tests/acceptance/comment_ratchet_gate.py", "tests/acceptance/docs_ratchet_gate.py"]},
