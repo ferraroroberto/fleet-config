@@ -14,8 +14,10 @@ The judgment is mechanical, so it lives here rather than being re-typed as
   finished      clean tree, and either no commits ahead of the default branch
                 or every local commit is in a *merged* PR (a squash merge
                 leaves the local SHAs ahead, so the PR is asked, not the log)
-  in-use        a live launcher session's cwd is inside it, or a live
-                active-issue marker names it
+  in-use        a live launcher session's cwd is inside it, a live
+                active-issue marker names it, a live chief-managed session
+                is working that repo#N, or it is younger than the grace
+                period (a lane may not have published its marker yet)
   has-work      dirty tree, or commits that are not on the default branch
                 and not in a merged PR -- the only class the chief asks about
   orphan-empty  an empty folder that is not a git worktree
@@ -47,6 +49,7 @@ import logging
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
@@ -62,6 +65,10 @@ LOGGER = logging.getLogger(__name__)
 WORKTREE_RE = re.compile(rf"^(?P<repo>.+){re.escape(WT_SEP)}(?P<number>\d+)$")
 DEFAULT_REF_CANDIDATES = ("origin/main", "origin/master")
 GH_TIMEOUT_S = 60
+# A fresh worktree is clean and level with the default branch, so it reads as
+# `finished` until its lane commits; ten minutes covers a lane that studies
+# before it writes anything.
+GRACE_S = 600
 
 FINISHED = "finished"
 IN_USE = "in-use"
@@ -115,6 +122,16 @@ def _holder(path: Path, dirs: Sequence[str]) -> Optional[str]:
     for cwd in dirs:
         if cwd == root or cwd.startswith(root + os.sep):
             return cwd
+    return None
+
+
+def _live_managed_session(
+    repo: str, number: int, managed: Mapping[str, Any], session_ids: set,
+) -> Optional[str]:
+    for sid, row in managed.items():
+        if (sid in session_ids and isinstance(row, dict) and row.get("number") == number
+                and str(row.get("repo") or "").casefold() == repo.casefold()):
+            return str(sid)
     return None
 
 
@@ -172,12 +189,18 @@ def classify_worktree(
     pr_lookup: PrLookup,
     host: Optional[str] = None,
     pid_probe: Callable[[int], Optional[bool]] = active_issue.pid_state,
+    managed: Optional[Mapping[str, Any]] = None,
+    grace_s: float = GRACE_S,
+    now: Callable[[], float] = time.time,
 ) -> Finding:
     """Class + evidence for one `<repo>-wt-<N>` folder. See the module docstring.
 
     `dirs` / `markers` / `session_ids` are None when the board or the marker
     file could not be read: a removable verdict then cannot be established and
     degrades to `unknown`, while `has-work` (git evidence alone) still stands.
+    `managed` is the chief-managed session map (session id -> {repo, number}):
+    a live session in it for this folder's repo#N holds the tree whether or not
+    its marker was published or read back correctly.
     """
     name = path.name
     held = _holder(path, dirs) if dirs is not None else None
@@ -196,6 +219,11 @@ def classify_worktree(
             return Finding(name, path, IN_USE, f"live active-issue marker {marker_key}")
         if owner == active_issue.LIVENESS_UNKNOWN:
             return Finding(name, path, UNKNOWN, f"active-issue marker {marker_key} owner liveness unknown")
+
+    if match and managed and session_ids:
+        sid = _live_managed_session(match.group("repo"), int(match.group("number")), managed, session_ids)
+        if sid:
+            return Finding(name, path, IN_USE, f"live session {sid[:8]} (chief-managed {marker_key})")
 
     live_known = dirs is not None and markers is not None
 
@@ -243,6 +271,12 @@ def classify_worktree(
 
     if not live_known:
         return Finding(name, path, UNKNOWN, f"{evidence}; live sessions not established")
+    try:
+        age_s = now() - (path / ".git").stat().st_mtime
+    except OSError as exc:
+        return Finding(name, path, UNKNOWN, f"{evidence}; tree age unreadable: {exc}")
+    if age_s < grace_s:
+        return Finding(name, path, IN_USE, f"younger than {grace_s / 60:g} min ({age_s / 60:.1f} min old)")
     return Finding(name, path, verdict, evidence)
 
 

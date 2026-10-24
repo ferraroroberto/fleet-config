@@ -568,12 +568,14 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
     markers = active_issue.read_rows()
+    managed = active_issue.read_rows(chief_managed.state_file())
     findings = chief_sweep.scan(
         root,
         dirs=None if cards is None else chief_sweep.live_dirs(cards),
         markers=markers,
         session_ids=None if cards is None else chief_sweep.live_session_ids(cards),
         pr_lookup=chief_sweep.github_pr_lookup,
+        managed=managed,
     )
     stuck = 0
     if args.apply:
@@ -581,7 +583,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
             findings, lambda wt: worktree_claim.remove_worktree(wt),
         )
     sessions = chief_sweep.stale_sessions(
-        cards or [], active_issue.read_rows(chief_managed.state_file()), launcher.fetch_issue_state,
+        cards or [], managed, launcher.fetch_issue_state,
     )
     print("\n".join(chief_sweep.format_report(findings, sessions, applied=args.apply)))
     return 1 if stuck else 0
