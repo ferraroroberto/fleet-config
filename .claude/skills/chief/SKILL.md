@@ -216,7 +216,8 @@ Use it instead of hand-assembling `curl`/JSON for the operations that recur
 every poll:
 
 - `chief_ops.py board` — the ~12-line digest (column counts, live sessions
-  with status/age/agent, PR/job cards, the 5h rate-limit line) in one call.
+  with status/age/agent, PR/job cards, the 5h rate-limit line) in one call;
+  `telegram:*` channel sessions collapse into one `channels` line (not workers).
   Add `--json` for the raw `/api/board` payload. A count shown as `?` (e.g.
   `backlog=?`) is **unknown**, not zero — its source (GitHub cache or
   session-host) couldn't be read, and the `unknown:` line below says why.

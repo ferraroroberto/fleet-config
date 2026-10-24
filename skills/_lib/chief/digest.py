@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import rails
+
 
 def _fmt_age(seconds: Any) -> str:
     """Compact age like `3m` / `2h` / `1d`. Unparseable input -> `?`."""
@@ -78,6 +80,7 @@ def _format_rate_limit_line(board: Dict[str, Any]) -> str:
 def format_board_digest(
     board: Dict[str, Any],
     fleet_jobs: Optional[Tuple[Optional[List[str]], Optional[str]]] = None,
+    caller_sid: Optional[str] = None,
 ) -> str:
     """The ~12-line phone-readable digest: counts, live sessions, PR/job
     cards, running fleet-wide jobs, one rate-limit line.
@@ -85,7 +88,13 @@ def format_board_digest(
     A count whose source can't be established renders `?` and the next line
     says why — the token shape stays `key=value` so the chief's poll still
     parses it. `fleet_jobs` is `fetch_running_fleet_jobs`'s result; None
-    (not fetched) omits that line."""
+    (not fetched) omits that line.
+
+    A session line is a worker the dispatch rails count. A standing
+    `telegram:*` channel session is collapsed into one `channels` line, and
+    the caller's own card (`caller_sid`, default the launcher session id in
+    this process's env) is marked `(you, chief)`, so no line reads as an
+    occupant that `rails.repo_occupancy` ignores."""
     cols = board.get("columns") or {}
     tokens: List[str] = []
     unknown: Dict[str, List[str]] = {}
@@ -111,11 +120,24 @@ def format_board_digest(
             f"counts are from {github.get('fetched_at')}"
         )
 
+    me = caller_sid or rails.caller_session_id()
+    channels: Dict[str, int] = {}
     for card in list(cols.get("claude_turn") or []) + list(cols.get("your_turn") or []):
-        sid = str(card.get("session_id") or "")[:8]
+        if rails._is_channel_session(card):
+            repo = str(card.get("project") or "?")
+            channels[repo] = channels.get(repo, 0) + 1
+            continue
+        full_sid = str(card.get("session_id") or "")
+        you = " (you, chief)" if me and full_sid == me else ""
         lines.append(
             f"  {card.get('project')}: {card.get('status')} "
-            f"age={_fmt_age(card.get('age_seconds'))} agent={card.get('agent')} sid={sid}"
+            f"age={_fmt_age(card.get('age_seconds'))} agent={card.get('agent')} "
+            f"sid={full_sid[:8]}{you}"
+        )
+    if channels:
+        lines.append(
+            "channels (not workers, never block dispatch): "
+            + ", ".join(f"{repo} x{n}" for repo, n in sorted(channels.items()))
         )
 
     for card in cols.get("other") or []:
