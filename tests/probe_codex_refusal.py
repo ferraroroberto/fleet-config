@@ -15,27 +15,9 @@ from _lib import NO_WINDOW, run_git
 REASON = "Fleet conformance sentinel refused"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, required=True, help="New disposable directory (must not exist)")
-    parser.add_argument("--model", required=True, help="Installed Codex model to run the two harmless tool calls")
-    parser.add_argument("--policy", choices=("refusal", "shell-safety"), default="refusal",
-                        help="Check refusal transport alone or the real unknown-shell safety dispatch")
-    args = parser.parse_args()
-    root = args.workspace.absolute()
-    if os.name != "nt" or root.exists():
-        parser.error("Windows required; workspace must be a new directory")
-    codex = shutil.which("codex")
-    if not codex:
-        parser.error("codex is not installed")
-    hook_dir = root / ".codex" / "hooks"
-    hook_dir.mkdir(parents=True)
-    init = run_git(["init", str(root)], timeout=15)
-    if init.returncode:
-        parser.error("disposable git init failed")
-    source = Path(__file__).resolve().parents[1] / "hooks"
-    hook = hook_dir / "sentinel.py"
-    hook.write_text('''import io, json, re, sys
+# The PreToolUse hook the probe installs: it records what Codex handed it, then refuses
+# the sentinel command. SOURCE, REASON and POLICY are substituted at write time.
+_SENTINEL_HOOK = '''import io, json, re, sys
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 sys.path.insert(0, SOURCE)
@@ -76,7 +58,30 @@ with (Path(__file__).parents[2] / "observations.jsonl").open("a", encoding="utf-
 sys.stdout.write(out.getvalue())
 sys.stderr.write(err.getvalue())
 sys.exit(code)
-'''.replace("SOURCE", repr(str(source))).replace("REASON", repr(REASON)).replace("POLICY", repr(args.policy)), encoding="utf-8")
+'''
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workspace", type=Path, required=True, help="New disposable directory (must not exist)")
+    parser.add_argument("--model", required=True, help="Installed Codex model to run the two harmless tool calls")
+    parser.add_argument("--policy", choices=("refusal", "shell-safety"), default="refusal",
+                        help="Check refusal transport alone or the real unknown-shell safety dispatch")
+    args = parser.parse_args()
+    root = args.workspace.absolute()
+    if os.name != "nt" or root.exists():
+        parser.error("Windows required; workspace must be a new directory")
+    codex = shutil.which("codex")
+    if not codex:
+        parser.error("codex is not installed")
+    hook_dir = root / ".codex" / "hooks"
+    hook_dir.mkdir(parents=True)
+    init = run_git(["init", str(root)], timeout=15)
+    if init.returncode:
+        parser.error("disposable git init failed")
+    source = Path(__file__).resolve().parents[1] / "hooks"
+    hook = hook_dir / "sentinel.py"
+    hook.write_text(_SENTINEL_HOOK.replace("SOURCE", repr(str(source))).replace("REASON", repr(REASON)).replace("POLICY", repr(args.policy)), encoding="utf-8")
     command = subprocess.list2cmdline([sys.executable, str(hook)])
     (root / ".codex" / "hooks.json").write_text(json.dumps({"hooks": {"PreToolUse": [
         {"matcher": "Bash", "hooks": [{"type": "command", "command": command, "timeout": 15}]}]}}), encoding="utf-8")

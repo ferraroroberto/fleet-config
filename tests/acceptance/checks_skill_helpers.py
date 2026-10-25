@@ -114,6 +114,16 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
           and "- 2026-06-08: prior learning (repo#9)" in body
           and body.index("2026-06-15: fresh") < body.index("2026-06-08: prior learning"))
 
+    _learning_log_archive_cases(check, ll)
+
+    _learning_log_gh_failure_cases(check, ll)
+
+    _learning_log_ledger_read_failure_cases(check, ll)
+
+    return check.failures, check.total
+
+
+def _learning_log_archive_cases(check: _Checker, ll: Any) -> None:
     # ---- archive windowing: dedupe on content, cap total (fleet-config#732) ----
     check("learning_log: window_archive dedupes same content across dates, keeps newest",
           ll.window_archive(["- 2026-06-15: same thing (repo#1)"],
@@ -134,6 +144,8 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
               "2026-06-15", "- [ ] h", "- fresh (repo#9)"
           ).count("\n- 2026-") <= ll.ARCHIVE_CAP)
 
+
+def _learning_log_gh_failure_cases(check: _Checker, ll: Any) -> None:
     # ---- a failed gh read is unknown, never "0 PRs" ----
     import argparse
     import contextlib
@@ -209,6 +221,11 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
     finally:
         ll._gh_json, ll.read_ledger_body, ll.git_run.run_gh = saved
 
+
+def _learning_log_ledger_read_failure_cases(check: _Checker, ll: Any) -> None:
+    import argparse
+    import tempfile
+
     # ---- a failed prior-ledger read must never look like "no ledger yet"
     # to a caller about to overwrite it (fleet-config#1061) ----
     saved_run_audit = ll.run_audit_issue
@@ -251,8 +268,6 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
               and "2026-06-08: prior learning (repo#9)" in out_path.read_text(encoding="utf-8"))
     finally:
         ll.read_ledger_body = saved_read
-
-    return check.failures, check.total
 
 
 def _restart_webapp_unit_checks() -> Tuple[int, int]:
@@ -328,6 +343,13 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
     check("sha_matches: a different sha does not match",
           not rw.sha_matches(head, "9999999abc"))
 
+    _restart_verify_exit_code_cases(check, rw, head)
+
+    return check.failures, check.total
+
+
+def _restart_verify_exit_code_cases(check: _Checker, rw: Any, head: str) -> None:
+    """`main()` end to end: only a git_sha that matches HEAD exits 0."""
     def drive(payload: Any, git_head: Any = head) -> int:
         """Run main() end-to-end with the port/restart/HTTP layer stubbed out —
         proves the *exit code*, not just the predicate."""
@@ -360,8 +382,6 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
           drive({"git_sha": "9999999abcdef"}) == 2)
     check("restart verify: endpoint never answers -> exit 2",
           drive(None) == 2)
-
-    return check.failures, check.total
 
 
 def _scheduled_skill_timeouts_named_check() -> Tuple[int, int]:

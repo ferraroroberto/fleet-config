@@ -18,6 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 
+# The tool call each fixed case asks for; the synthetic provider replays it verbatim.
+_BASE_CALLS = {
+    'allowed': {'name': 'powershell', 'arguments': {'command': 'Set-Content -LiteralPath allowed.txt -Value allowed'}},
+    'shell_block': {'name': 'powershell', 'arguments': {'command': "git commit --no-verify -m probe; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"}},
+    'edit_block': {'name': 'write', 'arguments': {'path': 'docs/2026-09-06-sentinel.md', 'content': 'sentinel'}},
+    'post_edit': {'name': 'write', 'arguments': {'path': 'invalid.py', 'content': 'def broken(:\n'}},
+    'post_replace': {'name': 'edit', 'arguments': {'path': 'replace.py', 'edits': [{'oldText': 'VALUE = 1', 'newText': 'def broken(:'}]}},
+    'compression_warning': {'name': 'bash', 'arguments': {'command': "cat noisy.txt; echo \"@'hi'@\""}},
+}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cli', type=Path, required=True)
@@ -71,45 +82,10 @@ def main() -> None:
         cases += [('post_replace', 'synthetic edit'), ('compression_warning', 'synthetic bash compression')]
     (repo / 'replace.py').write_text('VALUE = 1\n', encoding='utf-8')
     (repo / 'noisy.txt').write_text('synthetic row data repeated\n' * 5000, encoding='utf-8')
-    calls = {
-        'allowed': {'name': 'powershell', 'arguments': {'command': 'Set-Content -LiteralPath allowed.txt -Value allowed'}},
-        'shell_block': {'name': 'powershell', 'arguments': {'command': "git commit --no-verify -m probe; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"}},
-        'edit_block': {'name': 'write', 'arguments': {'path': 'docs/2026-09-06-sentinel.md', 'content': 'sentinel'}},
-        'post_edit': {'name': 'write', 'arguments': {'path': 'invalid.py', 'content': 'def broken(:\n'}},
-        'post_replace': {'name': 'edit', 'arguments': {'path': 'replace.py', 'edits': [{'oldText': 'VALUE = 1', 'newText': 'def broken(:'}]}},
-        'compression_warning': {'name': 'bash', 'arguments': {'command': "cat noisy.txt; echo \"@'hi'@\""}},
-    }
+    calls = dict(_BASE_CALLS)
     alias_targets = {}
     if args.synthetic:
-        # Distinct blocked write / successful write / successful edit per alias.
-        # Expected targets are fixtures; the production adapter uses Pi's resolver.
-        for alias in ['at', 'file_url', 'tilde', 'msys', 'wsl', 'cygwin', 'unicode_space']:
-            for operation in ['block', 'write', 'edit']:
-                name = 'alias_' + alias + '_' + operation
-                relative = 'docs/2026-09-06-'+alias+'.md' if operation == 'block' else name+'.py'
-                base_dir = root / 'home' if alias == 'tilde' else repo / 'alias dir' if alias == 'unicode_space' else repo
-                target = base_dir / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if alias == 'at':
-                    path = '@' + relative
-                elif alias == 'file_url':
-                    path = target.as_uri()
-                elif alias == 'tilde':
-                    path = '~/' + relative
-                elif alias == 'unicode_space':
-                    path = 'alias\u00a0dir/' + relative
-                else:
-                    # Windows native conformance only; no real network/UNC targets.
-                    absolute = target.as_posix()
-                    path = {'msys': '/', 'wsl': '/mnt/', 'cygwin': '/cygdrive/'}[alias] + absolute[0].lower() + absolute[2:]
-                if operation == 'edit':
-                    target.write_text('VALUE = 1\n', encoding='utf-8')
-                    call = {'name': 'edit', 'arguments': {'path': path, 'edits': [{'oldText': 'VALUE = 1', 'newText': 'def broken(:'}]}}
-                else:
-                    call = {'name': 'write', 'arguments': {'path': path, 'content': 'sentinel' if operation == 'block' else 'def broken(:\n'}}
-                calls[name] = call
-                alias_targets[name] = (operation, target)
-                cases.append((name, 'synthetic path alias conformance'))
+        _add_alias_cases(root, repo, calls, alias_targets, cases)
     reports = []
     print('EVIDENCE=' + str(root), flush=True)
     for name, prompt in cases:
@@ -135,35 +111,7 @@ def main() -> None:
         tool_text = json.dumps([m.get('content', []) for m in tool_messages], ensure_ascii=False)
         assistant_text = json.dumps([m for m in messages if m.get('role') == 'assistant'], ensure_ascii=False)
         invoked = len(ends) == 1 and len(tool_messages) == 1
-        if name in alias_targets:
-            operation, target = alias_targets[name]
-            if operation == 'block':
-                proven = invoked and not target.exists() and 'dated file under docs' in tool_text and tool_messages[0].get('isError') is True
-            else:
-                proven = (invoked and target.is_file() and 'def broken(:' in target.read_text(encoding='utf-8')
-                          and '[Fleet policy] py_compile:' in tool_text and 'SyntaxError' in tool_text
-                          and tool_messages[0].get('isError') is False)
-        elif name == 'allowed':
-            proven = invoked and (repo / 'allowed.txt').is_file() and not tool_messages[0].get('isError')
-        elif name == 'shell_block':
-            proven = invoked and not (repo / 'shell_sentinel.txt').exists() and 'git safety bypass' in tool_text
-        elif name == 'edit_block':
-            proven = invoked and not (repo / 'docs/2026-09-06-sentinel.md').exists() and 'Blocked' in tool_text
-        elif name == 'compression_warning':
-            proven = (invoked and '[Fleet policy]' in tool_text and 'here-string' in tool_text
-                      and 'fleet-context-filter: raw_tokens=' in tool_text and len(tool_text) < 10000)
-        else:
-            target = 'replace.py' if name == 'post_replace' else 'invalid.py'
-            proven = (invoked and (repo / target).is_file() and '[Fleet policy] py_compile:' in tool_text
-                      and 'SyntaxError' in tool_text and 'py_compile' in assistant_text
-                      and not tool_messages[0].get('isError'))
-        if args.synthetic:
-            received_path = root / (name+'.received.jsonl')
-            received = json.loads(received_path.read_text(encoding='utf-8').splitlines()[-1]) if received_path.exists() else {}
-            lifecycle_path = root / (name+'.lifecycle.jsonl')
-            lifecycle = [json.loads(line) for line in lifecycle_path.read_text(encoding='utf-8').splitlines()] if lifecycle_path.exists() else []
-            proven = proven and bool(tool_messages) and received.get('role') == 'toolResult' and received.get('content') == tool_messages[0].get('content') and len(lifecycle) == 3 and all(
-                item.get('observed', 'unknown') == item['expected'] for item in lifecycle)
+        proven = _case_proven(name, root, repo, args.synthetic, alias_targets, invoked, tool_messages, tool_text, assistant_text)
         report = {'case': name, 'status': 'verified' if result.returncode == 0 and proven else 'not confirmed',
                   'exit_code': result.returncode, 'tool_results': len(tool_messages),
                   'model_transport': 'deterministic synthetic' if args.synthetic else 'authenticated provider',
@@ -175,6 +123,74 @@ def main() -> None:
     (root / 'summary.json').write_text(json.dumps(reports, indent=2), encoding='utf-8')
     if len(reports) != len(cases) or any(r['status'] != 'verified' for r in reports):
         raise SystemExit(1)
+
+
+def _add_alias_cases(root: Path, repo: Path, calls: dict, alias_targets: dict, cases: list) -> None:
+    """Add one blocked write, one write and one edit case per path-alias spelling Pi must resolve."""
+    # Distinct blocked write / successful write / successful edit per alias.
+    # Expected targets are fixtures; the production adapter uses Pi's resolver.
+    for alias in ['at', 'file_url', 'tilde', 'msys', 'wsl', 'cygwin', 'unicode_space']:
+        for operation in ['block', 'write', 'edit']:
+            name = 'alias_' + alias + '_' + operation
+            relative = 'docs/2026-09-06-'+alias+'.md' if operation == 'block' else name+'.py'
+            base_dir = root / 'home' if alias == 'tilde' else repo / 'alias dir' if alias == 'unicode_space' else repo
+            target = base_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if alias == 'at':
+                path = '@' + relative
+            elif alias == 'file_url':
+                path = target.as_uri()
+            elif alias == 'tilde':
+                path = '~/' + relative
+            elif alias == 'unicode_space':
+                path = 'alias\u00a0dir/' + relative
+            else:
+                # Windows native conformance only; no real network/UNC targets.
+                absolute = target.as_posix()
+                path = {'msys': '/', 'wsl': '/mnt/', 'cygwin': '/cygdrive/'}[alias] + absolute[0].lower() + absolute[2:]
+            if operation == 'edit':
+                target.write_text('VALUE = 1\n', encoding='utf-8')
+                call = {'name': 'edit', 'arguments': {'path': path, 'edits': [{'oldText': 'VALUE = 1', 'newText': 'def broken(:'}]}}
+            else:
+                call = {'name': 'write', 'arguments': {'path': path, 'content': 'sentinel' if operation == 'block' else 'def broken(:\n'}}
+            calls[name] = call
+            alias_targets[name] = (operation, target)
+            cases.append((name, 'synthetic path alias conformance'))
+
+
+def _case_proven(name: str, root: Path, repo: Path, synthetic: bool, alias_targets: dict,
+                 invoked: bool, tool_messages: list, tool_text: str, assistant_text: str) -> bool:
+    """Whether the case's own evidence (files, tool text, synthetic receipts) proves the policy acted."""
+    if name in alias_targets:
+        operation, target = alias_targets[name]
+        if operation == 'block':
+            proven = invoked and not target.exists() and 'dated file under docs' in tool_text and tool_messages[0].get('isError') is True
+        else:
+            proven = (invoked and target.is_file() and 'def broken(:' in target.read_text(encoding='utf-8')
+                      and '[Fleet policy] py_compile:' in tool_text and 'SyntaxError' in tool_text
+                      and tool_messages[0].get('isError') is False)
+    elif name == 'allowed':
+        proven = invoked and (repo / 'allowed.txt').is_file() and not tool_messages[0].get('isError')
+    elif name == 'shell_block':
+        proven = invoked and not (repo / 'shell_sentinel.txt').exists() and 'git safety bypass' in tool_text
+    elif name == 'edit_block':
+        proven = invoked and not (repo / 'docs/2026-09-06-sentinel.md').exists() and 'Blocked' in tool_text
+    elif name == 'compression_warning':
+        proven = (invoked and '[Fleet policy]' in tool_text and 'here-string' in tool_text
+                  and 'fleet-context-filter: raw_tokens=' in tool_text and len(tool_text) < 10000)
+    else:
+        target = 'replace.py' if name == 'post_replace' else 'invalid.py'
+        proven = (invoked and (repo / target).is_file() and '[Fleet policy] py_compile:' in tool_text
+                  and 'SyntaxError' in tool_text and 'py_compile' in assistant_text
+                  and not tool_messages[0].get('isError'))
+    if synthetic:
+        received_path = root / (name+'.received.jsonl')
+        received = json.loads(received_path.read_text(encoding='utf-8').splitlines()[-1]) if received_path.exists() else {}
+        lifecycle_path = root / (name+'.lifecycle.jsonl')
+        lifecycle = [json.loads(line) for line in lifecycle_path.read_text(encoding='utf-8').splitlines()] if lifecycle_path.exists() else []
+        proven = proven and bool(tool_messages) and received.get('role') == 'toolResult' and received.get('content') == tool_messages[0].get('content') and len(lifecycle) == 3 and all(
+            item.get('observed', 'unknown') == item['expected'] for item in lifecycle)
+    return proven
 
 
 if __name__ == '__main__':

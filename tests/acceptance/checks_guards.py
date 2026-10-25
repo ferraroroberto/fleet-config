@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 from acceptance.shared import (
     HOOKS,
@@ -108,40 +108,64 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
         check("block_askuserquestion: chief-managed but non-AskUserQuestion tool -> allow (exit 0)",
               code == 0)
 
-        corrupt = tmp / "corrupt"
-        corrupt.mkdir()
-        corrupt_marker = corrupt / "chief-managed.json"
-        corrupt_marker.write_text("{not json", encoding="utf-8")
-        code, out, _err = run(
-            "block_askuserquestion_chief",
-            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
-            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(corrupt),
-                       "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
-        )
-        check("block_askuserquestion: unreadable registry -> fail open, allow (exit 0)", code == 0)
-        try:
-            warned = json.loads(out or "{}").get("systemMessage", "")
-        except ValueError:
-            warned = ""
-        check("block_askuserquestion: unreadable registry reports 'unknown', not silence",
-              "UNVERIFIED" in warned and "unknown" in warned)
-
-        # A registry that was never created is a determination ("nothing has
-        # been dispatched"), not an unknown -- no nudge, just a quiet allow.
-        empty = tmp / "empty"
-        empty.mkdir()
-        code, out, _err = run(
-            "block_askuserquestion_chief",
-            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
-            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(empty),
-                       "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
-        )
-        check("block_askuserquestion: no registry yet -> quiet allow (exit 0, no nudge)",
-              code == 0 and out.strip() == "")
+        _block_askuserquestion_registry_cases(check, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _block_askuserquestion_registry_cases(check: _Checker, tmp: Path) -> None:
+    """The two registry states that are not a clean marker: unreadable and absent."""
+    corrupt = tmp / "corrupt"
+    corrupt.mkdir()
+    corrupt_marker = corrupt / "chief-managed.json"
+    corrupt_marker.write_text("{not json", encoding="utf-8")
+    code, out, _err = run(
+        "block_askuserquestion_chief",
+        {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+        extra_env={"CLAUDE_HOOKS_STATE_DIR": str(corrupt),
+                   "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
+    )
+    check("block_askuserquestion: unreadable registry -> fail open, allow (exit 0)", code == 0)
+    try:
+        warned = json.loads(out or "{}").get("systemMessage", "")
+    except ValueError:
+        warned = ""
+    check("block_askuserquestion: unreadable registry reports 'unknown', not silence",
+          "UNVERIFIED" in warned and "unknown" in warned)
+
+    # A registry that was never created is a determination ("nothing has
+    # been dispatched"), not an unknown -- no nudge, just a quiet allow.
+    empty = tmp / "empty"
+    empty.mkdir()
+    code, out, _err = run(
+        "block_askuserquestion_chief",
+        {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+        extra_env={"CLAUDE_HOOKS_STATE_DIR": str(empty),
+                   "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
+    )
+    check("block_askuserquestion: no registry yet -> quiet allow (exit 0, no nudge)",
+          code == 0 and out.strip() == "")
+
+
+_TG_SERVER = "plugin:telegram:telegram"
+
+
+def _tg_channel_entry(chat_id: str, user_id: str, text: str = "send me the scan",
+                      origin_server: str = _TG_SERVER) -> Dict[str, Any]:
+    """A transcript `user` entry shaped like the Telegram plugin's inbound channel message."""
+    tag = (f'<channel source="{_TG_SERVER}" chat_id="{chat_id}" message_id="7" '
+           f'user="someone" user_id="{user_id}" ts="2026-10-17T09:00:00.000Z">')
+    return {"type": "user", "isMeta": True,
+            "origin": {"kind": "channel", "server": origin_server},
+            "message": {"role": "user", "content": f"{tag}\n{text}\n</channel>"}}
+
+
+def _tg_human_entry(text: str) -> Dict[str, Any]:
+    """A transcript `user` entry typed at the terminal."""
+    return {"type": "user", "origin": {"kind": "human"},
+            "message": {"role": "user", "content": text}}
 
 
 def _telegram_file_reply_guard_unit_checks() -> Tuple[int, int]:
@@ -158,21 +182,8 @@ def _telegram_file_reply_guard_unit_checks() -> Tuple[int, int]:
     """
     check = _Checker()
     tool = "mcp__plugin_telegram_telegram__reply"
-    server = "plugin:telegram:telegram"
+    channel, human = _tg_channel_entry, _tg_human_entry
     me, other, group = "111111111", "222222222", "-1009999999999"
-
-    def channel(chat_id: str, user_id: str, text: str = "send me the scan",
-                origin_server: str = server) -> Dict[str, Any]:
-        tag = (f'<channel source="{server}" chat_id="{chat_id}" message_id="7" '
-               f'user="someone" user_id="{user_id}" ts="2026-10-17T09:00:00.000Z">')
-        return {"type": "user", "isMeta": True,
-                "origin": {"kind": "channel", "server": origin_server},
-                "message": {"role": "user", "content": f"{tag}\n{text}\n</channel>"}}
-
-    def human(text: str) -> Dict[str, Any]:
-        return {"type": "user", "origin": {"kind": "human"},
-                "message": {"role": "user", "content": text}}
-
     tool_result = {"type": "user", "message": {"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
     assistant = {"type": "assistant", "message": {"role": "assistant", "content": [
@@ -411,39 +422,7 @@ def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
         check("secret_scan gh: relative --body-file resolves against payload cwd",
               verdict("gh issue create --title t --body-file live.md")[0] == 2)
 
-        # A leading cd moves the base a relative body file resolves against
-        # (fleet-config#1054). `cdlive.md` exists only under `moved/`, and the
-        # payload cwd is `elsewhere/`, so every blocking case below read a
-        # missing file and failed open before the fix.
-        moved = tmp / "moved"
-        moved.mkdir()
-        (moved / "cdlive.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
-        elsewhere = tmp / "elsewhere"
-        elsewhere.mkdir()
-        check("secret_scan gh: cd <abs> && relative --body-file resolves in the new dir",
-              verdict(f"cd {moved.as_posix()} && gh issue create --title t "
-                      "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
-        check("secret_scan gh: Set-Location <abs>; gh pr create -F <rel> (PowerShell)",
-              verdict(f'Set-Location "{moved}"; gh pr create -F cdlive.md',
-                      cwd=elsewhere, tool="PowerShell")[0] == 2)
-        check("secret_scan gh: Set-Location -Path <abs> is followed",
-              verdict(f"Set-Location -Path '{moved}'; gh pr create -F cdlive.md",
-                      cwd=elsewhere, tool="PowerShell")[0] == 2)
-        check("secret_scan gh: pushd <abs> is followed",
-              verdict(f"pushd {moved.as_posix()} && gh pr comment 5 -F cdlive.md",
-                      cwd=elsewhere)[0] == 2)
-        check("secret_scan gh: relative cd joins onto the payload cwd",
-              verdict("cd moved && gh issue create --title t --body-file cdlive.md")[0] == 2)
-        m_drive, m_rest = moved.as_posix().split(":", 1)
-        check("secret_scan gh: Git Bash cd /<drive>/ is followed",
-              verdict(f"cd /{m_drive.lower()}{m_rest} && gh issue create --title t "
-                      "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
-        check("secret_scan gh: an absolute --body-file ignores a preceding cd",
-              verdict(f"cd {elsewhere.as_posix()} && gh issue create --title t "
-                      f"--body-file {live.as_posix()}")[0] == 2)
-        code, out, err = verdict("cd $X && gh issue create --title t --body-file live.md")
-        check("secret_scan gh: cd $VAR makes a relative body file fail open, breadcrumb on stderr",
-              code == 0 and not out and "not scanned" in err, err)
+        _secret_scan_gh_cd_cases(check, verdict, tmp, live)
         spaced = tmp / "a b"
         spaced.mkdir()
         (spaced / "live.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
@@ -460,32 +439,78 @@ def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
         check("secret_scan gh: a UTF-16 (PowerShell Out-File) body is decoded and scanned",
               verdict(f"gh issue create --title t --body-file {utf16.as_posix()}")[0] == 2)
 
-        placeholder = tmp / "placeholder.md"
-        placeholder.write_text("Set `xoxb-…` or `xoxb-<token>` in .env.\n", encoding="utf-8")
-        code, out, err = verdict(f"gh issue create --title t --body-file {placeholder.as_posix()}")
-        check("secret_scan gh: placeholder forms in a body pass silently",
-              code == 0 and not out, err)
-        check("secret_scan gh: inline placeholder passes",
-              verdict('gh issue comment 5 --body "use xoxb-<token> here"')[0] == 0)
-
-        code, out, err = verdict("gh issue create --title t --body-file missing.md")
-        check("secret_scan gh: missing body file -> allow, breadcrumb on stderr only",
-              code == 0 and not out and "not scanned" in err, err)
-        code, out, _err = verdict("gh issue create --title t -F -")
-        check("secret_scan gh: -F - (stdin) -> allow silently", code == 0 and not out)
-        check("secret_scan gh: $VAR operand -> allow",
-              verdict("gh issue create --title t --body-file $BODY")[0] == 0)
-        for read in ("gh issue view 5", "gh pr list --state open", "gh issue view 5 --comments"):
-            code, out, err = verdict(read)
-            check(f"secret_scan gh: read `{read}` -> allow silently",
-                  code == 0 and not out and not err)
-        check("secret_scan gh: only the gh segment's -F is read, not a sibling grep -F",
-              verdict(f"grep -F x {live.as_posix()} && gh issue create --title t "
-                      f"--body-file {placeholder.as_posix()}")[0] == 0)
+        _secret_scan_gh_allow_cases(check, verdict, tmp, live)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _secret_scan_gh_allow_cases(check: _Checker, verdict: Callable[..., Tuple[int, str, str]],
+                                tmp: Path, live: Path) -> None:
+    """What the gh sink lets through: placeholders, unreadable bodies and read-only commands."""
+    placeholder = tmp / "placeholder.md"
+    placeholder.write_text("Set `xoxb-…` or `xoxb-<token>` in .env.\n", encoding="utf-8")
+    code, out, err = verdict(f"gh issue create --title t --body-file {placeholder.as_posix()}")
+    check("secret_scan gh: placeholder forms in a body pass silently",
+          code == 0 and not out, err)
+    check("secret_scan gh: inline placeholder passes",
+          verdict('gh issue comment 5 --body "use xoxb-<token> here"')[0] == 0)
+
+    code, out, err = verdict("gh issue create --title t --body-file missing.md")
+    check("secret_scan gh: missing body file -> allow, breadcrumb on stderr only",
+          code == 0 and not out and "not scanned" in err, err)
+    code, out, _err = verdict("gh issue create --title t -F -")
+    check("secret_scan gh: -F - (stdin) -> allow silently", code == 0 and not out)
+    check("secret_scan gh: $VAR operand -> allow",
+          verdict("gh issue create --title t --body-file $BODY")[0] == 0)
+    for read in ("gh issue view 5", "gh pr list --state open", "gh issue view 5 --comments"):
+        code, out, err = verdict(read)
+        check(f"secret_scan gh: read `{read}` -> allow silently",
+              code == 0 and not out and not err)
+    check("secret_scan gh: only the gh segment's -F is read, not a sibling grep -F",
+          verdict(f"grep -F x {live.as_posix()} && gh issue create --title t "
+                  f"--body-file {placeholder.as_posix()}")[0] == 0)
+
+
+def _secret_scan_gh_cd_cases(check: _Checker, verdict: Callable[..., Tuple[int, str, str]],
+                             tmp: Path, live: Path) -> None:
+    """Publish commands preceded by a directory change (cd, Set-Location, pushd)."""
+    from acceptance.hook_matrix import FAKE_GHP
+
+    # A leading cd moves the base a relative body file resolves against
+    # (fleet-config#1054). `cdlive.md` exists only under `moved/`, and the
+    # payload cwd is `elsewhere/`, so every blocking case below read a
+    # missing file and failed open before the fix.
+    moved = tmp / "moved"
+    moved.mkdir()
+    (moved / "cdlive.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
+    elsewhere = tmp / "elsewhere"
+    elsewhere.mkdir()
+    check("secret_scan gh: cd <abs> && relative --body-file resolves in the new dir",
+          verdict(f"cd {moved.as_posix()} && gh issue create --title t "
+                  "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
+    check("secret_scan gh: Set-Location <abs>; gh pr create -F <rel> (PowerShell)",
+          verdict(f'Set-Location "{moved}"; gh pr create -F cdlive.md',
+                  cwd=elsewhere, tool="PowerShell")[0] == 2)
+    check("secret_scan gh: Set-Location -Path <abs> is followed",
+          verdict(f"Set-Location -Path '{moved}'; gh pr create -F cdlive.md",
+                  cwd=elsewhere, tool="PowerShell")[0] == 2)
+    check("secret_scan gh: pushd <abs> is followed",
+          verdict(f"pushd {moved.as_posix()} && gh pr comment 5 -F cdlive.md",
+                  cwd=elsewhere)[0] == 2)
+    check("secret_scan gh: relative cd joins onto the payload cwd",
+          verdict("cd moved && gh issue create --title t --body-file cdlive.md")[0] == 2)
+    m_drive, m_rest = moved.as_posix().split(":", 1)
+    check("secret_scan gh: Git Bash cd /<drive>/ is followed",
+          verdict(f"cd /{m_drive.lower()}{m_rest} && gh issue create --title t "
+                  "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
+    check("secret_scan gh: an absolute --body-file ignores a preceding cd",
+          verdict(f"cd {elsewhere.as_posix()} && gh issue create --title t "
+                  f"--body-file {live.as_posix()}")[0] == 2)
+    code, out, err = verdict("cd $X && gh issue create --title t --body-file live.md")
+    check("secret_scan gh: cd $VAR makes a relative body file fail open, breadcrumb on stderr",
+          code == 0 and not out and "not scanned" in err, err)
 
 
 def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
@@ -582,7 +607,6 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
     exemption to ignored paths only."""
     sys.path.insert(0, str(HOOKS))
     sys.path.insert(0, str(REPO / "tests" / "_lib"))
-    import _lib  # noqa: E402
     from git_fixtures import init_repo  # noqa: E402
 
     check = _Checker()
@@ -638,107 +662,62 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
         )
         check("branch_guard: Bash tool_name -> allow (only guards Edit/Write/MultiEdit)", code == 0)
 
-        # ---- take-1's actual bug: a worktree worker judged by the primary's branch ----
-        worktree = main_repo.parent / f"{main_repo.name}-wt-1"
-        subprocess.run(
-            ["git", "worktree", "add", "-q", "-b", "feat/464-x", str(worktree)],
-            cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
-        )
-        try:
-            # cwd is the PRIMARY repo (still on main) -- the exact shape that
-            # broke take 1. file_path targets the worktree, on its own branch.
-            code, _out, _err = run(
-                "branch_before_edit_guard", edit_payload(main_repo, worktree), extra_env=launcher_env
-            )
-            check("branch_guard: worktree target on feature branch, cwd=primary(main) -> allow", code == 0)
-        finally:
-            subprocess.run(
-                ["git", "worktree", "remove", "-f", str(worktree)],
-                cwd=main_repo, check=False, creationflags=_lib.NO_WINDOW,
-            )
+        _branch_guard_worktree_case(check, main_repo, launcher_env, edit_payload)
 
-        # ---- take-2's own bug (fleet-config#489): a gitignored target *inside*
-        # the repo, on the default branch. Both live repros are covered: a
-        # single-file rule (life-os's `.active-skill`) and a directory rule
-        # (fleet-config's `hooks/state/`, reached by the chief through a
-        # junction). Neither file exists on disk -- `check-ignore` matches the
-        # pathname, which is what makes a creating `Write` resolve correctly.
-        (main_repo / ".gitignore").write_text(".active-skill\nstate/\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW)
-        subprocess.run(
-            ["git", "commit", "-q", "-m", "ignore rules"],
-            cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
-        )
-        (main_repo / "state").mkdir(exist_ok=True)
+        _branch_guard_ignored_target_cases(check, main_repo, launcher_env)
 
-        def payload_for(target: Path) -> Dict[str, Any]:
-            return {"tool_name": "Write", "cwd": str(main_repo), "tool_input": {"file_path": str(target)}}
-
-        code, _out, _err = run(
-            "branch_before_edit_guard", payload_for(main_repo / ".active-skill"), extra_env=launcher_env
-        )
-        check("branch_guard: gitignored file target on main + launcher env -> allow", code == 0)
-
-        code, _out, _err = run(
-            "branch_before_edit_guard", payload_for(main_repo / "state" / "chief-handover.md"),
-            extra_env=launcher_env,
-        )
-        check("branch_guard: target under a gitignored directory rule -> allow", code == 0)
-
-        # The exemption is gitignored-only: an untracked, non-ignored new file
-        # in the same repo can still be committed to main, so it must block.
-        code, _out, err = run(
-            "branch_before_edit_guard", payload_for(main_repo / "state.py"), extra_env=launcher_env
-        )
-        check("branch_guard: untracked but NOT ignored target on main -> still block", code == 2, err)
-
-        # ---- the junction shape (fleet-config#489's second live repro) ----
-        # `~/.claude/hooks/` is a junction into this repo, so the chief's write
-        # to its gitignored handover file arrives spelled under the junction.
-        # git follows a junction for `-C` but matches the *pathname argument*
-        # lexically against the worktree root, so the unresolved spelling exits
-        # 128 ("is outside repository at ...") -- the fail-closed path. Only
-        # the guard's `target.resolve()` keeps this case allowed.
-        if sys.platform == "win32":
-            link = main_repo.parent / f"{main_repo.name}-junction"
-            mk = subprocess.run(
-                ["cmd", "/c", "mklink", "/J", str(link), str(main_repo)],
-                capture_output=True, text=True, creationflags=_lib.NO_WINDOW,
-            )
-            check("branch_guard: junction fixture created", mk.returncode == 0, mk.stdout + mk.stderr)
-            if mk.returncode == 0:
-                try:
-                    code, _out, _err = run(
-                        "branch_before_edit_guard",
-                        payload_for(link / "state" / "chief-handover.md"), extra_env=launcher_env,
-                    )
-                    check("branch_guard: gitignored target via a junction path -> allow", code == 0)
-
-                    code, _out, err = run(
-                        "branch_before_edit_guard",
-                        payload_for(link / "tracked.py"), extra_env=launcher_env,
-                    )
-                    check("branch_guard: non-ignored target via a junction path -> still block", code == 2, err)
-                finally:
-                    subprocess.run(
-                        ["cmd", "/c", "rmdir", str(link)],
-                        capture_output=True, creationflags=_lib.NO_WINDOW,
-                    )
-
-        # ---- take-1's other bug: a write target entirely outside any repo ----
-        non_repo = Path(tempfile.mkdtemp(prefix="branch_guard_norepo_"))
-        try:
-            # cwd is a repo on main (e.g. chief's cwd); file_path targets a
-            # plain non-git directory (e.g. E:\tmp\chief).
-            code, _out, _err = run(
-                "branch_before_edit_guard", edit_payload(main_repo, non_repo), extra_env=launcher_env
-            )
-            check("branch_guard: non-git target dir, cwd=repo(main) -> allow (fail open)", code == 0)
-        finally:
-            shutil.rmtree(non_repo, ignore_errors=True)
+        _branch_guard_outside_repo_case(check, main_repo, launcher_env, edit_payload)
     finally:
         shutil.rmtree(main_repo, ignore_errors=True)
 
+    _branch_guard_other_branch_cases(check, git_repo, edit_payload, launcher_env)
+
+    return check.failures, check.total
+
+
+def _branch_guard_worktree_case(check: _Checker, main_repo: Path, launcher_env: Dict[str, str],
+                                edit_payload: Callable[..., Dict[str, Any]]) -> None:
+    import _lib  # noqa: E402
+
+    # ---- take-1's actual bug: a worktree worker judged by the primary's branch ----
+    worktree = main_repo.parent / f"{main_repo.name}-wt-1"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "feat/464-x", str(worktree)],
+        cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
+    )
+    try:
+        # cwd is the PRIMARY repo (still on main) -- the exact shape that
+        # broke take 1. file_path targets the worktree, on its own branch.
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, worktree), extra_env=launcher_env
+        )
+        check("branch_guard: worktree target on feature branch, cwd=primary(main) -> allow", code == 0)
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "-f", str(worktree)],
+            cwd=main_repo, check=False, creationflags=_lib.NO_WINDOW,
+        )
+
+
+def _branch_guard_outside_repo_case(check: _Checker, main_repo: Path, launcher_env: Dict[str, str],
+                                    edit_payload: Callable[..., Dict[str, Any]]) -> None:
+    # ---- take-1's other bug: a write target entirely outside any repo ----
+    non_repo = Path(tempfile.mkdtemp(prefix="branch_guard_norepo_"))
+    try:
+        # cwd is a repo on main (e.g. chief's cwd); file_path targets a
+        # plain non-git directory (e.g. E:\tmp\chief).
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, non_repo), extra_env=launcher_env
+        )
+        check("branch_guard: non-git target dir, cwd=repo(main) -> allow (fail open)", code == 0)
+    finally:
+        shutil.rmtree(non_repo, ignore_errors=True)
+
+
+def _branch_guard_other_branch_cases(check: _Checker, git_repo: Callable[[str], Path],
+                                     edit_payload: Callable[..., Dict[str, Any]],
+                                     launcher_env: Dict[str, str]) -> None:
+    """`master` is protected with no origin configured; a feature branch is not."""
     master_repo = git_repo("master")
     try:
         code, _out, err = run(
@@ -757,169 +736,80 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
     finally:
         shutil.rmtree(feature_repo, ignore_errors=True)
 
-    return check.failures, check.total
 
+def _branch_guard_ignored_target_cases(check: _Checker, main_repo: Path,
+                                       launcher_env: Dict[str, str]) -> None:
+    """Default-branch targets exempt because git ignores them, directly and via a junction."""
+    import _lib  # noqa: E402
 
-def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
-    """The force-push guard decides on the *ref being pushed* (fleet-config#562).
+    # ---- take-2's own bug (fleet-config#489): a gitignored target *inside*
+    # the repo, on the default branch. Both live repros are covered: a
+    # single-file rule (life-os's `.active-skill`) and a directory rule
+    # (fleet-config's `hooks/state/`, reached by the chief through a
+    # junction). Neither file exists on disk -- `check-ignore` matches the
+    # pathname, which is what makes a creating `Write` resolve correctly.
+    (main_repo / ".gitignore").write_text(".active-skill\nstate/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "ignore rules"],
+        cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
+    )
+    (main_repo / "state").mkdir(exist_ok=True)
 
-    The predicate used to be a word-boundary search for `main`/`master` across
-    the whole command line, so `git push --force origin
-    chore/rename-main-config-loader` was refused — a legitimate feature-branch
-    force-push the module's own docstring promises to allow. A fleet-wide guard
-    blocking valid work is the expensive kind of wrong (#464/#472 reverted a
-    hook within the hour for it), so the branch-name-contains-main case is
-    pinned here alongside the protections it must not weaken.
-    """
-    sys.path.insert(0, str(HOOKS))
-    import safe_kill_guard as skg  # noqa: E402
+    def payload_for(target: Path) -> Dict[str, Any]:
+        return {"tool_name": "Write", "cwd": str(main_repo), "tool_input": {"file_path": str(target)}}
 
-    check = _Checker()
-    push = "git " + "push"  # split so this file's own text isn't a force-push line
-    here = REPO
+    code, _out, _err = run(
+        "branch_before_edit_guard", payload_for(main_repo / ".active-skill"), extra_env=launcher_env
+    )
+    check("branch_guard: gitignored file target on main + launcher env -> allow", code == 0)
 
-    def blocked(cmd: str) -> bool:
-        return skg.forced_push_hits_protected(cmd, here)
+    code, _out, _err = run(
+        "branch_before_edit_guard", payload_for(main_repo / "state" / "chief-handover.md"),
+        extra_env=launcher_env,
+    )
+    check("branch_guard: target under a gitignored directory rule -> allow", code == 0)
 
-    check("force-push: --force origin main -> blocked", blocked(f"{push} --force origin main"))
-    check("force-push: -f origin master -> blocked", blocked(f"{push} -f origin master"))
-    check("force-push: --force-with-lease origin HEAD:main -> blocked",
-          blocked(f"{push} --force-with-lease origin HEAD:main"))
-    check("force-push: +refs/heads/master refspec -> blocked",
-          blocked(f"{push} --force origin +refs/heads/master"))
-    check("force-push: short-flag cluster -fu origin main -> blocked",
-          blocked(f"{push} -fu origin main"))
-    check("force-push: chained after another command -> blocked",
-          blocked(f"git status && {push} --force origin main"))
+    # The exemption is gitignored-only: an untracked, non-ignored new file
+    # in the same repo can still be committed to main, so it must block.
+    code, _out, err = run(
+        "branch_before_edit_guard", payload_for(main_repo / "state.py"), extra_env=launcher_env
+    )
+    check("branch_guard: untracked but NOT ignored target on main -> still block", code == 2, err)
 
-    # A leading `+` forces that one refspec with no flag at all (fleet-config#960).
-    check("force-push: flagless +HEAD:main -> blocked (#960)", blocked(f"{push} origin +HEAD:main"))
-    check("force-push: flagless +main -> blocked (#960)", blocked(f"{push} origin +main"))
-    check("force-push: flagless +refs/heads/master among plain refspecs -> blocked (#960)",
-          blocked(f"{push} origin feature/x +refs/heads/master"))
-    check("force-push: flagless +feature/x -> allowed (own branch) (#960)",
-          not blocked(f"{push} origin +feature/x"))
-    check("force-push: flagless + only forces its own refspec: plain main beside +feature -> allowed (#960)",
-          not blocked(f"{push} origin main +feature/x"))
-    check("force-push: flagless push reports only the +refspecs (#960)",
-          skg._parse_forced_push(f"{push} origin main +HEAD:feature/x") == (["+HEAD:feature/x"], None))
+    # ---- the junction shape (fleet-config#489's second live repro) ----
+    # `~/.claude/hooks/` is a junction into this repo, so the chief's write
+    # to its gitignored handover file arrives spelled under the junction.
+    # git follows a junction for `-C` but matches the *pathname argument*
+    # lexically against the worktree root, so the unresolved spelling exits
+    # 128 ("is outside repository at ...") -- the fail-closed path. Only
+    # the guard's `target.resolve()` keeps this case allowed.
+    if sys.platform == "win32":
+        link = main_repo.parent / f"{main_repo.name}-junction"
+        mk = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(main_repo)],
+            capture_output=True, text=True, creationflags=_lib.NO_WINDOW,
+        )
+        check("branch_guard: junction fixture created", mk.returncode == 0, mk.stdout + mk.stderr)
+        if mk.returncode == 0:
+            try:
+                code, _out, _err = run(
+                    "branch_before_edit_guard",
+                    payload_for(link / "state" / "chief-handover.md"), extra_env=launcher_env,
+                )
+                check("branch_guard: gitignored target via a junction path -> allow", code == 0)
 
-    # Git's global options sit between `git` and `push` (fleet-config#1275).
-    gpush = "git -C /some/repo " + "push"
-    check("force-push: -C <dir> --force origin main -> blocked (#1275)",
-          blocked(f"{gpush} --force origin main"))
-    check("force-push: -c k=v -f origin master -> blocked (#1275)",
-          blocked("git -c push.default=current " + "push -f origin master"))
-    check("force-push: --git-dir=<d> and --work-tree <d> before push -> blocked (#1275)",
-          blocked("git --git-dir=/r/.git --work-tree /r " + "push --force origin main"))
-    check("force-push: quoted -C path with a space -> blocked (#1275)",
-          blocked('git -C "/some repo" ' + "push --force origin main"))
-    check("force-push: -C <dir> to a branch NAMED *-main-* -> allowed (#562 holds)",
-          not blocked(f"{gpush} --force origin feature/main-thing"))
-    check("force-push: -C <dir> with no force flag -> not a forced push",
-          skg._parse_forced_push(f"{gpush} origin main") is None)
-    check("force-push: a force flag on another git subcommand is not a push",
-          skg._parse_forced_push("git -C /r checkout -f main") is None)
+                code, _out, err = run(
+                    "branch_before_edit_guard",
+                    payload_for(link / "tracked.py"), extra_env=launcher_env,
+                )
+                check("branch_guard: non-ignored target via a junction path -> still block", code == 2, err)
+            finally:
+                subprocess.run(
+                    ["cmd", "/c", "rmdir", str(link)],
+                    capture_output=True, creationflags=_lib.NO_WINDOW,
+                )
 
-    check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
-    check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
-          not blocked(f"{push} --force origin chore/rename-main-config-loader"))
-    check("force-push: branch whose name contains 'master' -> allowed",
-          not blocked(f"{push} --force origin fix/12-master-list-parser"))
-    check("force-push: a src-side 'main' pushed onto a feature ref -> allowed",
-          not blocked(f"{push} --force origin main:feature/staging-main"))
-    check("force-push: no force flag -> not a forced push at all",
-          skg._parse_forced_push(f"{push} origin main") is None)
-    check("force-push: --foo is not the short -f (no false positive)",
-          skg._parse_forced_push(f"{push} --foo origin main") is None)
-
-    check("force-push: refspec-less push reports an empty list, not a guess",
-          skg._parse_forced_push(f"{push} --force origin") == ([], None))
-    check("destination_branch: strips + and refs/heads/, keeps the dst side",
-          skg.destination_branch("+refs/heads/main") == "main"
-          and skg.destination_branch("HEAD:refs/heads/master") == "master"
-          and skg.destination_branch("feature/x") == "feature/x")
-
-    # Refspec-less force push falls back to the checked-out branch of `cwd`.
-    tmp = Path(tempfile.mkdtemp(prefix="fc-push-"))
-    try:
-        subprocess.run(["git", "-C", str(tmp), "init", "-b", "main"], capture_output=True)
-        check("force-push: refspec-less push on main -> blocked via the checked-out branch",
-              skg.forced_push_hits_protected(f"{push} --force origin", tmp))
-        subprocess.run(["git", "-C", str(tmp), "checkout", "-b", "feat/x"], capture_output=True)
-        check("force-push: refspec-less push on a feature branch -> allowed",
-              not skg.forced_push_hits_protected(f"{push} --force origin", tmp))
-        # `-C <dir>` names the repo the push runs in — the branch comes from it,
-        # not from the payload cwd (fleet-config#1275).
-        other = Path(tempfile.mkdtemp(prefix="fc-push-cwd-"))
-        try:
-            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/main"], capture_output=True)
-            check("force-push: refspec-less -C <repo on main> from another cwd -> blocked (#1275)",
-                  skg.forced_push_hits_protected(f"git -C {tmp} " + "push --force", other))
-            subprocess.run(["git", "-C", str(other), "init", "-b", "main"], capture_output=True)
-            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/feat/y"], capture_output=True)
-            check("force-push: refspec-less -C <repo on a feature branch> while cwd is on main -> allowed (#1275)",
-                  not skg.forced_push_hits_protected(f"git -C {tmp} " + "push --force", other))
-            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/main"], capture_output=True)
-            check("force-push: relative -C resolves against the payload cwd (#1275)",
-                  skg.forced_push_hits_protected(f"git -C {tmp.name} " + "push --force", tmp.parent))
-        finally:
-            shutil.rmtree(other, ignore_errors=True)
-        check("_current_branch: unresolvable cwd reports '' (fails open, never guesses)",
-              skg._current_branch(tmp / "not-a-repo-here") == "")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
-
-
-def _safe_kill_git_bypass_unit_checks() -> Tuple[int, int]:
-    """The bypass-flag check reads real `git` arguments, not words on the line (fleet-config#1303).
-
-    The old line regex refused any command mentioning the flag after the word
-    `git` - including a read-only `rg` for that phrase over `docs/`. Command-
-    position parsing must keep refusing every real invocation, so the
-    protections are pinned beside the false positive.
-    """
-    sys.path.insert(0, str(HOOKS))
-    import safe_kill_guard as skg  # noqa: E402
-
-    check = _Checker()
-    nv = "--no-" + "verify"
-    gs = "--no-gpg-" + "sign"
-    gpg = "commit.gpg" + "sign=false"
-
-    def flagged(cmd: str) -> bool:
-        return skg.git_bypass_flag(cmd) is not None
-
-    check("bypass: plain commit with the flag -> blocked", flagged(f"git commit {nv} -m hi"))
-    check("bypass: flag after the message -> blocked", flagged(f'git commit -m "hi" {nv}'))
-    check("bypass: push with the flag -> blocked", flagged(f"git push {nv}"))
-    check("bypass: --no-gpg-sign -> blocked", flagged(f"git commit {gs} -m hi"))
-    check("bypass: -c gpgsign=false before the subcommand -> blocked", flagged(f"git -c {gpg} commit -m hi"))
-    check("bypass: global -C <dir> before the subcommand does not hide it", flagged(f"git -C /r commit {nv}"))
-    check("bypass: chained after another command -> blocked", flagged(f"git add -A && git commit {nv}"))
-    check("bypass: env assignment before git -> blocked", flagged(f"GIT_X=1 git commit {nv}"))
-    check("bypass: git.exe by path -> blocked", flagged(f'"C:/Program Files/Git/bin/git.exe" commit {nv}'))
-    check("bypass: PowerShell call operator -> blocked", flagged(f"& git commit {nv}"))
-    check("bypass: nested shell string -> blocked", flagged(f'bash -c "git commit {nv}"'))
-    check("bypass: nested shell with a quoted separator -> blocked", flagged(f'bash -c "git add .; git commit {nv}"'))
-    check("bypass: xargs prefix -> blocked", flagged(f"echo x | xargs git commit {nv}"))
-    check("bypass: flag in a nested shell string via env prefix -> blocked", flagged(f"env FOO=1 git commit {nv}"))
-
-    check("bypass: rg for the phrase over docs/ -> allowed (the #1303 false positive)",
-          not flagged(f'rg "git commit {nv}" docs/'))
-    check("bypass: grep for the flag after a pipe -> allowed",
-          not flagged(f"git log --oneline | grep -- {nv}"))
-    check("bypass: echo of the phrase -> allowed", not flagged(f"echo git commit {nv}"))
-    check("bypass: flag inside a commit message -> allowed", not flagged(f'git commit -m "document {nv}"'))
-    check("bypass: ordinary commit and push -> allowed",
-          not flagged("git commit -m hi") and not flagged("git push origin feat/x"))
-    check("bypass: a longer unrelated flag is not the bypass flag", not flagged(f"git commit {nv}-hooks"))
-    check("bypass: quoted string handed to a non-shell command -> allowed",
-          not flagged(f'python -c "print(1)" "git commit {nv}"'))
-
-    return check.failures, check.total
 
 
 def _tier23_hooks_unit_checks() -> Tuple[int, int]:
@@ -942,7 +832,8 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
 
     tmp = Path(tempfile.mkdtemp(prefix="tier23_"))
     try:
-        def nudged(hook: str, path: Path, body: str, extra_env: Dict[str, str] | None = None) -> bool:
+        def nudged(hook: str, path: Path, body: str,
+                   extra_env: Dict[str, str] | None = None) -> bool:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
             code, out, _err = run(hook, {"tool_name": "Write", "tool_input": {"file_path": str(path)}},
@@ -1010,647 +901,6 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
         check("browser_stealth: non-watched filename with a launch -> silent",
               not nudged("browser_stealth_lint", tmp / "helper.py", bare_launch))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
-
-
-def _venv_junction_guard_unit_checks() -> Tuple[int, int]:
-    """`venv_discipline.py` rule 4 and its two false-positive fixes
-    (fleet-config#847).
-
-    Drives the real hook subprocess against a real primary `.venv` and a real
-    worktree whose `.venv` is a real junction to it -- the hazard is a
-    filesystem fact, so a mocked reparse point would prove nothing.
-
-    The incident these cover: a lane ran `git worktree remove --force
-    <worktree>` on a worktree whose `.venv` junction was still in place, and
-    git's recursive delete walked it into `task-os`'s primary venv while a live
-    app was importing from it. The allow-cases at the bottom are the guard's
-    own false positives -- it refused the issue that asked for this rule,
-    because the body quoted the hazard it describes.
-    """
-    check = _Checker()
-
-    tmp = Path(tempfile.mkdtemp(prefix="venv_junction_"))
-    try:
-        primary = tmp / "repo"
-        real_venv = primary / ".venv"
-        real_venv.mkdir(parents=True)
-        (real_venv / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
-
-        worktree = tmp / "repo-wt-847"
-        worktree.mkdir()
-        link = worktree / ".venv"
-        if sys.platform == "win32":
-            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(real_venv)],
-                           capture_output=True, encoding="oem", errors="replace")
-        else:
-            os.symlink(real_venv, link, target_is_directory=True)
-
-        sys.path.insert(0, str(HOOKS))
-        import venv_discipline  # noqa: E402
-
-        if not venv_discipline.is_reparse_point(link):
-            check.advisory("venv_junction: could not create a real junction -- cases skipped",
-                           False, f"mklink/symlink produced no reparse point at {link}")
-            return check.failures, check.total
-
-        def verdict(command: str, cwd: Path = worktree, tool: str = "Bash") -> int:
-            code, _out, _err = run("venv_discipline",
-                                   {"tool_name": tool, "cwd": str(cwd),
-                                    "tool_input": {"command": command}})
-            return code
-
-        # ---- rule 4: deletes that would follow the junction -> block ----
-        check("venv_junction: `git worktree remove --force <wt>` -> block",
-              verdict(f"git worktree remove --force {worktree}", cwd=primary) == 2)
-        check("venv_junction: `git -C <repo> worktree remove <wt>` -> block",
-              verdict(f"git -C {primary} worktree remove {worktree}", cwd=primary) == 2)
-        check("venv_junction: `rm -rf <wt>` -> block",
-              verdict(f"rm -rf {worktree}", cwd=primary) == 2)
-        check("venv_junction: `rm -rf <wt>/.venv` (the junction itself) -> block",
-              verdict(f"rm -rf {link}", cwd=primary) == 2)
-        check("venv_junction: `Remove-Item -Recurse <wt>` -> block",
-              verdict(f"Remove-Item -Recurse -Force {worktree}", cwd=primary,
-                      tool="PowerShell") == 2)
-        check("venv_junction: `rmdir /s <wt>` -> block",
-              verdict(f"rmdir /s /q {worktree}", cwd=primary) == 2)
-        # PowerShell resolves any unambiguous parameter prefix, so the guard
-        # must match the abbreviations too, not just the spelled-out switch.
-        check("venv_junction: `Remove-Item -r` (PowerShell abbreviation) -> block",
-              verdict(f"Remove-Item -r -Force {worktree}", cwd=primary,
-                      tool="PowerShell") == 2)
-        check("venv_junction: `Remove-Item -Rec` -> block",
-              verdict(f"Remove-Item -Rec {worktree}", cwd=primary, tool="PowerShell") == 2)
-        check("venv_junction: `del /s` through the junction -> block",
-              verdict(f"del /s /q {worktree}", cwd=primary) == 2)
-        # The shell expands a glob long after the hook sees the command, so an
-        # operand carrying one is reduced to the directory it expands within.
-        check("venv_junction: `rm -rf *` from the worktree root -> block",
-              verdict("rm -rf *", cwd=worktree) == 2)
-        check("venv_junction: `rm -rf <wt>/*` -> block",
-              verdict(f"rm -rf {worktree}/*", cwd=primary) == 2)
-        check("venv_junction: `rm -rf build/*` (no junction there) -> allow",
-              verdict("rm -rf build/*", cwd=worktree) == 0)
-        check("venv_junction: relative operand resolved against payload cwd -> block",
-              verdict("rm -rf repo-wt-847", cwd=tmp) == 2)
-        # The incident command was typed in Git Bash, so its operand was an
-        # MSYS path: `/e/automation/task-os-wt-225`. That has a root but no
-        # drive, so it is not `is_absolute()` on Windows -- and its leading `/`
-        # looks exactly like a cmd switch. Both traps are on the one path shape
-        # that actually caused fleet-config#847, so it gets its own case.
-        if sys.platform == "win32" and str(tmp)[1:3] == ":\\":
-            msys = "/" + str(worktree)[0].lower() + str(worktree)[2:].replace("\\", "/")
-            check("venv_junction: MSYS operand (`/e/automation/...`) -> block (#847)",
-                  verdict(f"git worktree remove --force {msys}", cwd=primary) == 2)
-            check("venv_junction: MSYS operand under `rm -rf` -> block (#847)",
-                  verdict(f"rm -rf {msys}", cwd=primary) == 2)
-        check("venv_junction: venv creation over the junction -> block",
-              verdict(r"& .\.venv\Scripts\python.exe -m venv .venv",
-                      cwd=worktree, tool="PowerShell") == 2)
-        check("venv_junction: venv reset over the junction -> block",
-              verdict(r"& .\.venv\Scripts\python.exe -m venv --clear .venv",
-                      cwd=worktree, tool="PowerShell") == 2)
-        check("venv_junction: hazard in a later clause is not laundered by the first -> block",
-              verdict(f"echo hi; rm -rf {worktree}", cwd=primary) == 2)
-
-        # ---- the safe forms stay allowed ----
-        check("venv_junction: `rmdir <junction>` with no /s (reparse-safe) -> allow",
-              verdict(f"rmdir {link}", cwd=primary) == 0)
-        check("venv_junction: `worktree_claim.py remove-worktree <wt>` -> allow",
-              verdict(f"E:/automation/fleet-config/.venv/Scripts/python.exe "
-                      f"skills/_lib/worktree_claim.py remove-worktree {worktree}",
-                      cwd=primary) == 0)
-        check("venv_junction: `rm -rf` on a real .venv (not a junction) -> allow",
-              verdict(f"rm -rf {primary}", cwd=tmp) == 0)
-        check("venv_junction: `rm -rf` on a path with no .venv at all -> allow",
-              verdict(f"rm -rf {tmp / 'nothing-here'}", cwd=tmp) == 0)
-        check("venv_junction: `git worktree remove` on a junction-free worktree -> allow",
-              verdict(f"git worktree remove {tmp / 'plain-wt'}", cwd=primary) == 0)
-
-        # ---- false positive 1: flags are not directory names ----
-        # Pre-fix this blocked, reporting `--clear` as the bad directory name.
-        check("venv_flags: venv reset with the canonical name -> allow (#847)",
-              verdict("python -m venv --clear .venv", cwd=tmp) == 0)
-        check("venv_flags: venv creation with a flag then the canonical name -> allow (#847)",
-              verdict("python -m venv --system-site-packages .venv", cwd=tmp) == 0)
-        check("venv_flags: a flag before a WRONG name still blocks the name",
-              verdict("python -m venv --clear venv", cwd=tmp) == 2)
-        check("venv_flags: wrong name with no flags still blocks (unchanged)",
-              verdict("python -m venv venv", cwd=tmp) == 2)
-
-        # ---- false positive 2: a heredoc body written to a file is text ----
-        # This exact shape refused fleet-config#847 from being filed.
-        doc = tmp / "issue.md"
-        hazard_text = "The shape is consistent with a venv reset or creation\n" \
-                      "run against a junctioned path -- `python -m venv venv`.\n"
-        heredoc = f"cat > {doc} <<'DOCEOF'\n{hazard_text}DOCEOF\n"
-        check("venv_heredoc: file-redirected heredoc quoting the hazard -> allow (#847)",
-              verdict(heredoc, cwd=tmp) == 0)
-        check("venv_heredoc: `>>` append heredoc quoting the hazard -> allow (#847)",
-              verdict(heredoc.replace(f"> {doc}", f">> {doc}"), cwd=tmp) == 0)
-        check("venv_heredoc: `gh issue create --body-file -` heredoc -> allow (#847)",
-              verdict(f"gh issue create --body-file - <<'MD'\n{hazard_text}MD\n", cwd=tmp) == 0)
-        # ... but a body the consuming command EXECUTES still counts, whether or
-        # not the line carries a file redirect. `python - <<'PY' > out.txt` is
-        # the case a redirect-only discriminator would have wrongly stripped.
-        check("venv_heredoc: non-redirected heredoc piping a real command -> block",
-              verdict(f"cat <<'SHEOF' | sh\n{hazard_text}SHEOF\n", cwd=tmp) == 2)
-        check("venv_heredoc: executed heredoc that ALSO redirects to a file -> block",
-              verdict(f"sh - <<'SHEOF' > {tmp / 'out.txt'}\n{hazard_text}SHEOF\n", cwd=tmp) == 2)
-        check("venv_heredoc: a real command AFTER a stripped heredoc still blocks",
-              verdict(heredoc + "python -m venv venv\n", cwd=tmp) == 2)
-    finally:
-        if sys.platform == "win32":
-            subprocess.run(["cmd", "/c", "rmdir", str(tmp / "repo-wt-847" / ".venv")],
-                           capture_output=True, encoding="oem", errors="replace")
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
-
-
-def _venv_primary_guard_unit_checks() -> Tuple[int, int]:
-    """`venv_discipline.py` rule 5 + the destructive-action audit trail
-    (fleet-config#828).
-
-    The incident: an unattended `/cleanup-fleet-all` lane emptied
-    `email-archiver`'s primary `.venv` -- directory surviving, contents gone --
-    and the command was never identified, because the run retained only
-    per-sub-agent progress markers. Rule 4 (#847) answers only a delete that
-    walks *through* a worktree's junction; the evidence could not rule out one
-    aimed at the primary's own `.venv`, and that route was undefended.
-
-    The first block below is the **reproduction**: it runs the candidate
-    commands for real against a real primary-plus-junctioned-worktree topology
-    and asserts which one actually produces the incident's signature. Of the
-    plausible candidates only `git worktree remove --force` over a live
-    junction does -- `rm -rf`, `Remove-Item -Recurse` and `shutil.rmtree` all
-    delete the reparse point without following it. That is what makes the
-    verdict cases below a regression test rather than an assertion about a
-    hazard nobody has demonstrated.
-
-    Every rule-5 case exits 0 against pre-fix code, where a recursive delete of
-    a primary checkout's real venv was explicitly out of scope
-    (`junctioned_venv_under`: "a real `.venv` directory is the caller's own to
-    delete").
-    """
-    check = _Checker()
-
-    tmp = Path(tempfile.mkdtemp(prefix="venv_primary_"))
-    try:
-        # ---- reproduction: does the hazard actually exist, and in which form?
-        if sys.platform == "win32" and shutil.which("git"):
-            repro = tmp / "repro"
-            primary = repro / "alpha"
-            (primary / "src").mkdir(parents=True)
-            (primary / ".gitignore").write_text(".venv/\n", encoding="utf-8")
-            for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"),
-                         ("config", "user.name", "t"), ("add", "-A"),
-                         ("commit", "-qm", "init")):
-                subprocess.run(["git", *args], cwd=str(primary), capture_output=True)
-            real = primary / ".venv"
-            real.mkdir()
-            (real / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
-            wt = repro / "alpha-wt-99"
-            subprocess.run(["git", "worktree", "add", "-q", "-b", "fix/99-x", str(wt)],
-                           cwd=str(primary), capture_output=True)
-            subprocess.run(["cmd", "/c", "mklink", "/J", str(wt / ".venv"), str(real)],
-                           capture_output=True, encoding="oem", errors="replace")
-            if (wt / ".venv").exists():
-                subprocess.run(["git", "worktree", "remove", "--force", str(wt)],
-                               cwd=str(primary), capture_output=True)
-                check("venv_primary: repro -- `git worktree remove --force` over a live "
-                      "junction empties the primary venv, directory surviving (#828 signature)",
-                      real.is_dir() and not any(real.iterdir()),
-                      f"{real}: exists={real.is_dir()} "
-                      f"children={sorted(p.name for p in real.iterdir()) if real.is_dir() else '-'}")
-            else:
-                check.advisory("venv_primary: repro -- junction could not be created, "
-                               "reproduction skipped", False, str(wt / ".venv"))
-        else:
-            check.advisory("venv_primary: repro needs Windows junctions + git -- skipped",
-                           False, f"platform={sys.platform} git={bool(shutil.which('git'))}")
-
-        # ---- rule 5 verdicts, against a real primary checkout
-        state = tmp / "state"
-        repo = tmp / "repo"
-        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
-        (repo / ".venv" / "Scripts").mkdir(parents=True)
-        (repo / "build").mkdir()
-        # A linked worktree carrying its OWN real venv: `.git` is a gitFILE, so
-        # this venv is the worktree's to dispose of and must stay allowed.
-        sibling = tmp / "repo-wt-2"
-        (sibling / ".venv").mkdir(parents=True)
-        (sibling / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-2",
-                                      encoding="utf-8")
-
-        def verdict(command: str, cwd: Path, tool: str = "Bash") -> int:
-            code, _out, _err = run("venv_discipline",
-                                   {"tool_name": tool, "cwd": str(cwd),
-                                    "session_id": "sess-828",
-                                    "tool_input": {"command": command}},
-                                   {"CLAUDE_HOOKS_STATE_DIR": str(state)})
-            return code
-
-        check("venv_primary: `rm -rf <repo>/.venv` -> block",
-              verdict(f"rm -rf {repo}/.venv", cwd=repo) == 2)
-        check("venv_primary: bare `rm -rf .venv` from the checkout -> block",
-              verdict("rm -rf .venv", cwd=repo) == 2)
-        check("venv_primary: `Remove-Item -Recurse -Force .venv` -> block",
-              verdict("Remove-Item -Recurse -Force .venv", cwd=repo,
-                      tool="PowerShell") == 2)
-        check("venv_primary: `rmdir /s /q .venv` -> block",
-              verdict("rmdir /s /q .venv", cwd=repo) == 2)
-        check("venv_primary: `rm -rf <repo>` (the checkout holding it) -> block",
-              verdict(f"rm -rf {repo}", cwd=tmp) == 2)
-
-        check("venv_primary: `rm -rf <repo>/build` (no venv there) -> allow",
-              verdict(f"rm -rf {repo}/build", cwd=repo) == 0)
-        check("venv_primary: a worktree's OWN real venv is its own to delete -> allow",
-              verdict(f"rm -rf {sibling}/.venv", cwd=tmp) == 0)
-        check("venv_primary: `git worktree remove --force` on a junction-free "
-              "worktree -> allow",
-              verdict(f"git worktree remove --force {sibling}", cwd=repo) == 0)
-        # The escape hatch rule 5's own refusal points at. A guard that blocks
-        # its own remedy is the expensive kind of wrong (#464/#472, #847).
-        check("venv_primary: `python -m venv --clear .venv` in place -> allow",
-              verdict(r"& .\.venv\Scripts\python.exe -m venv --clear .venv",
-                      cwd=repo, tool="PowerShell") == 0)
-
-        # ---- the audit trail (#828 acceptance 3: attributable after the fact)
-        trail = state / "destructive-actions.jsonl"
-        check("venv_primary: audit trail written under the state dir", trail.is_file(),
-              f"expected {trail}")
-        rows = [json.loads(line) for line in
-                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
-        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
-        allowed = [r for r in rows if r["verdict"] == "ALLOW"]
-        check("venv_primary: every refused clause is recorded", len(blocked) == 5,
-              f"got {len(blocked)}: {[r['verb'] for r in blocked]}")
-        # The whole point: a refusal the agent alone sees answers "was it
-        # stopped", never "what ran". An ALLOWed destructive clause is the one
-        # #828 needed a record of and did not have.
-        check("venv_primary: allowed destructive clauses are recorded too",
-              len(allowed) == 4, f"got {len(allowed)}: {[r['verb'] for r in allowed]}")
-        check("venv_primary: each record carries the fields a post-mortem needs",
-              bool(rows) and all(
-                  set(r) >= {"ts", "verdict", "rule", "verb", "operand", "venv",
-                             "tool", "cwd", "launcher_session", "session", "command"}
-                  for r in rows),
-              f"first record keys: {sorted(rows[0]) if rows else '(none)'}")
-        check("venv_primary: the record names the session and the venv at risk",
-              bool(blocked) and all(r["session"] == "sess-828" for r in blocked)
-              and all(r["venv"] for r in blocked),
-              f"{[(r['session'], r['venv']) for r in blocked]}")
-        check("venv_primary: both hazard routes are distinguishable in the trail",
-              {r["rule"] for r in blocked} == {"primary"},
-              f"rules seen: {sorted({r['rule'] for r in blocked})}")
-        # An unwritable state dir must never take the fleet's Bash tool down
-        # with it -- the audit is best-effort by construction.
-        check("venv_primary: an unwritable audit path still allows a clean command",
-              run("venv_discipline",
-                  {"tool_name": "Bash", "cwd": str(repo),
-                   "tool_input": {"command": f"rm -rf {repo}/build"}},
-                  {"CLAUDE_HOOKS_STATE_DIR": str(repo / ".venv" / "Scripts" / "python.exe")}
-                  )[0] == 0)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
-
-
-def _venv_git_clean_guard_unit_checks() -> Tuple[int, int]:
-    """`venv_discipline.py` rules 5 + the audit trail over `git clean`
-    (fleet-config#867).
-
-    `-x` drops the ignore rules, and every fleet repo ignores `.venv`, so
-    `git clean -xfd` in a primary checkout deletes its real venv outright --
-    the route #866's reviewer found neither refused nor recorded. The first
-    block is the **reproduction** with real git: it establishes the hazard,
-    the `-e .venv` escape hatch the refusal points at, and that a worktree's
-    junctioned `.venv` is only unlinked (which is why rule 4 must not fire on
-    `git clean`). Every block case below exits 0 against pre-fix code, where
-    `destructive_operands` had no `git clean` branch at all.
-    """
-    check = _Checker()
-
-    tmp = Path(tempfile.mkdtemp(prefix="venv_git_clean_"))
-    junctions = []
-    try:
-        # ---- reproduction: what real `git clean` does to a real `.venv`
-        if shutil.which("git"):
-            def real_repo(name: str) -> Path:
-                root = tmp / "repro" / name
-                (root / "src").mkdir(parents=True)
-                (root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
-                (root / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
-                for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"),
-                             ("config", "user.name", "t"), ("add", "-A"),
-                             ("commit", "-qm", "init")):
-                    subprocess.run(["git", *args], cwd=str(root), capture_output=True)
-                (root / ".venv").mkdir()
-                (root / ".venv" / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
-                return root
-
-            gone = real_repo("gone")
-            subprocess.run(["git", "clean", "-xfd"], cwd=str(gone), capture_output=True)
-            check("venv_git_clean: repro -- `git clean -xfd` deletes a primary's "
-                  "gitignored .venv outright", not (gone / ".venv").exists())
-            kept = real_repo("kept")
-            subprocess.run(["git", "clean", "-xfd", "-e", ".venv"], cwd=str(kept),
-                           capture_output=True)
-            check("venv_git_clean: repro -- `-e .venv` keeps it (the escape hatch is real)",
-                  (kept / ".venv" / "pyvenv.cfg").is_file())
-
-            if sys.platform == "win32":
-                prim = real_repo("prim")
-                wt = tmp / "repro" / "prim-wt-1"
-                subprocess.run(["git", "worktree", "add", "-q", "-b", "fix/1-x", str(wt)],
-                               cwd=str(prim), capture_output=True)
-                subprocess.run(["cmd", "/c", "mklink", "/J", str(wt / ".venv"),
-                                str(prim / ".venv")],
-                               capture_output=True, encoding="oem", errors="replace")
-                junctions.append(wt / ".venv")
-                if (wt / ".venv").exists():
-                    subprocess.run(["git", "clean", "-xfd"], cwd=str(wt), capture_output=True)
-                    check("venv_git_clean: repro -- in a worktree, `git clean -xfd` unlinks "
-                          "the .venv junction without following it",
-                          not (wt / ".venv").exists()
-                          and (prim / ".venv" / "pyvenv.cfg").is_file())
-                else:
-                    check.advisory("venv_git_clean: repro -- junction could not be created, "
-                                   "skipped", False, str(wt / ".venv"))
-        else:
-            check.advisory("venv_git_clean: repro needs git -- skipped", False, "no git")
-
-        # ---- verdicts, against a synthetic primary checkout
-        state = tmp / "state"
-        repo = tmp / "repo"
-        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
-        (repo / ".venv" / "Scripts").mkdir(parents=True)
-        (repo / "src").mkdir()
-        bare = tmp / "novenv"                    # a primary with nothing to lose
-        (bare / ".git").mkdir(parents=True)
-
-        def verdict(command: str, cwd: Path, tool: str = "Bash") -> Tuple[int, str]:
-            code, _out, err = run("venv_discipline",
-                                  {"tool_name": tool, "cwd": str(cwd),
-                                   "session_id": "sess-867",
-                                   "tool_input": {"command": command}},
-                                  {"CLAUDE_HOOKS_STATE_DIR": str(state)})
-            return code, err
-
-        msys_repo = "/" + str(repo)[0].lower() + str(repo)[2:].replace("\\", "/")
-        blocks = [
-            ("`git clean -xfd` in the primary", "git clean -xfd", repo, "Bash"),
-            ("`git -C <repo> clean -xdf`", f"git -C {repo} clean -xdf", tmp, "Bash"),
-            ("`git -C <msys path> clean -xdf`", f"git -C {msys_repo} clean -xdf", tmp, "Bash"),
-            ("PowerShell `git -C <repo> clean -dfx`", f"git -C '{repo}' clean -dfx", tmp,
-             "PowerShell"),
-            ("`git clean -Xfd` (ignored-only still takes .venv)", "git clean -Xfd", repo, "Bash"),
-            ("`git clean -x -f -d` (split flags)", "git clean -x -f -d", repo, "Bash"),
-            ("`git clean -xf .` (a pathspec makes -d irrelevant)", "git clean -xf .", repo,
-             "Bash"),
-            ("`git clean -xf -- .venv`", "git clean -xf -- .venv", repo, "Bash"),
-            ("global options before the verb", "git --no-pager -c core.quotepath=off clean -dxf",
-             repo, "Bash"),
-            ("`--attr-source <tree>` global option (the set that drifted from _lib, #1304)",
-             "git --attr-source HEAD clean -xfd", repo, "Bash"),
-            ("an unrelated `-e` does not protect .venv", "git clean -xfd -e build", repo, "Bash"),
-            ("`-X -e .venv` still deletes it", "git clean -Xfd -e .venv", repo, "Bash"),
-            ("a trailing redirect is not a pathspec", "git clean -xfd 2>&1", repo, "Bash"),
-            ("a compound command's later clause", "git status && git clean -xfd", repo, "Bash"),
-        ]
-        stderr_seen = ""
-        for label, command, cwd, tool in blocks:
-            code, err = verdict(command, cwd, tool)
-            stderr_seen = stderr_seen or err
-            check(f"venv_git_clean: {label} -> block", code == 2, f"exit={code} cmd={command}")
-        check("venv_git_clean: the refusal names the `-e .venv` escape hatch",
-              "-e .venv" in stderr_seen, stderr_seen[:300])
-
-        # Allowed and NOT recorded: these delete nothing a venv could lose.
-        unrecorded = [
-            ("`git clean -nxd` (dry run)", "git clean -nxd", repo),
-            ("`git clean -xfd --dry-run`", "git clean -xfd --dry-run", repo),
-            ("`git clean -xfd --dry` (git's long-option prefix)", "git clean -xfd --dry", repo),
-            ("`git clean -fd` (no -x: ignore rules keep .venv)", "git clean -fd", repo),
-            ("`git clean -xf` (no -d, no pathspec: never recurses)", "git clean -xf", repo),
-            ("`git commit -m \"git clean -xfd\"` (a message, not a verb)",
-             'git commit -m "git clean -xfd"', repo),
-            ("`echo git clean -xfd`", "echo git clean -xfd", repo),
-        ]
-        # Allowed but recorded: they do delete ignored files, just not a venv.
-        recorded = [
-            ("`git clean -xfd -e .venv`", "git clean -xfd -e .venv", repo),
-            ("`git clean -xfd --exclude=.venv/`", "git clean -xfd --exclude=.venv/", repo),
-            ("`git clean -xfd` from a subdirectory", "git clean -xfd", repo / "src"),
-            ("`git clean -xfd` where no .venv exists", "git clean -xfd", bare),
-        ]
-        if sys.platform == "win32":
-            linked = tmp / "repo-wt-3"
-            linked.mkdir()
-            (linked / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-3",
-                                         encoding="utf-8")
-            subprocess.run(["cmd", "/c", "mklink", "/J", str(linked / ".venv"),
-                            str(repo / ".venv")],
-                           capture_output=True, encoding="oem", errors="replace")
-            junctions.append(linked / ".venv")
-            if (linked / ".venv").exists():
-                recorded.append(("`git clean -xfd` in a worktree over a junction (git "
-                                 "unlinks it, never follows it)", "git clean -xfd", linked))
-        for label, command, cwd in unrecorded + recorded:
-            code, _err = verdict(command, cwd)
-            check(f"venv_git_clean: {label} -> allow", code == 0, f"exit={code}")
-
-        trail = state / "destructive-actions.jsonl"
-        rows = [json.loads(line) for line in
-                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
-        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
-        allowed = [r for r in rows if r["verdict"] == "ALLOW"]
-        check("venv_git_clean: every refused `git clean` is recorded as rule 5",
-              len(blocked) == len(blocks)
-              and all(r["rule"] == "primary" and r["venv"] for r in blocked),
-              f"got {[(r['verb'], r['rule']) for r in blocked]}")
-        check("venv_git_clean: allowed destructive `git clean`s are recorded, dry runs "
-              "and -x-less cleans are not",
-              len(allowed) == len(recorded)
-              and all(r["verb"].startswith("git clean") for r in allowed),
-              f"got {[(r['verb'], r['command']) for r in allowed]}")
-    finally:
-        for link in junctions:
-            try:
-                os.rmdir(link)                   # reparse-safe: never follows it
-            except OSError:
-                pass
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
-
-
-def _venv_cd_prefix_guard_unit_checks() -> Tuple[int, int]:
-    """`venv_discipline.py` rules 4 + 5 across a directory change
-    (fleet-config#871).
-
-    Agents here prefix almost every command with `cd /e/automation/<repo> &&`,
-    because the Bash tool resets cwd between calls. Rules 4 and 5 resolved
-    every operand against the payload cwd, so `cd <primary> && git clean -xfd`
-    issued from anywhere else was allowed, and its audit record named no venv.
-    Every case in `fixed_blocks` exits 0 against pre-fix code.
-
-    `hooks/` is junctioned live into `~/.claude/hooks`, so a false block here
-    stalls every running session the moment it merges: the allow table is the
-    real non-destructive shapes agents issue all day, and it is held to the
-    same bar as the blocks. Everything runs against temp directories only.
-    """
-    check = _Checker()
-
-    tmp = Path(tempfile.mkdtemp(prefix="venv_cd_prefix_"))
-    junctions = []
-    try:
-        state = tmp / "state"
-        repo = tmp / "repo"
-        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
-        (repo / ".venv" / "Scripts").mkdir(parents=True)
-        (repo / "src").mkdir()
-        (repo / "build").mkdir()
-        elsewhere = tmp / "elsewhere"            # a session cwd with nothing to lose
-        elsewhere.mkdir()
-
-        def verdict(command: str, cwd: Path, tool: str = "Bash") -> int:
-            code, _out, _err = run("venv_discipline",
-                                   {"tool_name": tool, "cwd": str(cwd),
-                                    "session_id": "sess-871",
-                                    "tool_input": {"command": command}},
-                                   {"CLAUDE_HOOKS_STATE_DIR": str(state)})
-            return code
-
-        msys_repo = "/" + str(repo)[0].lower() + str(repo)[2:].replace("\\", "/")
-        venv = os.path.normcase(str(repo / ".venv"))
-        # (label, command, cwd, tool) -- each one allowed before #871.
-        fixed_blocks = [
-            ("`cd <primary> && git clean -xfd`", f"cd {repo} && git clean -xfd",
-             elsewhere, "Bash"),
-            ("`cd <primary> && rm -rf .venv`", f"cd {repo} && rm -rf .venv", elsewhere, "Bash"),
-            ("`cd <msys primary> && git clean -xfd`", f"cd {msys_repo} && git clean -xfd",
-             elsewhere, "Bash"),
-            ("`cd <primary>` then `rm -rf .venv` on the next line",
-             f"cd {repo}\nrm -rf .venv", elsewhere, "Bash"),
-            ("the new base survives an unrelated clause",
-             f"cd {repo} && git status && git clean -xfd", elsewhere, "Bash"),
-            ("relative `cd` chains resolve", f"cd {repo}/src && cd .. && git clean -xfd",
-             elsewhere, "Bash"),
-            ("a redirected `cd` still moves", f"cd {repo} >/dev/null 2>&1 && git clean -xfd",
-             elsewhere, "Bash"),
-            ("`pushd <primary>`", f"pushd {repo} && rm -rf .venv && popd", elsewhere, "Bash"),
-            ("PowerShell `cd '<primary>'; Remove-Item -Recurse`",
-             f"cd '{repo}'; Remove-Item -Recurse -Force .venv", elsewhere, "PowerShell"),
-            ("PowerShell `Set-Location -Path`",
-             f"Set-Location -Path '{repo}'; Remove-Item -Recurse .venv", elsewhere,
-             "PowerShell"),
-        ]
-        for label, command, cwd, tool in fixed_blocks:
-            code = verdict(command, cwd, tool)
-            check(f"venv_cd_prefix: {label} -> block", code == 2, f"exit={code} cmd={command!r}")
-
-        # A `cd` that cannot succeed leaves the next `;` clause where it was.
-        code = verdict(f"cd {tmp}/missing; git clean -xfd", repo)
-        check("venv_cd_prefix: `cd <missing>; git clean -xfd` in the primary -> block",
-              code == 2, f"exit={code}")
-        kept_blocks = 1
-
-        if sys.platform == "win32":
-            linked = tmp / "repo-wt-5"
-            linked.mkdir()
-            (linked / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-5",
-                                         encoding="utf-8")
-            subprocess.run(["cmd", "/c", "mklink", "/J", str(linked / ".venv"),
-                            str(repo / ".venv")],
-                           capture_output=True, encoding="oem", errors="replace")
-            junctions.append(linked / ".venv")
-        else:
-            linked = None
-        junction_ok = linked is not None and (linked / ".venv").exists()
-        if junction_ok:
-            code = verdict(f"cd {linked} && rm -rf .venv", elsewhere)
-            check("venv_cd_prefix: `cd <worktree> && rm -rf .venv` -> rule 4 block",
-                  code == 2, f"exit={code}")
-        else:
-            check.advisory("venv_cd_prefix: junction could not be created, rule 4 case "
-                           "skipped", False, f"platform={sys.platform}")
-
-        trail = state / "destructive-actions.jsonl"
-        rows = [json.loads(line) for line in
-                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
-        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
-        primary_rows = [r for r in blocked if r["rule"] == "primary"]
-        check("venv_cd_prefix: every rule-5 refusal is recorded with the venv at risk",
-              len(primary_rows) == len(fixed_blocks) + kept_blocks
-              and all(os.path.normcase(r["venv"]) == venv for r in primary_rows),
-              f"got {[(r['rule'], r['venv'], r['command']) for r in blocked]}")
-        if junction_ok:
-            check("venv_cd_prefix: the worktree refusal is recorded as rule 4",
-                  [r["rule"] for r in blocked].count("junction") == 1,
-                  f"got {[(r['rule'], r['command']) for r in blocked]}")
-
-        # ---- false-block bar: the shapes agents issue dozens of times an hour
-        allows = [
-            ("`cd <primary>/src && git clean -xfd`", f"cd {repo}/src && git clean -xfd",
-             elsewhere, "Bash"),
-            ("`cd <primary> && git status`", f"cd {repo} && git status", elsewhere, "Bash"),
-            ("`cd <msys primary> && git log`", f"cd {msys_repo} && git log --oneline -5",
-             elsewhere, "Bash"),
-            ("`cd <primary> && git fetch && git pull`",
-             f"cd {repo} && git fetch origin && git pull --ff-only", elsewhere, "Bash"),
-            ("`cd <primary> && git diff`", f"cd {repo} && git diff main...HEAD", elsewhere,
-             "Bash"),
-            ("`cd <primary> && .venv/Scripts/python.exe -m pytest`",
-             f"cd {repo} && .venv/Scripts/python.exe -m pytest -q", elsewhere, "Bash"),
-            ("PowerShell `cd <primary>; & .\\.venv\\Scripts\\python.exe`",
-             f"cd '{repo}'; & .\\.venv\\Scripts\\python.exe -m compileall -q hooks",
-             elsewhere, "PowerShell"),
-            ("`cd <primary> && gh issue view`", f"cd {repo} && gh issue view 871 --json state",
-             elsewhere, "Bash"),
-            ("`cd <primary> && rm -rf build`", f"cd {repo} && rm -rf build", elsewhere, "Bash"),
-            ("`cd <primary> && git clean -xfd -e .venv`",
-             f"cd {repo} && git clean -xfd -e .venv", elsewhere, "Bash"),
-            ("`cd <primary> || git clean -xfd` (runs only where cd failed)",
-             f"cd {repo} || git clean -xfd", elsewhere, "Bash"),
-            ("`pushd <primary> && popd && git clean -xfd` (popd restores)",
-             f"pushd {repo} && popd && git clean -xfd", elsewhere, "Bash"),
-            ("`cd <elsewhere> && git clean -xfd` issued from the primary",
-             f"cd {elsewhere} && git clean -xfd", repo, "Bash"),
-            ("`cd ~ && git status`", "cd ~ && git status", repo, "Bash"),
-            ("a quoted `cd … && rm -rf .venv` in `echo`",
-             f'echo "cd {repo} && rm -rf .venv"', elsewhere, "Bash"),
-            ("a quoted `cd … && git clean -xfd` in a commit message",
-             f'git commit -m "docs: cd {repo} && git clean -xfd is refused"', elsewhere,
-             "Bash"),
-            ("a quoted `cd …; rm -rf .venv` in a gh comment",
-             f"gh issue comment 1 --body 'run: cd {repo}; rm -rf .venv'", elsewhere, "Bash"),
-            ("a text-sink heredoc body quoting the hazard",
-             f"cat > notes.md <<'EOF'\ncd {repo} && rm -rf .venv\nEOF", elsewhere, "Bash"),
-            ("an executed heredoc whose text splits at a stray quote",
-             f"cd {repo} && python - <<'PY'\nnote = \"a && rm -rf .venv, then \"\nPY",
-             elsewhere, "Bash"),
-            ("`rm -rf \"\"` names no path", f"cd {repo} && rm -rf \"\"", elsewhere, "Bash"),
-            ("a `--body-file -` heredoc body quoting the hazard",
-             f"gh issue create --title x --body-file - <<'EOF'\ncd {repo}\ngit clean -xfd\nEOF",
-             elsewhere, "Bash"),
-        ]
-        if junction_ok:
-            allows.append(("`cd <worktree> && git worktree list`",
-                           f"cd {linked} && git worktree list", elsewhere, "Bash"))
-        for label, command, cwd, tool in allows:
-            code = verdict(command, cwd, tool)
-            check(f"venv_cd_prefix: {label} -> allow", code == 0, f"exit={code} cmd={command!r}")
-    finally:
-        for link in junctions:
-            try:
-                os.rmdir(link)                   # reparse-safe: never follows it
-            except OSError:
-                pass
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
