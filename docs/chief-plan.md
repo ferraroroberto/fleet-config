@@ -83,6 +83,7 @@ chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status ga
 chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus]   # --note "" / --model "" clear
 chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273
+chief_ops.py plan prune [--status merged …]     # drop every queue row with a status (default merged); lanes and waiting items stay
 chief_ops.py plan lane app-launcher gate --item "#1273" [--session <sid>] [--model opus]    # upsert, one lane per repo; an omitted --model keeps the lane's
 chief_ops.py plan drop-lane app-launcher
 chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131      # = plan ask with only the question
@@ -92,4 +93,4 @@ chief_ops.py plan unwait q2                     # or the 1-based index, the repo
 chief_ops.py plan clear
 ```
 
-Success prints one line, `PLAN=written lanes=… queue=… waiting=… updated_at=…`; `wait` and `ask` append the new item's ` id=…`. `show` prints the plan as JSON with one row per line. A refusal prints `ERROR: <reason>` to stderr and exits 2.
+Success prints one line, `PLAN=written lanes=… queue=… waiting=… updated_at=…`; `wait` and `ask` append the new item's ` id=…`; `prune` prefixes ` PRUNED=<n>` (0 when nothing matched, the file is still re-stamped). `chief_plan.prune_plan_file(path, statuses=("merged",))` is the same operation through the locked writer for in-process callers (the Board's clear-merged button), so the app never writes the plan file itself. `show` prints the plan as JSON with one row per line. A refusal prints `ERROR: <reason>` to stderr and exits 2.

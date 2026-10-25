@@ -416,6 +416,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`unwait <id>`; fleet-config#1049) and the `chief_ops.py plan` CLI "
      "legs -- is testable on its own, with no real chief-plan.json "
      "touched (fleet-config#1034)"),
+    ("chief_plan_prune", "chief_plan/test_prune.py",
+     "`plan prune` -- `prune_items` dropping only the listed statuses "
+     "(default merged) and leaving lanes and waiting items alone, an unknown "
+     "status refused, `prune_plan_file` through the locked writer (missing "
+     "file, corrupt file left byte-identical) and the CLI `PRUNED=<n>` line "
+     "with a repeatable `--status` -- is testable on its own, with no real "
+     "chief-plan.json touched"),
     ("chief_ops_transport", "acceptance/test_chief_ops_transport.py",
      "chief_ops against a slow or dead launcher -- the distinct "
      "`UNCONFIRMED=timeout` and `UNREACHABLE=` lines and exit codes with no "
