@@ -910,42 +910,6 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     cause -- a leaked browser helper or backend server) must produce an honest
     non-zero exit naming the path, so the caller reports residue instead of a
     false clean.
-
-    **When the removal fails as "busy", suspect a leaked browser helper.** The
-    named cause (project-scaffolding#203) is a Playwright/WebKit helper process
-    left behind by an e2e run, holding the worktree as its **current working
-    directory** -- helpers inherit pytest's cwd, so a run inside `<repo>-wt-<N>`
-    leaves helpers rooted there, and Windows will not delete a directory that is
-    some live process's cwd. A busy worktree implies a holder that still owns
-    the directory -- which may be genuinely **running**, or wedged mid-exit
-    (fleet-config#705): `ExitStatus` set so `GetExitCodeProcess`/`taskkill`
-    report it gone, but `GetProcessTimes` shows no exit time, Toolhelp32 shows
-    a live thread, and its cwd handle is still held. Windows keeps an
-    already-exited process's object (and its `tasklist`/WMI row) alive only
-    while *some* handle to it remains -- that alone does not rule out this
-    wedged state, so "the sweep calls it exited" is not proof the worktree is
-    safe to retry.
-
-    Diagnosing and clearing that is the e2e harness's job, not this module's.
-    Run the adopting repo's own standalone sweep through its venv interpreter,
-    then retry the teardown:
-
-        <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py <worktree-path> [--dry-run]
-
-    Pointer only -- the sweep classifies by cwd read from the PEB (Win32
-    exposes no accessor for another process's working directory) and lives in
-    `project-scaffolding`'s e2e harness (as of project-scaffolding#236 it
-    reports a wedged holder as `wedged:pins-scope` and exits non-zero when the
-    path is pinned). Never reimplement it here.
-
-    **A `wedged:pins-scope` verdict means retrying the teardown will not
-    help** -- nothing can reap a wedged process. The directory is freed by
-    closing the holder's cwd handle remotely (`RTL_USER_PROCESS_PARAMETERS
-    .CurrentDirectory.Handle` from its PEB, then `NtDuplicateObject(...,
-    DUPLICATE_CLOSE_SOURCE)`), not by killing or rebooting -- rebooting the
-    host was tried (home-automation#581) and the directories came straight
-    back. Working implementation: `home-automation`'s
-    `scripts/unpin_directory.py`.
     """
     if not wt.exists():
         print(f"Worktree already gone: {wt}")
@@ -987,6 +951,44 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
         # The junction is already gone, so this delete cannot escape the tree.
         shutil.rmtree(wt, ignore_errors=True)
 
+    return _report_removal(wt)
+
+
+def _report_removal(wt: Path) -> int:
+    """1 when the tree survived, naming its likely holder; else release its ports, 0.
+
+    **When the removal fails as "busy", suspect a leaked browser helper**
+    (project-scaffolding#203): a Playwright/WebKit helper left by an e2e run
+    inherits pytest's cwd, so a run inside `<repo>-wt-<N>` leaves helpers whose
+    **current working directory** is the worktree, and Windows will not delete
+    a live process's cwd. The holder may be genuinely **running**, or wedged mid-exit
+    (fleet-config#705): `ExitStatus` set so `GetExitCodeProcess`/`taskkill`
+    report it gone, but `GetProcessTimes` shows no exit time, Toolhelp32 shows
+    a live thread, and its cwd handle is still held. Windows keeps an
+    already-exited process's object (and its `tasklist`/WMI row) alive only
+    while *some* handle to it remains -- that alone does not rule out this
+    wedged state, so "the sweep calls it exited" is not proof the worktree is
+    safe to retry.
+
+    Diagnosing and clearing that is the e2e harness's job, not this module's.
+    Run the adopting repo's own standalone sweep through its venv interpreter,
+    then retry the teardown:
+
+        <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py <worktree-path> [--dry-run]
+
+    Pointer only -- the sweep reads each process's cwd from its PEB (Win32 has
+    no accessor for it) and lives in `project-scaffolding`'s e2e harness, which
+    reports a wedged holder as `wedged:pins-scope` and exits non-zero when the
+    path is pinned (project-scaffolding#236). Never reimplement it here.
+
+    **A `wedged:pins-scope` verdict means retrying the teardown will not
+    help** -- nothing can reap a wedged process. The directory is freed by
+    closing the holder's cwd handle remotely (`RTL_USER_PROCESS_PARAMETERS
+    .CurrentDirectory.Handle` from its PEB, then `NtDuplicateObject(...,
+    DUPLICATE_CLOSE_SOURCE)`), not by killing or rebooting -- rebooting the
+    host was tried (home-automation#581) and the directories came straight
+    back. Working implementation: `home-automation`'s `scripts/unpin_directory.py`.
+    """
     if wt.exists():
         print(f"Worktree NOT removed (a live process is likely holding a file "
               f"inside it): {wt}", file=sys.stderr)
@@ -996,11 +998,9 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
               f"#   <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py "
               f"{wt} --dry-run", file=sys.stderr)
         return 1
-    # Only once the tree is genuinely gone: a surviving worktree may still
-    # boot and bind, so handing its ports back here would invite exactly the
-    # collision the reservation exists to prevent. `_live_rows` would prune
-    # these eventually anyway -- this just makes the port reusable now
-    # instead of at the next reader.
+    # Only once the tree is genuinely gone: a surviving worktree may still boot
+    # and bind, so releasing its ports earlier invites the collision the
+    # reservation prevents. `_live_rows` would prune them later; this frees them now.
     released = release_ports(wt)
     if released:
         print(f"PORTS_RELEASED={len(released)}: "

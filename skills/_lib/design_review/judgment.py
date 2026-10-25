@@ -233,6 +233,71 @@ def unmeasured_doc(rubric: Rubric, errors: List[str], judges: int = 1) -> dict:
             "rubric_version": rubric.version, "judges": judges, "answers": [], "uncatalogued": [], "errors": list(errors), "disagreements": [], "dropped": []}
 
 
+def _answer_errors(jid: str, a: dict, q: Judgment, screens: Dict[str, dict]) -> Tuple[List[str], dict]:
+    """Every schema error in one answer, and its normalized fields (evidence alias resolved)."""
+    errs: List[str] = []
+    bad_keys = sorted(set(a) - {"id", "answer", "evidence", "maps_to", "note"})
+    if bad_keys:
+        errs.append(f"{jid}: unknown keys {bad_keys}")
+    answer = a.get("answer")
+    if answer not in ANSWERS:
+        errs.append(f"{jid}: answer {answer!r} not in {ANSWERS}")
+    evidence = a.get("evidence")
+    alias = None
+    if isinstance(evidence, str) and evidence not in screens and evidence.endswith(FULL_SUFFIX) and evidence[:-len(FULL_SUFFIX)] in screens:
+        alias = {"id": jid, "from": evidence, "to": evidence[:-len(FULL_SUFFIX)]}
+        evidence = evidence[:-len(FULL_SUFFIX)]
+    if evidence is None or evidence == "":
+        if answer != "na":
+            errs.append(f"{jid}: evidence is required for a {answer!r} answer")
+        evidence = None
+    elif not isinstance(evidence, str) or evidence not in screens:
+        errs.append(f"{jid}: evidence {evidence!r} is not a screen id of this run")
+    elif not _in_scope(screens[evidence], q.screens):
+        errs.append(f"{jid}: evidence {evidence!r} is outside the question's scope ({q.screens})")
+    maps_to = a.get("maps_to")
+    if maps_to is None:
+        maps_to = []
+    if not isinstance(maps_to, list) or any(not isinstance(m, str) for m in maps_to):
+        errs.append(f"{jid}: maps_to must be a list of rule ids or null")
+        maps_to = []
+    outside = [m for m in maps_to if m not in q.maps_to]
+    if outside:
+        errs.append(f"{jid}: maps_to {outside} not in the question's list {q.maps_to or '[]'}")
+    if maps_to and answer != "no":
+        errs.append(f"{jid}: maps_to given on a {answer!r} answer")
+    note = a.get("note")
+    if note is not None and not isinstance(note, str):
+        errs.append(f"{jid}: note must be a string or null")
+    return errs, {"answer": answer, "evidence": evidence, "maps_to": maps_to, "note": note, "alias": alias}
+
+
+def _uncatalogued_errors(label: str, u: dict, qid: str, questions: Dict[str, Judgment],
+                         seen: Dict[str, dict]) -> List[str]:
+    """Every schema error in one uncatalogued entry."""
+    errs = []
+    if qid not in questions:
+        errs.append(f"{label}: question {qid!r} is not a checklist id")
+    elif qid not in seen:
+        errs.append(f"{label}: names {qid}, which has no kept answer")
+    elif seen[qid]["answer"] != "no":
+        errs.append(f"{label}: names {qid} which was answered {seen[qid]['answer']!r}, not 'no'")
+    title = u.get("title")
+    if not isinstance(title, str) or not title.strip():
+        errs.append(f"{label}: title is required")
+    if u.get("severity") not in SEVERITIES:
+        errs.append(f"{label}: severity {u.get('severity')!r} not in {SEVERITIES}")
+    if u.get("owner") not in OWNERS:
+        errs.append(f"{label}: owner {u.get('owner')!r} not in {OWNERS}")
+    detail = u.get("detail")
+    if not isinstance(detail, str) or not detail.strip():
+        errs.append(f"{label}: detail is required")
+    proposed = u.get("proposed")
+    if not isinstance(proposed, dict) or not str(proposed.get("metric") or "").strip() or proposed.get("threshold") in (None, ""):
+        errs.append(f"{label}: proposed.metric and proposed.threshold are required")
+    return errs
+
+
 def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, List[str]]:
     """Schema-validate one judge's payload against the rubric checklist and the run's screens.
 
@@ -284,40 +349,9 @@ def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, 
             dropped.append((jid, f"{jid}: answered more than once"))
             continue
         q = questions[jid]
-        errs: List[str] = []
-        bad_keys = sorted(set(a) - {"id", "answer", "evidence", "maps_to", "note"})
-        if bad_keys:
-            errs.append(f"{jid}: unknown keys {bad_keys}")
-        answer = a.get("answer")
-        if answer not in ANSWERS:
-            errs.append(f"{jid}: answer {answer!r} not in {ANSWERS}")
-        evidence = a.get("evidence")
-        alias = None
-        if isinstance(evidence, str) and evidence not in screens and evidence.endswith(FULL_SUFFIX) and evidence[:-len(FULL_SUFFIX)] in screens:
-            alias = {"id": jid, "from": evidence, "to": evidence[:-len(FULL_SUFFIX)]}
-            evidence = evidence[:-len(FULL_SUFFIX)]
-        if evidence is None or evidence == "":
-            if answer != "na":
-                errs.append(f"{jid}: evidence is required for a {answer!r} answer")
-            evidence = None
-        elif not isinstance(evidence, str) or evidence not in screens:
-            errs.append(f"{jid}: evidence {evidence!r} is not a screen id of this run")
-        elif not _in_scope(screens[evidence], q.screens):
-            errs.append(f"{jid}: evidence {evidence!r} is outside the question's scope ({q.screens})")
-        maps_to = a.get("maps_to")
-        if maps_to is None:
-            maps_to = []
-        if not isinstance(maps_to, list) or any(not isinstance(m, str) for m in maps_to):
-            errs.append(f"{jid}: maps_to must be a list of rule ids or null")
-            maps_to = []
-        outside = [m for m in maps_to if m not in q.maps_to]
-        if outside:
-            errs.append(f"{jid}: maps_to {outside} not in the question's list {q.maps_to or '[]'}")
-        if maps_to and answer != "no":
-            errs.append(f"{jid}: maps_to given on a {answer!r} answer")
-        note = a.get("note")
-        if note is not None and not isinstance(note, str):
-            errs.append(f"{jid}: note must be a string or null")
+        errs, fields = _answer_errors(jid, a, q, screens)
+        answer, evidence, maps_to, note, alias = (fields["answer"], fields["evidence"], fields["maps_to"],
+                                                  fields["note"], fields["alias"])
         if errs:
             dropped.extend((jid, e) for e in errs)
             continue
@@ -334,26 +368,8 @@ def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, 
             dropped.append((label, f"{label} is not an object"))
             continue
         qid = str(u.get("question", "")).strip()
-        errs = []
-        if qid not in questions:
-            errs.append(f"{label}: question {qid!r} is not a checklist id")
-        elif qid not in seen:
-            errs.append(f"{label}: names {qid}, which has no kept answer")
-        elif seen[qid]["answer"] != "no":
-            errs.append(f"{label}: names {qid} which was answered {seen[qid]['answer']!r}, not 'no'")
-        title = u.get("title")
-        if not isinstance(title, str) or not title.strip():
-            errs.append(f"{label}: title is required")
-        if u.get("severity") not in SEVERITIES:
-            errs.append(f"{label}: severity {u.get('severity')!r} not in {SEVERITIES}")
-        if u.get("owner") not in OWNERS:
-            errs.append(f"{label}: owner {u.get('owner')!r} not in {OWNERS}")
-        detail = u.get("detail")
-        if not isinstance(detail, str) or not detail.strip():
-            errs.append(f"{label}: detail is required")
-        proposed = u.get("proposed")
-        if not isinstance(proposed, dict) or not str(proposed.get("metric") or "").strip() or proposed.get("threshold") in (None, ""):
-            errs.append(f"{label}: proposed.metric and proposed.threshold are required")
+        errs = _uncatalogued_errors(label, u, qid, questions, seen)
+        title, detail, proposed = u.get("title"), u.get("detail"), u.get("proposed")
         if errs:
             dropped.extend((label, e) for e in errs)
             continue

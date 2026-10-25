@@ -757,6 +757,13 @@ class ProgressFormatter:
         self.emit(f"{self.adapter.label}:\n{_redact(text)}")
 
     def finish(self, exit_code: int, stalled: bool = False) -> None:
+        recent_unknown = self._emit_record_warnings()
+        status = self._final_status(exit_code, stalled, recent_unknown)
+        result_note = " · no terminal result event" if not self._saw_result else ""
+        self.emit(f"{status} · exit {exit_code}{result_note}")
+
+    def _emit_record_warnings(self) -> int:
+        """One line per kind of record that did not count; returns the unknown burst size."""
         if self._malformed or self._unknown:
             breakdown = self.unknown_summary()
             self.emit(
@@ -765,20 +772,17 @@ class ProgressFormatter:
                 + (f" · unknown: {breakdown}" if breakdown else "")
             )
         if self._unverified:
-            # Its own line, never folded into the "ignored" one above: these are
-            # the records that did decide the verdict, and a reader who sees
-            # "not confirmed" needs to be told which ones.
+            # Its own line, never folded into "ignored": these records decided the
+            # verdict, and a reader who sees "not confirmed" needs to know which.
             self.emit(
                 f"⚠ {self._unverified} record(s) left this run unverified "
                 f"· {self.unverified_summary()}"
             )
         if self._child_failures or self._child_cancellations:
-            # Not a verdict (see `saw_kill_signature`) but never silent either:
-            # a run that lost a background task should say so on its own line,
-            # so the next reader of the log can tell "happened and was worked
-            # around" from "never happened" without re-reading 300 lines of
-            # stream. Worded as a record rather than a judgement — the adapter
-            # knows the child ended badly, not whether the run coped.
+            # Not a verdict (see `saw_kill_signature`) but never silent: its own
+            # line tells "happened and was worked around" from "never happened".
+            # Worded as a record, not a judgement — the adapter knows the child
+            # ended badly, not whether the run coped.
             counts = ", ".join(
                 part for part in (
                     f"{self._child_failures} failed" if self._child_failures else "",
@@ -795,13 +799,11 @@ class ProgressFormatter:
                 f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
                 "— possible truncated/killed stream"
             )
-        failed = (
-            stalled
-            or exit_code != 0
-            or self._result_error
-            or self._saw_kill_signature
-            or self._saw_self_reported_failure
-        )
+        return recent_unknown
+
+    def _final_status(self, exit_code: int, stalled: bool, recent_unknown: int) -> str:
+        failed = (stalled or exit_code != 0 or self._result_error
+                  or self._saw_kill_signature or self._saw_self_reported_failure)
         if stalled:
             status = "⏱ stalled"
         elif exit_code == TRANSIENT_API_EXIT_CODE:
@@ -862,9 +864,7 @@ class ProgressFormatter:
             status = "❓ not confirmed · missing, malformed or unverifiable completion stream"
         else:
             status = "❌ failed" if failed else "✅ completed"
-        result_note = " · no terminal result event" if not self._saw_result else ""
-        self.emit(f"{status} · exit {exit_code}{result_note}")
-
+        return status
 
 def build_command(arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
     """Build the child command while keeping stream-owned flags canonical."""

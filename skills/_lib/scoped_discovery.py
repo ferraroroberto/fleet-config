@@ -218,43 +218,71 @@ def _link(source: Path, target: Path) -> None:
         target.symlink_to(source, target_is_directory=True)
 
 
+class _Rows:
+    """The reconcile report: one row per path, and whether any row blocks the run."""
+
+    def __init__(self) -> None:
+        self.rows: list = []
+        self.blocked = False
+
+    def __call__(self, state: str, path: Path, detail: str) -> None:
+        self.rows.append({"state": state, "path": str(path), "detail": detail})
+        self.blocked |= state in {"collision", "unknown", "missing-source"}
+
+
+def _safe_parent(repo: Path, target: Path) -> bool:
+    """Never traverse a replaced parent while touching a recorded child link."""
+    return all(not is_link(p) for p in target.parents if p != repo and repo in p.parents)
+
+
+def _uninstall(repo: Path, manifest: dict, report: _Rows) -> dict:
+    """Remove every owned link that is still exactly what was recorded."""
+    for key, source in list(manifest["links"].items()):
+        target = repo / key
+        if not _safe_parent(repo, target):
+            report("collision", target, "parent became a link; retained ownership record")
+        elif not present(target):
+            del manifest["links"][key]
+            report("absent", target, "already removed")
+        elif not is_link(target) or str(target.resolve()) != source:
+            report("collision", target, "entry changed; retained entry and ownership record")
+        else:
+            _unlink(target)
+            del manifest["links"][key]
+            report("removed", target, source)
+    if manifest["links"] or manifest_path(repo).exists():
+        _save(repo, manifest)
+    if not manifest["links"] and manifest_path(repo).exists():
+        manifest_path(repo).unlink()
+    return {"repo": str(repo), "state": "blocked" if report.blocked else "ok", "rows": report.rows}
+
+
+def _reconcile_removed_sources(repo: Path, action: str, manifest: dict, report: _Rows) -> None:
+    """Source removal/move is reconciled only for unchanged, manifest-owned links."""
+    for key, source in list(manifest["links"].items()):
+        target = repo / key
+        if not _safe_parent(repo, target) or (present(target) and (not is_link(target) or str(target.resolve()) != source)):
+            report("collision", target, "owned entry changed; preserve it and resolve manually")
+        elif not (Path(source) / "SKILL.md").is_file():
+            if action == "install":
+                if present(target):
+                    _unlink(target)
+                del manifest["links"][key]
+                report("removed", target, "maintained source was removed")
+            else:
+                report("missing-source", target, source)
+
+
 def reconcile(repo: Path, action: str, home: Optional[Path] = None) -> dict:
     """Diagnose, install, or uninstall this checkout's individually owned links."""
     repo = repo.resolve()
     if not (repo / ".git").exists():
         raise ValueError(f"not a checkout: {repo}")
     manifest = load_manifest(repo)
-    rows = []
-    blocked = False
-
-    def report(state: str, path: Path, detail: str) -> None:
-        nonlocal blocked
-        rows.append({"state": state, "path": str(path), "detail": detail})
-        blocked |= state in {"collision", "unknown", "missing-source"}
-
-    # Never traverse a replaced parent while touching a recorded child link.
-    def safe_parent(target: Path) -> bool:
-        return all(not is_link(p) for p in target.parents if p != repo and repo in p.parents)
+    report = _Rows()
 
     if action == "uninstall":
-        for key, source in list(manifest["links"].items()):
-            target = repo / key
-            if not safe_parent(target):
-                report("collision", target, "parent became a link; retained ownership record")
-            elif not present(target):
-                del manifest["links"][key]
-                report("absent", target, "already removed")
-            elif not is_link(target) or str(target.resolve()) != source:
-                report("collision", target, "entry changed; retained entry and ownership record")
-            else:
-                _unlink(target)
-                del manifest["links"][key]
-                report("removed", target, source)
-        if manifest["links"] or manifest_path(repo).exists():
-            _save(repo, manifest)
-        if not manifest["links"] and manifest_path(repo).exists():
-            manifest_path(repo).unlink()
-        return {"repo": str(repo), "state": "blocked" if blocked else "ok", "rows": rows}
+        return _uninstall(repo, manifest, report)
 
     scopes = scopes_in(repo)
     for scope in scopes:
@@ -296,7 +324,7 @@ def reconcile(repo: Path, action: str, home: Optional[Path] = None) -> dict:
                     continue
                 target = scope / root / "skills" / skill.path.name
                 key = target.relative_to(repo).as_posix()
-                if not safe_parent(target):
+                if not _safe_parent(repo, target):
                     report("collision", target, "parent is a link; preserve it and select a safe source manually")
                 elif present(target):
                     report("collision", target, "occupied entry; compare content and explicitly select/rename; nothing overwritten")
@@ -312,22 +340,11 @@ def reconcile(repo: Path, action: str, home: Optional[Path] = None) -> dict:
                 else:
                     report("missing-link", target, str(source))
 
-    # Source removal/move is reconciled only for unchanged, manifest-owned links.
-    for key, source in list(manifest["links"].items()):
-        target = repo / key
-        if not safe_parent(target) or (present(target) and (not is_link(target) or str(target.resolve()) != source)):
-            report("collision", target, "owned entry changed; preserve it and resolve manually")
-        elif not (Path(source) / "SKILL.md").is_file():
-            if action == "install":
-                if present(target):
-                    _unlink(target)
-                del manifest["links"][key]
-                report("removed", target, "maintained source was removed")
-            else:
-                report("missing-source", target, source)
+    _reconcile_removed_sources(repo, action, manifest, report)
     if action == "install" and (manifest["links"] or manifest_path(repo).exists()):
         _save(repo, manifest)
-    state = "blocked" if blocked else "needs-install" if any(r["state"] == "missing-link" for r in rows) else "ok"
+    rows = report.rows
+    state = "blocked" if report.blocked else "needs-install" if any(r["state"] == "missing-link" for r in rows) else "ok"
     return {"repo": str(repo), "state": state, "rows": rows,
             "native_discovery": "unknown: run the opt-in synthetic client probe"}
 

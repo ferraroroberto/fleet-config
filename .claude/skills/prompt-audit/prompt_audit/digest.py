@@ -137,9 +137,6 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     stamp = (f"<!-- {STAMP_PREFIX} run={run.get('date') or 'unknown'} status={status} scan={scan} "
              f"guides={guides} update-issue={run.get('update_issue') or 'none'} -->")
 
-    def prov(f: dict) -> str:
-        return " _(provisional)_" if f["rule"] in provisional else ""
-
     out = [f"## prompt-audit digest — {run.get('date', '')}", stamp, "",
            f"`status={status}` · `guides={guides}` · `rubric={str(run.get('rubric', ''))[:12]}`"
            + (" · **dry run — nothing written**" if run.get("dry_run") else ""), ""]
@@ -185,6 +182,29 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
                 for r, t in sorted(tally.items())]
         out.append("")
 
+    out += _finding_lines(findings, master_text, lite_text, provisional)
+    if unmeasured:
+        out += ["### Unmeasured (not established — not compliant)", ""]
+        out += [f"- `{k}`" for k in unmeasured] + [""]
+    if unmeasured_rules:
+        out += ["### Rules not established (file judged in part — rescanned next run)", ""]
+        out += [f"- `{f['path']}` **{f['rule']}** — {clean(f.get('note', ''))[:160]}" for f in unmeasured_rules] + [""]
+    if skip:
+        out += ["<details><summary>Skipped — unchanged since the last scan under this rubric "
+                f"({len(skip)})</summary>", ""]
+        out += [f"- `{k}`" for k in skip] + ["", "</details>", ""]
+    body = "\n".join(out) + "\n"
+    if len(body) > COMMENT_CHAR_CAP:
+        body = body[:COMMENT_CHAR_CAP] + "\n\n… digest truncated at the comment size cap.\n"
+    return body, status
+
+
+def _finding_lines(findings: list, master_text: str, lite_text: str, provisional: Set[str]) -> list:
+    """The shared-with-scaffold and local findings sections, provisional findings marked."""
+    def prov(f: dict) -> str:
+        return " _(provisional)_" if f["rule"] in provisional else ""
+
+    out: list = []
     annotated = dedup(findings, master_text, lite_text)
     shared: Dict[Tuple[str, str], dict] = {}
     local = []
@@ -212,17 +232,4 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         if len(local) > DIGEST_FINDINGS_CAP:
             out.append(f"- … {len(local) - DIGEST_FINDINGS_CAP} more not listed (cap {DIGEST_FINDINGS_CAP})")
         out.append("")
-    if unmeasured:
-        out += ["### Unmeasured (not established — not compliant)", ""]
-        out += [f"- `{k}`" for k in unmeasured] + [""]
-    if unmeasured_rules:
-        out += ["### Rules not established (file judged in part — rescanned next run)", ""]
-        out += [f"- `{f['path']}` **{f['rule']}** — {clean(f.get('note', ''))[:160]}" for f in unmeasured_rules] + [""]
-    if skip:
-        out += ["<details><summary>Skipped — unchanged since the last scan under this rubric "
-                f"({len(skip)})</summary>", ""]
-        out += [f"- `{k}`" for k in skip] + ["", "</details>", ""]
-    body = "\n".join(out) + "\n"
-    if len(body) > COMMENT_CHAR_CAP:
-        body = body[:COMMENT_CHAR_CAP] + "\n\n… digest truncated at the comment size cap.\n"
-    return body, status
+    return out

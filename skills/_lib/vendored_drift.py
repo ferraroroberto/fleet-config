@@ -170,7 +170,8 @@ def diff_hashes(a: Dict[str, str], b: Dict[str, str]) -> List[str]:
     return sorted(k for k in keys if a.get(k) != b.get(k))
 
 
-def classify_adopter(local: Dict[str, str], pinned: Dict[str, str], head: Dict[str, str]) -> Dict[str, object]:
+def classify_adopter(local: Dict[str, str], pinned: Dict[str, str],
+                     head: Dict[str, str]) -> Dict[str, object]:
     """Given three relpath->sha256 maps — the adopter's local copy, the
     scaffold at the pinned `sha`, and the scaffold at its current HEAD for the
     same path — report the two independent drift signals.
@@ -476,12 +477,8 @@ def scan_fleet(
                 **result,
             }
             if result["behind_head"]:
-                if src not in head_texts:
-                    head_texts[src] = contract_texts_at_ref(scaffold_root, head_ref, src)
-                if (sha, src) not in contract_cache:
-                    contract_cache[(sha, src)] = contract_change(
-                        contract_texts_at_ref(scaffold_root, sha, src), head_texts[src])
-                row["contract"] = contract_cache[(sha, src)]
+                row["contract"] = _contract_for(scaffold_root, head_ref, sha, src,
+                                                head_texts, contract_cache)
             adopters.append(row)
 
     catalog, catalog_error = scaffold_catalog(scaffold_root)
@@ -492,6 +489,28 @@ def scan_fleet(
         component_filter=component_filter, scaffold_resolved=scaffold_resolved,
     )
 
+    return _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
+                        catalog, catalog_error, carriers, unreadable)
+
+
+def _contract_for(scaffold_root: Path, head_ref: str, sha: str, src: str,
+                  head_texts: Dict[str, Dict[str, str]],
+                  contract_cache: Dict[tuple, Dict[str, object]]) -> Dict[str, object]:
+    """The selector-contract change from a pinned sha to the tip, cached per (sha, src)."""
+    if src not in head_texts:
+        head_texts[src] = contract_texts_at_ref(scaffold_root, head_ref, src)
+    if (sha, src) not in contract_cache:
+        contract_cache[(sha, src)] = contract_change(
+            contract_texts_at_ref(scaffold_root, sha, src), head_texts[src])
+    return contract_cache[(sha, src)]
+
+
+def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[str, Path],
+                 adopters: List[Dict[str, object]], no_manifest: List[str],
+                 errors: List[Dict[str, str]], catalog: Dict[str, str],
+                 catalog_error: Optional[str], carriers: List[Dict[str, object]],
+                 unreadable: List[str]) -> Dict[str, object]:
+    """`scan_fleet`'s result, with the coverage line every caller must state."""
     return {
         "scaffold": str(scaffold_root),
         "head_ref": head_ref,

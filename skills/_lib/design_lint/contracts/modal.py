@@ -1,9 +1,9 @@
 """Dialog and editor-modal contracts (design.md `modal`; fleet-config#307).
 
 Native `<dialog>` vs a hand-rolled overlay, plus the five editor-modal checks
-(rows / fieldset / header / footer / top-anchor) that all read the one `modals`
-scan `_ContractsCtx` carries, so they stay one function rather than five that
-each re-derive it.
+(rows / fieldset / header / footer / top-anchor). All five read the one
+`modals` scan `_ContractsCtx` carries: `_check_editor_modal_contract` takes it
+once and hands it to one function per check, so none re-derives it.
 """
 from __future__ import annotations
 
@@ -46,16 +46,13 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     # 16-20. Editor-modal contract (design.md `modal` component) — a <dialog>
     #     containing real editable fields (<form> wrapper optional) is held to the
     #     header/rows/fieldset/footer/top-anchor contract. All five share
-    #     the one `modals` scan, so they live in one function rather than
-    #     re-deriving it per check.
+    #     the one `modals` scan, taken here once and handed to each check.
     css_all = ctx.css_all
     modals = ctx.modals
     if not modals:
         return [_result(cid, "NA", "no editor-modal <dialog> found")
                 for cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
                             "modal-footer", "modal-top-anchor")]
-
-    results: List[dict] = []
 
     # classes carried by the <dialog> tags themselves and by elements inside
     # them — a rule scoped under any of these is dialog-scoped even when the
@@ -67,6 +64,17 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
             dialog_classes_set.update(cm.group(1).split())
     dialog_classes = frozenset(dialog_classes_set)
 
+    return [
+        _modal_unstyled_rows(modals, css_all, dialog_classes),
+        _modal_raw_fieldsets(modals, css_all),
+        _modal_header(modals),
+        _modal_footer(modals, css_all),
+        _modal_top_anchor(modals, css_all),
+    ]
+
+
+def _modal_unstyled_rows(modals: List[dict], css_all: str, dialog_classes: frozenset) -> dict:
+    """16. Unstyled dialog rows: a row whose classes are styled only outside dialogs."""
     # 16. unstyled dialog rows — a dialog row (label) whose classes are only
     #     ever styled under some other, unrelated scope. Judged per label,
     #     not per class: one properly styled class makes the row styled — an
@@ -84,14 +92,17 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
                    else "never styled")
             unstyled.append((loc, f"label.{'.'.join(classes)} ({why})"))
     if unstyled:
-        results.append(_result("modal-unstyled-rows", "FAIL",
+        return _result("modal-unstyled-rows", "FAIL",
             f"{len(unstyled)} dialog row class(es) with no dialog-scoped "
             "styling (design.md modal contract): " + _join(unstyled, "; "),
-            unstyled[0][0]))
+            unstyled[0][0])
     else:
-        results.append(_result("modal-unstyled-rows", "PASS",
-            "every dialog row class is styled globally or in a dialog-scoped rule"))
+        return _result("modal-unstyled-rows", "PASS",
+            "every dialog row class is styled globally or in a dialog-scoped rule")
 
+
+def _modal_raw_fieldsets(modals: List[dict], css_all: str) -> dict:
+    """17. A `<fieldset>` with no authored CSS renders as a raw browser legend box."""
     # 17. raw <fieldset> — a fieldset/legend with no authored CSS at all,
     #     rendering as a raw browser legend box.
     raw_fieldsets: List[Tuple[str, str]] = []
@@ -106,14 +117,17 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
             if not authored:
                 raw_fieldsets.append((_loc_in_modal(modal, fm.start()), ""))
     if raw_fieldsets:
-        results.append(_result("modal-raw-fieldset", "FAIL",
+        return _result("modal-raw-fieldset", "FAIL",
             f"{len(raw_fieldsets)} <fieldset> with no authored CSS — raw "
             "browser legend box (design.md modal wants titled plain "
             "sections, never a fieldset): " + _join(raw_fieldsets, ", "),
-            raw_fieldsets[0][0]))
+            raw_fieldsets[0][0])
     else:
-        results.append(_result("modal-raw-fieldset", "PASS", "no unstyled <fieldset> found in editor modals"))
+        return _result("modal-raw-fieldset", "PASS", "no unstyled <fieldset> found in editor modals")
 
+
+def _modal_header(modals: List[dict]) -> dict:
+    """18. Header contract: a titled modal carries a square close button, never a footer Cancel."""
     # 18. header contract — a title needs a square × close button; a
     #     footer "Cancel" button in its place is the anti-pattern.
     header_bad: List[Tuple[str, str]] = []
@@ -140,15 +154,18 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
                 reasons.append("footer Cancel button in its place")
             header_bad.append((f"{modal['file']}:{modal['line']}", " + ".join(reasons)))
     if header_checked == 0:
-        results.append(_result("modal-header", "NA", "no titled editor-modal <dialog> found"))
+        return _result("modal-header", "NA", "no titled editor-modal <dialog> found")
     elif header_bad:
-        results.append(_result("modal-header", "FAIL",
+        return _result("modal-header", "FAIL",
             "editor-modal header contract violated (design.md modal wants "
             "a heading-lg title + square x close, never a footer Cancel): "
-            + _join(header_bad, "; "), header_bad[0][0]))
+            + _join(header_bad, "; "), header_bad[0][0])
     else:
-        results.append(_result("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel"))
+        return _result("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel")
 
+
+def _modal_footer(modals: List[dict], css_all: str) -> dict:
+    """19. Footer contract: a staged editor has exactly one full-width solid-accent primary."""
     # 19. footer contract — exactly one always-visible action, styled as
     #     the full-width solid-accent primary. Applies only to *staged*
     #     editors (a Save/submit persistence boundary exists): a live-control
@@ -211,17 +228,20 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
             footer_bad.append((f"{modal['file']}:{modal['line']}",
                                "primary " + " + ".join(missing)))
     if footer_checked == 0:
-        results.append(_result("modal-footer", "NA",
-            "no staged editor modal with a Save affordance + locatable footer/actions container"))
+        return _result("modal-footer", "NA",
+            "no staged editor modal with a Save affordance + locatable footer/actions container")
     elif footer_bad:
-        results.append(_result("modal-footer", "FAIL",
+        return _result("modal-footer", "FAIL",
             "editor-modal footer contract violated (design.md modal wants "
             "exactly one full-width solid-accent primary): "
-            + _join(footer_bad, "; "), footer_bad[0][0]))
+            + _join(footer_bad, "; "), footer_bad[0][0])
     else:
-        results.append(_result("modal-footer", "PASS",
-            "editor-modal footer(s) carry exactly one full-width solid-accent primary"))
+        return _result("modal-footer", "PASS",
+            "editor-modal footer(s) carry exactly one full-width solid-accent primary")
 
+
+def _modal_top_anchor(modals: List[dict], css_all: str) -> dict:
+    """20. Top-anchoring: the dialog scrolls internally instead of jumping as rows toggle."""
     # 20. top-anchoring — a tall form must not jump vertically as
     #     conditional rows toggle; the dialog itself scrolls internally.
     top_anchor_bad: List[Tuple[str, str]] = []
@@ -238,13 +258,11 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
         if not ok:
             top_anchor_bad.append((f"{modal['file']}:{modal['line']}", ""))
     if top_anchor_bad:
-        results.append(_result("modal-top-anchor", "FAIL",
+        return _result("modal-top-anchor", "FAIL",
             "editor-modal(s) with no max-height + internal scroll — a tall "
             "form jumps as conditional rows toggle (design.md modal: "
             "top-anchored on mobile): " + _join(top_anchor_bad, ", "),
-            top_anchor_bad[0][0]))
+            top_anchor_bad[0][0])
     else:
-        results.append(_result("modal-top-anchor", "PASS",
-            "editor-modal(s) are top-anchored with internal scroll"))
-
-    return results
+        return _result("modal-top-anchor", "PASS",
+            "editor-modal(s) are top-anchored with internal scroll")

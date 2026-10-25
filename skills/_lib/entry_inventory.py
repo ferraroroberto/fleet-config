@@ -318,21 +318,7 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
     texts = {p: _read(repo, p) for p in files if p.lower().endswith(TEXT_EXTS)}
     docs = {p: _read(repo, p) for p in files if p.lower().endswith(DOC_EXTS)}
 
-    launched_by: Dict[str, Set[str]] = {}
-    for launcher in launchers:
-        for target in launcher_targets(launcher, texts.get(launcher, ""), fileset):
-            launched_by.setdefault(target, set()).add(f"launcher:{launcher}")
-    covered: Dict[str, List[Tuple[str, Optional[str]]]] = {}  # direct job/task evidence per target
-    for job in evidence.get("jobs") or []:
-        covered.setdefault(job["target"], []).append((f"job:{job['id']}" + (" (paused)" if job.get("paused") else ""), job.get("last_run_utc")))
-    for task in evidence.get("tasks") or []:
-        covered.setdefault(task["target"], []).append((f"task:{task['name']}", task.get("last_run_utc")))
-    for target, rows in covered.items():
-        launched_by.setdefault(target, set()).update(src for src, _ in rows)
-    for doc, text in docs.items():
-        for path in files:
-            if not is_test(path) and (path in text or (path.endswith(".py") and PurePosixPath(path).name in text)):
-                launched_by.setdefault(path, set()).add(f"doc:{doc}")
+    launched_by, covered = _launch_sources(files, fileset, launchers, texts, docs, evidence)
 
     # Interpreter-start hits: a `-m pkg.mod` hit resolves from the repo root.
     beacon = evidence.get("beacon") if isinstance(evidence.get("beacon"), dict) else {}
@@ -349,25 +335,7 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
 
     entries = sorted({p for p, f in py.items() if f.main_guard and not is_test(p)} | set(launchers)
                      | {t for t, srcs in launched_by.items() if any(not s.startswith("doc:") for s in srcs)})
-    # Last seen: direct evidence, then propagated down launcher chains (a job's .bat runs its .py).
-    last_seen: Dict[str, Tuple[Optional[str], str]] = {}
-    for target, rows in covered.items():
-        runs = sorted((r for _, r in rows if r), reverse=True)
-        last_seen[target] = (runs[0] if runs else None, rows[0][0])
-    changed = True
-    while changed:
-        changed = False
-        for target, srcs in sorted(launched_by.items()):
-            for src in sorted(srcs):
-                if src.startswith("launcher:") and src[9:] in last_seen:
-                    seen, source = last_seen[src[9:]]
-                    best = last_seen.get(target)
-                    if best is None or (seen or "") > (best[0] or ""):
-                        last_seen[target] = (seen, f"{source} via {src[9:]}")
-                        changed = True
-    for path, utc in beacon_hits.items():
-        if path not in last_seen or utc > (last_seen[path][0] or ""):
-            last_seen[path] = (utc, "beacon")
+    last_seen = _last_seen(covered, launched_by, beacon_hits)
 
     as_of_utc = datetime.combine(as_of, datetime.min.time(), timezone.utc)
     cutoff = (as_of_utc - timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -418,6 +386,89 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
             row.update(state="unknown", reason="no-launcher")
         rows[path] = row
 
+    _add_module_rows(rows, py, fileset, texts, importers, repo)
+
+    active_keeps, unmatched_keeps = _apply_keeps(rows, keeps, as_of)
+    candidates = [r for r in rows.values()
+                  if (r["state"] == "unreachable" or (r["state"] == "unknown" and r.get("reason") == "no-launcher"))
+                  and r["path"] not in active_keeps]
+    counts, reasons = _state_counts(rows)
+    return {"schema": SCHEMA, "repo": repo.name, "as_of": as_of.isoformat(), "window_days": window_days,
+            "evidence": {**{k: evidence.get(k) for k in ("collected_utc", "jobs_error", "tasks_error", "beacon_error")},
+                         "beacon": {"state": beacon_state, "covers_window": beacon_covers, "hits": len(beacon_hits),
+                                    **{k: beacon.get(k) for k in ("installed_utc", "uninstalled_utc", "pth_present",
+                                                                  "outside", "no_script", "malformed")}}},
+            "counts": counts, "unknown_reasons": reasons,
+            "candidates": [{"path": r["path"], "state": r["state"], "reason": r.get("reason"), "lines": r["lines"]}
+                           for r in sorted(candidates, key=lambda r: r["path"])],
+            "candidate_lines": sum(r["lines"] for r in candidates),
+            "keeps_unmatched": unmatched_keeps,
+            "note": "name matching is conservative: a name collision makes code look used, so this under-reports dead code",
+            "files": [rows[p] for p in sorted(rows)]}
+
+
+def _state_counts(rows: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, int], Dict[str, int]]:
+    """Rows per state, and unknown rows per reason."""
+    counts: Dict[str, int] = {}
+    reasons: Dict[str, int] = {}
+    for r in rows.values():
+        counts[r["state"]] = counts.get(r["state"], 0) + 1
+        if r["state"] == "unknown":
+            reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
+    return counts, reasons
+
+
+def _launch_sources(files: List[str], fileset: Set[str], launchers: List[str],
+                    texts: Dict[str, str], docs: Dict[str, str],
+                    evidence: Dict[str, Any]) -> Tuple[Dict[str, Set[str]], Dict[str, List[Tuple[str, Optional[str]]]]]:
+    """Who starts each file (launchers, jobs, tasks, docs), and the job/task rows naming it."""
+    launched_by: Dict[str, Set[str]] = {}
+    for launcher in launchers:
+        for target in launcher_targets(launcher, texts.get(launcher, ""), fileset):
+            launched_by.setdefault(target, set()).add(f"launcher:{launcher}")
+    covered: Dict[str, List[Tuple[str, Optional[str]]]] = {}  # direct job/task evidence per target
+    for job in evidence.get("jobs") or []:
+        covered.setdefault(job["target"], []).append((f"job:{job['id']}" + (" (paused)" if job.get("paused") else ""), job.get("last_run_utc")))
+    for task in evidence.get("tasks") or []:
+        covered.setdefault(task["target"], []).append((f"task:{task['name']}", task.get("last_run_utc")))
+    for target, rows in covered.items():
+        launched_by.setdefault(target, set()).update(src for src, _ in rows)
+    for doc, text in docs.items():
+        for path in files:
+            if not is_test(path) and (path in text or (path.endswith(".py") and PurePosixPath(path).name in text)):
+                launched_by.setdefault(path, set()).add(f"doc:{doc}")
+    return launched_by, covered
+
+
+def _last_seen(covered: Dict[str, List[Tuple[str, Optional[str]]]],
+               launched_by: Dict[str, Set[str]],
+               beacon_hits: Dict[str, str]) -> Dict[str, Tuple[Optional[str], str]]:
+    """Last run per target: direct evidence, propagated down launcher chains, then beacon hits."""
+    # Last seen: direct evidence, then propagated down launcher chains (a job's .bat runs its .py).
+    last_seen: Dict[str, Tuple[Optional[str], str]] = {}
+    for target, rows in covered.items():
+        runs = sorted((r for _, r in rows if r), reverse=True)
+        last_seen[target] = (runs[0] if runs else None, rows[0][0])
+    changed = True
+    while changed:
+        changed = False
+        for target, srcs in sorted(launched_by.items()):
+            for src in sorted(srcs):
+                if src.startswith("launcher:") and src[9:] in last_seen:
+                    seen, source = last_seen[src[9:]]
+                    best = last_seen.get(target)
+                    if best is None or (seen or "") > (best[0] or ""):
+                        last_seen[target] = (seen, f"{source} via {src[9:]}")
+                        changed = True
+    for path, utc in beacon_hits.items():
+        if path not in last_seen or utc > (last_seen[path][0] or ""):
+            last_seen[path] = (utc, "beacon")
+    return last_seen
+
+
+def _add_module_rows(rows: Dict[str, Dict[str, Any]], py: Dict[str, "PyFacts"], fileset: Set[str],
+                     texts: Dict[str, str], importers: Dict[str, Set[str]], repo: Path) -> None:
+    """Modules: reached through imports from an entry point, else classified by who names them."""
     # Modules: reached through imports from any entry point (tests are not roots).
     rank = {"live": 3, "unknown": 2, "cold": 1}
     reach: Dict[str, str] = {}
@@ -453,6 +504,10 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
                 row.update(state="unreachable", reason="no-importer")
         rows[path] = row
 
+
+def _apply_keeps(rows: Dict[str, Dict[str, Any]], keeps: Optional[List[Dict[str, Any]]],
+                 as_of: date) -> Tuple[Dict[str, Any], List[str]]:
+    """Mark each kept row, returning the unexpired keeps and the keeps that match no row."""
     active_keeps = {}
     unmatched_keeps = sorted(str(k.get("path")) for k in keeps or [] if k.get("path") not in rows)
     for keep in keeps or []:
@@ -461,27 +516,7 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
             rows[keep["path"]]["keep"] = {"reason": keep.get("reason"), "expires": keep.get("expires"), "expired": bool(expired)}
             if not expired:
                 active_keeps[keep["path"]] = keep
-    candidates = [r for r in rows.values()
-                  if (r["state"] == "unreachable" or (r["state"] == "unknown" and r.get("reason") == "no-launcher"))
-                  and r["path"] not in active_keeps]
-    counts: Dict[str, int] = {}
-    reasons: Dict[str, int] = {}
-    for r in rows.values():
-        counts[r["state"]] = counts.get(r["state"], 0) + 1
-        if r["state"] == "unknown":
-            reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
-    return {"schema": SCHEMA, "repo": repo.name, "as_of": as_of.isoformat(), "window_days": window_days,
-            "evidence": {**{k: evidence.get(k) for k in ("collected_utc", "jobs_error", "tasks_error", "beacon_error")},
-                         "beacon": {"state": beacon_state, "covers_window": beacon_covers, "hits": len(beacon_hits),
-                                    **{k: beacon.get(k) for k in ("installed_utc", "uninstalled_utc", "pth_present",
-                                                                  "outside", "no_script", "malformed")}}},
-            "counts": counts, "unknown_reasons": reasons,
-            "candidates": [{"path": r["path"], "state": r["state"], "reason": r.get("reason"), "lines": r["lines"]}
-                           for r in sorted(candidates, key=lambda r: r["path"])],
-            "candidate_lines": sum(r["lines"] for r in candidates),
-            "keeps_unmatched": unmatched_keeps,
-            "note": "name matching is conservative: a name collision makes code look used, so this under-reports dead code",
-            "files": [rows[p] for p in sorted(rows)]}
+    return active_keeps, unmatched_keeps
 
 
 def table(doc: Dict[str, Any]) -> str:

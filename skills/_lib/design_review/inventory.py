@@ -145,7 +145,8 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 # ---- input -------------------------------------------------------------------------
 
 
-def app_inventory(target: str, metrics: dict, run: Optional[str] = None, source: Optional[str] = None) -> Optional[dict]:
+def app_inventory(target: str, metrics: dict, run: Optional[str] = None,
+                  source: Optional[str] = None) -> Optional[dict]:
     """One app's measured inventory screens from a `metrics.json` document, or None when it has none.
 
     A screen whose `inventory` errored (`{"error": ..}`) or is absent is left out; one taken with no
@@ -269,7 +270,8 @@ def _note(into: Seen, group: str, rendering: str, app: str, screen: str) -> None
     apps[app] = min(apps.get(app, screen), screen)
 
 
-def _majority(renderings: Dict[str, Dict[str, str]], pool: Optional[Iterable[str]] = None) -> Optional[str]:
+def _majority(renderings: Dict[str, Dict[str, str]],
+              pool: Optional[Iterable[str]] = None) -> Optional[str]:
     cands = sorted(pool if pool is not None else renderings)
     if not cands:
         return None
@@ -360,6 +362,30 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
         app_rows.append({"target": t, "run": app.get("run"), "source": app.get("source"),
                          "screens": len(app["screens"]), "uncatalogued_screens": uncatalogued})
 
+    findings = _inventory_findings(text, actions, choices, bespoke, reference, catalog, observed_vendored)
+
+    findings.sort(key=lambda f: (f["class"], f["id"]))
+    counts = {cls: sum(1 for f in findings if f["class"] == cls) for cls in CLASSES}
+    counts.update({scope: sum(1 for f in findings if f["scope"] == scope) for scope in ("app", "fleet")})
+    present = {a["target"] for a in apps}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "apps": app_rows,
+        "missing": sorted(set(targets or ()) - present),
+        "catalog": {"components": sorted(set(catalog or ())), "error": catalog_error if catalog is None else None},
+        "counts": counts,
+        "findings": findings,
+        "unclassified": sorted(unclassified.values(), key=lambda u: (u["app"], u["reason"], u["kind"], u["component"], u["key"], u["label"])),
+    }
+
+
+# ---- filing ------------------------------------------------------------------------
+
+
+def _inventory_findings(text: Seen, actions: Seen, choices: Seen,
+                        bespoke: Dict[str, Dict[str, dict]], reference: Dict[str, str],
+                        catalog: Optional[Iterable[str]], observed_vendored: set) -> List[dict]:
+    """INV-01..04 findings from the fleet-wide tallies, unsorted."""
     findings: List[dict] = []
     for role in sorted(text):
         ref = reference.get(role)
@@ -395,23 +421,8 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
         if f:
             f["group"] = f"{choice} ({bucket.replace('-plus', '+')} options)"
             findings.append(f)
+    return findings
 
-    findings.sort(key=lambda f: (f["class"], f["id"]))
-    counts = {cls: sum(1 for f in findings if f["class"] == cls) for cls in CLASSES}
-    counts.update({scope: sum(1 for f in findings if f["scope"] == scope) for scope in ("app", "fleet")})
-    present = {a["target"] for a in apps}
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "apps": app_rows,
-        "missing": sorted(set(targets or ()) - present),
-        "catalog": {"components": sorted(set(catalog or ())), "error": catalog_error if catalog is None else None},
-        "counts": counts,
-        "findings": findings,
-        "unclassified": sorted(unclassified.values(), key=lambda u: (u["app"], u["reason"], u["kind"], u["component"], u["key"], u["label"])),
-    }
-
-
-# ---- filing ------------------------------------------------------------------------
 
 TITLES = {
     "INV-01": "text role `{group}` renders {ways}",
@@ -466,7 +477,8 @@ def summaries(section: Optional[dict], scope: str, target: Optional[str] = None)
     return out
 
 
-def carry_statuses(existing_body: str, section: Optional[dict], target: Optional[str] = None) -> Dict[str, str]:
+def carry_statuses(existing_body: str, section: Optional[dict],
+                   target: Optional[str] = None) -> Dict[str, str]:
     """Statuses for the `INV-*` lines already on a body, so the merge tags them right when they are not current.
 
     `fail` = still a finding but filed elsewhere this run (carried); `pass` = the inventory was compared and

@@ -46,6 +46,9 @@ reads as `delivery=unknown` (unestablished, never a false pass), and every
 such comment ages out of `delivery_check.py`'s freshness window within one
 weekly cycle, so no transition-window shim was worth carrying.
 
+The run model (probe states, merge outcomes, `validate`) lives in
+`digest_model.py`; the page stylesheet in `digest_style.py`.
+
 stdlib only. CLI:
     digest.py validate <run.json>
     digest.py render   <run.json> --html P --md P --chat-text P [--url U]
@@ -82,9 +85,36 @@ SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parents[2]
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+# Its own folder too: a caller that loads this file by path still finds the sibling modules.
+sys.path.insert(0, str(SKILL_DIR))
 import git_run  # noqa: E402
 from audit_issue_client import run_audit_issue  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
+from digest_model import (  # noqa: E402
+    all_descriptions,
+    blast_radius,
+    collect,
+    coverage_line,
+    headline,
+    _lines,
+    merge_blockers,
+    _merge_cell,
+    merge_record,
+    merge_state,
+    merge_summary,
+    _num,
+    _primary_cell,
+    probe_state,
+    probe_verdict,
+    ranked_repos,
+    _revert,
+    rewritten_files,
+    risk_score,
+    untouched_files,
+    validate,
+)
+from digest_style import PAGE_CSS  # noqa: E402
 
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
 LEDGER_REPO = "ferraroroberto/fleet-config"
@@ -98,355 +128,6 @@ PRIMARY_LABEL = "chore"
 # tooling.
 LEDGER_LABEL = "audit-meta"
 STAMP_PREFIX = "context-purge-digest"
-
-SHAPE_WEIGHT = {"large": 3, "medium": 2, "small": 1}
-
-
-# ---- run-data access: unknown never becomes zero ---------------------------
-
-def _num(value: Any) -> Optional[int]:
-    """An int, or None when the run did not record one. Never coerces to 0."""
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
-def probe_state(entry: dict) -> str:
-    """`probed` | `not-probed` | `unknown` for one file entry.
-
-    The three-way split is the whole point: "0 files probed" and "probe
-    coverage not recorded" are different facts.
-    """
-    if "probe" not in entry:
-        return "unknown"
-    probe = entry.get("probe")
-    if probe is None:
-        return "unknown"
-    if not isinstance(probe, dict):
-        return "unknown"
-    if probe.get("ran") is True:
-        return "probed"
-    if probe.get("ran") is False:
-        return "not-probed"
-    return "unknown"
-
-
-def probe_verdict(entry: dict) -> Optional[bool]:
-    """True when the compressed file scored >= the control, None if unmeasured."""
-    probe = entry.get("probe")
-    if not isinstance(probe, dict) or probe.get("ran") is not True:
-        return None
-    compressed, control = _num(probe.get("compressed")), _num(probe.get("control"))
-    if compressed is None or control is None:
-        return None
-    return compressed >= control
-
-
-def rewritten_files(run: dict) -> list[tuple[dict, dict]]:
-    return [(repo, f) for repo in run.get("repos", [])
-            for f in repo.get("files", []) if f.get("action") == "rewritten"]
-
-
-def headline(run: dict) -> dict:
-    """The figures a reader needs before trusting anything else in the digest."""
-    pairs = rewritten_files(run)
-    tokens_removed = 0
-    tokens_unknown = 0
-    for _repo, f in pairs:
-        before, after = _num(f.get("tokens_before")), _num(f.get("tokens_after"))
-        if before is None or after is None:
-            tokens_unknown += 1
-        else:
-            tokens_removed += before - after
-
-    inventory_walked = 0
-    inventory_unknown = 0
-    for _repo, f in pairs:
-        items = _num(f.get("inventory_items"))
-        if items is None:
-            inventory_unknown += 1
-        else:
-            inventory_walked += items
-
-    states = [probe_state(f) for _repo, f in pairs]
-    return {
-        "tokens_removed": tokens_removed,
-        "tokens_unknown": tokens_unknown,
-        "files_rewritten": len(pairs),
-        "files_assessed": sum(len(r.get("files", [])) for r in run.get("repos", [])),
-        "inventory_walked": inventory_walked,
-        "inventory_unknown": inventory_unknown,
-        "probed": states.count("probed"),
-        "not_probed": states.count("not-probed"),
-        "probe_unknown": states.count("unknown"),
-        "repos": len(run.get("repos", [])),
-        "unreached": len(run.get("unreached", [])),
-    }
-
-
-def coverage_line(h: dict) -> str:
-    """Probe coverage as a fraction, with unknowns kept as their own term."""
-    if h["files_rewritten"] == 0:
-        return "no files rewritten"
-    line = f"{h['probed']}/{h['files_rewritten']} rewritten files probed"
-    if h["probe_unknown"]:
-        line += f", {h['probe_unknown']} not recorded"
-    return line
-
-
-def risk_score(repo: dict) -> tuple[int, str]:
-    """Rank by what a lost directive would cost, not alphabetically."""
-    risk = repo.get("risk") or {}
-    score = 0
-    if risk.get("always_on") is True:
-        score += 3
-    score += SHAPE_WEIGHT.get(str(risk.get("shape_change", "")).lower(), 0)
-    checked = risk.get("checked")
-    if checked is not True:
-        score += 3  # nothing verified the result, or we do not know that it did
-    label = "checked" if checked is True else ("unchecked" if checked is False else "unknown")
-    return score, label
-
-
-def ranked_repos(run: dict) -> list[dict]:
-    return sorted(run.get("repos", []), key=lambda r: (-risk_score(r)[0], r.get("repo", "")))
-
-
-def all_descriptions(run: dict) -> list[dict]:
-    out = []
-    for repo in run.get("repos", []):
-        for d in repo.get("descriptions", []):
-            out.append({**d, "repo": repo.get("repo", "?")})
-    return out
-
-
-def collect(run: dict, key: str) -> list[dict]:
-    out = []
-    for repo in run.get("repos", []):
-        for item in repo.get(key, []):
-            out.append({**item, "repo": repo.get("repo", "?")})
-    return out
-
-
-def untouched_files(run: dict) -> list[dict]:
-    out = []
-    for repo in run.get("repos", []):
-        for f in repo.get("files", []):
-            if f.get("action") in ("assessed-lean", "untouched"):
-                out.append({**f, "repo": repo.get("repo", "?")})
-    return out
-
-
-# ---- merge outcome: what the run applied, and whether it was allowed to ------
-
-MERGE_STATES = ("merged", "not-merged")
-PRIMARY_STATES = ("fast-forwarded", "left")
-
-
-def merge_record(repo: dict) -> Optional[dict]:
-    """The repo's merge record, or None when the run did not record one."""
-    merge = repo.get("merge")
-    return merge if isinstance(merge, dict) else None
-
-
-def merge_state(repo: dict) -> str:
-    """`merged` | `not-merged` | `unknown` -- an absent record is never `merged`."""
-    state = (merge_record(repo) or {}).get("state")
-    return state if state in MERGE_STATES else "unknown"
-
-
-def merge_blockers(repo: dict) -> list[str]:
-    """Why this repo's rewrite may NOT be merged. Empty = eligible.
-
-    The deterministic half of the auto-merge go/no-go (fleet-config#1312): a
-    worker runs it (`digest.py merge-check`) before `gh pr merge`, and
-    `validate` re-applies it to every repo recorded as merged, so a rewrite
-    that skipped the harness cannot reach `main` and still publish a clean
-    digest. Anything the run could not establish blocks -- unknown is not a pass.
-    """
-    blockers: list[str] = []
-    if not repo.get("pr"):
-        blockers.append("no PR recorded")
-    if (repo.get("risk") or {}).get("checked") is not True:
-        blockers.append("check.py, audit.py and the repo gate not confirmed passing "
-                        "(risk.checked is not true)")
-    rewritten = [f for f in repo.get("files", []) if f.get("action") == "rewritten"]
-    if not rewritten:
-        blockers.append("no rewritten files")
-    for f in rewritten:
-        path = f.get("path", "?")
-        items, done = _num(f.get("inventory_items")), _num(f.get("inventory_discharged"))
-        if items is None or done is None:
-            blockers.append(f"{path}: directive-inventory result not recorded")
-        elif done != items:
-            blockers.append(f"{path}: inventory {done}/{items} discharged")
-        state = probe_state(f)
-        if state == "unknown":
-            blockers.append(f"{path}: probe not recorded (ran=false is a decision, null is not)")
-        elif state == "probed":
-            verdict = probe_verdict(f)
-            if verdict is None:
-                blockers.append(f"{path}: probe scores not recorded")
-            elif verdict is False:
-                blockers.append(f"{path}: probe regression (compressed scored below control)")
-    return blockers
-
-
-def merged_repos(run: dict) -> list[dict]:
-    return [r for r in run.get("repos", []) if merge_state(r) == "merged"]
-
-
-def blast_radius(repo: str, path: str) -> str:
-    """Which agents and sessions load a context file, derived from its path.
-
-    Pure path logic so the digest states it the same way every week and cannot
-    drift from the layout (`install.ps1` junctions `skills/` into every agent).
-    """
-    name = path.rsplit("/", 1)[-1]
-    if repo == "fleet-config" and path == "global-CLAUDE.md":
-        return "every agent in every session, fleet-wide"
-    if name == "SKILL.md":
-        skill = path.rsplit("/", 2)[-2] if path.count("/") >= 1 else "?"
-        if repo == "fleet-config" and path.startswith("skills/"):
-            return (f"global skill: its description is always-on in every session "
-                    f"of every repo; the body loads when `/{skill}` runs")
-        return (f"`/{skill}` in `{repo}`: description always-on in `{repo}` sessions, "
-                f"body loads when it runs")
-    if name == "CLAUDE.md":
-        return f"every session started in `{repo}`"
-    return f"sessions that read `{path}` in `{repo}`"
-
-
-def _lines(f: dict) -> str:
-    before, after = _num(f.get("lines_before")), _num(f.get("lines_after"))
-    if before is None or after is None:
-        return "not recorded"
-    return f"{before:,} to {after:,} ({after - before:+,})"
-
-
-def _revert(repo: dict) -> str:
-    merge = merge_record(repo)
-    sha = (merge or {}).get("sha")
-    if merge_state(repo) != "merged" or not sha:
-        return "n/a"
-    return f"`git revert {str(sha)[:10]}` in `{repo.get('repo', '?')}`"
-
-
-def _merge_cell(repo: dict) -> str:
-    state = merge_state(repo)
-    merge = merge_record(repo) or {}
-    if state == "merged":
-        return "merged"
-    if state == "not-merged":
-        return f"NOT merged -- {merge.get('reason', 'reason not recorded')}"
-    return "not recorded"
-
-
-def _primary_cell(repo: dict) -> str:
-    primary = (merge_record(repo) or {}).get("primary")
-    if merge_state(repo) != "merged":
-        return "n/a"
-    if not isinstance(primary, dict) or primary.get("state") not in PRIMARY_STATES:
-        return "not recorded"
-    if primary["state"] == "fast-forwarded":
-        return "fast-forwarded"
-    return f"left -- {primary.get('reason', 'reason not recorded')}"
-
-
-def merge_summary(run: dict) -> dict:
-    """Counts the headline and chat need; unknown stays its own term."""
-    repos = [r for r in run.get("repos", []) if r.get("status") != "skipped"]
-    states = [merge_state(r) for r in repos]
-    primaries = [(merge_record(r) or {}).get("primary") for r in merged_repos(run)]
-    return {
-        "candidates": len(repos),
-        "merged": states.count("merged"),
-        "not_merged": states.count("not-merged"),
-        "unknown": states.count("unknown"),
-        "primaries_left": sum(1 for p in primaries
-                              if isinstance(p, dict) and p.get("state") == "left"),
-        "primaries_unknown": sum(1 for p in primaries
-                                 if not isinstance(p, dict)
-                                 or p.get("state") not in PRIMARY_STATES),
-    }
-
-
-# ---- validation -------------------------------------------------------------
-
-def _validate_merge(repo: dict, name: str) -> list[str]:
-    errors: list[str] = []
-    status = repo.get("status")
-    if status == "shipped" and "merge" not in repo:
-        errors.append(f"{name}: a shipped repo must carry a 'merge' key "
-                      f"(null is allowed and means 'not recorded')")
-    merge = repo.get("merge")
-    if merge is None:
-        return errors
-    if not isinstance(merge, dict):
-        return errors + [f"{name}: merge must be an object or null"]
-    state = merge.get("state")
-    if state not in MERGE_STATES:
-        errors.append(f"{name}: merge.state must be merged|not-merged, got {state!r}")
-    elif state == "merged":
-        if not merge.get("sha"):
-            errors.append(f"{name}: merged but no merge.sha -- the revert pointer is the "
-                          f"point of reporting a merge")
-        if status != "shipped":
-            errors.append(f"{name}: merge.state=merged but status is {status!r} -- "
-                          f"'shipped' means merged")
-        for why in merge_blockers(repo):
-            errors.append(f"{name}: merged without passing validation -- {why}")
-    else:
-        if not merge.get("reason"):
-            errors.append(f"{name}: not-merged must say why (merge.reason)")
-        if status == "shipped":
-            errors.append(f"{name}: status=shipped but merge.state=not-merged -- contradictory")
-    primary = merge.get("primary")
-    if primary is not None:
-        if state != "merged":
-            errors.append(f"{name}: merge.primary recorded for a repo that was not merged")
-        elif not isinstance(primary, dict) or primary.get("state") not in PRIMARY_STATES:
-            errors.append(f"{name}: merge.primary.state must be fast-forwarded|left")
-        elif primary["state"] == "left" and not primary.get("reason"):
-            errors.append(f"{name}: a primary left behind must say why (merge.primary.reason)")
-    return errors
-
-
-def validate(run: Any) -> list[str]:
-    """Structural problems that would make the digest lie. Empty = usable."""
-    errors: list[str] = []
-    if not isinstance(run, dict):
-        return ["run data is not a JSON object"]
-    if not run.get("run_id"):
-        errors.append("run_id is missing")
-    status = run.get("status")
-    if status not in ("complete", "partial"):
-        errors.append(f"status must be 'complete' or 'partial', got {status!r}")
-    if not isinstance(run.get("repos"), list):
-        errors.append("repos must be a list")
-        return errors
-    if status == "partial" and not run.get("unreached"):
-        errors.append("status=partial but no unreached repos are named -- a partial run "
-                      "must say which repos it did not reach")
-    if status == "complete" and run.get("unreached"):
-        errors.append("status=complete but unreached repos are listed -- contradictory")
-    for repo in run["repos"]:
-        name = repo.get("repo", "<unnamed>")
-        if not repo.get("repo"):
-            errors.append("a repo entry has no name")
-        if repo.get("status") not in ("shipped", "skipped", "failed"):
-            errors.append(f"{name}: status must be shipped|skipped|failed, "
-                          f"got {repo.get('status')!r}")
-        for f in repo.get("files", []):
-            if not f.get("path"):
-                errors.append(f"{name}: a file entry has no path")
-            if f.get("action") not in ("rewritten", "assessed-lean", "untouched"):
-                errors.append(f"{name}/{f.get('path')}: action must be "
-                              f"rewritten|assessed-lean|untouched, got {f.get('action')!r}")
-            if f.get("action") == "rewritten" and "probe" not in f:
-                errors.append(f"{name}/{f.get('path')}: rewritten file must carry a "
-                              f"'probe' key (null is allowed and means 'not recorded')")
-        errors.extend(_validate_merge(repo, name))
-    return errors
-
 
 # ---- stamp ------------------------------------------------------------------
 
@@ -606,6 +287,30 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None,
         lines.append("| — | — | — | — | no files rewritten |")
     lines.append("")
 
+    lines.extend(_md_description_lines(run))
+
+    lines.append("### Repos by cost of a lost directive")
+    lines.append("")
+    lines.append("| Repo | Always-on | Shape change | Verified | Result |")
+    lines.append("|---|---|---|---|---|")
+    for repo in ranked_repos(run):
+        risk = repo.get("risk") or {}
+        _score, checked = risk_score(repo)
+        always = "yes" if risk.get("always_on") is True else (
+            "no" if risk.get("always_on") is False else "not recorded")
+        shape = risk.get("shape_change") or "not recorded"
+        pr = repo.get("pr")
+        result = f"{repo.get('status','?')}" + (f" — {pr}" if pr else "")
+        lines.append(f"| `{repo.get('repo','?')}` | {always} | {shape} | {checked} | {result} |")
+    lines.append("")
+
+    lines.extend(_md_review_lines(run))
+    return "\n".join(lines) + "\n"
+
+
+def _md_description_lines(run: dict) -> list[str]:
+    """Rewritten skill descriptions, before and after: the highest-risk edit the purge makes."""
+    lines: list[str] = []
     descriptions = all_descriptions(run)
     lines.append("### Rewritten skill descriptions")
     lines.append("")
@@ -624,22 +329,12 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None,
     else:
         lines.append("No skill descriptions were rewritten this run.")
     lines.append("")
+    return lines
 
-    lines.append("### Repos by cost of a lost directive")
-    lines.append("")
-    lines.append("| Repo | Always-on | Shape change | Verified | Result |")
-    lines.append("|---|---|---|---|---|")
-    for repo in ranked_repos(run):
-        risk = repo.get("risk") or {}
-        _score, checked = risk_score(repo)
-        always = "yes" if risk.get("always_on") is True else (
-            "no" if risk.get("always_on") is False else "not recorded")
-        shape = risk.get("shape_change") or "not recorded"
-        pr = repo.get("pr")
-        result = f"{repo.get('status','?')}" + (f" — {pr}" if pr else "")
-        lines.append(f"| `{repo.get('repo','?')}` | {always} | {shape} | {checked} | {result} |")
-    lines.append("")
 
+def _md_review_lines(run: dict) -> list[str]:
+    """Reviewer decisions, findings deliberately left, and files assessed but untouched."""
+    lines: list[str] = []
     decisions = collect(run, "decisions")
     lines.append("### Reviewer decisions asked for")
     lines.append("")
@@ -675,7 +370,7 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None,
     else:
         lines.append("Every assessed file was rewritten.")
     lines.append("")
-    return "\n".join(lines) + "\n"
+    return lines
 
 
 # ---- chat --------------------------------------------------------------------
@@ -720,34 +415,40 @@ def render_chat(run: dict, link: Optional[str] = None,
 
 # ---- html -------------------------------------------------------------------
 
-def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
-    h = headline(run)
+def _cells(row: list[str], tag: str = "td") -> str:
+    return "".join(f"<{tag}>{c}</{tag}>" for c in row)
+
+
+def _bullets(items: list[dict], fmt) -> str:
+    return "".join(f"<li>{fmt(i)}</li>" for i in items) or "<li>none</li>"
+
+
+def _html_backlog(backlog: "list[dict] | None") -> str:
     esc = _html.escape
-    partial = run.get("status") == "partial"
-
-    def cells(row: list[str], tag: str = "td") -> str:
-        return "".join(f"<{tag}>{c}</{tag}>" for c in row)
-
     if backlog is None:
-        backlog_html = "<p>Not recorded this run — treat as unknown, not clean.</p>"
-    elif not backlog:
-        backlog_html = "<p>No open <code>chore/context-purge-*</code> PRs.</p>"
-    else:
-        backlog_rows = "".join(
-            "<tr>" + cells([
-                f"<code>{esc(b.get('repo','?'))}</code>",
-                f"<a href='{esc(b.get('url',''))}'>#{esc(str(b.get('number','?')))}</a>",
-                "unknown" if b.get("age_days") is None else f"{b['age_days']}d",
-                esc(b.get("title", "?")),
-            ]) + "</tr>"
-            for b in sorted(backlog, key=lambda b: -(b.get("age_days") or 0))
-        )
-        backlog_html = (f"<div class='scroll'><table>"
-                        f"<tr><th>Repo</th><th>PR</th><th>Age</th><th>Title</th></tr>"
-                        f"{backlog_rows}</table></div>")
+        return "<p>Not recorded this run — treat as unknown, not clean.</p>"
+    if not backlog:
+        return "<p>No open <code>chore/context-purge-*</code> PRs.</p>"
+    backlog_rows = "".join(
+        "<tr>" + _cells([
+            f"<code>{esc(b.get('repo','?'))}</code>",
+            f"<a href='{esc(b.get('url',''))}'>#{esc(str(b.get('number','?')))}</a>",
+            "unknown" if b.get("age_days") is None else f"{b['age_days']}d",
+            esc(b.get("title", "?")),
+        ]) + "</tr>"
+        for b in sorted(backlog, key=lambda b: -(b.get("age_days") or 0))
+    )
+    return (f"<div class='scroll'><table>"
+            f"<tr><th>Repo</th><th>PR</th><th>Age</th><th>Title</th></tr>"
+            f"{backlog_rows}</table></div>")
 
-    file_rows = "".join(
-        "<tr>" + cells([
+
+def _html_rows(run: dict) -> dict:
+    """The body rows of every per-file and per-repo table on the page."""
+    esc = _html.escape
+    rows: dict = {}
+    rows["file_rows"] = "".join(
+        "<tr>" + _cells([
             f"<code>{esc(repo.get('repo','?'))}</code>",
             f"<code>{esc(f.get('path','?'))}</code>",
             esc(_delta(f)),
@@ -756,8 +457,8 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
         for repo, f in rewritten_files(run)
     ) or "<tr><td colspan='4'>no files rewritten</td></tr>"
 
-    desc_rows = "".join(
-        "<tr>" + cells([
+    rows["desc_rows"] = "".join(
+        "<tr>" + _cells([
             f"<code>{esc(d['repo'])}</code>",
             f"<code>{esc(d.get('path','?'))}</code>",
             esc(f"{d.get('words_before','?')} → {d.get('words_after','?')}"),
@@ -767,8 +468,8 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
         for d in all_descriptions(run)
     ) or "<tr><td colspan='4'>none rewritten</td></tr>"
 
-    repo_rows = "".join(
-        "<tr>" + cells([
+    rows["repo_rows"] = "".join(
+        "<tr>" + _cells([
             f"<code>{esc(r.get('repo','?'))}</code>",
             esc(str((r.get('risk') or {}).get('always_on', 'not recorded'))),
             esc(str((r.get('risk') or {}).get('shape_change', 'not recorded'))),
@@ -778,11 +479,8 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
         for r in ranked_repos(run)
     )
 
-    def bullets(items: list[dict], fmt) -> str:
-        return "".join(f"<li>{fmt(i)}</li>" for i in items) or "<li>none</li>"
-
-    change_rows = "".join(
-        "<tr>" + cells([
+    rows["change_rows"] = "".join(
+        "<tr>" + _cells([
             f"<code>{esc(repo.get('repo','?'))}</code>",
             f"<code>{esc(f.get('path','?'))}</code>",
             esc(_delta(f)),
@@ -792,8 +490,8 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
         for repo, f in rewritten_files(run)
     ) or "<tr><td colspan='5'>no files rewritten</td></tr>"
 
-    merge_rows = "".join(
-        "<tr>" + cells([
+    rows["merge_rows"] = "".join(
+        "<tr>" + _cells([
             f"<code>{esc(r.get('repo','?'))}</code>",
             esc(_merge_cell(r)),
             esc(str(r.get("pr") or "none")),
@@ -802,6 +500,15 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
         ]) + "</tr>"
         for r in ranked_repos(run) if r.get("status") != "skipped"
     )
+    return rows
+
+
+def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
+    h = headline(run)
+    esc = _html.escape
+    partial = run.get("status") == "partial"
+    backlog_html = _html_backlog(backlog)
+    rows = _html_rows(run)
 
     banner = ""
     if partial:
@@ -812,36 +519,7 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
 
     return f"""<title>context-purge {esc(str(run.get('run_id','')))}</title>
 <style>
-:root {{ --bg:#fbfbfa; --fg:#1f2328; --muted:#6b7280; --line:#e5e7eb;
-        --card:#ffffff; --accent:#b45309; --warn:#fef3c7; }}
-@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
-  --bg:#16181d; --fg:#e6e8eb; --muted:#9ca3af; --line:#2b2f36;
-  --card:#1c1f26; --accent:#fbbf24; --warn:#3a2f10; }} }}
-:root[data-theme="dark"] {{ --bg:#16181d; --fg:#e6e8eb; --muted:#9ca3af;
-  --line:#2b2f36; --card:#1c1f26; --accent:#fbbf24; --warn:#3a2f10; }}
-body {{ background:var(--bg); color:var(--fg); margin:0; padding:1.5rem 1rem 4rem;
-  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
-main {{ max-width:60rem; margin:0 auto; }}
-h1 {{ font-size:1.5rem; margin:0 0 .25rem; }}
-h2 {{ font-size:1.05rem; margin:2rem 0 .5rem; padding-bottom:.3rem;
-  border-bottom:1px solid var(--line); }}
-.sub {{ color:var(--muted); margin:0 0 1.5rem; }}
-.grid {{ display:grid; gap:.75rem; grid-template-columns:repeat(auto-fit,minmax(11rem,1fr)); }}
-.stat {{ background:var(--card); border:1px solid var(--line); border-radius:.6rem; padding:.8rem; }}
-.stat .n {{ font-size:1.5rem; font-weight:600; }}
-.stat .l {{ color:var(--muted); font-size:.82rem; }}
-.banner {{ background:var(--warn); border:1px solid var(--accent); border-radius:.6rem;
-  padding:.8rem; margin-bottom:1.25rem; }}
-.scroll {{ overflow-x:auto; }}
-table {{ border-collapse:collapse; width:100%; font-size:.88rem; }}
-th,td {{ text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line);
-  vertical-align:top; }}
-th {{ color:var(--muted); font-weight:600; }}
-code {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85em; }}
-.was {{ color:var(--muted); text-decoration:line-through; }}
-.now {{ margin-top:.3rem; }}
-ul {{ padding-left:1.1rem; }}
-</style>
+{PAGE_CSS}</style>
 <main>
 <h1>/context-purge run digest</h1>
 <p class="sub"><code>{esc(str(run.get('run_id','unknown')))}</code> ·
@@ -858,11 +536,11 @@ ul {{ padding-left:1.1rem; }}
 <p>Merged to main: {esc(merge_line(merge_summary(run)))}</p>
 <div class="scroll"><table>
 <tr><th>Repo</th><th>File</th><th>Tokens</th><th>Lines</th><th>Blast radius</th></tr>
-{change_rows}
+{rows["change_rows"]}
 </table></div>
 <div class="scroll"><table>
 <tr><th>Repo</th><th>Merge</th><th>PR</th><th>Revert</th><th>Live checkout</th></tr>
-{merge_rows}
+{rows["merge_rows"]}
 </table></div>
 
 <h2>Open purge PR backlog</h2>
@@ -871,32 +549,32 @@ ul {{ padding-left:1.1rem; }}
 <h2>Probe coverage, per file</h2>
 <div class="scroll"><table>
 <tr><th>Repo</th><th>File</th><th>Tokens</th><th>Probe</th></tr>
-{file_rows}
+{rows["file_rows"]}
 </table></div>
 
 <h2>Rewritten skill descriptions</h2>
 <div class="scroll"><table>
 <tr><th>Repo</th><th>File</th><th>Words</th><th>Before / after</th></tr>
-{desc_rows}
+{rows["desc_rows"]}
 </table></div>
 
 <h2>Repos by cost of a lost directive</h2>
 <div class="scroll"><table>
 <tr><th>Repo</th><th>Always-on</th><th>Shape change</th><th>Verified</th><th>Result</th></tr>
-{repo_rows}
+{rows["repo_rows"]}
 </table></div>
 
 <h2>Reviewer decisions asked for</h2>
-<ul>{bullets(collect(run, 'decisions'),
+<ul>{_bullets(collect(run, 'decisions'),
              lambda d: f"<code>{esc(d['repo'])}</code> — {esc(d.get('summary',''))}")}</ul>
 
 <h2>Found and deliberately not fixed</h2>
-<ul>{bullets(collect(run, 'not_fixed'),
+<ul>{_bullets(collect(run, 'not_fixed'),
              lambda n: f"<code>{esc(n['repo'])}</code> — {esc(n.get('summary',''))} "
                        f"<em>({esc(n.get('reason','not recorded'))})</em>")}</ul>
 
 <h2>Assessed and left untouched</h2>
-<ul>{bullets(untouched_files(run),
+<ul>{_bullets(untouched_files(run),
              lambda f: f"<code>{esc(f['repo'])}/{esc(f.get('path',''))}</code> "
                        f"({esc(f.get('action',''))})")}</ul>
 </main>
