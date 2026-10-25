@@ -127,6 +127,20 @@ def fetch_chief_settings(base_url: str) -> Tuple[Optional[Dict[str, Any]], str]:
     return (result, "") if isinstance(result, dict) else (None, "chief-settings reply was not an object")
 
 
+def fetch_codex_catalog(base_url: str) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """`(the launcher's Codex model catalog, "")` from `/api/config`, or
+    `(None, why)`. The catalog is the one source of the slugs the Board
+    accepts, so an unreadable one is its own state, never an empty list."""
+    try:
+        config = _request(base_url, "/api/config")
+    except (OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    catalog = (config.get("model_catalog") or {}).get("codex") if isinstance(config, dict) else None
+    if not isinstance(catalog, list):
+        return None, "launcher config carries no Codex model catalog"
+    return catalog, ""
+
+
 # ---- the transport and the session-input wrappers ---------------------------
 
 def _ssl_context() -> ssl.SSLContext:

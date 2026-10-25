@@ -60,6 +60,39 @@ DISPATCH_TIMEOUT = 120.0
 # alias carries no tier.
 DISPATCH_MODEL_ALIASES = {"grok": "grok:grok-4.5"}
 
+# Codex families the chief may name, version-free: the launcher's catalog
+# label (case-insensitive) picks the slug, so a new Luna release needs no edit
+# here. Only Luna: Codex on a ChatGPT account rejects the other families.
+CODEX_FAMILIES = ("luna",)
+
+# Retired names, refused rather than guessed at: the Board reads an unprefixed
+# value as a Claude tier and would 400 with an opaque `unknown model`.
+RETIRED_DISPATCH_MODELS = {"gpt5.6": "luna"}
+
+
+def resolve_dispatch_model(model: str, catalog: Optional[List[dict]], catalog_error: str = "") -> str:
+    """The launcher-qualified model for a chief `--model` value, or ValueError
+    naming why it can't be sent. `catalog` is only consulted for a Codex
+    family; every other value is posted as typed."""
+    key = model.lower()
+    if key in RETIRED_DISPATCH_MODELS:
+        raise ValueError(
+            f"--model {model} is retired (the name goes stale with every release); "
+            f"use --model {RETIRED_DISPATCH_MODELS[key]}"
+        )
+    if key in DISPATCH_MODEL_ALIASES:
+        return DISPATCH_MODEL_ALIASES[key]
+    if key not in CODEX_FAMILIES:
+        return model
+    if catalog is None:
+        raise ValueError(f"--model {model} not resolved: launcher Codex catalog unreadable ({catalog_error})")
+    offered = [entry for entry in catalog if entry.get("available")]
+    for entry in offered:
+        if str(entry.get("label", "")).lower() == key and entry.get("value"):
+            return f"codex:{entry['value']}"
+    names = ", ".join(str(e.get("label")) for e in offered) or "none"
+    raise ValueError(f"--model {model} matches no available Codex model in the launcher catalog (offered: {names})")
+
 
 def load_dispatch_brief(path: str) -> str:
     """A `--brief-file`'s text, or ValueError naming why it can't be one.
@@ -271,6 +304,16 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             print(f"REFUSED={exc}")
             return 1
 
+    model = None
+    if args.model:
+        catalog, catalog_error = (launcher.fetch_codex_catalog(args.base_url)
+                                  if args.model.lower() in CODEX_FAMILIES else (None, ""))
+        try:
+            model = resolve_dispatch_model(args.model, catalog, catalog_error)
+        except ValueError as exc:
+            print(f"REFUSED={exc}")
+            return 1
+
     board = launcher._request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
     settings = launcher._request(args.base_url, "/api/board/chief/settings")
@@ -302,8 +345,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         print(f"WARNING=fleet-job-running job={job_id}")
 
     body = {"repo": args.repo, "number": args.number, "mode": args.mode}
-    if args.model:
-        body["model"] = DISPATCH_MODEL_ALIASES.get(args.model, args.model)
+    if model:
+        body["model"] = model
     if brief is not None:
         body["brief"] = brief
     try:
