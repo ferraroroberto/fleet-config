@@ -143,7 +143,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook session_state"
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook session_state",
+            "timeout": 10
           }
         ]
       }
