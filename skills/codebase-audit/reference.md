@@ -2,10 +2,24 @@
 
 Loaded on demand from the `/codebase-audit` skill (`SKILL.md`, steps 8, 9 and 10). "Hard rules" and step numbers refer to that file.
 
+## Step 3a — gate-enforced checks
+
+`skills/_lib/gate_coverage/enforced.py <repo>` reads the repo's enabled ratchets
+from `origin/<default>` and prints a `GATE=<repo>|state=…` header, then one
+`gate-enforced: <bucket>: <check> (<ratchet>, <N> baselined)` line per check a
+ratchet already fails at ship time (a duplicate block, an unused import, an
+oversized file, a dead doc reference, a convention rule, …). The gate owns those
+checks and their baselined debt is burned down by issues, not by this audit, so
+the audit does not look for them. Everything else in the same bucket is still
+read: a ratchet owns one detectable class, never the bucket's judgment.
+`state=unknown` (an unreadable `.fleet.toml`, baseline or vendored ratchet) or
+`not_adopted` claims nothing, so every check is scanned. The lines go verbatim
+into step 10's report.
+
 ## Step 5a — dead-code leads (fleet-config#1527)
 
 `skills/_lib/dead_code_leads.py leads <repo> --ruff` prints one JSON verdict:
-`state` (`ok` | `not-applicable` | `not-confirmed`), `reason`, `hits[]` (`file`,
+`state` (`ok` | `not-applicable` | `skipped` | `not-confirmed`), `reason`, `gate`, `hits[]` (`file`,
 `line`, `kind`, `name`, `test_only`) and a `ruff` block. It runs vulture at floor
 60, because vulture scores an unused function, class, method or property at
 exactly 60 (imports 90, arguments 100) and a floor of 80 finds none of them. It
@@ -15,7 +29,9 @@ anything in a test file, framework-decorated handlers (`@app.*`, `@router.*`,
 `@pytest.fixture`, …) and whatever the repo's own `[tool.vulture]` table or
 tracked `vulture_whitelist.py` lists. `test_only` marks a symbol only a test
 calls. `--ruff` adds F401/F841 leads and is skipped under an enabled
-`[static_ratchet]`.
+`[static_ratchet]`; the vulture pass is `skipped` under an enabled
+`[dead_code_ratchet]`. Both read the gate from `origin/<default>` through
+`gate_coverage/enforced.py`; `gate.state` `unknown` runs both passes.
 
 **Confirm each lead** before it is a finding:
 
@@ -39,7 +55,7 @@ each repo's gate, never this skill. Count the leads (`hit_count` plus ruff hits)
 and the ones that reached the issue for step 10's `dead-code leads:` line. A
 `not-confirmed` state (vulture missing or crashed, unparseable output, an
 unreadable file list or tracked file) is printed as such. `not-applicable` means
-the repo tracks no Python.
+the repo tracks no Python; `skipped` is printed as `gate-enforced (dead_code_ratchet)`.
 
 ## Step 8 — fresh issue body shape and title style
 
@@ -190,7 +206,10 @@ Print one summary table and stop. Exact shape:
 
   security (self-healed):  1  — PR merged, private alert sent; or "escalated" / "none"
 
-  dead-code leads: <H> hits, <C> confirmed   (or "not confirmed (<reason>)" / "not applicable")
+  dead-code leads: <H> hits, <C> confirmed   (or "not confirmed (<reason>)" / "not applicable" / "gate-enforced (dead_code_ratchet)")
+
+  gate: <adopted | not_adopted | unknown (<reason>) — every check scanned>
+    gate-enforced: <bucket>: <check> (<ratchet>, <N> baselined)   (step 3a, verbatim)
 
   * stale = carried from an earlier run, not re-verified this pass — kept on
     the checklist and flagged for review, not deleted.

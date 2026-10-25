@@ -81,6 +81,26 @@ def partition_run(run: dict) -> dict:
     }
 
 
+def gate_digest_lines(gate: object) -> list:
+    """The gate-enforced section, from the lint step's `GATE=` lines (one per repo).
+
+    An adopted repo's instruction ratchet owns the listed lint rules for its in-scope files,
+    so the scan did not re-detect them; its baselined debt is still shown. An `unknown` repo
+    is named with its reason: every rule was linted there. No lines -> `not-checked`.
+    """
+    if not isinstance(gate, list) or not gate:
+        return ["**Gate-enforced:** not-checked"]
+    rows = [_kv(line) for line in gate if isinstance(line, str) and line.startswith("GATE=")]
+    owned = [r for r in rows if r.get("state") == "adopted" and r.get("enforced", "none") != "none"]
+    out = [f"**Gate-enforced:** {len(owned)} of {len(rows)} repos — their instruction ratchet owns these lint "
+           f"rules at ship time, so the scan left them out of in-scope files; "
+           f"{sum(int(r.get('baselined', 0) or 0) for r in owned)} baselined hits remain as debt"]
+    out += [f"- `{r['GATE']}` {r['enforced']} ({r.get('baselined', '0')} baselined)" for r in owned]
+    out += [f"- `{r['GATE']}` {r.get('state')} ({clean(r.get('reason', 'not established'))[:120]}) — every rule linted"
+            for r in rows if r.get("state") == "unknown"]
+    return out
+
+
 def summarize_run(run: dict) -> dict:
     """The verdicts both the digest and the ping report, computed once from `run`."""
     srcs = [_kv(l) for l in run.get("sources", [])]
@@ -156,6 +176,7 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     out += lead_digest_lines(run.get("leads")) + [""]
     # Skill evals: their own job's result, reported here; never part of this run's status.
     out += eval_digest_lines(run.get("evals")) + [""]
+    out += gate_digest_lines(run.get("gate")) + [""]
     ref = run.get("update_issue") or "(update issue not filed)"
     if not scan_ran:
         out += [f"**Scan:** not run — rule-set update issue {ref}", ""]

@@ -40,6 +40,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "rules and baselined hits per repo, `not adopted` and `unknown` as their "
      "own states, week-over-week change, and the numbers read from origin's "
      "default branch while the working tree differs (fleet-config#1619)"),
+    ("gate_enforced", "acceptance/test_gate_enforced.py",
+     "the map from each ratchet to the audit checks and prompt-audit lint "
+     "rules it enforces, the skip in dead_code_leads and prompt-audit lint for "
+     "an adopted repo, and an unknown or non-adopted repo still scanned "
+     "(fleet-config#1645)"),
     ("structural_scope", "acceptance/test_structural_scope.py",
      "the structural check's scope (repo-specific, generalizable, "
      "scaffold-owned, n/a; an unreadable scaffold catalog is unknown) and the "

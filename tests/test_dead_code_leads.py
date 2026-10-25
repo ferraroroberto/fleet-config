@@ -188,9 +188,12 @@ try:
     rl = dcl.leads(plain, with_ruff=True)["ruff"]
     check(rl and rl["state"] == "ok" and {h["code"] for h in rl["hits"]} == {"F401", "F841"},
           f"--ruff reports unused imports and variables outside the ratchet -- {rl}")
+    # The gate is read from origin/<default> (tests/acceptance/test_gate_enforced.py covers the skip);
+    # a ratchet enabled only in a working tree with no origin is an unknown gate, so ruff still runs.
     ratchet = make_repo(tmp / "r4", {"m.py": "import os\n", ".fleet.toml": "[static_ratchet]\nenabled = true\n"})
-    rs = dcl.leads(ratchet, with_ruff=True)["ruff"]
-    check(rs["state"] == "skipped" and rs["hits"] == [], f"--ruff is skipped when [static_ratchet] is enabled -- {rs}")
+    rv = dcl.leads(ratchet, with_ruff=True)
+    check(rv["gate"]["state"] == "unknown" and rv["ruff"]["state"] == "ok" and rv["ruff"]["hits"],
+          f"--ruff runs when the gate cannot be read from origin -- {rv['gate']} {rv['ruff']}")
     check(dcl._first_line("") == "" and dcl.is_test_path("tests/x.py") and dcl.is_test_path("pkg/test_a.py")
           and dcl.is_test_path("conftest.py") and not dcl.is_test_path("pkg/contest.py"),
           "test-path detection matches tests/, test_*.py and conftest.py only")

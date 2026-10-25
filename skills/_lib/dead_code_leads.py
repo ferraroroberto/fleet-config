@@ -16,14 +16,18 @@ A symbol referenced only from test files is tagged `test_only` -- found by a
 second vulture pass over the non-test files, since the first pass counts a test
 as a caller.
 
-Every verdict is one of three states, and a failed run is never `ok`:
+Every verdict is one of four states, and a failed run is never `ok`:
   ok              vulture ran and its output parsed; `hits` may be empty
   not-applicable  the repo tracks no Python
+  skipped         `[dead_code_ratchet]` is enabled on the default branch: the
+                  ratchet's baseline owns these kinds at ship time
   not-confirmed   vulture missing/crashed/timed out, its output did not parse,
                   or the tracked-file list could not be read -- exit 3
 
 `--ruff` adds ruff F401/F841 leads for a repo that has not enabled
 `[static_ratchet]` (a ratchet repo already owns those through its baseline).
+Whether a ratchet is enabled is `gate_coverage.enforced`'s answer, read from
+`origin/<default>`; a gate it cannot read is `unknown` and both passes run.
 
 stdlib only apart from the vulture / ruff subprocesses.
 """
@@ -40,7 +44,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_toml  # noqa: E402
+from gate_coverage import enforced  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
@@ -137,14 +141,9 @@ def _kept(hit: Dict) -> bool:
     return not any(fnmatch.fnmatchcase(name, pat) for pat in PROTOCOL_NAMES)
 
 
-def _ratchet_enabled(repo: Path) -> bool:
-    table = fleet_toml.table(fleet_toml.load(repo), "static_ratchet")
-    return bool(table and table.get("enabled") is True)
-
-
-def run_ruff(repo: Path, files: Sequence[str]) -> Dict:
+def run_ruff(repo: Path, files: Sequence[str], gate: Dict) -> Dict:
     """Ruff F401/F841 leads for a repo outside the ratchet: `{state, reason, hits}`."""
-    if _ratchet_enabled(repo):
+    if enforced.enforces(gate, "static_ratchet"):
         return {"state": "skipped", "reason": "[static_ratchet] enabled: the baseline owns F401/F841", "hits": []}
     cmd = [sys.executable, "-m", "ruff", "check", "--isolated", "--no-cache", "--select", "F401,F841",
            "--output-format", "json", *files]
@@ -178,6 +177,13 @@ def leads(repo: Path, *, with_ruff: bool = False, vulture_cmd: Optional[Sequence
     py_files = [f for f in tracked if f.endswith(".py")]
     if not py_files:
         return {**out, "state": "not-applicable", "reason": "no tracked Python files"}
+    gate = enforced.read_gate(str(repo))
+    out["gate"] = {"state": gate["state"], "reason": gate["reason"]}
+    if with_ruff:
+        out["ruff"] = run_ruff(repo, py_files, gate)
+    if enforced.enforces(gate, "dead_code_ratchet"):
+        return {**out, "state": "skipped",
+                "reason": "[dead_code_ratchet] enabled: the baseline owns unused functions, classes and methods"}
     everything, why = run_vulture(repo, py_files, vulture_cmd)
     if everything is None:
         return {**out, "state": "not-confirmed", "reason": why}
@@ -192,8 +198,6 @@ def leads(repo: Path, *, with_ruff: bool = False, vulture_cmd: Optional[Sequence
              if _kept(h) and (h["file"], h["line"], h["name"]) not in alive_somewhere]
     hits.sort(key=lambda h: (h["file"], h["line"], h["name"]))
     out.update(hits=hits, hit_count=len(hits))
-    if with_ruff:
-        out["ruff"] = run_ruff(repo, py_files)
     return out
 
 
