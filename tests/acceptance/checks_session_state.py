@@ -515,6 +515,15 @@ def _session_state_session_end_cases(check: _Checker, rows: Callable[[], Dict[st
     check("session_state: SessionEnd for an unknown sid -> exit 0, file untouched",
           code == 0 and set(rows()) == before)
 
+    # Grok bounds a SessionEnd hook by its own `timeout` (1.5 s when unset) and
+    # the shim-launched hook takes up to ~1.4 s, so an unset timeout loses the
+    # chief-inbox write that follows the row removal.
+    template = json.loads((REPO / "settings.template.json").read_text(encoding="utf-8"))
+    session_end = [h for block in template["hooks"]["SessionEnd"] for h in block["hooks"]
+                   if "session_state" in h.get("command", "")]
+    check("settings.template: session_state SessionEnd hook sets a timeout above Grok's 1.5 s default",
+          len(session_end) == 1 and session_end[0].get("timeout", 0) >= 5)
+
 
 def _index_lock_sessionstart_unit_checks() -> Tuple[int, int]:
     """The stranded-index-lock tripwire (fleet-config#939).
