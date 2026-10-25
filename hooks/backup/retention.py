@@ -319,16 +319,40 @@ def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
             stored["last_seen"] = manifest.get("date")
             sessions[session_id] = stored
 
+    unresolved = _unresolved_sessions(sessions, files, manifest.get("date"))
+    if unresolved:
+        errors.append(f"{len(unresolved)} current session(s) reference an unarchived native path")
+
+    _write_archive_manifest(dest_root, leg, files, sessions, errors)
+
+    return {
+        "status": "fail" if errors else "pass",
+        "files": len(files),
+        "sessions": len(sessions),
+        "added": added,
+        "updated": updated,
+        "unchanged": unchanged,
+        "retained_missing": len(set(files) - current_keys),
+        "unresolved_sessions": unresolved,
+        "errors": errors,
+    }
+
+
+def _unresolved_sessions(sessions: Dict[str, Any], files: Dict[str, Any], date: Any) -> List[str]:
+    """Sessions seen this run whose native path has no archived file."""
     unresolved = []
     for session_id, session in sessions.items():
-        if session.get("last_seen") != manifest.get("date"):
+        if session.get("last_seen") != date:
             continue
         path = session.get("path")
         if path and f"{session.get('group')}/{str(path).replace('\\', '/')}" not in files:
             unresolved.append(session_id)
-    if unresolved:
-        errors.append(f"{len(unresolved)} current session(s) reference an unarchived native path")
+    return unresolved
 
+
+def _write_archive_manifest(dest_root: Path, leg: str, files: Dict[str, Any],
+                            sessions: Dict[str, Any], errors: List[str]) -> None:
+    """Atomically replace the archive manifest; a failed write is recorded in `errors`."""
     archive_manifest = {
         "schema": 1,
         "leg": leg,
@@ -346,18 +370,6 @@ def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
         os.replace(temporary, dest_root / ARCHIVE_MANIFEST_NAME)
     except OSError as exc:
         errors.append(f"archive manifest: {exc}")
-
-    return {
-        "status": "fail" if errors else "pass",
-        "files": len(files),
-        "sessions": len(sessions),
-        "added": added,
-        "updated": updated,
-        "unchanged": unchanged,
-        "retained_missing": len(set(files) - current_keys),
-        "unresolved_sessions": unresolved,
-        "errors": errors,
-    }
 
 
 def audit_session_archive(dest_root: Path, groups: Dict[str, Any]) -> Dict[str, Any]:

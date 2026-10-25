@@ -141,47 +141,11 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
 
     logger.info("▶️ %s: snapshotting %d files across %d groups", leg,
                 sum(len(selection.files) for selection in groups.values()), len(groups))
-    linked = copied = 0
-    for name, selection in sorted(groups.items()):
-        errors = list(selection.errors)
-        vanished = list(selection.vanished)
-        if dry_run:
-            entries = [
-                {"path": rel, "sha256": None, "size": size, "mtime": None}
-                for _, rel, size in selection.files
-            ]
-        else:
-            entries, group_linked, group_copied = write_group(
-                selection.files, name, snapshot_dir, prev_dir, prev_index, errors, vanished,
-            )
-            linked += group_linked
-            copied += group_copied
-        manifest["groups"][name] = {
-            "status": "failed" if errors else "ok",
-            "files": entries,
-            "bytes": sum(entry["size"] for entry in entries),
-            "bulk_excluded": selection.bulk_excluded,
-            "oversize": selection.oversize,
-            "errors": errors,
-            "vanished": vanished,
-            "sessions": selection.sessions,
-        }
+    linked, copied = _snapshot_groups(groups, manifest, snapshot_dir, prev_dir, prev_index,
+                                      dry_run)
 
     total_files = sum(len(payload["files"]) for payload in manifest["groups"].values())
-    manifest["totals"] = {
-        "files": total_files,
-        "sessions": sum(
-            len(payload["sessions"]) for payload in manifest["groups"].values()
-        ),
-        "bytes": sum(payload["bytes"] for payload in manifest["groups"].values()),
-        "linked": linked,
-        "copied": copied,
-        "groups": len(manifest["groups"]),
-        "bulk_excluded_dirs": sum(
-            len(payload["bulk_excluded"]) for payload in manifest["groups"].values()
-        ),
-        "vanished": sum(len(payload["vanished"]) for payload in manifest["groups"].values()),
-    }
+    manifest["totals"] = _leg_totals(manifest, total_files, linked, copied)
 
     if dry_run:
         manifest["status"] = "dry-run"
@@ -225,6 +189,57 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     manifest["pruned"] = prune(dest_root, cfg)
     write_restore_note(dest_root, leg, source)
     return manifest
+
+
+def _snapshot_groups(groups: Dict[str, Selection], manifest: Dict[str, Any], snapshot_dir: Path,
+                     prev_dir: Optional[Path], prev_index: Dict[str, Any],
+                     dry_run: bool) -> Tuple[int, int]:
+    """Write (or, dry, list) every group into the snapshot; returns files hard-linked and copied."""
+    linked = copied = 0
+    for name, selection in sorted(groups.items()):
+        errors = list(selection.errors)
+        vanished = list(selection.vanished)
+        if dry_run:
+            entries = [
+                {"path": rel, "sha256": None, "size": size, "mtime": None}
+                for _, rel, size in selection.files
+            ]
+        else:
+            entries, group_linked, group_copied = write_group(
+                selection.files, name, snapshot_dir, prev_dir, prev_index, errors, vanished,
+            )
+            linked += group_linked
+            copied += group_copied
+        manifest["groups"][name] = {
+            "status": "failed" if errors else "ok",
+            "files": entries,
+            "bytes": sum(entry["size"] for entry in entries),
+            "bulk_excluded": selection.bulk_excluded,
+            "oversize": selection.oversize,
+            "errors": errors,
+            "vanished": vanished,
+            "sessions": selection.sessions,
+        }
+    return linked, copied
+
+
+def _leg_totals(manifest: Dict[str, Any], total_files: int, linked: int,
+                copied: int) -> Dict[str, Any]:
+    """The leg's roll-up across its groups."""
+    return {
+        "files": total_files,
+        "sessions": sum(
+            len(payload["sessions"]) for payload in manifest["groups"].values()
+        ),
+        "bytes": sum(payload["bytes"] for payload in manifest["groups"].values()),
+        "linked": linked,
+        "copied": copied,
+        "groups": len(manifest["groups"]),
+        "bulk_excluded_dirs": sum(
+            len(payload["bulk_excluded"]) for payload in manifest["groups"].values()
+        ),
+        "vanished": sum(len(payload["vanished"]) for payload in manifest["groups"].values()),
+    }
 
 
 def collect_repos(cfg: BackupConfig, only: Optional[str],
@@ -394,67 +409,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     cfg = load_backup_config(args.config)
 
     if args.audit_sessions:
-        audits: Dict[str, Dict[str, Any]] = {}
-        with contextlib.ExitStack() as stack:
-            if cfg.transcripts_src.is_dir():
-                audits[CLAUDE_SESSIONS_LEG] = audit_session_archive(
-                    cfg.transcripts_dest, {"projects": select_transcripts(cfg)},
-                )
-            else:
-                audits[CLAUDE_SESSIONS_LEG] = {
-                    "status": "unknown", "reason": f"{cfg.transcripts_src} does not exist",
-                }
-            if cfg.codex_sessions_src.is_dir():
-                staging = stack.enter_context(runtime_data_staging())
-                audits[CODEX_SESSIONS_LEG] = audit_session_archive(
-                    cfg.codex_sessions_dest,
-                    {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, staging)},
-                )
-            else:
-                audits[CODEX_SESSIONS_LEG] = {
-                    "status": "unknown", "reason": f"{cfg.codex_sessions_src} does not exist",
-                }
-        statuses = {detail["status"] for detail in audits.values()}
-        overall = "unknown" if "unknown" in statuses else (
-            "incomplete" if "incomplete" in statuses else "ok"
-        )
-        print(f"SESSION_ARCHIVE_AUDIT={overall}")
-        for leg, detail in audits.items():
-            print(f"  {leg}: {json.dumps(detail, ensure_ascii=False)}")
-        return EXIT_OK if overall == "ok" else (
-            EXIT_REPO_FAILURE if overall == "incomplete" else EXIT_VERIFY_FAILED
-        )
+        return _audit_sessions(cfg)
 
     if args.check_freshness:
-        worst = FRESHNESS_OK
-        details = {}
-        legs = [("repos", cfg.dest), (CLAUDE_SESSIONS_LEG, cfg.transcripts_dest)]
-        if cfg.codex_sessions_src.is_dir():
-            legs.append((CODEX_SESSIONS_LEG, cfg.codex_sessions_dest))
-        else:
-            details[CODEX_SESSIONS_LEG] = {
-                "state": "not-yet-active", "reason": f"{cfg.codex_sessions_src} does not exist",
-            }
-        if cfg.runtime_data_src.is_dir():
-            legs.append((RUNTIME_DATA_LEG, cfg.runtime_data_dest))
-        else:
-            # The leg does not run while its source root is absent, so it has no
-            # snapshot to be fresh or stale about. Reported as its own state
-            # rather than as `unknown` — "this leg is not active yet" is a fact
-            # we established, not one we failed to.
-            details[RUNTIME_DATA_LEG] = {
-                "state": "not-yet-active",
-                "reason": f"{cfg.runtime_data_src} does not exist",
-            }
-        for leg, dest_root in legs:
-            state, detail = freshness(dest_root, cfg)
-            details[leg] = {"state": state, **detail}
-            if _FRESHNESS_EXIT[state] > _FRESHNESS_EXIT[worst]:
-                worst = state
-        print(f"BACKUP_FRESHNESS={worst}")
-        for leg, detail in details.items():
-            print(f"  {leg}: {json.dumps(detail, ensure_ascii=False)}")
-        return _FRESHNESS_EXIT[worst]
+        return _check_freshness(cfg)
 
     started = time.monotonic()
     exit_code, manifests = run(
@@ -471,3 +429,69 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.monotonic() - started, exit_code)
     return exit_code
 
+
+def _audit_sessions(cfg: BackupConfig) -> int:
+    """Read-only: is every current native Claude/Codex session in its durable archive?"""
+    audits: Dict[str, Dict[str, Any]] = {}
+    with contextlib.ExitStack() as stack:
+        if cfg.transcripts_src.is_dir():
+            audits[CLAUDE_SESSIONS_LEG] = audit_session_archive(
+                cfg.transcripts_dest, {"projects": select_transcripts(cfg)},
+            )
+        else:
+            audits[CLAUDE_SESSIONS_LEG] = {
+                "status": "unknown", "reason": f"{cfg.transcripts_src} does not exist",
+            }
+        if cfg.codex_sessions_src.is_dir():
+            staging = stack.enter_context(runtime_data_staging())
+            audits[CODEX_SESSIONS_LEG] = audit_session_archive(
+                cfg.codex_sessions_dest,
+                {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, staging)},
+            )
+        else:
+            audits[CODEX_SESSIONS_LEG] = {
+                "status": "unknown", "reason": f"{cfg.codex_sessions_src} does not exist",
+            }
+    statuses = {detail["status"] for detail in audits.values()}
+    overall = "unknown" if "unknown" in statuses else (
+        "incomplete" if "incomplete" in statuses else "ok"
+    )
+    print(f"SESSION_ARCHIVE_AUDIT={overall}")
+    for leg, detail in audits.items():
+        print(f"  {leg}: {json.dumps(detail, ensure_ascii=False)}")
+    return EXIT_OK if overall == "ok" else (
+        EXIT_REPO_FAILURE if overall == "incomplete" else EXIT_VERIFY_FAILED
+    )
+
+
+def _check_freshness(cfg: BackupConfig) -> int:
+    """Print BACKUP_FRESHNESS for every active leg; the exit code is the worst state's."""
+    worst = FRESHNESS_OK
+    details = {}
+    legs = [("repos", cfg.dest), (CLAUDE_SESSIONS_LEG, cfg.transcripts_dest)]
+    if cfg.codex_sessions_src.is_dir():
+        legs.append((CODEX_SESSIONS_LEG, cfg.codex_sessions_dest))
+    else:
+        details[CODEX_SESSIONS_LEG] = {
+            "state": "not-yet-active", "reason": f"{cfg.codex_sessions_src} does not exist",
+        }
+    if cfg.runtime_data_src.is_dir():
+        legs.append((RUNTIME_DATA_LEG, cfg.runtime_data_dest))
+    else:
+        # The leg does not run while its source root is absent, so it has no
+        # snapshot to be fresh or stale about. Reported as its own state
+        # rather than as `unknown` — "this leg is not active yet" is a fact
+        # we established, not one we failed to.
+        details[RUNTIME_DATA_LEG] = {
+            "state": "not-yet-active",
+            "reason": f"{cfg.runtime_data_src} does not exist",
+        }
+    for leg, dest_root in legs:
+        state, detail = freshness(dest_root, cfg)
+        details[leg] = {"state": state, **detail}
+        if _FRESHNESS_EXIT[state] > _FRESHNESS_EXIT[worst]:
+            worst = state
+    print(f"BACKUP_FRESHNESS={worst}")
+    for leg, detail in details.items():
+        print(f"  {leg}: {json.dumps(detail, ensure_ascii=False)}")
+    return _FRESHNESS_EXIT[worst]
