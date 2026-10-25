@@ -243,7 +243,7 @@ covers (it enforces the mechanical half of the safety rails below, not
 just the launcher call):
 
 - Start an issue: `chief_ops.py dispatch <repo> <number> [--mode
-  start|yolo] [--model sonnet|opus|fable|gpt5.6] [--brief-file <path>]` —
+  start|yolo] [--model sonnet|opus|fable|gpt5.6|grok] [--brief-file <path>]` —
   **refuses** (prints `REFUSED=...`, no session spawned) if that repo
   already has a live session, if the worker cap is at/over, if `--mode yolo`
   is given without `--yolo-confirmed`, or if the brief file is missing or
@@ -453,7 +453,8 @@ instead:
    mutation (start/dispatch/nudge/stop) happens only on an explicit
    direction in the user's message.
 7. Models: pass `"sonnet"` unless the user names a tier (`opus`, `fable`,
-   `gpt5.6` (Codex only)). Your own model is not yours to change.
+   `gpt5.6` (Codex only), `grok` (Grok Build, `easy`-tier lanes only, per
+   `docs/model-tiers.md`)). Your own model is not yours to change.
 8. **Destructive-scope steers always need a human echo — permanent floor,
    independent of any steer mechanism (fleet-config#509, #622).** Routine
    steers (correct the approach, narrow the scope, answer a question, unstick

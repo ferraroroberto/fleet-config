@@ -52,7 +52,8 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     d.add_argument("repo")
     d.add_argument("number", type=int)
     d.add_argument("--mode", choices=("start", "yolo"), default="start")
-    d.add_argument("--model", default=None)
+    d.add_argument("--model", default=None,
+                   help="sonnet|opus|fable|gpt5.6|grok (grok = Grok Build, easy-tier lanes only)")
     d.add_argument("--brief-file", default=None,
                    help="lane brief, delivered in the launch command (#944)")
     d.add_argument("--yolo-confirmed", action="store_true")
