@@ -10,6 +10,7 @@ import queue
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,6 +20,7 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import quota_snapshot as contract
 import quota_sources as sources
 from codex_app_server import AppServerSession
+from hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS
 
 NOW = dt.datetime(2026, 9, 5, 12, tzinfo=dt.timezone.utc)
 RESET = int((NOW + dt.timedelta(days=1)).timestamp())
@@ -198,6 +200,25 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), before)
             self.assertFalse(list(target.parent.glob("*.tmp.*")))
             self.assertFalse(before.startswith(b"\xef\xbb\xbf"))
+
+    def test_publish_sweeps_only_its_own_stale_temps(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = contract.publish(codex(), root)
+            old = time.time() - ATOMIC_TMP_SWEEP_AFTER_SECONDS - 60
+            stale = target.parent / (target.name + ".tmp.abc_123")
+            fresh = target.parent / (target.name + ".tmp.def_456")
+            sibling = target.parent / "claude-statusline.json.tmp.abc_123"
+            sibling_longer = target.parent / (target.name + ".tmp.abc.partial")
+            for orphan in (stale, fresh, sibling, sibling_longer):
+                orphan.write_text("x", encoding="utf-8")
+            for orphan in (stale, sibling, sibling_longer):
+                os.utime(orphan, (old, old))
+            contract.publish(codex(), root)
+            self.assertFalse(stale.exists())
+            self.assertTrue(fresh.exists())
+            self.assertTrue(sibling.exists())
+            self.assertTrue(sibling_longer.exists())
 
     def test_concurrent_process_producers_and_continuous_reader_never_lose_a_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

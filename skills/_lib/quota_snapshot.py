@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import state_dir  # noqa: E402
+from hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS, state_dir  # noqa: E402
 
 SCHEMA_VERSION = 1
 MAX_AGE_SECONDS = 600
@@ -189,16 +189,42 @@ def validate_source(raw: Any) -> dict[str, Any]:
     return result
 
 
+def sweep_stale_temps(target: Path) -> None:
+    """Unlink ``target``'s abandoned ``<name>.tmp.<random>`` temporaries, by age.
+
+    A status-line render killed between ``mkstemp`` and ``os.replace`` runs no
+    handler, so its temp is stranded; the next publish expires it instead. The
+    folder can hold thousands, so this is one ``scandir`` (``DirEntry.stat``
+    reuses the listing's data on Windows). The name must be exactly this target
+    plus one ``mkstemp`` segment, so another producer's shard or temp is never
+    touched. Advisory: a failure leaves the orphan for the next publish.
+    """
+    pattern = re.compile(re.escape(target.name + ".tmp.") + r"[a-z0-9_]+")
+    cutoff = time.time() - ATOMIC_TMP_SWEEP_AFTER_SECONDS
+    try:
+        with os.scandir(target.parent) as entries:
+            for entry in entries:
+                try:
+                    if pattern.fullmatch(entry.name) and entry.stat().st_mtime < cutoff:
+                        os.unlink(entry.path)
+                except OSError:
+                    continue
+    except OSError:
+        return
+
+
 def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:
     """Atomically replace only this producer's shard; never merge shared JSON.
 
     Unique temp names + os.replace permit concurrent producers and readers.
-    A failed replacement retains the complete old shard and removes our temp.
+    A failed replacement retains the complete old shard and removes our temp;
+    a killed writer's stranded temp is expired by the next publish.
     """
     source = validate_source(raw)
     folder = (directory or state_dir()) / "quota-v1"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / (source["producer"] + ".json")
+    sweep_stale_temps(target)
     fd, temporary = tempfile.mkstemp(prefix=target.name + ".tmp.", dir=folder)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
