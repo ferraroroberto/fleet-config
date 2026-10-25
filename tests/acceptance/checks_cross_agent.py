@@ -24,7 +24,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from acceptance.shared import (
     HOOKS,
@@ -124,133 +124,144 @@ def _session_state_agent_adapter_unit_checks() -> Tuple[int, int]:
               code == 0 and codex2_row.get("agent") == "codex"
               and codex2_row.get("launcher_session_id") == "launcher-codex")
 
-        # Codex SessionEnd is terminal for observational events only. It removes
-        # exactly its own id, repeated/unknown ends are harmless, and a late
-        # Stop/PermissionRequest cannot recreate the row. A later explicit
-        # prompt proves a genuine resume and may reopen the same native id.
-        sibling_payloads = (
-            ("session_state", {"hook_event_name": "UserPromptSubmit",
-                               "session_id": "claude-sibling", "cwd": str(tmp)}),
-            ("session_state_pi", {"event": "input", "session_id": "pi-sibling",
-                                  "cwd": str(tmp)}),
-            ("session_state", {"hookEventName": "user_prompt_submit",
-                               "sessionId": "grok-sibling", "cwd": str(tmp)}),
-        )
-        for module, payload in sibling_payloads:
-            run(module, payload, extra_env=env)
-        code, _out, _err = run(
-            "session_state_codex",
-            {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
-             "reason": "other"},
-            extra_env=env,
-        )
-        sibling_rows = rows()
-        check("session_state_codex: SessionEnd removes only its matching same-cwd row",
-              code == 0 and "codex-2" not in sibling_rows
-              and {"codex-1", "claude-sibling", "pi-sibling", "grok-sibling"}
-              <= set(sibling_rows)
-              and sibling_rows["claude-sibling"].get("agent") == "claude"
-              and sibling_rows["pi-sibling"].get("agent") == "pi"
-              and sibling_rows["grok-sibling"].get("agent") == "grok")
+        _codex_session_end_cases(check, rows, env, launcher_env, codex_payload, tmp, ended_path)
 
-        before_repeat = rows()
-        run("session_state_codex",
-            {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
-             "reason": "other"}, extra_env=env)
-        run("session_state_codex",
-            {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "unknown-codex",
-             "reason": "other"}, extra_env=env)
-        check("session_state_codex: repeated and unknown SessionEnd leave live rows untouched",
-              rows() == before_repeat)
-
-        run("session_state_codex",
-            {**codex_payload, "hook_event_name": "Stop", "session_id": "codex-2"},
-            extra_env=env)
-        run("session_state_codex",
-            {**codex_payload, "hook_event_name": "PermissionRequest", "session_id": "codex-2"},
-            extra_env=env)
-        check("session_state_codex: late observational events do not resurrect a closed row",
-              "codex-2" not in rows())
-
-        code, _out, _err = run(
-            "session_state_codex",
-            {**codex_payload, "hook_event_name": "UserPromptSubmit", "session_id": "codex-2"},
-            extra_env=launcher_env,
-        )
-        reopened = rows().get("codex-2") or {}
-        check("session_state_codex: explicit prompt reopens a genuinely resumed native id",
-              code == 0 and reopened.get("status") == "working"
-              and reopened.get("launcher_session_id") == "launcher-codex")
-
-        run("session_state_codex",
-            {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
-             "reason": "other"}, extra_env=env)
-        try:
-            ended = json.loads(ended_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            ended = {}
-        if "codex-2" in ended:
-            ended["codex-2"] = "2020-01-01T00:00:00Z"
-            ended_path.write_text(json.dumps(ended), encoding="utf-8")
-            run("session_state_codex",
-                {**codex_payload, "hook_event_name": "Stop", "session_id": "codex-2"},
-                extra_env=launcher_env)
-        check("session_state_codex: expired tombstone does not hide a resumable id forever",
-              "codex-2" in ended
-              and (rows().get("codex-2") or {}).get("status") == "needs-you")
-
-        # ---- Pi: input -> working, agent_settled -> needs-you, default_agent ----
-        pi_event = {"event": "input", "session_id": "pi-1", "cwd": str(tmp)}
-        code, _out, _err = run("session_state_pi", pi_event, extra_env=env)
-        pi_row = rows().get("pi-1") or {}
-        check("session_state_pi: input -> working, agent defaults to pi",
-              code == 0 and pi_row.get("status") == "working" and pi_row.get("agent") == "pi")
-
-        code, _out, _err = run(
-            "session_state_pi", {**pi_event, "event": "agent_settled"}, extra_env=env,
-        )
-        check("session_state_pi: agent_settled -> needs-you",
-              code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
-
-        code, _out, _err = run(
-            "session_state_pi", {**pi_event, "event": "some_unwired_event"}, extra_env=env,
-        )
-        check("session_state_pi: unwired event -> exit 0, state untouched",
-              code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
-
-        # ---- Pi: session_shutdown removes the row through the same shared path ----
-        code, _out, _err = run(
-            "session_state_pi", {**pi_event, "event": "session_shutdown"}, extra_env=env,
-        )
-        check("session_state_pi: session_shutdown removes the row",
-              code == 0 and "pi-1" not in rows())
-
-        before = set(rows())
-        code, _out, _err = run(
-            "session_state_pi", {"event": "session_shutdown", "session_id": "pi-does-not-exist", "cwd": str(tmp)},
-            extra_env=env,
-        )
-        check("session_state_pi: session_shutdown for an unknown sid -> exit 0, file untouched",
-              code == 0 and set(rows()) == before)
-
-        # Two agents in the same project stay independent rows (fleet-config#349
-        # acceptance: "Two agents in one project remain independent") — same
-        # cwd, distinct session ids and agent fields, neither writer clobbers
-        # the other's row.
-        code, _out, _err = run(
-            "session_state_pi", {"event": "input", "session_id": "pi-2", "cwd": str(tmp)}, extra_env=env,
-        )
-        codex2_after = rows().get("codex-2") or {}
-        pi2_row = rows().get("pi-2") or {}
-        check("session_state: Codex and Pi rows for the same cwd stay independent",
-              code == 0 and codex2_after.get("agent") == "codex" and pi2_row.get("agent") == "pi"
-              and codex2_after.get("cwd") == pi2_row.get("cwd") == str(tmp))
+        _pi_adapter_cases(check, rows, env, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
 
-    return check.failures, check.total
+
+def _codex_session_end_cases(check: _Checker, rows: Callable[[], Dict[str, Any]],
+                             env: Dict[str, str], launcher_env: Dict[str, str],
+                             codex_payload: Dict[str, Any], tmp: Path, ended_path: Path) -> None:
+    """Codex SessionEnd closes only its own row, and only a genuine resume reopens it."""
+    # Codex SessionEnd is terminal for observational events only. It removes
+    # exactly its own id, repeated/unknown ends are harmless, and a late
+    # Stop/PermissionRequest cannot recreate the row. A later explicit
+    # prompt proves a genuine resume and may reopen the same native id.
+    sibling_payloads = (
+        ("session_state", {"hook_event_name": "UserPromptSubmit",
+                           "session_id": "claude-sibling", "cwd": str(tmp)}),
+        ("session_state_pi", {"event": "input", "session_id": "pi-sibling",
+                              "cwd": str(tmp)}),
+        ("session_state", {"hookEventName": "user_prompt_submit",
+                           "sessionId": "grok-sibling", "cwd": str(tmp)}),
+    )
+    for module, payload in sibling_payloads:
+        run(module, payload, extra_env=env)
+    code, _out, _err = run(
+        "session_state_codex",
+        {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
+         "reason": "other"},
+        extra_env=env,
+    )
+    sibling_rows = rows()
+    check("session_state_codex: SessionEnd removes only its matching same-cwd row",
+          code == 0 and "codex-2" not in sibling_rows
+          and {"codex-1", "claude-sibling", "pi-sibling", "grok-sibling"}
+          <= set(sibling_rows)
+          and sibling_rows["claude-sibling"].get("agent") == "claude"
+          and sibling_rows["pi-sibling"].get("agent") == "pi"
+          and sibling_rows["grok-sibling"].get("agent") == "grok")
+
+    before_repeat = rows()
+    run("session_state_codex",
+        {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
+         "reason": "other"}, extra_env=env)
+    run("session_state_codex",
+        {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "unknown-codex",
+         "reason": "other"}, extra_env=env)
+    check("session_state_codex: repeated and unknown SessionEnd leave live rows untouched",
+          rows() == before_repeat)
+
+    run("session_state_codex",
+        {**codex_payload, "hook_event_name": "Stop", "session_id": "codex-2"},
+        extra_env=env)
+    run("session_state_codex",
+        {**codex_payload, "hook_event_name": "PermissionRequest", "session_id": "codex-2"},
+        extra_env=env)
+    check("session_state_codex: late observational events do not resurrect a closed row",
+          "codex-2" not in rows())
+
+    code, _out, _err = run(
+        "session_state_codex",
+        {**codex_payload, "hook_event_name": "UserPromptSubmit", "session_id": "codex-2"},
+        extra_env=launcher_env,
+    )
+    reopened = rows().get("codex-2") or {}
+    check("session_state_codex: explicit prompt reopens a genuinely resumed native id",
+          code == 0 and reopened.get("status") == "working"
+          and reopened.get("launcher_session_id") == "launcher-codex")
+
+    run("session_state_codex",
+        {**codex_payload, "hook_event_name": "SessionEnd", "session_id": "codex-2",
+         "reason": "other"}, extra_env=env)
+    try:
+        ended = json.loads(ended_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ended = {}
+    if "codex-2" in ended:
+        ended["codex-2"] = "2020-01-01T00:00:00Z"
+        ended_path.write_text(json.dumps(ended), encoding="utf-8")
+        run("session_state_codex",
+            {**codex_payload, "hook_event_name": "Stop", "session_id": "codex-2"},
+            extra_env=launcher_env)
+    check("session_state_codex: expired tombstone does not hide a resumable id forever",
+          "codex-2" in ended
+          and (rows().get("codex-2") or {}).get("status") == "needs-you")
+
+
+def _pi_adapter_cases(check: _Checker, rows: Callable[[], Dict[str, Any]], env: Dict[str, str],
+                      tmp: Path) -> None:
+    """Pi's event map and shutdown, and Codex and Pi rows in one cwd staying independent."""
+    # ---- Pi: input -> working, agent_settled -> needs-you, default_agent ----
+    pi_event = {"event": "input", "session_id": "pi-1", "cwd": str(tmp)}
+    code, _out, _err = run("session_state_pi", pi_event, extra_env=env)
+    pi_row = rows().get("pi-1") or {}
+    check("session_state_pi: input -> working, agent defaults to pi",
+          code == 0 and pi_row.get("status") == "working" and pi_row.get("agent") == "pi")
+
+    code, _out, _err = run(
+        "session_state_pi", {**pi_event, "event": "agent_settled"}, extra_env=env,
+    )
+    check("session_state_pi: agent_settled -> needs-you",
+          code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
+
+    code, _out, _err = run(
+        "session_state_pi", {**pi_event, "event": "some_unwired_event"}, extra_env=env,
+    )
+    check("session_state_pi: unwired event -> exit 0, state untouched",
+          code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
+
+    # ---- Pi: session_shutdown removes the row through the same shared path ----
+    code, _out, _err = run(
+        "session_state_pi", {**pi_event, "event": "session_shutdown"}, extra_env=env,
+    )
+    check("session_state_pi: session_shutdown removes the row",
+          code == 0 and "pi-1" not in rows())
+
+    before = set(rows())
+    code, _out, _err = run(
+        "session_state_pi", {"event": "session_shutdown", "session_id": "pi-does-not-exist", "cwd": str(tmp)},
+        extra_env=env,
+    )
+    check("session_state_pi: session_shutdown for an unknown sid -> exit 0, file untouched",
+          code == 0 and set(rows()) == before)
+
+    # Two agents in the same project stay independent rows (fleet-config#349
+    # acceptance: "Two agents in one project remain independent") — same
+    # cwd, distinct session ids and agent fields, neither writer clobbers
+    # the other's row.
+    code, _out, _err = run(
+        "session_state_pi", {"event": "input", "session_id": "pi-2", "cwd": str(tmp)}, extra_env=env,
+    )
+    codex2_after = rows().get("codex-2") or {}
+    pi2_row = rows().get("pi-2") or {}
+    check("session_state: Codex and Pi rows for the same cwd stay independent",
+          code == 0 and codex2_after.get("agent") == "codex" and pi2_row.get("agent") == "pi"
+          and codex2_after.get("cwd") == pi2_row.get("cwd") == str(tmp))
 
 
 # What "returns promptly" grants a Codex hook's own work. The interpreter's
@@ -459,6 +470,13 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "\n".join(smoke_failures),
     )
 
+    _codex_hung_hook_cases(check, commands, env)
+
+    return check.failures, check.total
+
+
+def _codex_hung_hook_cases(check: _Checker, commands: List[str], env: Dict[str, str]) -> None:
+    """A hung hook is reported at its bound, and nothing it started survives."""
     # A hung hook is reported at its bound, not when the hang ends, and nothing it
     # started survives the check (fleet-config#1073). The synthetic hook records the
     # PID of the interpreter that actually runs it (the venv launcher's child).
@@ -483,8 +501,6 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
             pid is not None and not _pid_alive(pid),
             f"hung hook pid {pid} (None: it never started)",
         )
-
-    return check.failures, check.total
 
 
 _POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -608,6 +624,14 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
         print("SKIP  hook_transport: run-hook.ps1 cases (Windows PowerShell not found)")
         return check.failures, check.total, check.skipped
 
+    _shim_transport_cases(check, payload, guard_payload, env, no_py_encoding_env, command)
+    return check.failures, check.total, check.skipped
+
+
+def _shim_transport_cases(check: _Checker, payload: Dict[str, Any], guard_payload: Dict[str, Any],
+                          env: Dict[str, str], no_py_encoding_env: Dict[str, str],
+                          command: str) -> None:
+    """The `run-hook.ps1` transport, under every console code page the gate can inherit."""
     for code_page in _shim_console_code_pages():
         with tempfile.TemporaryDirectory(prefix="fleet-config-912-") as tmp:
             shim_copy = Path(tmp) / "run-hook.ps1"
@@ -654,7 +678,6 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
             res.returncode == 0 and executed == command,
             f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
         )
-    return check.failures, check.total, check.skipped
 
 
 def _copilot_hook_shells() -> list[Tuple[str, str]]:

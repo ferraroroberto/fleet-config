@@ -20,7 +20,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 from acceptance.shared import (
     HOOKS,
@@ -137,6 +137,40 @@ def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    _chief_skill_refresh_cases(check, chs)
+
+    # ---- gating is a projects.toml key, not a hardcoded project name ----
+    tmp = Path(tempfile.mkdtemp(prefix="chief_handover_gate_"))
+    try:
+        proj_a, proj_b = tmp / "a", tmp / "b"
+        proj_a.mkdir()
+        proj_b.mkdir()
+        (tmp / "chief-handover.md").write_text("gate-check log line\n", encoding="utf-8")
+        toml = tmp / "projects.toml"
+        toml.write_text(
+            f'[opted-in]\ncwd_prefix = "{proj_a.as_posix()}"\nchief_handover = true\n\n'
+            f'[other]\ncwd_prefix = "{proj_b.as_posix()}"\n', encoding="utf-8")
+        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "CLAUDE_HOOKS_PROJECTS_TOML": str(toml)}
+        _c, out_a, _e = run(
+            "chief_handover_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_a)},
+            extra_env=env)
+        _c, out_b, _e = run(
+            "chief_handover_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_b)},
+            extra_env=env)
+        check("chief_handover_sessionstart gate: a project with chief_handover = true gets the log",
+              "gate-check log line" in out_a)
+        check("chief_handover_sessionstart gate: a project without the key is a silent no-op",
+              "gate-check log line" not in out_b)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _chief_skill_refresh_cases(check: _Checker, chs: Any) -> None:
+    """A compacted or resumed chief is told to re-read its current skill; nobody else is."""
     # ---- a compacted/resumed chief is told to re-read its current skill (#1102) ----
     tmp = Path(tempfile.mkdtemp(prefix="chief_skill_refresh_"))
     try:
@@ -168,35 +202,6 @@ def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
               "If you are the standing chief: re-read" in refresh_out("sid-chief", "compact"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
-    # ---- gating is a projects.toml key, not a hardcoded project name ----
-    tmp = Path(tempfile.mkdtemp(prefix="chief_handover_gate_"))
-    try:
-        proj_a, proj_b = tmp / "a", tmp / "b"
-        proj_a.mkdir()
-        proj_b.mkdir()
-        (tmp / "chief-handover.md").write_text("gate-check log line\n", encoding="utf-8")
-        toml = tmp / "projects.toml"
-        toml.write_text(
-            f'[opted-in]\ncwd_prefix = "{proj_a.as_posix()}"\nchief_handover = true\n\n'
-            f'[other]\ncwd_prefix = "{proj_b.as_posix()}"\n', encoding="utf-8")
-        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "CLAUDE_HOOKS_PROJECTS_TOML": str(toml)}
-        _c, out_a, _e = run(
-            "chief_handover_sessionstart",
-            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_a)},
-            extra_env=env)
-        _c, out_b, _e = run(
-            "chief_handover_sessionstart",
-            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_b)},
-            extra_env=env)
-        check("chief_handover_sessionstart gate: a project with chief_handover = true gets the log",
-              "gate-check log line" in out_a)
-        check("chief_handover_sessionstart gate: a project without the key is a silent no-op",
-              "gate-check log line" not in out_b)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    return check.failures, check.total
 
 
 def _chief_steer_convention_unit_checks() -> Tuple[int, int]:
@@ -303,19 +308,7 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         except (OSError, ValueError):
             return {}
 
-    # A live per-process registry fixture (~/.claude/sessions/<pid>.json-style):
-    # one file whose sessionId matches "sid-1" (the generic-fallback case,
-    # nameSource:"derived") and one unrelated file that must not match.
-    (sessions_dir / "70212.json").write_text(json.dumps({
-        "pid": 70212, "sessionId": "sid-1", "cwd": str(tmp), "kind": "interactive",
-        "entrypoint": "cli", "name": "fleet-config-c4", "nameSource": "derived",
-        "status": "busy",
-    }), encoding="utf-8")
-    (sessions_dir / "99999.json").write_text(json.dumps({
-        "pid": 99999, "sessionId": "sid-unrelated", "name": "other-session",
-    }), encoding="utf-8")
-    # A malformed fixture alongside the good ones must not break the scan.
-    (sessions_dir / "bad.json").write_text("{not json", encoding="utf-8")
+    _write_session_registry_fixture(sessions_dir, tmp)
 
     saved_env = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
     saved_sessions_env = os.environ.get("CLAUDE_SESSIONS_DIR")
@@ -339,30 +332,7 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         check("session_state: launcher env -> exact launcher id + agent (#345)",
               row.get("launcher_session_id") == "launcher-abc" and row.get("agent") == "claude")
 
-        # ---- no matching sessionId in the registry -> name/name_source stay None ----
-        code, _out, _err = run(
-            "session_state",
-            {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-match",
-             "transcript_path": str(tmp / "t2.jsonl"), "cwd": str(tmp)},
-            extra_env=env,
-        )
-        no_match_row = rows().get("sid-no-match") or {}
-        check("session_state: no matching sessionId -> name/name_source omitted (None)",
-              code == 0 and no_match_row.get("name") is None and no_match_row.get("name_source") is None)
-        check("session_state: external Claude row -> explicit agent, no launcher id (#345)",
-              no_match_row.get("agent") == "claude" and no_match_row.get("launcher_session_id") is None)
-
-        # ---- missing sessions registry directory entirely -> still exit 0, no name ----
-        missing_dir = sessions_dir / "does-not-exist"
-        code, _out, _err = run(
-            "session_state",
-            {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-registry",
-             "transcript_path": str(tmp / "t3.jsonl"), "cwd": str(tmp)},
-            extra_env={**env, "CLAUDE_SESSIONS_DIR": str(missing_dir)},
-        )
-        no_registry_row = rows().get("sid-no-registry") or {}
-        check("session_state: missing sessions registry dir -> exit 0, name omitted",
-              code == 0 and no_registry_row.get("name") is None)
+        _session_state_name_lookup_cases(check, rows, env, tmp, sessions_dir)
 
         code, _out, _err = run(
             "session_state", {**payload, "hook_event_name": "Stop"},
@@ -384,88 +354,11 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         check("session_state: unwired event -> exit 0, state untouched",
               code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
 
-        # ---- in-process: multi-row, pruning, corrupt-file recovery ----
-        rows_before_sid2 = set(rows())
-        session_state.upsert("sid-2", status="working", project="p2",
-                             transcript_path=None, cwd_path=str(tmp))
-        check("session_state: second session -> two distinct rows",
-              set(rows()) == rows_before_sid2 | {"sid-2"})
+        _session_state_in_process_cases(check, session_state, rows, state_path, tmp)
 
-        stale = rows()
-        stale["sid-old"] = {"project": "old", "status": "idle", "transcript_path": None,
-                            "cwd": str(tmp), "updated_at": "2020-01-01T00:00:00Z"}
-        state_path.write_text(json.dumps(stale), encoding="utf-8")
-        session_state.upsert("sid-2", status="needs-you", project="p2",
-                             transcript_path=None, cwd_path=str(tmp))
-        check("session_state: >24h-old row pruned on next write", "sid-old" not in rows())
+        _session_state_notify_piggyback_cases(check, session_state, rows, env, tmp)
 
-        state_path.write_text("{not json", encoding="utf-8")
-        session_state.upsert("sid-3", status="working", project="p3",
-                             transcript_path=None, cwd_path=str(tmp))
-        check("session_state: corrupt state file recovered by next upsert",
-              (rows().get("sid-3") or {}).get("status") == "working")
-
-        # ---- notify_on_idle piggyback: persists the row, ping path unchanged ----
-        idle_payload = {"session_id": "sid-4", "transcript_path": str(tmp / "t.jsonl"),
-                        "cwd": str(tmp), "notification_type": "permission_prompt",
-                        "message": "Claude needs your permission"}
-        code, _out, _err = run("notify_on_idle", idle_payload, extra_env=env)
-        check("notify_on_idle: permission_prompt persists a 'needs-you' row (exit 0)",
-              code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
-
-        # fleet-config#354: idle_prompt is a periodic "still waiting on you" nag,
-        # not a new state -- it must not downgrade an existing 'needs-you' row.
-        code, _out, _err = run("notify_on_idle", {**idle_payload, "notification_type": "idle_prompt"}, extra_env=env)
-        check("notify_on_idle: idle_prompt after needs-you -> row stays 'needs-you' (exit 0)",
-              code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
-
-        # Also true from a cold start (no prior row at all) -- idle_prompt writes nothing.
-        cold_payload = {"session_id": "sid-5", "transcript_path": str(tmp / "t2.jsonl"),
-                        "cwd": str(tmp), "notification_type": "idle_prompt",
-                        "message": "Claude is waiting for your input"}
-        code, _out, _err = run("notify_on_idle", cold_payload, extra_env=env)
-        check("notify_on_idle: idle_prompt with no prior row -> exit 0, no row created",
-              code == 0 and "sid-5" not in rows())
-
-        # fleet-config#718: agent_needs_input/agent_completed fire per Task/Agent
-        # sub-agent spawn, not for the parent session -- they must not overwrite
-        # a live "working" row with "needs-you" mid-turn, same as idle_prompt above.
-        session_state.upsert("sid-6", status="working", project="p6",
-                             transcript_path=None, cwd_path=str(tmp))
-        sub_agent_payload = {"session_id": "sid-6", "transcript_path": str(tmp / "t6.jsonl"),
-                             "cwd": str(tmp), "notification_type": "agent_needs_input",
-                             "message": "sub-agent needs input"}
-        code, _out, _err = run("notify_on_idle", sub_agent_payload, extra_env=env)
-        check("notify_on_idle: agent_needs_input -> exit 0, 'working' row NOT overwritten to 'needs-you'",
-              code == 0 and (rows().get("sid-6") or {}).get("status") == "working")
-
-        session_state.upsert("sid-7", status="working", project="p7",
-                             transcript_path=None, cwd_path=str(tmp))
-        code, _out, _err = run(
-            "notify_on_idle",
-            {**sub_agent_payload, "session_id": "sid-7", "notification_type": "agent_completed"},
-            extra_env=env,
-        )
-        check("notify_on_idle: agent_completed -> exit 0, 'working' row NOT overwritten to 'needs-you'",
-              code == 0 and (rows().get("sid-7") or {}).get("status") == "working")
-
-        # ---- SessionEnd (#241): deletes the row instead of leaving it to the 24h prune ----
-        code, _out, _err = run(
-            "session_state",
-            {"hook_event_name": "SessionEnd", "session_id": "sid-1", "cwd": str(tmp)},
-            extra_env=env,
-        )
-        check("session_state: SessionEnd removes the row (exit 0)",
-              code == 0 and "sid-1" not in rows())
-
-        before = set(rows())
-        code, _out, _err = run(
-            "session_state",
-            {"hook_event_name": "SessionEnd", "session_id": "sid-does-not-exist", "cwd": str(tmp)},
-            extra_env=env,
-        )
-        check("session_state: SessionEnd for an unknown sid -> exit 0, file untouched",
-              code == 0 and set(rows()) == before)
+        _session_state_session_end_cases(check, rows, env, tmp)
     finally:
         if saved_env is None:
             os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
@@ -479,6 +372,148 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(sessions_dir, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _write_session_registry_fixture(sessions_dir: Path, tmp: Path) -> None:
+    # A live per-process registry fixture (~/.claude/sessions/<pid>.json-style):
+    # one file whose sessionId matches "sid-1" (the generic-fallback case,
+    # nameSource:"derived") and one unrelated file that must not match.
+    (sessions_dir / "70212.json").write_text(json.dumps({
+        "pid": 70212, "sessionId": "sid-1", "cwd": str(tmp), "kind": "interactive",
+        "entrypoint": "cli", "name": "fleet-config-c4", "nameSource": "derived",
+        "status": "busy",
+    }), encoding="utf-8")
+    (sessions_dir / "99999.json").write_text(json.dumps({
+        "pid": 99999, "sessionId": "sid-unrelated", "name": "other-session",
+    }), encoding="utf-8")
+    # A malformed fixture alongside the good ones must not break the scan.
+    (sessions_dir / "bad.json").write_text("{not json", encoding="utf-8")
+
+
+def _session_state_name_lookup_cases(check: _Checker, rows: Callable[[], Dict[str, Any]],
+                                     env: Dict[str, str], tmp: Path, sessions_dir: Path) -> None:
+    """A session with no live-registry entry, or no registry at all, still gets a row without a name."""
+    # ---- no matching sessionId in the registry -> name/name_source stay None ----
+    code, _out, _err = run(
+        "session_state",
+        {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-match",
+         "transcript_path": str(tmp / "t2.jsonl"), "cwd": str(tmp)},
+        extra_env=env,
+    )
+    no_match_row = rows().get("sid-no-match") or {}
+    check("session_state: no matching sessionId -> name/name_source omitted (None)",
+          code == 0 and no_match_row.get("name") is None and no_match_row.get("name_source") is None)
+    check("session_state: external Claude row -> explicit agent, no launcher id (#345)",
+          no_match_row.get("agent") == "claude" and no_match_row.get("launcher_session_id") is None)
+
+    # ---- missing sessions registry directory entirely -> still exit 0, no name ----
+    missing_dir = sessions_dir / "does-not-exist"
+    code, _out, _err = run(
+        "session_state",
+        {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-registry",
+         "transcript_path": str(tmp / "t3.jsonl"), "cwd": str(tmp)},
+        extra_env={**env, "CLAUDE_SESSIONS_DIR": str(missing_dir)},
+    )
+    no_registry_row = rows().get("sid-no-registry") or {}
+    check("session_state: missing sessions registry dir -> exit 0, name omitted",
+          code == 0 and no_registry_row.get("name") is None)
+
+
+def _session_state_in_process_cases(check: _Checker, session_state: Any,
+                                    rows: Callable[[], Dict[str, Any]], state_path: Path,
+                                    tmp: Path) -> None:
+    """Multiple rows, pruning and corrupt-file recovery, driven in-process."""
+    # ---- in-process: multi-row, pruning, corrupt-file recovery ----
+    rows_before_sid2 = set(rows())
+    session_state.upsert("sid-2", status="working", project="p2",
+                         transcript_path=None, cwd_path=str(tmp))
+    check("session_state: second session -> two distinct rows",
+          set(rows()) == rows_before_sid2 | {"sid-2"})
+
+    stale = rows()
+    stale["sid-old"] = {"project": "old", "status": "idle", "transcript_path": None,
+                        "cwd": str(tmp), "updated_at": "2020-01-01T00:00:00Z"}
+    state_path.write_text(json.dumps(stale), encoding="utf-8")
+    session_state.upsert("sid-2", status="needs-you", project="p2",
+                         transcript_path=None, cwd_path=str(tmp))
+    check("session_state: >24h-old row pruned on next write", "sid-old" not in rows())
+
+    state_path.write_text("{not json", encoding="utf-8")
+    session_state.upsert("sid-3", status="working", project="p3",
+                         transcript_path=None, cwd_path=str(tmp))
+    check("session_state: corrupt state file recovered by next upsert",
+          (rows().get("sid-3") or {}).get("status") == "working")
+
+
+def _session_state_notify_piggyback_cases(check: _Checker, session_state: Any,
+                                          rows: Callable[[], Dict[str, Any]], env: Dict[str, str],
+                                          tmp: Path) -> None:
+    """`notify_on_idle` persists the row; nag and sub-agent notifications never downgrade it."""
+    # ---- notify_on_idle piggyback: persists the row, ping path unchanged ----
+    idle_payload = {"session_id": "sid-4", "transcript_path": str(tmp / "t.jsonl"),
+                    "cwd": str(tmp), "notification_type": "permission_prompt",
+                    "message": "Claude needs your permission"}
+    code, _out, _err = run("notify_on_idle", idle_payload, extra_env=env)
+    check("notify_on_idle: permission_prompt persists a 'needs-you' row (exit 0)",
+          code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
+
+    # fleet-config#354: idle_prompt is a periodic "still waiting on you" nag,
+    # not a new state -- it must not downgrade an existing 'needs-you' row.
+    code, _out, _err = run("notify_on_idle", {**idle_payload, "notification_type": "idle_prompt"}, extra_env=env)
+    check("notify_on_idle: idle_prompt after needs-you -> row stays 'needs-you' (exit 0)",
+          code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
+
+    # Also true from a cold start (no prior row at all) -- idle_prompt writes nothing.
+    cold_payload = {"session_id": "sid-5", "transcript_path": str(tmp / "t2.jsonl"),
+                    "cwd": str(tmp), "notification_type": "idle_prompt",
+                    "message": "Claude is waiting for your input"}
+    code, _out, _err = run("notify_on_idle", cold_payload, extra_env=env)
+    check("notify_on_idle: idle_prompt with no prior row -> exit 0, no row created",
+          code == 0 and "sid-5" not in rows())
+
+    # fleet-config#718: agent_needs_input/agent_completed fire per Task/Agent
+    # sub-agent spawn, not for the parent session -- they must not overwrite
+    # a live "working" row with "needs-you" mid-turn, same as idle_prompt above.
+    session_state.upsert("sid-6", status="working", project="p6",
+                         transcript_path=None, cwd_path=str(tmp))
+    sub_agent_payload = {"session_id": "sid-6", "transcript_path": str(tmp / "t6.jsonl"),
+                         "cwd": str(tmp), "notification_type": "agent_needs_input",
+                         "message": "sub-agent needs input"}
+    code, _out, _err = run("notify_on_idle", sub_agent_payload, extra_env=env)
+    check("notify_on_idle: agent_needs_input -> exit 0, 'working' row NOT overwritten to 'needs-you'",
+          code == 0 and (rows().get("sid-6") or {}).get("status") == "working")
+
+    session_state.upsert("sid-7", status="working", project="p7",
+                         transcript_path=None, cwd_path=str(tmp))
+    code, _out, _err = run(
+        "notify_on_idle",
+        {**sub_agent_payload, "session_id": "sid-7", "notification_type": "agent_completed"},
+        extra_env=env,
+    )
+    check("notify_on_idle: agent_completed -> exit 0, 'working' row NOT overwritten to 'needs-you'",
+          code == 0 and (rows().get("sid-7") or {}).get("status") == "working")
+
+
+def _session_state_session_end_cases(check: _Checker, rows: Callable[[], Dict[str, Any]],
+                                     env: Dict[str, str], tmp: Path) -> None:
+    """SessionEnd deletes the row instead of leaving it to the 24h prune."""
+    # ---- SessionEnd (#241): deletes the row instead of leaving it to the 24h prune ----
+    code, _out, _err = run(
+        "session_state",
+        {"hook_event_name": "SessionEnd", "session_id": "sid-1", "cwd": str(tmp)},
+        extra_env=env,
+    )
+    check("session_state: SessionEnd removes the row (exit 0)",
+          code == 0 and "sid-1" not in rows())
+
+    before = set(rows())
+    code, _out, _err = run(
+        "session_state",
+        {"hook_event_name": "SessionEnd", "session_id": "sid-does-not-exist", "cwd": str(tmp)},
+        extra_env=env,
+    )
+    check("session_state: SessionEnd for an unknown sid -> exit 0, file untouched",
+          code == 0 and set(rows()) == before)
 
 
 def _index_lock_sessionstart_unit_checks() -> Tuple[int, int]:
@@ -565,54 +600,60 @@ def _index_lock_sessionstart_unit_checks() -> Tuple[int, int]:
         check("build_context: caps the named list and counts the remainder",
               "and 5 more" in big)
 
-        # ---- sweep_targets: the fleet, from a cwd that is not in it ----
-        fake_repo = tmp / "fleet-member"
-        (fake_repo / ".git").mkdir(parents=True)
-        toml = tmp / "projects.toml"
-        toml.write_text(
-            f'[fleet-member]\ncwd_prefix = "{str(fake_repo).replace(chr(92), "/")}"\n'
-            '\n[global]\nnever_kill_ports = []\n',
-            encoding="utf-8",
-        )
-        saved = os.environ.get("CLAUDE_HOOKS_PROJECTS_TOML")
-        try:
-            os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(toml)
-            names = [n for n, _ in ils.sweep_targets(Path(tempfile.gettempdir()))]
-            check("sweep_targets: covers fleet members even when cwd is outside the fleet "
-                  "(the 2026-09-20 shape: the clean repo was the one chief sat in)",
-                  "fleet-member" in names, f"got {names}")
-            check("sweep_targets: adds this session's own checkout (a lane's worktree is "
-                  "not a projects.toml member)",
-                  "wt" in [n for n, _ in ils.sweep_targets(wt)])
-        finally:
-            if saved is None:
-                os.environ.pop("CLAUDE_HOOKS_PROJECTS_TOML", None)
-            else:
-                os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = saved
-
-        # ---- end to end: a real stranded lock reaches the model ----
-        code, stdout, stderr = run(
-            "index_lock_sessionstart",
-            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
-            extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
-        )
-        check(f"index_lock_sessionstart e2e: exits 0, never blocks ({stderr.strip()})", code == 0)
-        check("index_lock_sessionstart e2e: stdout carries the SessionStart envelope",
-              '"hookEventName": "SessionStart"' in stdout)
-        check("index_lock_sessionstart e2e: the nudge names the locked checkout",
-              "index.lock" in stdout and "fleet-config#939" in stdout)
-
-        # A clean fleet says nothing at all -- a tripwire that fires every
-        # session is one nobody reads.
-        lock.unlink()
-        code, stdout, _ = run(
-            "index_lock_sessionstart",
-            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
-            extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
-        )
-        check("index_lock_sessionstart e2e: clean fleet -> exit 0 and silence",
-              code == 0 and not stdout.strip(), f"stdout={stdout!r}")
+        _index_lock_fleet_sweep_cases(check, ils, tmp, plain, wt, lock)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _index_lock_fleet_sweep_cases(check: _Checker, ils: Any, tmp: Path, plain: Path, wt: Path,
+                                  lock: Path) -> None:
+    """The tripwire sweeps the fleet, not the session's cwd, and a real stranded lock reaches the model."""
+    # ---- sweep_targets: the fleet, from a cwd that is not in it ----
+    fake_repo = tmp / "fleet-member"
+    (fake_repo / ".git").mkdir(parents=True)
+    toml = tmp / "projects.toml"
+    toml.write_text(
+        f'[fleet-member]\ncwd_prefix = "{str(fake_repo).replace(chr(92), "/")}"\n'
+        '\n[global]\nnever_kill_ports = []\n',
+        encoding="utf-8",
+    )
+    saved = os.environ.get("CLAUDE_HOOKS_PROJECTS_TOML")
+    try:
+        os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(toml)
+        names = [n for n, _ in ils.sweep_targets(Path(tempfile.gettempdir()))]
+        check("sweep_targets: covers fleet members even when cwd is outside the fleet "
+              "(the 2026-09-20 shape: the clean repo was the one chief sat in)",
+              "fleet-member" in names, f"got {names}")
+        check("sweep_targets: adds this session's own checkout (a lane's worktree is "
+              "not a projects.toml member)",
+              "wt" in [n for n, _ in ils.sweep_targets(wt)])
+    finally:
+        if saved is None:
+            os.environ.pop("CLAUDE_HOOKS_PROJECTS_TOML", None)
+        else:
+            os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = saved
+
+    # ---- end to end: a real stranded lock reaches the model ----
+    code, stdout, stderr = run(
+        "index_lock_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
+        extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
+    )
+    check(f"index_lock_sessionstart e2e: exits 0, never blocks ({stderr.strip()})", code == 0)
+    check("index_lock_sessionstart e2e: stdout carries the SessionStart envelope",
+          '"hookEventName": "SessionStart"' in stdout)
+    check("index_lock_sessionstart e2e: the nudge names the locked checkout",
+          "index.lock" in stdout and "fleet-config#939" in stdout)
+
+    # A clean fleet says nothing at all -- a tripwire that fires every
+    # session is one nobody reads.
+    lock.unlink()
+    code, stdout, _ = run(
+        "index_lock_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
+        extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
+    )
+    check("index_lock_sessionstart e2e: clean fleet -> exit 0 and silence",
+          code == 0 and not stdout.strip(), f"stdout={stdout!r}")

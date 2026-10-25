@@ -27,44 +27,8 @@ def main() -> int:
     root.mkdir(parents=True)
     if run_git(["init", "-q", "-b", "main", str(root)], timeout=15).returncode:
         parser.error("disposable git init failed")
-    hook_dir = root / ".codex" / "hooks"
-    hook_dir.mkdir(parents=True)
-    source = Path(__file__).resolve().parents[1] / "hooks"
     observations = root / "hook-observations.jsonl"
-    wrapper = hook_dir / "session_state_codex.py"
-    wrapper.write_text(
-        "import json, os, sys\n"
-        "from pathlib import Path\n"
-        f"sys.path.insert(0, {str(source)!r})\n"
-        "import _lib, harness_wire, session_state_codex\n"
-        "raw = json.load(sys.stdin)\n"
-        f"observations = Path({str(observations)!r})\n"
-        "payload = _lib.normalize_payload(raw)\n"
-        "harness_wire._ACTIVE_EVENT = payload.get('hook_event_name')\n"
-        "_lib.read_stdin_json = lambda: payload\n"
-        "code = 0\n"
-        "try:\n"
-        "    session_state_codex.main()\n"
-        "except SystemExit as exc:\n"
-        "    code = int(exc.code or 0)\n"
-        "state_path = Path(os.environ['CLAUDE_HOOKS_STATE_DIR']) / 'sessions-state.json'\n"
-        "try:\n"
-        "    rows = json.loads(state_path.read_text(encoding='utf-8'))\n"
-        "except (OSError, ValueError):\n"
-        "    rows = {}\n"
-        "with observations.open('a', encoding='utf-8') as log:\n"
-        "    log.write(json.dumps({'payload': raw, 'row_status': "
-        "(rows.get(str(raw.get('session_id'))) or {}).get('status')}) + '\\n')\n"
-        "raise SystemExit(code)\n",
-        encoding="utf-8",
-    )
-    command = subprocess.list2cmdline([sys.executable, str(wrapper)])
-    handler = {"matcher": "", "hooks": [{"type": "command", "command": command,
-                                              "timeout": 15}]}
-    hooks = {event: [handler] for event in ("UserPromptSubmit", "Stop", "SessionEnd")}
-    (root / ".codex" / "hooks.json").write_text(
-        json.dumps({"hooks": hooks}, indent=2), encoding="utf-8",
-    )
+    _install_observer_hook(root, observations)
 
     prompt = "Reply with exactly: lifecycle probe complete. Do not call any tools."
     env = {
@@ -135,6 +99,47 @@ def main() -> int:
         "evidence": str(root),
     }))
     return 0 if passed else 1
+
+
+def _install_observer_hook(root: Path, observations: Path) -> None:
+    """Install a project-level Codex hook that runs session_state_codex and logs each event with the row it left."""
+    hook_dir = root / ".codex" / "hooks"
+    hook_dir.mkdir(parents=True)
+    source = Path(__file__).resolve().parents[1] / "hooks"
+    wrapper = hook_dir / "session_state_codex.py"
+    wrapper.write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"sys.path.insert(0, {str(source)!r})\n"
+        "import _lib, harness_wire, session_state_codex\n"
+        "raw = json.load(sys.stdin)\n"
+        f"observations = Path({str(observations)!r})\n"
+        "payload = _lib.normalize_payload(raw)\n"
+        "harness_wire._ACTIVE_EVENT = payload.get('hook_event_name')\n"
+        "_lib.read_stdin_json = lambda: payload\n"
+        "code = 0\n"
+        "try:\n"
+        "    session_state_codex.main()\n"
+        "except SystemExit as exc:\n"
+        "    code = int(exc.code or 0)\n"
+        "state_path = Path(os.environ['CLAUDE_HOOKS_STATE_DIR']) / 'sessions-state.json'\n"
+        "try:\n"
+        "    rows = json.loads(state_path.read_text(encoding='utf-8'))\n"
+        "except (OSError, ValueError):\n"
+        "    rows = {}\n"
+        "with observations.open('a', encoding='utf-8') as log:\n"
+        "    log.write(json.dumps({'payload': raw, 'row_status': "
+        "(rows.get(str(raw.get('session_id'))) or {}).get('status')}) + '\\n')\n"
+        "raise SystemExit(code)\n",
+        encoding="utf-8",
+    )
+    command = subprocess.list2cmdline([sys.executable, str(wrapper)])
+    handler = {"matcher": "", "hooks": [{"type": "command", "command": command,
+                                              "timeout": 15}]}
+    hooks = {event: [handler] for event in ("UserPromptSubmit", "Stop", "SessionEnd")}
+    (root / ".codex" / "hooks.json").write_text(
+        json.dumps({"hooks": hooks}, indent=2), encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

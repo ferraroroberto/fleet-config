@@ -251,71 +251,77 @@ def main() -> int:
                 watcher.stop()
                 watcher.join(timeout=5)
 
-        events = [json.loads(line) for line in
-                  (root / "stream.jsonl").read_text(encoding="utf-8").splitlines()]
-        assert returncode == 0, f"CLI exit {returncode}"
-        assert sum(e["type"] == "turn.completed" for e in events) == 1, "No unique terminal turn"
-        assert not any(e["type"] in ("turn.failed", "error") for e in events), "Native turn failure"
-        items = [e["item"] for e in events if e["type"] == "item.completed"]
-        assert all(i["type"] in ("agent_message", "reasoning", "error") for i in items), "Unexpected tool use"
-        assert [i["text"] for i in items if i["type"] == "agent_message"] == [expected]
-        thread_id = next(e["thread_id"] for e in events if e["type"] == "thread.started")
-
-        report["boundary_actions"] = watcher.actions
-        report["observed_state_rows"] = observed_states
-        report["disallowed_host_seen"] = any(a["reason"] == "disallowed_host" for a in watcher.actions)
-
-        # A recorded "killed": false can mean the process had already exited on
-        # its own before Stop-Process ran (fine) or that termination genuinely
-        # failed while it was still alive (not fine) -- don't trust the flag,
-        # re-check every acted-on pid's actual liveness now, after the run.
-        still_alive = {p["ProcessId"] for p in snapshot_processes()}
-        report["surviving_owned_pids"] = [a["pid"] for a in watcher.actions if a["pid"] in still_alive]
-        report["all_owned_processes_terminal"] = not report["surviving_owned_pids"]
-
-        statuses_for_session = {row.get("status") for row in observed_states if row.get("session_id") == thread_id}
-        report["userpromptsubmit_observed"] = "working" in statuses_for_session
-
-        captures = list((project / "conversations").glob("*.md"))
-        report["captures_found"] = len(captures)
-        if captures:
-            text = captures[0].read_text(encoding="utf-8")
-            header = cc.parse_capture_header(text)
-            report["capture_header"] = header
-            report["capture_matches_session"] = header.get("sid") == thread_id and header.get("agent") == "codex"
-            report["capture_contains_marker"] = expected in text
-        else:
-            report["capture_matches_session"] = False
-            report["capture_contains_marker"] = False
-
-        # A disallowed host appearing is not itself a failure -- #783's acceptance
-        # criteria accept either full suppression or a reviewed controlled
-        # execution. What matters is that nothing it spawned outlives this run.
-        proof_complete = (
-            report["captures_found"] == 1 and report["capture_matches_session"]
-            and report["capture_contains_marker"] and report["userpromptsubmit_observed"]
-            and report["all_owned_processes_terminal"]
-        )
-        report["status"] = "PASS" if proof_complete else "INCONCLUSIVE"
-        if not proof_complete:
-            report["limits"] = (
-                "One or more required signals were absent, or an owned process "
-                "outlived this run -- see surviving_owned_pids. Treat as "
-                "blocked/unknown per #783's acceptance criteria, not a pass."
-            )
-        elif report["disallowed_host_seen"]:
-            report["limits"] = (
-                "mcp_servers.node_repl.enabled=false does NOT prevent the host from "
-                "spawning (reproduces the symptom #783 originally reported); the "
-                "boundary here is a live watcher that kills it on sight, verified "
-                "terminal above -- not config-level suppression. No supported "
-                "suppression mechanism was found for this Codex CLI version."
-            )
+        _evaluate_run(report, root, project, returncode, expected, watcher, observed_states)
     finally:
         (root / "evidence.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print(json.dumps(report, indent=2))
     return 0 if report["status"] == "PASS" else 1
+
+
+def _evaluate_run(report: dict, root: Path, project: Path, returncode: int, expected: str,
+                  watcher: "BoundaryWatcher", observed_states: list[dict]) -> None:
+    """Fill `report` from the run's stream, the watcher and the capture; asserts on a broken run."""
+    events = [json.loads(line) for line in
+              (root / "stream.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert returncode == 0, f"CLI exit {returncode}"
+    assert sum(e["type"] == "turn.completed" for e in events) == 1, "No unique terminal turn"
+    assert not any(e["type"] in ("turn.failed", "error") for e in events), "Native turn failure"
+    items = [e["item"] for e in events if e["type"] == "item.completed"]
+    assert all(i["type"] in ("agent_message", "reasoning", "error") for i in items), "Unexpected tool use"
+    assert [i["text"] for i in items if i["type"] == "agent_message"] == [expected]
+    thread_id = next(e["thread_id"] for e in events if e["type"] == "thread.started")
+
+    report["boundary_actions"] = watcher.actions
+    report["observed_state_rows"] = observed_states
+    report["disallowed_host_seen"] = any(a["reason"] == "disallowed_host" for a in watcher.actions)
+
+    # A recorded "killed": false can mean the process had already exited on
+    # its own before Stop-Process ran (fine) or that termination genuinely
+    # failed while it was still alive (not fine) -- don't trust the flag,
+    # re-check every acted-on pid's actual liveness now, after the run.
+    still_alive = {p["ProcessId"] for p in snapshot_processes()}
+    report["surviving_owned_pids"] = [a["pid"] for a in watcher.actions if a["pid"] in still_alive]
+    report["all_owned_processes_terminal"] = not report["surviving_owned_pids"]
+
+    statuses_for_session = {row.get("status") for row in observed_states if row.get("session_id") == thread_id}
+    report["userpromptsubmit_observed"] = "working" in statuses_for_session
+
+    captures = list((project / "conversations").glob("*.md"))
+    report["captures_found"] = len(captures)
+    if captures:
+        text = captures[0].read_text(encoding="utf-8")
+        header = cc.parse_capture_header(text)
+        report["capture_header"] = header
+        report["capture_matches_session"] = header.get("sid") == thread_id and header.get("agent") == "codex"
+        report["capture_contains_marker"] = expected in text
+    else:
+        report["capture_matches_session"] = False
+        report["capture_contains_marker"] = False
+
+    # A disallowed host appearing is not itself a failure -- #783's acceptance
+    # criteria accept either full suppression or a reviewed controlled
+    # execution. What matters is that nothing it spawned outlives this run.
+    proof_complete = (
+        report["captures_found"] == 1 and report["capture_matches_session"]
+        and report["capture_contains_marker"] and report["userpromptsubmit_observed"]
+        and report["all_owned_processes_terminal"]
+    )
+    report["status"] = "PASS" if proof_complete else "INCONCLUSIVE"
+    if not proof_complete:
+        report["limits"] = (
+            "One or more required signals were absent, or an owned process "
+            "outlived this run -- see surviving_owned_pids. Treat as "
+            "blocked/unknown per #783's acceptance criteria, not a pass."
+        )
+    elif report["disallowed_host_seen"]:
+        report["limits"] = (
+            "mcp_servers.node_repl.enabled=false does NOT prevent the host from "
+            "spawning (reproduces the symptom #783 originally reported); the "
+            "boundary here is a live watcher that kills it on sight, verified "
+            "terminal above -- not config-level suppression. No supported "
+            "suppression mechanism was found for this Codex CLI version."
+        )
 
 
 if __name__ == "__main__":

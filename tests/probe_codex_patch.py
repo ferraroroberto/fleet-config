@@ -36,25 +36,9 @@ FAILED_PATCH = """*** Begin Patch
 *** End Patch"""
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--model", required=True)
-    parser.add_argument("--expect-bug", action="store_true", help="Require the pre-fix silent early return")
-    args = parser.parse_args()
-    root = args.workspace.absolute()
-    codex = shutil.which("codex")
-    if os.name != "nt" or root.exists() or not codex:
-        parser.error("Requires Windows, installed Codex and a new workspace directory")
-    hook_dir = root / ".codex" / "hooks"
-    hook_dir.mkdir(parents=True)
-    if run_git(["init", str(root)], timeout=15).returncode:
-        parser.error("disposable git init failed")
-    for name in ("old.py", "deleted.py"):
-        (root / name).write_text("VALUE = 0\n", encoding="utf-8")
-    source = Path(__file__).resolve().parents[1] / "hooks"
-    hook = hook_dir / "observe.py"
-    hook.write_text('''import io, json, sys
+# The hook the probe installs on every edit event: it runs py_syntax_check and records
+# the payload, the files it compiled and its output. SOURCE is substituted at write time.
+_OBSERVE_HOOK = '''import io, json, sys
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 sys.path.insert(0, SOURCE)
@@ -86,7 +70,28 @@ with (Path(__file__).parents[2] / "observations.jsonl").open("a", encoding="utf-
 sys.stdout.write(out.getvalue())
 sys.stderr.write(err.getvalue())
 sys.exit(code)
-'''.replace("SOURCE", repr(str(source))), encoding="utf-8")
+'''
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--expect-bug", action="store_true", help="Require the pre-fix silent early return")
+    args = parser.parse_args()
+    root = args.workspace.absolute()
+    codex = shutil.which("codex")
+    if os.name != "nt" or root.exists() or not codex:
+        parser.error("Requires Windows, installed Codex and a new workspace directory")
+    hook_dir = root / ".codex" / "hooks"
+    hook_dir.mkdir(parents=True)
+    if run_git(["init", str(root)], timeout=15).returncode:
+        parser.error("disposable git init failed")
+    for name in ("old.py", "deleted.py"):
+        (root / name).write_text("VALUE = 0\n", encoding="utf-8")
+    source = Path(__file__).resolve().parents[1] / "hooks"
+    hook = hook_dir / "observe.py"
+    hook.write_text(_OBSERVE_HOOK.replace("SOURCE", repr(str(source))), encoding="utf-8")
     command = subprocess.list2cmdline([sys.executable, str(hook)])
     (root / ".codex" / "hooks.json").write_text(json.dumps({"hooks": {
         event: [{"matcher": "Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": command, "timeout": 15}]}]

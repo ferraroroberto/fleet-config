@@ -16,6 +16,10 @@ modules, one per domain (fleet-config#680): `checks_context_filter`,
 code: `hook_cases/` holds the hook-matrix records (one module per hook family) and
 `context_filter_sections/` holds the context-filter check as small section functions
 plus its case tables; `hook_matrix` and `checks_context_filter` are the runners.
+A domain whose checks outgrew one module continues in a subpackage named for it:
+`guard_checks/` (safe-kill and venv-discipline guards), `notify_checks/` (Codex
+attention routing, network isolation) and `prose_guards/` (rules that live in
+skill text).
 The `checks_*` modules were the one straggler of the #502 split -- left as a
 single 2681-line `unit_checks.py` while every sibling concern got its own
 file -- and each is now the obvious home for the next check in its domain.
