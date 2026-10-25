@@ -397,7 +397,14 @@ def main() -> int:
         tag = " (ignored one-off)" if d["ignored"] else ""
         print(f"  {d['repo']:<28} {d['shared_with_scaffold']}/{d['headers']} headers shared{tag}")
 
-    print(f"\n-- bootstrap loads (est tokens per invocation; read cap {args.read_cap}) --")
+    _print_bootstrap_loads(boot, args.read_cap)
+
+    return 0
+
+
+def _print_bootstrap_loads(boot: list, read_cap: int) -> None:
+    """The bootstrap-loads section: est tokens per skill invocation and the cap breakers."""
+    print(f"\n-- bootstrap loads (est tokens per invocation; read cap {read_cap}) --")
     if not boot:
         print("  none declared")
     for b in boot:
@@ -411,8 +418,6 @@ def main() -> int:
             print(f"  {b['repo']}/{r['skill']:<32} {r['est_tokens']:>6} tok  {len(r['files'])} files{flags}")
         for c in b["credential_files"]:
             print(f"  ⚠️ credential-shaped lines in an auto-loaded file: {b['repo']}/{c['path']} ({c['hits']})")
-
-    return 0
 
 
 if __name__ == "__main__":

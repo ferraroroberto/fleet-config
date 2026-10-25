@@ -149,6 +149,34 @@ def _check_app_icon_family(ctx: _ContractsCtx) -> List[dict]:
     if missing_assets:
         problems.append("missing canonical asset(s): " + ", ".join(missing_assets))
 
+    problems += _manifest_problems(ctx, required, manifest_hrefs)
+
+    generator_adopted = False
+    for path in repo_files(ctx.root, (".py",)):
+        if "scripts" not in path.parts:
+            continue
+        text = read_text(path)
+        if generator in text and re.search(r"\brender_set\s*\(", text):
+            generator_adopted = True
+            break
+    if not generator_adopted:
+        problems.append(f"shared {generator}.render_set generator not adopted")
+
+    if problems:
+        return [_result("app-icon-family", "FAIL", " | ".join(problems),
+                        rel(ctx.root, ctx.index_files[0]))]
+    return [_result(
+        "app-icon-family", "PASS",
+        "canonical brand_gen family: Apple 180 + regular 192/512 + distinct "
+        "maskable 512 + favicon; index and manifest wiring present",
+        rel(ctx.root, ctx.index_files[0]),
+    )]
+
+
+def _manifest_problems(ctx: _ContractsCtx, required: Dict[str, str],
+                       manifest_hrefs: List[str]) -> List[str]:
+    """Problems with the linked web manifest's 'any' and 'maskable' icon entries."""
+    problems: List[str] = []
     manifest_names = {Path(href.split("?", 1)[0]).name for href in manifest_hrefs}
     source_files = repo_files(ctx.root, (".webmanifest", ".json", ".py"))
     manifest_parts: List[str] = []
@@ -173,24 +201,4 @@ def _check_app_icon_family(ctx: _ContractsCtx) -> List[dict]:
     for key in ("regular-small", "regular-large", "maskable"):
         if required[key] not in manifest_blob:
             problems.append(f"manifest does not reference {required[key]}")
-
-    generator_adopted = False
-    for path in repo_files(ctx.root, (".py",)):
-        if "scripts" not in path.parts:
-            continue
-        text = read_text(path)
-        if generator in text and re.search(r"\brender_set\s*\(", text):
-            generator_adopted = True
-            break
-    if not generator_adopted:
-        problems.append(f"shared {generator}.render_set generator not adopted")
-
-    if problems:
-        return [_result("app-icon-family", "FAIL", " | ".join(problems),
-                        rel(ctx.root, ctx.index_files[0]))]
-    return [_result(
-        "app-icon-family", "PASS",
-        "canonical brand_gen family: Apple 180 + regular 192/512 + distinct "
-        "maskable 512 + favicon; index and manifest wiring present",
-        rel(ctx.root, ctx.index_files[0]),
-    )]
+    return problems

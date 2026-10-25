@@ -1055,6 +1055,44 @@ def _fetch_merged_prs(repo: str) -> list[dict]:
     return json.loads(out) if out else []
 
 
+def _churn_decision(repo: str, repo_path: str, ledger: dict, commit_count: int,
+                    current_rubric: str) -> tuple[str, list[int], float | None]:
+    """Decide on commits since the ledger: self-fix churn, below threshold, or a re-audit.
+
+    A rubric mismatch does not short-circuit to AUDIT here: if the only commits
+    are self-fix PRs, one of them may have edited CLAUDE.md itself (resolving a
+    claude-md-drift finding), which is still churn. It matters only when the
+    fixes cannot explain it, which `ledger_decision` captures by falling through
+    to AUDIT whenever `self_fix` is False. `--first-parent` collapses each merged
+    PR to the one commit that landed on the mainline (squash or merge commit),
+    so repos on regular "Merge pull request" merges match their self-fix PRs too.
+    """
+    commit_shas = git_run.run_git_checked(
+        ["-C", repo_path, "rev-list", "--first-parent", f"{ledger['sha']}..HEAD"]
+    ).splitlines()
+    prs = _fetch_merged_prs(repo)
+
+    managed = set(bucket_issue_numbers(_list_open(repo)).values())
+    referenced: set[int] = set()
+    for pr in prs:
+        referenced |= {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
+    for n in referenced - managed:
+        try:
+            view = json.loads(gh(["issue", "view", str(n), "--repo", repo, "--json", "title,body"]))
+        except SystemExit:
+            continue
+        if any(has_marker(view.get("body", ""), k) or title_matches(view.get("title", ""), k)
+               for k in BUCKET_KINDS):
+            managed.add(n)
+
+    self_fix = audit_only_churn(commit_shas, prs, managed)
+    significance = None if self_fix else unexplained_weighted_loc(commit_shas, prs, managed)
+    decision = ledger_decision(
+        commit_count, ledger["rubric"], current_rubric, self_fix=self_fix, significance=significance
+    )
+    return decision, sorted(referenced & managed), significance
+
+
 def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     """The single-repo ledger-gate decision, including self-fix-churn detection.
 
@@ -1096,50 +1134,8 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
         # ledger/rubric mismatch we can't explain.
         decision = ledger_decision(commit_count, ledger["rubric"], current_rubric)
     else:
-        # Deliberately do NOT short-circuit to AUDIT on a rubric mismatch
-        # here: if the only commits since the last audit are self-fix PRs
-        # (audit_only_churn below), one of those very fixes may have edited
-        # CLAUDE.md itself (e.g. resolving a claude-md-drift finding) — that
-        # is still self-fix churn, not organic drift, so it must not force a
-        # full re-audit. A rubric change matters ONLY when it can't be
-        # explained by the fixes themselves — captured by ledger_decision
-        # falling through to AUDIT whenever self_fix comes back False.
-        # --first-parent collapses each merged PR to the one commit that
-        # actually landed on the mainline (the squash commit, or the merge
-        # commit for a regular non-squash merge) — never the individual
-        # feature-branch commits a merge pulls in as second-parent history.
-        # Without this, a repo using regular "Merge pull request" merges
-        # (several sister repos do — see the global CLAUDE.md's "some sister
-        # projects use a local-merge flow" note) shows the feature commit as
-        # an "unexplained" commit even though its own merge commit matched a
-        # self-fix PR, which fails audit_only_churn closed for every such
-        # repo. This makes the self-fix check work identically for
-        # squash-merge and regular-merge repos.
-        commit_shas = git_run.run_git_checked(
-            ["-C", repo_path, "rev-list", "--first-parent", f"{ledger['sha']}..HEAD"]
-        ).splitlines()
-        prs = _fetch_merged_prs(repo)
-
-        managed = set(bucket_issue_numbers(_list_open(repo)).values())
-        referenced: set[int] = set()
-        for pr in prs:
-            referenced |= {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
-        for n in referenced - managed:
-            try:
-                view = json.loads(gh(["issue", "view", str(n), "--repo", repo, "--json", "title,body"]))
-            except SystemExit:
-                continue
-            if any(has_marker(view.get("body", ""), k) or title_matches(view.get("title", ""), k)
-                   for k in BUCKET_KINDS):
-                managed.add(n)
-        closed_issues = sorted(referenced & managed)
-
-        self_fix = audit_only_churn(commit_shas, prs, managed)
-        if not self_fix:
-            significance = unexplained_weighted_loc(commit_shas, prs, managed)
-        decision = ledger_decision(
-            commit_count, ledger["rubric"], current_rubric, self_fix=self_fix, significance=significance
-        )
+        decision, closed_issues, significance = _churn_decision(
+            repo, repo_path, ledger, commit_count, current_rubric)
 
     result = {
         "decision": decision,

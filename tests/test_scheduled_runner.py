@@ -22,6 +22,7 @@ import scheduled_runner as runner
 from runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
 import process_scope
 sys.path.insert(0, str(ROOT / "tests" / "_lib"))
+from orphan_fixtures import held_provider_script, kernel32_handles
 from readiness_clock import ReadinessClock
 
 
@@ -603,16 +604,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                     marker = Path(folder) / "descendant_completed"
                     ready = Path(folder) / "descendant_started"
                     release = Path(folder) / "provider_release"
-                    descendant = f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(8);Path({str(marker)!r}).touch()"
-                    out = "sys.stdout" if pipe in ("stdout", "both") else "subprocess.DEVNULL"
-                    err = "sys.stderr" if pipe in ("stderr", "both") else "subprocess.DEVNULL"
-                    # The provider holds its exit until the test releases it: an
-                    # exit the runner sees before the cancel starts a 1s drain the
-                    # cancel then has to win, and under load it lost (#1039).
-                    script = (f"import subprocess,sys,time;from pathlib import Path;"
-                              f"subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout={out},stderr={err},creationflags={flags});"
-                              f"print({good!r},flush=True);t=time.monotonic()+30\n"
-                              f"while not Path({str(release)!r}).exists() and time.monotonic()<t: time.sleep(.01)")
+                    script = held_provider_script(pipe, ready, marker, release, good, flags)
                     lines = []
                     errors = []
                     released = []
@@ -623,13 +615,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                         killing.set()
                         return real_kill(process)
                     handles = []
-                    api = ctypes.WinDLL("kernel32", use_last_error=True)
-                    api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-                    api.OpenProcess.restype = wintypes.HANDLE
-                    api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-                    api.WaitForSingleObject.restype = wintypes.DWORD
-                    api.CloseHandle.argtypes = [wintypes.HANDLE]
-                    api.CloseHandle.restype = wintypes.BOOL
+                    api = kernel32_handles()
                     def request():
                         try:
                             # Setup only: nothing in the runner is timing while the

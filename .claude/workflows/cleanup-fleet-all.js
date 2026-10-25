@@ -454,9 +454,13 @@ async function processIssue(bucket, issue) {
     schema: TEARDOWN_RESULT_SCHEMA,
   })
 
-  // The two reported-only probes default to 'unknown', never
-  // to their passing value, when the teardown agent died or omitted them — a
-  // check that could not establish its fact must surface as unknown.
+  return laneResult(lane, teardown)
+}
+
+// The two reported-only probes default to 'unknown', never to their passing
+// value, when the teardown agent died or omitted them — a check that could not
+// establish its fact must surface as unknown.
+function laneResult(lane, teardown) {
   return {
     ...lane,
     residue: teardown ? teardown.residue : 'RESIDUE',

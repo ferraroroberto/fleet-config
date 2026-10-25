@@ -175,7 +175,8 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict],
     secs = sections(text, entry.audience, audiences)
     lines = instruction_lines(text)
 
-    def add(rule_id: str, line_no: int, count: int, excerpt: str, cap_as: Optional[str] = None) -> None:
+    def add(rule_id: str, line_no: int, count: int, excerpt: str,
+            cap_as: Optional[str] = None) -> None:
         rule = rules.get(rule_id)
         if rule is None or not rule_applies_to_kind(rule, entry.kind):
             return
@@ -225,6 +226,23 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict],
         res.size = "n/a"
 
     # R-15 skill description
+    lint_skill_frontmatter(entry, text, res, mcp_vocab, add)
+
+    # R-35 long reference file without a contents list
+    if entry.kind == "skill-ref" and len(raw_lines) > REF_TOC_LINES:
+        top = [l for n, l in unfenced_lines(text) if n <= REF_TOC_WINDOW]
+        if not any(_CONTENTS.match(l) for l in top):
+            add("R-35", 1, 1, f"{len(raw_lines)} lines, no contents heading in the first {REF_TOC_WINDOW}")
+
+    lint_paragraph_rules(entry, lines, raw_lines, secs, audiences, add)
+    res.hits.sort(key=lambda h: (h.line, h.rule))
+    return res
+
+
+def lint_skill_frontmatter(entry: Entry, text: str, res: LintResult,
+                           mcp_vocab: Optional[Dict[str, Set[str]]],
+                           add: Callable[..., None]) -> None:
+    """R-15 on one SKILL.md's frontmatter, then its body structure; `add` is `lint_entry`'s hit recorder."""
     if entry.kind == "skill":
         err = frontmatter_error(text)
         desc = "" if err else frontmatter_description(text)
@@ -247,12 +265,10 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict],
             add("R-15", 1, 1, f"name {name!r} is not 1-64 chars of [a-z0-9-]")
         lint_skill_structure(entry, text, mcp_vocab or {}, add)
 
-    # R-35 long reference file without a contents list
-    if entry.kind == "skill-ref" and len(raw_lines) > REF_TOC_LINES:
-        top = [l for n, l in unfenced_lines(text) if n <= REF_TOC_WINDOW]
-        if not any(_CONTENTS.match(l) for l in top):
-            add("R-35", 1, 1, f"{len(raw_lines)} lines, no contents heading in the first {REF_TOC_WINDOW}")
 
+def lint_paragraph_rules(entry: Entry, lines: List[Tuple[int, str]], raw_lines: List[str],
+                         secs: list, audiences: Dict[str, dict], add: Callable[..., None]) -> None:
+    """R-16 contradictions and R-17 unmarked vendor paragraphs; `add` is `lint_entry`'s hit recorder."""
     # R-16 mechanically visible contradictions
     polarity: Dict[str, Dict[str, int]] = {}
     for n, line in lines:
@@ -278,8 +294,6 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict],
             terms = audience_terms(audiences[named[0]])
             anchor = next((n for n, l in para if terms.search(l)), first)
             add("R-17", anchor, 1, raw_lines[anchor - 1])
-    res.hits.sort(key=lambda h: (h.line, h.rule))
-    return res
 
 
 def lint_skill_structure(entry: Entry, text: str, mcp_vocab: Dict[str, Set[str]],
@@ -371,7 +385,8 @@ def _is_local(name: str, dirs: List[Path]) -> bool:
     return any((d / f"{name}.py").is_file() or (d / name).is_dir() for d in dirs)
 
 
-def unnamed_imports(skill_path: Path, text: str, repo_dir: Path) -> List[Tuple[int, str, List[str]]]:
+def unnamed_imports(skill_path: Path, text: str,
+                    repo_dir: Path) -> List[Tuple[int, str, List[str]]]:
     """(line, script, packages) for each bundled script SKILL.md names whose non-stdlib, non-local
     imports SKILL.md never mentions (R-43's lint assist)."""
     root = repo_dir.resolve()

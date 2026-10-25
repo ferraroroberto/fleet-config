@@ -517,16 +517,8 @@ the comma-separated EOF marker values from the two files, in root then nested or
     return report
 
 
-def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
-    """Compare Claude's real request assembly locally; never call a model."""
-    executable = shutil.which("claude.exe") or shutil.which("claude")
-    if not executable:
-        return {"client": "claude", "status": "missing"}
-    global_path = Path.home() / ".claude" / "CLAUDE.md"
-    if not global_path.is_file():
-        return {"client": "claude", "status": "unknown",
-                "reason": f"global instruction file missing: {global_path}"}
-    captured: list[bytes] = []
+def _capture_handler(captured: list[bytes]) -> type:
+    """A request handler that records each POST body and answers with an API error."""
 
     class CaptureHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
@@ -548,15 +540,17 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), CaptureHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    return CaptureHandler
+
+
+def _loopback_env(paths: dict[str, Path], port: int) -> dict[str, str]:
+    """The child environment that sends Claude's request to the local capture server only."""
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
     env.update({
         "CLAUDE_CONFIG_DIR": str(paths["home"] / ".claude"),
         "ANTHROPIC_API_KEY": "synthetic-dummy-key",
-        "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+        "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "DISABLE_TELEMETRY": "1",
         "DISABLE_ERROR_REPORTING": "1",
@@ -567,6 +561,24 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
                  "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
                  "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         env.pop(name, None)
+    return env
+
+
+def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
+    """Compare Claude's real request assembly locally; never call a model."""
+    executable = shutil.which("claude.exe") or shutil.which("claude")
+    if not executable:
+        return {"client": "claude", "status": "missing"}
+    global_path = Path.home() / ".claude" / "CLAUDE.md"
+    if not global_path.is_file():
+        return {"client": "claude", "status": "unknown",
+                "reason": f"global instruction file missing: {global_path}"}
+    captured: list[bytes] = []
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _capture_handler(captured))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    env = _loopback_env(paths, server.server_port)
     try:
         result = _run(
             [executable, "-p", "--output-format", "stream-json", "--verbose",
