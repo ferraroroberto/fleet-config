@@ -58,7 +58,8 @@ check(
 # set exactly as a live session carries it.
 
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
-                  jobs=None, allow_during_fleet_job=False, start_exc=None, model=None):
+                  jobs=None, allow_during_fleet_job=False, start_exc=None, model=None,
+                  catalog=()):
     posted = []
     requested = []
     _run_dispatch.start_timeout = None
@@ -69,6 +70,10 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
             if isinstance(jobs, Exception):
                 raise jobs
             return jobs if jobs is not None else {"jobs": []}
+        if path == "/api/config":
+            if isinstance(catalog, Exception):
+                raise catalog
+            return {"model_catalog": {"codex": catalog}}
         if path == "/api/board":
             return {"columns": {"claude_turn": cards, "your_turn": []}}
         if path == "/api/board/chief/settings":
@@ -138,6 +143,37 @@ rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="grok")
 check(rc == 0 and posted[0].get("model") == "grok:grok-4.5",
       "cmd_dispatch: --model grok posts the launcher's grok:grok-4.5")
 
+_CATALOG = [
+    {"value": "gpt-6-luna", "label": "Luna", "available": True},
+    {"value": "gpt-5.6-sol", "label": "Sol", "available": True},
+    {"value": "gpt-6-astra", "label": "Astra", "available": False},
+]
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="luna", catalog=_CATALOG)
+check(rc == 0 and posted[0].get("model") == "codex:gpt-6-luna",
+      "cmd_dispatch: --model luna posts the catalog's Luna slug, not a hard-coded one")
+
+renamed = [{"value": "gpt-7-luna", "label": "Luna", "available": True}]
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="Luna", catalog=renamed)
+check(rc == 0 and posted[0].get("model") == "codex:gpt-7-luna",
+      "cmd_dispatch: a new Luna release resolves with no code change (case-insensitive)")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="luna", catalog=[_CATALOG[1], _CATALOG[2]])
+check(rc == 1 and posted == [] and "offered: Sol" in _run_dispatch.last_output,
+      "cmd_dispatch: a family missing from the catalog is refused with the available list")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="luna", catalog=OSError("down"))
+check(rc == 1 and posted == [] and "unreadable" in _run_dispatch.last_output,
+      "cmd_dispatch: an unreadable catalog is refused, never guessed")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="gpt5.6", catalog=_CATALOG)
+check(rc == 1 and posted == [] and "use --model luna" in _run_dispatch.last_output
+      and "/api/board" not in _run_dispatch.last_requested,
+      "cmd_dispatch: the retired gpt5.6 name is refused with the replacement, before any board read")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="opus")
+check("/api/config" not in _run_dispatch.last_requested,
+      "cmd_dispatch: a Claude tier never reads the Codex catalog")
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="opus")
 check(rc == 0 and posted[0].get("model") == "opus",
       "cmd_dispatch: a non-alias model is posted as typed")
