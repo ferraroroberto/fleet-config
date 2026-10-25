@@ -28,7 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
     import tomli as tomllib  # type: ignore[no-redef]
 
 
-HOOKS_DIR = Path(__file__).resolve().parent
+HOOKS_DIR = Path(__file__).resolve().parent.parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
 # The tracked template. projects.toml itself is machine-local and gitignored.
 PROJECTS_TOML_EXAMPLE = HOOKS_DIR / "projects.toml.example"
@@ -252,7 +252,7 @@ DOTENV_PATH_ENV_VAR = "FLEET_CONFIG_ENV_PATH"
 
 def _dotenv_value(key: str) -> Optional[str]:
     """Read one value from fleet-config's ignored root ``.env``; never raise."""
-    default_path = Path(__file__).resolve().parent.parent / ".env"
+    default_path = HOOKS_DIR.parent / ".env"
     path = Path(os.environ.get(DOTENV_PATH_ENV_VAR) or default_path)
     try:
         for raw_line in path.read_text(encoding="utf-8-sig").splitlines():

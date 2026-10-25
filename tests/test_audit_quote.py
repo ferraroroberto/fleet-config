@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/audit_quote.py (fleet-config#960 A).
+"""Unit tests for skills/_lib/audit_ledger/audit_quote.py (fleet-config#960 A).
 
 A `/codebase-audit` finding must quote the line it is about, and the quote is
 checked against the named file before filing. Synthetic repo only.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import audit_quote as aq  # noqa: E402
+from audit_ledger import audit_quote as aq  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402

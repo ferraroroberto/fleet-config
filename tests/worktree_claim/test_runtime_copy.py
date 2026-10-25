@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from _suite import _h, check, wc  # noqa: E402
+from _suite import _h, check, wc, wgit  # noqa: E402
 
 
 # ---- copy_runtime_config: the worktree gets its OWN port, not the primary's (#537) ----
@@ -410,14 +410,14 @@ def _raise_not_a_repo(_p):
 
 _real_is_primary = wc.is_primary_checkout
 try:
-    wc.is_primary_checkout = _raise_not_a_repo
+    wgit.is_primary_checkout = _raise_not_a_repo
     check(wc._is_primary_checkout_safe(Path("not-a-git-repo")) is False,
           "_is_primary_checkout_safe: swallows CalledProcessError -> False, never raises (#589)")
-    wc.is_primary_checkout = lambda p: True
+    wgit.is_primary_checkout = lambda p: True
     check(wc._is_primary_checkout_safe(Path("whatever")) is True,
           "_is_primary_checkout_safe: passes through a real True (#589)")
 finally:
-    wc.is_primary_checkout = _real_is_primary
+    wgit.is_primary_checkout = _real_is_primary
 
 
 # ---- remove_worktree: refuses a primary checkout, never deletes it (#589) -----
@@ -436,18 +436,18 @@ try:
     (primary_like / "sentinel.txt").write_text("still here", encoding="utf-8")
 
     real_is_primary = wc.is_primary_checkout
-    wc.is_primary_checkout = lambda p: True
+    wgit.is_primary_checkout = lambda p: True
     try:
         rc = wc.remove_worktree(primary_like)
         check(rc == 2, "remove_worktree: refuses a primary checkout, exit 2 (#589)")
         check(primary_like.exists() and (primary_like / "sentinel.txt").exists(),
               "remove_worktree: a primary checkout is left completely untouched (#589)")
     finally:
-        wc.is_primary_checkout = real_is_primary
+        wgit.is_primary_checkout = real_is_primary
 
     # Not a primary checkout, but the basename doesn't match <repo>-wt-<N> ->
     # the naming-convention guard refuses too.
-    wc.is_primary_checkout = lambda p: False
+    wgit.is_primary_checkout = lambda p: False
     try:
         weird_name = guard_base / "not-a-worktree-name"
         weird_name.mkdir()
@@ -473,7 +473,7 @@ try:
         check(rc == 0, "remove_worktree: a real <repo>-wt-<N> worktree still tears down (#589)")
         check(not ok_wt.exists(), "remove_worktree: the real worktree is actually gone (#589)")
     finally:
-        wc.is_primary_checkout = real_is_primary
+        wgit.is_primary_checkout = real_is_primary
 finally:
     shutil.rmtree(guard_base, ignore_errors=True)
 

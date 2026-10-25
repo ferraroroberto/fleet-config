@@ -98,9 +98,8 @@ try:
     # Relocate the library so `myrepo` is a declared, tray-less project (the
     # same isolation tests/worktree_claim/ uses for land-primary).
     lib_dst = base / "skills" / "_lib"
-    lib_dst.mkdir(parents=True)
-    for mod in (ROOT / "skills" / "_lib").glob("*.py"):
-        shutil.copy2(mod, lib_dst / mod.name)
+    shutil.copytree(ROOT / "skills" / "_lib", lib_dst,
+                    ignore=shutil.ignore_patterns("__pycache__"))
     (base / "hooks").mkdir()
     (base / "hooks" / "projects.toml").write_text(
         f'[myrepo]\ncwd_prefix = "{primary.as_posix()}"\n', encoding="utf-8")

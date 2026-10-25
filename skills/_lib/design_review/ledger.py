@@ -59,8 +59,8 @@ from typing import Dict, List, Optional
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import hooks_state  # noqa: E402
-import service_probe  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
+from worktree import service_probe  # noqa: E402
 
 from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 

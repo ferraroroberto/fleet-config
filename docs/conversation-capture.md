@@ -1,6 +1,6 @@
 # Shared conversation capture
 
-`hooks/transcript_readers.py` is the stored-transcript boundary for `conversation_capture.py`. Hook envelope adaptation stays in `_lib.normalize_payload`; transcript formats are separate native protocols. Capture is deterministic and does not call a model. `conversation_index.py` still digests settled captures through `hub_client` and the local hub; curated memory remains an explicitly approved downstream operation.
+`hooks/conversation/transcript_readers.py` is the stored-transcript boundary for `conversation_capture.py`. Hook envelope adaptation stays in `_lib.normalize_payload`; transcript formats are separate native protocols. Capture is deterministic and does not call a model. `conversation_index.py` still digests settled captures through `hub_client` and the local hub; curated memory remains an explicitly approved downstream operation.
 
 ## Opt in
 

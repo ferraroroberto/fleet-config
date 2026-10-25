@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/start_beacon.py (fleet-config#1114).
+"""Unit tests for skills/_lib/dead_code/start_beacon.py (fleet-config#1114).
 
 The rendered `.pth` line is run for real: a child interpreter started with
 `-S` calls `site.addsitedir()` on a folder holding it, the same path `site`
@@ -19,7 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import start_beacon as sb  # noqa: E402
+from dead_code import start_beacon as sb  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))

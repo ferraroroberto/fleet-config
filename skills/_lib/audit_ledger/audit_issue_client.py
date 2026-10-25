@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from no_window import NO_WINDOW  # noqa: E402
 
 DEFAULT_TIMEOUT = 120.0

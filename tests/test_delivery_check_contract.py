@@ -1,7 +1,7 @@
 """Characterization + contract tests for the digest delivery post-condition.
 
 Written **before** `/audit-fleet`'s `delivery_check.py` was refactored onto the
-shared `skills/_lib/digest_delivery.py` helper (fleet-config#627), and proven
+shared `skills/_lib/audit_ledger/digest_delivery.py` helper (fleet-config#627), and proven
 passing against the pre-refactor code first. A test written after a refactor
 only proves the new code agrees with itself; this one pins the behaviour that
 existed, so the refactor has something to be measured against. The observed
@@ -51,7 +51,7 @@ from delivery_fixtures import (  # noqa: E402
 
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import audit_issue  # noqa: E402
-import digest_delivery as dd  # noqa: E402
+from audit_ledger import digest_delivery as dd  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

@@ -41,7 +41,7 @@ extra_roots  = ["custom_components"]  # top-level dirs the shape does not list b
 | `port` | | `port` | enabling cards render it; `:NNNN` form |
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
-| `shape` | | — | one of `webapp-tray`, `streamlit`, `pipeline-cli`, `skills-governance`, `node`, `static-site` (the ids of project-scaffolding's repo-layout doc); the one enum is SHAPES in skills/_lib/fleet_toml.py; read by the scaffold's layout check, not rendered |
+| `shape` | | — | one of `webapp-tray`, `streamlit`, `pipeline-cli`, `skills-governance`, `node`, `static-site` (the ids of project-scaffolding's repo-layout doc); the one enum is SHAPES in skills/_lib/fleet_core/fleet_toml.py; read by the scaffold's layout check, not rendered |
 | `extra_roots` | | — | list of top-level directory names the shape does not list but the repo deliberately has (for example `custom_components`); a justified exception declared once, in data |
 
 `build_data.py` validates both: an unknown `shape` or an `extra_roots` that is not a list of directory names is an error naming the repo and the value. Dormancy is not a `.fleet.toml` field; the per-repo active/dormant status lives in `hooks/projects.toml`.
@@ -245,7 +245,7 @@ wide_views = ["board", "table", "today"]
 |---|---|
 | `wide_views` | optional; a list of non-empty view ids, the same tab ids the `/design-review` walk derives (`desktop-light-<id>`). An undeclared view keeps the measure |
 
-`skills/_lib/wide_views.py` is the one reader. `/design-review` records the list in `metrics.json`, and LAYOUT-06 fails a declared view that does not fill the window and an undeclared one-dimensional column wider than the measure. An undeclared master-detail does not fail as a stretched column, whether its detail pane is docked outside the tab's pane or sits beside the list inside it (`layout.pane_split`, fleet-config#1361); a declared entry stays authoritative and still has to fill the window. `design_lint`'s `desktop-measure` cannot see views, so with wide views declared and no 772px cap in the CSS it returns WARN, not FAIL, and leaves the other views to LAYOUT-06. A malformed key is never read as empty or as an exemption: LAYOUT-06 reports it as unmeasured, and `desktop-measure` keeps its FAIL with the reason. Same silent-if-unrecognized parsing as the other `[design]` keys.
+`skills/_lib/fleet_core/wide_views.py` is the one reader. `/design-review` records the list in `metrics.json`, and LAYOUT-06 fails a declared view that does not fill the window and an undeclared one-dimensional column wider than the measure. An undeclared master-detail does not fail as a stretched column, whether its detail pane is docked outside the tab's pane or sits beside the list inside it (`layout.pane_split`, fleet-config#1361); a declared entry stays authoritative and still has to fill the window. `design_lint`'s `desktop-measure` cannot see views, so with wide views declared and no 772px cap in the CSS it returns WARN, not FAIL, and leaves the other views to LAYOUT-06. A malformed key is never read as empty or as an exemption: LAYOUT-06 reports it as unmeasured, and `desktop-measure` keeps its FAIL with the reason. Same silent-if-unrecognized parsing as the other `[design]` keys.
 
 ### Optional per-repo `[design] no_chat_surface` key (fleet-config#1443)
 

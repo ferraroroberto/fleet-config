@@ -7,7 +7,7 @@ working file against the previously-committed one (``git show HEAD:…``), so th
 line summarises exactly what moved since the last run.
 
 The generic diff/CLI scaffolding (shared with ``/config-map``'s twin) lives in
-``skills/_lib/snapshot_diff.py`` — this module supplies only the
+``skills/_lib/fleet_core/snapshot_diff.py`` — this module supplies only the
 fleet-specific ``parse_fleet``/``format_line``.
 
 Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-import snapshot_diff  # noqa: E402
+from fleet_core import snapshot_diff  # noqa: E402
 
 # The sections of fleet.data.js whose cards are real fleet repos (same set the
 # drift guard in tests/run_acceptance.py reconciles against projects.toml).

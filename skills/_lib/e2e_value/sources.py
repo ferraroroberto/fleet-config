@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import fleet_toml
+from fleet_core import fleet_toml
 import git_run
 
 __all__ = [

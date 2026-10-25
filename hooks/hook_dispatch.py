@@ -44,7 +44,7 @@ from typing import List, NoReturn, Optional
 
 HOOKS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(HOOKS_DIR))
-import harness_wire  # noqa: E402
+from hook_wire import harness_wire  # noqa: E402
 
 _HOOK_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 

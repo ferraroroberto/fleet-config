@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import fleet_toml
+from fleet_core import fleet_toml
 import git_run
 
 from .sources import e2e_table, GIT_TIMEOUT_S, load_state, repo_slug, _gather
@@ -91,7 +91,7 @@ def time_budget(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] =
 
 def audit_record_path(repo_root: Path) -> Path:
     """Where the last audit's test count lives: machine-local hooks state, one file per repo."""
-    from hooks_state import state_dir
+    from fleet_core.hooks_state import state_dir
     name = (repo_slug(repo_root) or repo_root.resolve().name).replace("/", "-")
     return state_dir() / "e2e-audit" / f"{name}.json"
 

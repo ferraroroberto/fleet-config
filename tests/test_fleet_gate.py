@@ -15,7 +15,7 @@ from typing import Dict, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
-import fleet_gate as fg  # noqa: E402
+from fleet_core import fleet_gate as fg  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -158,7 +158,7 @@ check(not s.gated and not s.ungated and len(s.unknown) == 5 and s.dormant == ["p
       f"an empty root leaves every active repo unknown: {s}")
 
 cli = subprocess.run(
-    [sys.executable, str(ROOT / "skills" / "_lib" / "fleet_gate.py"),
+    [sys.executable, str(ROOT / "skills" / "_lib" / "fleet_core" / "fleet_gate.py"),
      "--projects-toml", str(registry), "--root", str(root)],
     capture_output=True, text=True, encoding="utf-8",
 )

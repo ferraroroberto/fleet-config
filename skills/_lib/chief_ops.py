@@ -207,7 +207,7 @@ Subcommands
       fleet-config#247) — run by chief, never by the worker being checked,
       right before a worker's self-reported "shipped ✅" is trusted onward.
       `<repo>` is a fleet-registry name (resolved via
-      `skills/_lib/fleet_repo_scan.py`) or a literal path. Exits 1 on
+      `skills/_lib/fleet_core/fleet_repo_scan.py`) or a literal path. Exits 1 on
       STATUS=DIRTY *and* on STATUS=UNKNOWN (the repo could not be read, so
       the self-report is unverified — relaying it as verified would be the
       same false pass) so a caller can gate on the exit code, not just parse
@@ -225,7 +225,7 @@ Subcommands
       for `stop`). Read-only by default; `--apply` removes `finished` via
       `worktree_claim.remove_worktree` and `orphan-empty` via `rmdir`, and a
       folder that will not go stays and is reported (exit 1). Never kills a
-      process. The logic lives in `skills/_lib/chief_sweep.py`.
+      process. The logic lives in `skills/_lib/chief/chief_sweep.py`.
 
   plan <show|lane|drop-lane|add|set|move|remove|wait|ask|unwait|clear> ...
       The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the
@@ -242,7 +242,7 @@ Subcommands
 `--verify`'s four-verdict classification is **not** here: the exchange-marker
 parser, the precedence rules, the output-age measurement they rest on and the
 verdict/reason rendering are one self-contained subsystem, and they live in
-`skills/_lib/steer_delivery.py` (fleet-config#680). This module fetches the
+`skills/_lib/chief/steer_delivery.py` (fleet-config#680). This module fetches the
 facts and prints the line; that one decides. Its names are re-exported here so
 every existing caller and test keeps reaching them through `chief_ops`.
 
@@ -323,7 +323,7 @@ from chief.rails import (  # noqa: E402
     resolve_session_id,
     running_fleet_jobs,
 )
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 

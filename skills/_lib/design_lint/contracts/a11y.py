@@ -17,7 +17,7 @@ from ..selectors import _compounds, _last_selector_line, _split_top_level_commas
 from ._ctx import _ContractsCtx, _evidence, _loc_at, _result
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # skills/_lib, as design_lint.files does
-import wide_views  # noqa: E402
+from fleet_core import wide_views  # noqa: E402
 
 
 _FOCUS_VISIBLE_RULE_RE = re.compile(

@@ -38,8 +38,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_repo_scan  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import fleet_repo_scan  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 

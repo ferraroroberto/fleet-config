@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
+from scheduled.codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from no_window import NO_WINDOW
 from quota_snapshot import (account_key, empty_source, identifier, observation,
                             parse_time, publish, read_snapshot, refresh_states, utc_now, window)

@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-from frontmatter import frontmatter_field
+from fleet_core.frontmatter import frontmatter_field
 
 QUOTED = re.compile(r"\"[^\"]+\"")
 _WORD = re.compile(r"\S+")

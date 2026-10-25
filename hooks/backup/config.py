@@ -107,7 +107,7 @@ class BackupConfig:
     """The `[backup]` table of projects.toml, with defaults filled in.
 
     A dedicated table rather than `[global]` keys: `_lib.load_registry` and
-    `skills/_lib/fleet_repo_scan.fleet_repos` both enumerate projects.toml by
+    `skills/_lib/fleet_core/fleet_repo_scan.fleet_repos` both enumerate projects.toml by
     "table carrying a `cwd_prefix`", so a `[backup]` table is invisible to them
     and adding one cannot perturb the fleet-membership list.
     """

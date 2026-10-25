@@ -61,8 +61,8 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import fleet_repo_scan  # noqa: E402
-import hooks_state  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 
 from . import capture, evaluate as evaluate_mod, filing, inventory, ledger, plan, report  # noqa: E402
 from .report import SEVERITY_ORDER  # noqa: E402

@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/entry_inventory.py (fleet-config#961).
+"""Unit tests for skills/_lib/dead_code/entry_inventory.py (fleet-config#961).
 
 A tiny synthetic git repo carries one of every shape the verdict must tell
 apart: a job-launched script (live), a job-launched .bat and its script
@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import entry_inventory as ei  # noqa: E402
+from dead_code import entry_inventory as ei  # noqa: E402
 from git_run import run_git  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
@@ -198,7 +198,7 @@ try:
     collected = ei.collect(repo, jobs_url="https://127.0.0.1:1/api/jobs", tasks=False)
     check(collected["jobs"] == [] and collected["jobs_error"], f"an unreachable jobs API is recorded as an error, not as no jobs -- {collected.get('jobs_error')}")
 
-    source = (REPO / "skills" / "_lib" / "entry_inventory.py").read_text(encoding="utf-8")
+    source = (REPO / "skills" / "_lib" / "dead_code" / "entry_inventory.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     writes = sorted({f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
                      for node in ast.walk(f) if isinstance(node, ast.Attribute) and node.attr in ("write_text", "write_bytes", "mkdir")})

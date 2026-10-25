@@ -11,7 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import chief_ops as co  # noqa: E402
-import steer_delivery as sd  # noqa: E402
+from chief import steer_delivery as sd  # noqa: E402
 
 sys.path.insert(0, str(REPO / "hooks"))
 import notify_on_idle  # noqa: E402

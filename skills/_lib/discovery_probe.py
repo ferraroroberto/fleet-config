@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import scoped_discovery as discovery
-from codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
+from scheduled.codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from git_run import run_git
 from no_window import NO_WINDOW
 

@@ -1,7 +1,7 @@
 [
   {
     "pattern": "fleet_repo_tables",
-    "files": ["skills/_lib/design_review/plan.py", "skills/_lib/service_probe.py"],
+    "files": ["skills/_lib/design_review/plan.py", "skills/_lib/worktree/service_probe.py"],
     "reason": "answers what a repo declares (a port, a tray command) for a repo the caller names or whose app may still be running, not which repos a run reaches"
   },
   {

@@ -19,7 +19,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'hooks'))
 import conversation_capture as cc
-import transcript_readers as tr
+from conversation import transcript_readers as tr
 from _lib import NO_WINDOW, run_git
 
 

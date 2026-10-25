@@ -236,7 +236,7 @@ Run in the foreground, whole repo (a scope path still scans every tracked file,
 since a caller can sit anywhere):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dead_code_leads.py leads <repo-root> --ruff
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dead_code/dead_code_leads.py leads <repo-root> --ruff
 ```
 
 Its hits are **leads, not findings**: confirm each with `refs` per
@@ -327,7 +327,7 @@ re-matched finding carries ``Quote: `<verbatim text of the motivating line(s)>` 
 inside — see the body shape in reference.md). Write the merged body to the temp file, then:
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_quote.py check \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_ledger/audit_quote.py check \
   --repo-path <repo root> --body-file <tmpfile>
 ```
 

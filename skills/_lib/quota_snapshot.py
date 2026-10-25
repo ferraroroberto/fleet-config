@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS, state_dir  # noqa: E402
+from fleet_core.hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS, state_dir  # noqa: E402
 
 SCHEMA_VERSION = 1
 MAX_AGE_SECONDS = 600

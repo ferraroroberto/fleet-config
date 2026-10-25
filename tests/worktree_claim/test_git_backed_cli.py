@@ -240,9 +240,8 @@ try:
     # depend on `myrepo` happening to be undeclared for real -- an undeclared
     # repo is now unknown, therefore refuse (fleet-config#686).
     lib_dst = land_base / "skills" / "_lib"
-    lib_dst.mkdir(parents=True)
-    for mod in (Path(__file__).resolve().parent.parent.parent / "skills" / "_lib").glob("*.py"):
-        shutil.copy2(mod, lib_dst / mod.name)
+    shutil.copytree(Path(__file__).resolve().parent.parent.parent / "skills" / "_lib", lib_dst,
+                    ignore=shutil.ignore_patterns("__pycache__"))
     CLI = str(lib_dst / "worktree_claim.py")
     (land_base / "hooks").mkdir()
     (land_base / "hooks" / "projects.toml").write_text(
@@ -333,9 +332,7 @@ try:
 
     lib_src = Path(__file__).resolve().parent.parent.parent / "skills" / "_lib"
     lib_dst = svc_base / "skills" / "_lib"
-    lib_dst.mkdir(parents=True)
-    for mod in lib_src.glob("*.py"):
-        shutil.copy2(mod, lib_dst / mod.name)
+    shutil.copytree(lib_src, lib_dst, ignore=shutil.ignore_patterns("__pycache__"))
     SVC_CLI = str(lib_dst / "worktree_claim.py")
 
     def _make_repo(name: str) -> Path:

@@ -81,9 +81,9 @@ from typing import Callable, Dict, List, Optional
 # `fleet_repo_scan` is a sibling top-level module in skills/_lib; reached the
 # same way `design_lint/files.py` reaches `git_run`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import fleet_repo_scan  # noqa: E402
-import fleet_toml  # noqa: E402
-import wide_views  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
+from fleet_core import wide_views  # noqa: E402
 from worktree_residue import WT_SEP  # noqa: E402
 
 LOOPBACK = "127.0.0.1"

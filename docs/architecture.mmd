@@ -52,9 +52,9 @@ flowchart TB
   COPILOTHOOKS --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
-    LIBPY["_lib.py — hook core + payload accessors, NO_WINDOW spawn flag\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)\nre-exports harness_wire.py + registry.py + edit_events.py so no hook's import changes (#819/#931)"]
-    HARNESSWIREPY["harness_wire.py\nstdin-JSON, normalize_payload: Grok/Copilot/agy/Pi/Codex -> Claude shape (#491)\nblock · warn · rewrite_command · allow per-harness dialects (#931)"]
-    REGISTRYPY["registry.py\nprojects.toml loader, cwd->project matching, Telegram/board-URL notify routing (#819)"]
+    LIBPY["_lib.py — hook core + payload accessors, NO_WINDOW spawn flag\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)\nre-exports hook_wire/ (harness_wire.py + registry.py + edit_events.py) so no hook's import changes (#819/#931)"]
+    HARNESSWIREPY["hook_wire/harness_wire.py\nstdin-JSON, normalize_payload: Grok/Copilot/agy/Pi/Codex -> Claude shape (#491)\nblock · warn · rewrite_command · allow per-harness dialects (#931)"]
+    REGISTRYPY["hook_wire/registry.py\nprojects.toml loader, cwd->project matching, Telegram/board-URL notify routing (#819)"]
     EDITEVENTSPY["edit_events.py\nEditEvent: native + Codex patch + Pi targets/outcomes (#744/#746/#819)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
@@ -63,7 +63,7 @@ folds verdicts via harness_wire.emit_collected"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · telegram_file_reply_guard ·
 chief_handover_sessionstart · …"]
     NOTIFYPY["notify_send.py -> notify_complete.py -> work_summary.py"]
-    CONVPY["conversation memory engine (projects.toml opt-in, #586)\ntranscript_readers (native Claude/Codex) -> conversation_capture (Stop)\nharness-qualified capture + native-session/fork header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd
+    CONVPY["conversation memory engine (projects.toml opt-in, #586)\nconversation/transcript_readers (native Claude/Codex) -> conversation_capture (Stop)\nharness-qualified capture + native-session/fork header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd
 conversation_title — user titles in a titles.json sidecar (#1348)"]
     BACKUPPY["backup_private.py + run-backup-daily.bat (#590/#797)\nNOT a hook — a daily scheduled program\ngit-ignored residue + Claude/Codex native sessions + live SQLite\nhardlinked dated snapshots + latest/ + explicit-deletion-only session archives\nself-verifying: sample re-hash · native-ID inventory · zero-file regression · 3-state freshness"]
   end
@@ -103,8 +103,7 @@ conversation_title — user titles in a titles.json sidecar (#1348)"]
     OTHERGLOBAL["codebase-audit · design-sync · e2e · e2e-audit · docs-shots · handoff-commit · quick · screen"]
     DESIGNREVIEWSKILL["design-review [file] · design-review fleet [file]\nprobe → measure → evaluate → judge-prompt → fresh judge agent(s) → judge-merge → ledger → render → file (dry run unless `file`)\nfleet: every webapp_port table serially, judgment skipped, one digest\nprivate artifact only where the host has one; the judge spawn is capability-bound"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
-    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · audit_quote.py · cert_drift.py · rate_gate.py · dirty_tree_check.py · dir_holders.py ·\nissue_state_gate.py · repo_preflight.py · worktree_residue.py · branch_residue.py · untrack_guard.py ·\ndesign_lint/ · design_review/ · perf_review/ · structure_debt/ · gate_coverage/ · structural/ · design_sweep_scan.py · git_run.py · index_lock.py · snapshot_diff.py · fleet_repo_scan.py · fleet_gate.py ·\nvendored_drift.py · no_window.py · e2e_test_audit.py · e2e_value/ · e2e_route.py · html_shot.py · docs_shots_plan.py ·\nfleet_audit_scan.py · deploy_coverage.py · chief_ops.py + chief/ · steer_delivery.py · chief_managed.py · chief_plan.py ·\nservice_probe.py · skill_description.py · digest_delivery.py · skip_delta.py ·
-fleet_toml.py · codex_app_server.py · entry_inventory.py · start_beacon.py"]
+    LIB["_lib/ — worktree_claim.py + worktree/ (claim · gitops · worktree_config · service_probe) · active_issue.py ·\nclaude_progress.py + scheduled_runner.py + scheduled/ (progress · runner_adapters · process_scope · codex_app_server · wait_for_sentinel) ·\naudit_issue.py + audit_ledger/ (records · audit_issue_client · audit_quote · digest_delivery) · ux_surface.py · browser_verify.py ·\ncert_drift.py · rate_gate.py · dirty_tree_check.py · dir_holders.py · issue_state_gate.py · repo_preflight.py · worktree_residue.py ·\nbranch_residue.py · untrack_guard.py · design_lint/ · design_review/ · perf_review/ · structure_debt/ · gate_coverage/ · structural/ ·\ndesign_sweep_scan.py · git_run.py · no_window.py · index_lock.py · vendored_drift.py · e2e_test_audit.py · e2e_value/ · e2e_route.py ·\ndocs_shots_plan.py · fleet_audit_scan.py · deploy_coverage.py · chief_ops.py + chief/ (chief_sweep · steer_delivery · skip_delta) ·\nchief_managed.py · chief_plan.py · fleet_core/ (fleet_toml · frontmatter · hooks_state · fleet_repo_scan · fleet_gate · html_shot ·\nsnapshot_diff · skill_description · wide_views · utf8_stdio) · dead_code/ (entry_inventory · start_beacon · dead_code_leads)"]
   end
   gskills --> CLAUDE
   gskills --> CODEX

@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/chief_sweep.py, the chief's worktree sweep (fleet-config#1496).
+"""Unit tests for skills/_lib/chief/chief_sweep.py, the chief's worktree sweep (fleet-config#1496).
 
 Every class (`finished`, `in-use`, `has-work`, `orphan-empty`, `unknown`) is
 driven against real throwaway git worktrees; only the `gh` PR lookup, the board
@@ -32,7 +32,7 @@ TMP = throwaway_dir("chief_sweep_")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(TMP / "state")
 
 import chief_ops as co  # noqa: E402
-import chief_sweep as cs  # noqa: E402
+from chief import chief_sweep as cs  # noqa: E402
 import worktree_claim  # noqa: E402
 
 _h = CheckHarness()

@@ -344,7 +344,7 @@ def _run_in_job(command: str, env: Dict[str, str], stdin_text: str,
             return None
         return subprocess.CompletedProcess(command, proc.returncode, out, err)
     sys.path.insert(0, str(REPO / "skills" / "_lib"))
-    from process_scope import _WindowsJob  # noqa: E402
+    from scheduled.process_scope import _WindowsJob  # noqa: E402
     job = _WindowsJob()
     try:
         proc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

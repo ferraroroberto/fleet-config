@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from html_shot import render_cli  # noqa: E402
+from fleet_core.html_shot import render_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_HTML = REPO_ROOT / "architecture" / "config-map.html"

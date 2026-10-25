@@ -10,8 +10,8 @@ from __future__ import annotations
 import argparse
 
 import chief_plan
-import chief_sweep
-from steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
+from chief import chief_sweep
+from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 
 from . import commands, compact, launcher, mailbox
 

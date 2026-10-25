@@ -62,7 +62,7 @@ Capture `out=` verbatim as `SWEEP_RESULT` — never construct/guess the path; `f
 **Wait** with a foreground blocking helper script — never `Monitor`, never a raw backgrounded Bash call (`fleet-config#609`, reopened):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/wait_for_sentinel.py --path "$SWEEP_RESULT" --timeout-seconds 560
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/scheduled/wait_for_sentinel.py --path "$SWEEP_RESULT" --timeout-seconds 560
 ```
 
 **Exit 0** (`SENTINEL-READY <path>`) — sweep done: `cat "$SWEEP_RESULT"` and continue with its JSON. **Exit 2** (`SENTINEL-NOT-READY <path>`) — not a wait-for-notification signal; re-invoke the exact same command again immediately, same turn. `--timeout-seconds 560` keeps a call under the Bash tool's 600s ceiling — the retry is normal, not a failure. **Cap retries at 26** (~4 hours, above the observed 1460s outlier). If `SWEEP_RESULT` still absent after 26 exit-2 results, or carries `{"error": ...}`: treat as pre-flight-class failure — print `Fleet audit plan — sweep did not complete: <reason>` and skip to step 6's delivery assertion (prints `SCHEDULED-RUN-FAILED`); never fabricate a plan line from an unfinished scan. **Never end this turn on an exit-2 result** — only two valid stops: resolved exit 0, or exhausted retry cap.

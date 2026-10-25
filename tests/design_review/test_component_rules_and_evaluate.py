@@ -611,7 +611,7 @@ check(_t02_hit["status"] == "fail" and _t02_hit["evidence"], "TOUCH-02: a pair f
 
 # every `<name>_truncated` flag the page script emits is read by evaluate.py, so a bound the measurement knows it hit is
 # never dropped on the way to a verdict
-_emitted = set(re.findall(r"\b(\w+_truncated)\s*:", Path(measure.__file__).read_text(encoding="utf-8")))
+_emitted = set(re.findall(r"\b(\w+_truncated)\s*:", measure._MEASURE_JS))
 _read = Path(ev.__file__).read_text(encoding="utf-8")
 check(_emitted and all(any(p.endswith("." + k) for p in measure.metric_paths()) and k in _read for k in _emitted),
       f"every *_truncated flag measure.py emits is a metric path and is read by evaluate.py -- {sorted(_emitted)}")

@@ -48,8 +48,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import atomic_write_text, state_dir  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 PTH_NAME = "fleet_start_beacon.pth"
 LEDGER_NAME = "starts.tsv"

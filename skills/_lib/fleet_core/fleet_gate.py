@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_repo_scan  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import fleet_repo_scan  # noqa: E402
 import fleet_status  # noqa: E402
 import git_run  # noqa: E402
 
@@ -159,7 +159,7 @@ def format_report(s: Survey) -> str:
 def main(argv: Optional[List[str]] = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Report which active fleet repos lack a recognised gate.")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3],
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[4],
                         help="directory holding the fleet checkouts (default: beside this repo)")
     parser.add_argument("--projects-toml", type=Path, help="read this registry instead of hooks/projects.toml")
     args = parser.parse_args(argv)

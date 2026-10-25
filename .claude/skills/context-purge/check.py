@@ -16,7 +16,7 @@ checkable, so they live here rather than in LLM judgment (same discipline as
      description (fleet-config#845).
 
 The `description:` parser and the double-quoted-trigger regex now live in
-`skills/_lib/skill_description.py`, shared with `context-audit/audit.py` — the
+`skills/_lib/fleet_core/skill_description.py`, shared with `context-audit/audit.py` — the
 two carried private copies and the audit's `["']` character class silently
 under-counted every description containing an apostrophe (fleet-config#626).
 
@@ -47,9 +47,9 @@ from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import git_run  # noqa: E402
-from frontmatter import frontmatter_error  # noqa: E402
-from skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.frontmatter import frontmatter_error  # noqa: E402
+from fleet_core.skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 _MARKED_BLOCK = re.compile(
     r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S

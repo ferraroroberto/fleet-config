@@ -1,7 +1,7 @@
 """Shared read of one field out of a SKILL.md YAML frontmatter block (fleet-config#615).
 
 Three call sites parsed a `---`-delimited frontmatter block for a single field's
-value independently: `skills/_lib/skill_description.py`'s `frontmatter_description()`
+value independently: `skills/_lib/fleet_core/skill_description.py`'s `frontmatter_description()`
 (description only), `.claude/skills/config-map/build_data.py`'s `_frontmatter_field()`
 (any field, reads the file itself). One parser here; both now delegate to it —
 `frontmatter_description()` for the description-specific '' contract that

@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 import git_run  # noqa: E402
 import worktree_residue  # noqa: E402
@@ -368,7 +368,7 @@ def format_report(findings: Sequence[Finding], sessions: Sequence[str], applied:
 
 def default_root() -> Path:
     """The folder holding the fleet repos: the parent of this checkout's repo."""
-    return Path(__file__).resolve().parents[2].parent
+    return Path(__file__).resolve().parents[3].parent
 
 
 def add_cli(parser: argparse.ArgumentParser) -> None:

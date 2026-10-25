@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from fleet_repo_scan import fleet_repos
-from frontmatter import frontmatter_field
+from fleet_core.fleet_repo_scan import fleet_repos
+from fleet_core.frontmatter import frontmatter_field
 from git_run import run_git
 from no_window import NO_WINDOW
 

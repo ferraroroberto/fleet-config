@@ -19,8 +19,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import quota_snapshot as contract
 import quota_sources as sources
-from codex_app_server import AppServerSession
-from hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS
+from scheduled.codex_app_server import AppServerSession
+from fleet_core.hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS
 
 NOW = dt.datetime(2026, 9, 5, 12, tzinfo=dt.timezone.utc)
 RESET = int((NOW + dt.timedelta(days=1)).timestamp())

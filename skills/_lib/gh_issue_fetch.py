@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any, Callable, Collection, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 
 GH_TIMEOUT_SECONDS = 60

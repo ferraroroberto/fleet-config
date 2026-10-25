@@ -1,4 +1,4 @@
-"""Unit tests for the pure logic in skills/_lib/html_shot.py (fleet-config#96).
+"""Unit tests for the pure logic in skills/_lib/fleet_core/html_shot.py (fleet-config#96).
 
 No live Chrome — these exercise URL-scheme detection, file:// URL building,
 query-string appending, target-URL resolution, and the DIMS-log parser.
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
-import html_shot as hs  # noqa: E402
+from fleet_core import html_shot as hs  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402

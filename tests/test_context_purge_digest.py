@@ -460,7 +460,7 @@ check("status=partial" in stamp_p and "unreached=1" in stamp_p and "delivery=fai
 
 # The stamp the digest writes must be the stamp the post-condition reads.
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import digest_delivery  # noqa: E402
+from audit_ledger import digest_delivery  # noqa: E402
 
 check(digest_delivery.parse_stamp(stamp, digest.STAMP_PREFIX)["status"] == "complete",
       "stamp: digest.py's writer and digest_delivery.py's reader agree on the format")

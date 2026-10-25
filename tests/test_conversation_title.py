@@ -36,7 +36,7 @@ import conversation_capture as cc  # noqa: E402
 import conversation_index as ci  # noqa: E402
 import conversation_search as cs  # noqa: E402
 import conversation_title as ct  # noqa: E402
-from transcript_readers import Transcript  # noqa: E402
+from conversation.transcript_readers import Transcript  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402

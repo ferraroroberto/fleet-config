@@ -10,7 +10,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 from git_run import run_git
-from runner_adapters import ClaudeAdapter, CodexAdapter
+from scheduled.runner_adapters import ClaudeAdapter, CodexAdapter
 from scheduled_runner import main as run_scheduled
 
 

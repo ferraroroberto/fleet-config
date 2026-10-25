@@ -32,7 +32,7 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, SOURCE)
 import conversation_capture as cc
-import transcript_readers as tr
+from conversation import transcript_readers as tr
 raw = json.load(sys.stdin)
 project = Path(__file__).resolve().parents[2]
 # Only this reviewed wrapper opts in. Installed global capture stays inert,

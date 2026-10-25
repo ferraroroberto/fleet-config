@@ -21,7 +21,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Piped/redirected stdout falls back to cp1252 on Windows, which chokes on the
 # report's em-dashes and arrows — force UTF-8 (global Windows-capture gotcha).

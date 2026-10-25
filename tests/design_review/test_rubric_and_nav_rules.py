@@ -271,7 +271,7 @@ check("1400px" in report_mod.finding_sentence(_st, {"params": {"measure": 772}})
       "LAYOUT-06: the fix sentence names the column width")
 
 # `[design] wide_views` loads through one shared reader (#1113)
-import wide_views as wv  # noqa: E402
+from fleet_core import wide_views as wv  # noqa: E402
 
 _wv_dir = Path(throwaway_dir("wv-"))
 check(wv.load_wide_views(None) == ([], None) and wv.load_wide_views(_wv_dir) == ([], None), "wide_views: no root / no file is the normal, empty case")

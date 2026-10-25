@@ -21,8 +21,8 @@ compare the fresh-checkout run against it — always with `-rs`, or the skips
 come back unnamed:
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py capture <primary-run.txt> --label "primary checkout" --out <baseline.json>
-E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py compare <fresh-run.txt> --baseline <baseline.json>
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/chief/skip_delta.py capture <primary-run.txt> --label "primary checkout" --out <baseline.json>
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/chief/skip_delta.py compare <fresh-run.txt> --baseline <baseline.json>
 ```
 
 Report-only, always exits 0. Relay `STATUS` (the count fact) **and** `SET` (the

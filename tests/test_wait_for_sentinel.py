@@ -1,4 +1,4 @@
-"""Unit + wiring tests for skills/_lib/wait_for_sentinel.py.
+"""Unit + wiring tests for skills/_lib/scheduled/wait_for_sentinel.py.
 
 The load-bearing property this proves: `/audit-fleet` step 3 can only be
 reached after this helper returns exit 0, and exit 0 is only ever returned
@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
-import wait_for_sentinel as wfs  # noqa: E402
+from scheduled import wait_for_sentinel as wfs  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as _td:
 # ---- CLI (main): the real subprocess contract SKILL.md relies on -----------
 
 PYTHON = sys.executable
-SCRIPT = str(ROOT / "skills" / "_lib" / "wait_for_sentinel.py")
+SCRIPT = str(ROOT / "skills" / "_lib" / "scheduled" / "wait_for_sentinel.py")
 
 with tempfile.TemporaryDirectory() as _td:
     _present = Path(_td) / "ready.json"

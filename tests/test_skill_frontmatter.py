@@ -2,7 +2,7 @@
 
 Two halves:
 
-  1. `skills/_lib/frontmatter.py`'s `frontmatter_error()` pinned against shapes
+  1. `skills/_lib/fleet_core/frontmatter.py`'s `frontmatter_error()` pinned against shapes
      whose real-YAML outcome was established with PyYAML — this repo's `.venv`
      is stdlib-only, so the loader cannot run here; its verdicts are recorded.
   2. A live scan of both skill trees this repo ships — `skills/` (junctioned
@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
-from frontmatter import frontmatter_error  # noqa: E402
+from fleet_core.frontmatter import frontmatter_error  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

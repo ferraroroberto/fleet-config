@@ -41,8 +41,8 @@ HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.
 
 sys.path.insert(0, str(HELPER.parent))
 import git_run  # noqa: E402
-from audit_issue_client import run_audit_issue  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from audit_ledger.audit_issue_client import run_audit_issue  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 

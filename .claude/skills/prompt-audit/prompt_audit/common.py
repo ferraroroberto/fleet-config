@@ -18,16 +18,16 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 import git_run as git_run  # noqa: E402
 from audit_issue import rubric_sha  # noqa: E402
-from audit_issue_client import run_audit_issue as run_audit_issue  # noqa: E402
-from fleet_repo_scan import fleet_repos as fleet_repos, is_linked_worktree as is_linked_worktree  # noqa: E402
-from hooks_state import atomic_write_text as atomic_write_text  # noqa: E402
-from frontmatter import frontmatter_error as frontmatter_error, frontmatter_field as frontmatter_field  # noqa: E402
-from skill_description import (  # noqa: E402
+from audit_ledger.audit_issue_client import run_audit_issue as run_audit_issue  # noqa: E402
+from fleet_core.fleet_repo_scan import fleet_repos as fleet_repos, is_linked_worktree as is_linked_worktree  # noqa: E402
+from fleet_core.hooks_state import atomic_write_text as atomic_write_text  # noqa: E402
+from fleet_core.frontmatter import frontmatter_error as frontmatter_error, frontmatter_field as frontmatter_field  # noqa: E402
+from fleet_core.skill_description import (  # noqa: E402
     frontmatter_description as frontmatter_description,
     prose_words as prose_words,
     strip_quoted as strip_quoted,
 )
-from utf8_stdio import ensure_utf8_stdio as ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio as ensure_utf8_stdio  # noqa: E402
 
 SOURCES_TOML = SKILL_DIR / "sources.toml"
 RULES_MD = SKILL_DIR / "rules.md"

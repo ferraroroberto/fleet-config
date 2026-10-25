@@ -59,10 +59,10 @@ A hit passes when its file names `ignored_repos`, `split_dormant`, `list_status`
 
 ## An active repo needs a gate
 
-An active repo has a recognised verification gate, or it is dormant. `skills/_lib/fleet_gate.py` answers it per repo (`gate_verdict()`) and fleet-wide (`survey()`); the CLI prints the same report, and a digest reads `survey()` directly:
+An active repo has a recognised verification gate, or it is dormant. `skills/_lib/fleet_core/fleet_gate.py` answers it per repo (`gate_verdict()`) and fleet-wide (`survey()`); the CLI prints the same report, and a digest reads `survey()` directly:
 
 ```powershell
-& E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/fleet_gate.py
+& E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/fleet_core/fleet_gate.py
 ```
 
 A repo has a gate when its committed default branch carries any of these forms (`GATE_SCRIPTS`, `RATCHET_NAMES` and friends in the module hold the list):

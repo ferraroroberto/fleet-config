@@ -26,8 +26,8 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import git_run  # noqa: E402
-import hooks_state  # noqa: E402
-import service_probe  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
+from worktree import service_probe  # noqa: E402
 from design_review.capture import probe_listening, resolve_interpreter, target_commit  # noqa: E402
 from design_review.filing import repo_slug  # noqa: E402
 from design_review.plan import PlanError, resolve_target  # noqa: E402
