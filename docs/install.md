@@ -26,6 +26,26 @@ The two limit items use Codex's own account data and rendering. An unavailable w
 
 This config affects the Codex terminal TUI only. It does not customize the Codex desktop conversation UI, and it does not add custom colors, thresholds, or a replacement renderer; theme colors and layout remain native Codex behavior.
 
+## Grok status line opt-in
+
+Grok Build's status line is off until `~/.grok/config.toml` sets `[ui.status_line]`. To use the fleet's row, run this from the primary checkout:
+
+```powershell
+.\install.ps1 -ConfigureGrokStatusline
+```
+
+The switch runs `grok_statusline.py --apply`, which appends this table when the file has no `[ui.status_line]`:
+
+```toml
+[ui.status_line]
+type = "command"
+command = "<repo>/.venv/Scripts/python.exe <repo>/grok_statusline.py"
+```
+
+Every other byte of the file is kept, line endings included. A row the user already set, of any type, is left alone and reported as `status=kept-user-row`; re-running after a successful add reports `status=unchanged`. `grok_statusline.py --check` reports what `--apply` would do without writing. A malformed config fails without replacing the file, and the switch is refused in scoped/worktree install mode. Grok reads the row at startup, so start a new Grok session to see it.
+
+What the row shows, and why it never shows a Grok limit: [`docs/cross-agent-parity.md`](cross-agent-parity.md).
+
 ## Codex model policy opt-in
 
 Run this from the primary checkout to apply the fleet's managed Codex defaults:

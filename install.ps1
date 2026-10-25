@@ -28,6 +28,7 @@
 [CmdletBinding()]
 param(
     [switch]$ConfigureCodexStatusline,
+    [switch]$ConfigureGrokStatusline,
     [switch]$ConfigureCodexModelPolicy,
     [switch]$ConfigureSessionRetention,
     [switch]$VerifyCodexSandbox,
@@ -42,7 +43,7 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 # A named checkout (including a linked worktree) installs only its local links.
 # Never redirect machine-wide homes to a transient worktree.
 if ($ProjectRoot -or (Test-Path -LiteralPath (Join-Path $RepoRoot '.git') -PathType Leaf)) {
-    if ($ConfigureCodexStatusline -or $ConfigureCodexModelPolicy -or $ConfigureSessionRetention -or $VerifyCodexSandbox -or $VerifyGrokCompat) {
+    if ($ConfigureCodexStatusline -or $ConfigureGrokStatusline -or $ConfigureCodexModelPolicy -or $ConfigureSessionRetention -or $VerifyCodexSandbox -or $VerifyGrokCompat) {
         throw 'Scoped installation cannot change or verify user-home configuration; run the requested switch from the primary checkout.'
     }
     if (-not $ProjectRoot) { $ProjectRoot = $RepoRoot }
@@ -364,6 +365,7 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     # prompt -- a fresh install -- reporting a successful install for a
     # verification that never ran.
     if ($ConfigureCodexStatusline) { $psArgs += '-ConfigureCodexStatusline' }
+    if ($ConfigureGrokStatusline) { $psArgs += '-ConfigureGrokStatusline' }
     if ($ConfigureCodexModelPolicy) { $psArgs += '-ConfigureCodexModelPolicy' }
     if ($ConfigureSessionRetention) { $psArgs += '-ConfigureSessionRetention' }
     if ($VerifyCodexSandbox) { $psArgs += '-VerifyCodexSandbox' }
@@ -471,6 +473,11 @@ if ($ConfigureCodexStatusline) {
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_statusline.py') --apply --config (Join-Path $CodexHome 'config.toml')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+if ($ConfigureGrokStatusline) {
+    # Adds a command-type [ui.status_line] only when ~/.grok/config.toml has none.
+    & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'grok_statusline.py') --apply
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 if ($ConfigureCodexModelPolicy) {
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_model_policy.py') --apply `
         --config (Join-Path $CodexHome 'config.toml') `
@@ -498,6 +505,9 @@ Write-Host "Next step: merge the 'hooks' block from settings.template.json into 
 Write-Host "then restart Claude Code so the new hooks load."
 if ($ConfigureCodexStatusline) {
     Write-Host "Open a fresh Codex terminal to load the updated native footer."
+}
+if ($ConfigureGrokStatusline) {
+    Write-Host "Start a new Grok session to load the status line; Grok reads it at startup."
 }
 if ($ConfigureCodexModelPolicy) {
     Write-Host "Open a fresh Codex terminal to load the managed model policy."
