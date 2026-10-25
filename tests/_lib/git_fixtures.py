@@ -7,7 +7,7 @@ eight files; this retires the next hand-roll one level up — the ~15-20 line
 `checkout -b main`, `git config user.email/user.name` with the identical
 hardcoded fleet-config commit-author address, commit a README, `git clone` to
 `work`" fixture, hand-rolled independently in `test_git_run.py`,
-`test_dirty_tree_check.py`, `test_chief_ops.py`, and `test_audit_issue.py`
+`test_dirty_tree_check.py`, `chief_ops/`, and `test_audit_issue.py`
 (there as `_git567`).
 
 Usage (matches the existing per-file shape so call sites barely change):

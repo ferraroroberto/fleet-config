@@ -18,7 +18,7 @@ Three concerns, in dependency order:
     one (the fleet rule that an unestablished fact reports as its own state);
   - the **pure verdict**, `live_service_check`, which turns a declaration plus
     a probe result into `(ok, reason)` with no I/O in it at all -- unit-tested
-    exhaustively in `tests/test_worktree_claim.py`;
+    exhaustively in `tests/worktree_claim/test_claim_and_landing.py`;
   - the **impure probe**: `declared_service` (read the declaration out of
     `hooks/projects.toml`), `listening_ports` (the OS's own TCP listener
     table), `_running_sha` (best-effort `git_sha` off the declared version

@@ -69,11 +69,18 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "machine-global port reservation that makes two lanes exclusive before "
      "either binds -- are testable on their own against temp trees and a "
      "redirected state dir (fleet-config#937)"),
-    ("worktree_claim", "test_worktree_claim.py",
+    ("worktree_claim_decisions", "worktree_claim/test_claim_and_landing.py",
      "the claim FSM -- atomic acquire, the worktree fallback when held, "
      "TTL stale-reclaim, and the sibling-path convention -- is testable "
-     "on its own; the same file covers `service_probe.py`, the live-service "
-     "capability land-primary's fourth guard calls (fleet-config#680)"),
+     "on its own, beside `service_probe.py`, the live-service capability "
+     "land-primary's fourth guard calls (fleet-config#680)"),
+    ("worktree_claim_runtime_copy", "worktree_claim/test_runtime_copy.py",
+     "a worktree's runtime twin -- config, .env and port copying, the "
+     "naming and primary-checkout refusals, junction targets -- is "
+     "testable against temp trees with no git"),
+    ("worktree_claim_git_cli", "worktree_claim/test_git_backed_cli.py",
+     "the git-backed CLI -- reparse-safe teardown, land-primary, root-config "
+     "mirroring and mode -- runs against real temp repos"),
     ("untrack_guard", "test_untrack_guard.py",
      "a fast-forward keeps every live file the merged range untracks -- "
      "the automation#144 config loss reproduced through land-primary against "
@@ -110,10 +117,19 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "run -- whose owned job would count the child and turn a delivered run "
      "into exit 118 -- and on interactively, proven through the real runner "
      "(fleet-config#911)"),
-    ("claude_progress", "test_claude_progress.py",
-     "parser filtering/deduplication, child exit-code propagation, and "
+    ("claude_progress_stream", "claude_progress/test_command_and_stream.py",
+     "command construction, parser filtering/deduplication, stderr "
+     "redaction and child exit-code propagation"),
+    ("claude_progress_stall", "claude_progress/test_stall_and_ceiling.py",
+     "the stall watchdog kills a silent run's whole tree and the CLI "
+     "background-wait ceiling is lifted for every child"),
+    ("claude_progress_delivery", "claude_progress/test_delivery_checks.py",
+     "zero-work and nothing-invoked runs fail, --delivery-check holds, and "
      "the checked-in contract that every run-weekly.bat uses the shared "
      "adapter"),
+    ("claude_progress_retry", "claude_progress/test_retry.py",
+     "a transient upstream 5xx is retried under the retry policy and each "
+     "attempt is judged on its own evidence"),
     ("cpu_burn", "test_cpu_burn.py",
      "the load-proof helper runs its burners and the command under proof "
      "below normal priority, so a burn can't starve scheduled jobs, and "
@@ -136,13 +152,22 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("context_purge_gate", "test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),
-    ("prompt_audit", "test_prompt_audit.py",
+    ("prompt_audit_lint", "prompt_audit/test_lint_and_inventory.py",
      "/prompt-audit's deterministic half -- exact lint counts on planted and "
      "clean fixtures, file/section audience classification, scaffold and lite "
-     "dedup, all four freshness-gate verdicts, corrupt-state degradation, the "
-     "rubric-keyed skip-unchanged plan, and a digest that never folds "
-     "unmeasured into compliant -- is testable on its own against a synthetic "
-     "fleet, with no gh, fetch, or real state touched (fleet-config#832)"),
+     "dedup, all four freshness-gate verdicts, the rubric-keyed "
+     "skip-unchanged plan, and a digest that never folds unmeasured into "
+     "compliant -- against a synthetic fleet, with no gh, fetch, or real "
+     "state touched"),
+    ("prompt_audit_runs", "prompt_audit/test_runs_and_drift.py",
+     "scan-anyway on a changed guide, the one-line chat ping and the "
+     "prompt-drift issue routing and backlog merge"),
+    ("prompt_audit_skills", "prompt_audit/test_skill_structure.py",
+     "the skill-structure rules, the coverage check and leads intake, each "
+     "failing loudly on malformed input"),
+    ("prompt_audit_evals", "prompt_audit/test_evals_and_contracts.py",
+     "skill-eval verdict tiers, weekly eval rotation and the rules.md / "
+     "sources.toml / vendor-neutrality contracts"),
     ("context_purge_digest", "test_context_purge_digest.py",
      "the per-run digest's rendering layer -- the three-way "
      "probed/not-probed/not-recorded split that keeps an unknown from "
@@ -343,14 +368,20 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "claim exactly once (also under two concurrent claimers), old-format "
      "events still read, .claimed/ and temps untouched; passes unchanged on "
      "the pre-v2 tree (fleet-config#1455)"),
-    ("chief_ops", "test_chief_ops.py",
-     "the fleet chief's deterministic ops helper -- repo occupancy, the "
-     "alive-worker count, the three dispatch refusals (occupied repo, "
-     "at/over worker cap, unconfirmed yolo), the non-loopback-host "
-     "guard, and the board-digest formatting -- is testable on its own, "
-     "with no live launcher or `gh` call required (fleet-config#445); the "
-     "same file covers `steer_delivery.py`, the say --verify classifier "
-     "(fleet-config#680)"),
+    ("chief_ops_board", "chief_ops/test_board_and_delivery.py",
+     "the fleet chief's board reading -- repo occupancy, the alive-worker "
+     "count, find_chief -- and `steer_delivery.py`, the say --verify "
+     "classifier, are testable with no live launcher or `gh` call"),
+    ("chief_ops_dispatch", "chief_ops/test_dispatch.py",
+     "the three dispatch refusals (occupied repo, at/over worker cap, "
+     "unconfirmed yolo), cmd_dispatch with briefs, the non-loopback-host "
+     "guard and the board-digest formatting hold without a launcher"),
+    ("chief_ops_verify", "chief_ops/test_verify_and_verdicts.py",
+     "chief verify against throwaway git repos, chief-managed marking, the "
+     "fail-closed worker cap and say --verify's four distinct verdicts"),
+    ("chief_ops_sessions", "chief_ops/test_session_commands.py",
+     "say/stop prefix resolution, the wait-event inbox, the wake doorbell "
+     "and context + self-compact work with the launcher stubbed"),
     ("chief_sweep", "test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
      "squash-merged branch, in-use, has-work incl. a dirty tree, "

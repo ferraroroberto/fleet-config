@@ -3,18 +3,14 @@
   "entries": [
     {"key": "dir:hooks", "modules": 43},
     {"key": "dir:skills/_lib", "modules": 64},
-    {"key": "dir:tests", "modules": 110},
+    {"key": "dir:tests", "modules": 106},
     {"key": "fn:skills/_lib/scheduled_runner.py:run_process", "lines": 175},
     {"key": "size:skills/_lib/audit_issue.py", "lines": 1280},
     {"key": "size:skills/_lib/design_review/measure.py", "lines": 1517},
     {"key": "size:skills/_lib/scheduled_runner.py", "lines": 1302},
     {"key": "size:skills/_lib/worktree_claim.py", "lines": 1479},
-    {"key": "size:tests/test_chief_ops.py", "lines": 1904},
-    {"key": "size:tests/test_claude_progress.py", "lines": 1362},
     {"key": "size:tests/test_design_review_browser.py", "lines": 1355},
     {"key": "size:tests/test_e2e_value.py", "lines": 1114},
-    {"key": "size:tests/test_fleet_private_backup.py", "lines": 1485},
-    {"key": "size:tests/test_prompt_audit.py", "lines": 1148},
-    {"key": "size:tests/test_worktree_claim.py", "lines": 1834}
+    {"key": "size:tests/test_fleet_private_backup.py", "lines": 1485}
   ]
 }

@@ -1,6 +1,6 @@
 """A formatter clock that counts a stall window from fixture readiness.
 
-Shared by the runner suites (`tests/test_claude_progress.py`,
+Shared by the runner suites (`tests/claude_progress/test_stall_and_ceiling.py`,
 `tests/test_scheduled_runner.py`) so a loaded box's interpreter start is never
 mistaken for the silence a stall watchdog is meant to judge (fleet-config#1056,
 #1069).

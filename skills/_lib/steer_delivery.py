@@ -16,7 +16,7 @@ So it lives here; `chief_ops` keeps the CLI and calls in.
 returns a verdict or a string. No HTTP, no `gh`, no clock beyond
 `last_output_age_seconds`'s injectable `now`. That is what makes the whole
 delivery lattice unit-testable without a live launcher
-(`tests/test_chief_ops.py`), and it is the property to preserve: if a change
+(`tests/chief_ops/test_board_and_delivery.py`), and it is the property to preserve: if a change
 here needs a network call, the call belongs in `chief_ops` and its *result*
 belongs in an argument.
 
