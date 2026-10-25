@@ -30,7 +30,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from active_issue import _iso_z, _now, state_lock, write_rows  # noqa: E402
@@ -415,6 +415,32 @@ def remove_item(doc: Dict[str, Any], ref: str) -> None:
     doc["queue"].pop(_index(doc, ref))
 
 
+def prune_items(doc: Dict[str, Any], statuses: Sequence[str] = ("merged",)) -> int:
+    """Drop every queue row whose status is in `statuses`; returns how many went.
+
+    Lanes and waiting items are never touched: a lane's `item` is only a `#N`
+    pointer, and a question outlives the row it was asked about.
+    """
+    unknown = sorted(set(statuses) - set(QUEUE_STATUSES))
+    if unknown:
+        raise ValueError(f"unknown status {unknown[0]!r}; use one of {', '.join(QUEUE_STATUSES)}")
+    kept = [row for row in doc["queue"] if row["status"] not in statuses]
+    pruned = len(doc["queue"]) - len(kept)
+    doc["queue"][:] = kept
+    return pruned
+
+
+def prune_plan_file(path: Path, statuses: Sequence[str] = ("merged",)) -> int:
+    """`prune_items` through the locked read-modify-write; the in-process entry for the app.
+
+    Returns the number of rows removed. A plan this writer cannot parse raises
+    ValueError rather than being overwritten, like every other verb.
+    """
+    pruned: List[int] = []
+    update(path, lambda doc: pruned.append(prune_items(doc, statuses)))
+    return pruned[0]
+
+
 def _next_id(doc: Dict[str, Any]) -> str:
     """`q<N>`, one past the highest auto id in use, so a cleared id is not reissued
     while a later one is still waiting (an answer for it can't land on a new item)."""
@@ -550,6 +576,10 @@ def _run(args: argparse.Namespace) -> int:
     if action == "show":
         print(render(load(path)))
         return 0
+    if action == "prune":
+        pruned = prune_plan_file(path, args.status or ("merged",))
+        print(f"PRUNED={pruned} " + _summary(load(path)))
+        return 0
     added: List[str] = []
     mutations: Dict[str, Callable[[Dict[str, Any]], None]] = {
         "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session, args.model),
@@ -607,6 +637,10 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
 
     rm = acts.add_parser("remove", help="drop an item from the queue")
     rm.add_argument("ref")
+
+    prune = acts.add_parser("prune", help="drop every queue row with a status (default merged)")
+    prune.add_argument("--status", action="append", choices=QUEUE_STATUSES, default=None,
+                       help="status to drop; repeat to widen (default: merged)")
 
     wait = acts.add_parser("wait", help="add a waiting-on-Roberto item")
     wait.add_argument("text", help="filed as a question (the short form of `ask`, #1102)")
