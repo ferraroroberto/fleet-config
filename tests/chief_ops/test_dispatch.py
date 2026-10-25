@@ -58,7 +58,7 @@ check(
 # set exactly as a live session carries it.
 
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
-                  jobs=None, allow_during_fleet_job=False, start_exc=None):
+                  jobs=None, allow_during_fleet_job=False, start_exc=None, model=None):
     posted = []
     requested = []
     _run_dispatch.start_timeout = None
@@ -94,7 +94,7 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         os.environ[co.LAUNCHER_SESSION_ID_ENV_VAR] = env_sid
     try:
         args = argparse.Namespace(
-            repo=repo, number=number, mode="start", model=None,
+            repo=repo, number=number, mode="start", model=model,
             brief_file=brief_file, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
             allow_during_fleet_job=allow_during_fleet_job,
         )
@@ -130,6 +130,21 @@ check(rc == 1 and posted == [],
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
 check(rc == 0 and len(posted) == 1,
       "cmd_dispatch: an unoccupied repo is unaffected by the exclusion")
+
+
+# ---- cmd_dispatch --model: the grok alias reaches the launcher qualified ---
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="grok")
+check(rc == 0 and posted[0].get("model") == "grok:grok-4.5",
+      "cmd_dispatch: --model grok posts the launcher's grok:grok-4.5")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="opus")
+check(rc == 0 and posted[0].get("model") == "opus",
+      "cmd_dispatch: a non-alias model is posted as typed")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
+check(rc == 0 and "model" not in posted[0],
+      "cmd_dispatch: no --model sends no model key")
 
 
 # ---- cmd_dispatch --brief-file: the brief rides the launch command (#944) ---

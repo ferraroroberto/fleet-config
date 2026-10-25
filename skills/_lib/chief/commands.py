@@ -55,6 +55,11 @@ DEFAULT_VERIFY_TIMEOUT = 20.0
 # default leaves the server spawning anyway, and a blind retry then double-spawns.
 DISPATCH_TIMEOUT = 120.0
 
+# Short names the chief types, mapped to the launcher's provider-qualified
+# model; anything else is sent as typed. Grok Build ships one model, so the
+# alias carries no tier.
+DISPATCH_MODEL_ALIASES = {"grok": "grok:grok-4.5"}
+
 
 def load_dispatch_brief(path: str) -> str:
     """A `--brief-file`'s text, or ValueError naming why it can't be one.
@@ -298,7 +303,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     body = {"repo": args.repo, "number": args.number, "mode": args.mode}
     if args.model:
-        body["model"] = args.model
+        body["model"] = DISPATCH_MODEL_ALIASES.get(args.model, args.model)
     if brief is not None:
         body["brief"] = brief
     try:

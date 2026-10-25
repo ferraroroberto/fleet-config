@@ -20,6 +20,22 @@ grok 0.2.114, polled at 60 ms, produced the transition
 The `idle` cell stays unproven on purpose — an unverified state is recorded as
 unavailable, never inferred.
 
+Re-run on grok 1.0.70, headless `grok -p` in a throwaway repo with the
+launcher's session and agent stamps set and the hooks state directory
+isolated, so the live Board and chief inbox were untouched:
+
+| Signal | grok 1.0.70 result |
+|---|---|
+| Claude-compat reach (`-VerifyGrokCompat` checks) | all six `compat.claude` cells enabled; global instructions and fleet skills resolve |
+| `PreToolUse` guard | a fleet guard refused a file edit and Grok honored it |
+| chief inbox `turn-end` | received in every run, `agent: "grok"` |
+| chief inbox `session-end` | **intermittent** — received in 2 of 3 captured runs. `SessionEnd` always fired and removed the row, but Grok bounds each `SessionEnd` hook by a 1.5 s default and a shim-launched hook takes 0.85–1.4 s, so the inbox write is sometimes cut off |
+| chief inbox `needs-input` | **unknown** — headless runs raised no permission prompt, so no event could be observed |
+| session-end `Stop` | **leaks as a `turn-end`.** Grok now sends the snake-case `hook_event_name: "Stop"` alias beside `hookEventName: "stop"`; the alias wins in `normalize_payload()`, so the `reason` filter never applies. The Board is protected by the session-end tombstone; the chief inbox receives a spurious `turn-end` |
+
+On 1.0.70 the session-end `Stop` can also fire just before `SessionEnd`
+rather than after it.
+
 ## Why the gaps are safe
 
 Any state a writer can't prove is never fabricated. `app-launcher/src/board_sessions.py`
