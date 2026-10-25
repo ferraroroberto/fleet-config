@@ -221,8 +221,8 @@ def _work_summary_unit_checks() -> Tuple[int, int]:
     }
     check("work_summary: format_block renders the exact roll-up",
           ws.format_block(data) ==
-          f"📊 +308 {M}47 · 5 files\n"
-          f"   🆕 2 new (+210)  ✏️ 2 changed (+98 {M}40)  🗑️ 1 deleted ({M}7)")
+          f"📊 +308 {M}47 · 5 files\n\n"
+          f"🆕 2 new (+210)  ✏️ 2 changed (+98 {M}40)  🗑️ 1 deleted ({M}7)")
 
     check("work_summary: format_table is churn-sorted with status icons",
           ws.format_table(data) ==
@@ -238,7 +238,21 @@ def _work_summary_unit_checks() -> Tuple[int, int]:
     one = {"additions": 8, "deletions": 1, "changedFiles": 1,
            "files": [{"path": "x.py", "additions": 8, "deletions": 1, "changeType": "MODIFIED"}]}
     check("work_summary: empty buckets dropped + singular 'file'",
-          ws.format_block(one) == f"📊 +8 {M}1 · 1 file\n   ✏️ 1 changed (+8 {M}1)")
+          ws.format_block(one) == f"📊 +8 {M}1 · 1 file\n\n✏️ 1 changed (+8 {M}1)")
+
+    # Markdown-safe: a chat renderer joins consecutive lines into one paragraph and
+    # treats an indented line as preformatted, so the buckets sit in their own
+    # paragraph with no leading whitespace on any line.
+    block = ws.format_block(data)
+    check("work_summary: format_block is two flush-left paragraphs (renders as two lines)",
+          len(block.split("\n\n")) == 2
+          and all(ln == ln.lstrip() for ln in block.splitlines()))
+
+    # The completion ping appends the block under its canonical line as plain text.
+    check("work_summary: ping text keeps the roll-up readable as plain text",
+          f"✅ done\n{block}" ==
+          f"✅ done\n📊 +308 {M}47 · 5 files\n\n"
+          f"🆕 2 new (+210)  ✏️ 2 changed (+98 {M}40)  🗑️ 1 deleted ({M}7)")
 
     # Degrade path: no files (or a {} from a failed gh call) → "" both renderings.
     check("work_summary: no files → empty block and empty table",

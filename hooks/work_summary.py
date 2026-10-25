@@ -8,7 +8,8 @@ renderings, both built **here in Python** so they're byte-stable:
   as the chat report's header::
 
       📊 +312 −47 · 8 files
-         🆕 3 new (+210)  ✏️ 4 changed (+98 −40)  🗑️ 1 deleted (−7)
+
+      🆕 3 new (+210)  ✏️ 4 changed (+98 −40)  🗑️ 1 deleted (−7)
 
 * :func:`format_table` — a per-file markdown table (status · file · + · −,
   churn-sorted), for the in-chat finish/yolo report where a renderer shows it as
@@ -74,9 +75,10 @@ def _plural(n: int, noun: str) -> str:
 def format_block(data: Dict) -> str:
     """The compact roll-up block. Pure / testable.
 
-    Line 1 is the authoritative total (``+add −del · N files``); line 2 breaks it
-    into new / changed / deleted buckets, each dropped cleanly when its count is
-    zero. Returns ``""`` when the PR touched no files (so a caller appends
+    Paragraph 1 is the authoritative total (``+add −del · N files``); paragraph 2,
+    after a blank line, breaks it into new / changed / deleted buckets, each dropped
+    cleanly when its count is zero. No line is indented, so it pastes into chat as
+    markdown (outside a code fence) and renders as two lines. Returns ``""`` when the PR touched no files (so a caller appends
     nothing rather than an empty header).
     """
     files = data.get("files") or []
@@ -106,7 +108,10 @@ def format_block(data: Dict) -> str:
     if counts["deleted"]["n"]:
         parts.append(f"🗑️ {counts['deleted']['n']} deleted ({MINUS}{counts['deleted']['del']})")
 
-    return head if not parts else f"{head}\n   {'  '.join(parts)}"
+    # A blank line, not an indent: a chat renderer joins consecutive lines into one
+    # paragraph and treats indentation as preformatted, so only a paragraph break
+    # keeps the buckets on their own line. Still plain text in the Telegram ping.
+    return head if not parts else f"{head}\n\n{'  '.join(parts)}"
 
 
 def format_table(data: Dict) -> str:

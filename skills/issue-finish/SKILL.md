@@ -460,7 +460,9 @@ next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
 only the first is reporting a deploy it never established.
 
 Then append the **work-summary** — the file/LOC shape of what shipped — by
-running the deterministic helper and echoing its output verbatim:
+running the deterministic helper and pasting its output verbatim into the reply
+as plain markdown — **never inside a code fence** (a chat renderer shows a fenced
+table as literal `|` text; it renders only outside one):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr <PR_URL>
