@@ -34,6 +34,9 @@ flowchart TB
   SCOPED --> PROJECTSKILLS["maintained .claude/.agents skills\nindividual same-scope discovery routes"]
   INSTALL --> CODEX
   INSTALL -->|"-ConfigureCodexStatusline"| CODEXSTATUS --> CODEX
+  GROKSTATUS["grok_statusline.py\nGrok command status row + opt-in ~/.grok/config.toml merge\nClaude limits from the quota snapshot, never a Grok limit"]
+  INSTALL -->|"-ConfigureGrokStatusline"| GROKSTATUS
+  QUOTAS -.->|Claude windows| GROKSTATUS
   INSTALL -->|"-ConfigureCodexModelPolicy"| CODEXPOLICY --> CODEX
   INSTALL --> PIHOME
   PIPOLICY["pi/extensions/policy_hooks.ts\nPi tool_call/tool_result -> bounded hidden Python guards\nversioned allow/block/warn; compression preserves advice"]

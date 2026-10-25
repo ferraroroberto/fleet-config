@@ -94,6 +94,7 @@ fleet-config/
 ├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own; runs are diffed by rule id from a local ledger under hooks/state/design-review/ and filed as one managed design-review issue per repo on request (fleet-config#971, #972, #973, #974)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
+├── grok_statusline.py              # Grok Build status line (command row, Claude's limits labelled as Claude's) + its opt-in ~/.grok/config.toml merge
 ├── codex_model_policy.py           # opt-in, atomic merge of the versioned Codex model policy (codex/) into ~/.codex/config.toml
 ├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
 ├── config_edit.py                  # atomic_write, line-level TOML regexes and the quote/comment-aware TOML scanner shared by the three root config writers above
@@ -201,6 +202,8 @@ each agent supports, what is wired, and where a class is a deliberate non-goal
 — is in [`docs/cross-agent-parity.md`](docs/cross-agent-parity.md).
 
 To add the supported context, model, location, branch, five-hour-limit, and weekly-limit items to the native Codex terminal footer, run `.\install.ps1 -ConfigureCodexStatusline` from the primary checkout. This opt-in merge preserves existing footer items, their order, comments, `terminal_title`, and unrelated settings; see [`docs/install.md`](docs/install.md#codex-terminal-footer-opt-in).
+
+To turn on the Grok Build status line, run `.\install.ps1 -ConfigureGrokStatusline` from the primary checkout. It adds a command-type `[ui.status_line]` to `~/.grok/config.toml` only when none is set; see [`docs/install.md`](docs/install.md#grok-status-line-opt-in).
 
 To apply the versioned Codex model policy, run `.\install.ps1 -ConfigureCodexModelPolicy` from the primary checkout. It defaults new threads to Sol, filters the native picker to Luna, Terra, Sol, and Astra, and installs the unbudgeted `easy` (Luna/xhigh), `normal` (Terra/high), and `hard` (Sol/high) native roles; see [`docs/install.md`](docs/install.md#codex-model-policy-opt-in). Context capacity is controlled by the native model, not this policy.
 

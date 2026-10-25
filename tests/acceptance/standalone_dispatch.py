@@ -590,6 +590,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("codex_statusline", "test_codex_statusline.py",
      "the opt-in Codex footer merger preserves custom settings/comments, appends native quota items, "
      "and stays idempotent against synthetic config files (#752)"),
+    ("grok_statusline", "test_grok_statusline.py",
+     "the Grok status row labels Claude's limits as Claude's, never shows a Grok limit or a zero for "
+     "an unknown, and the opt-in config merge only adds a row where none is set"),
     ("codex_model_policy", "test_codex_model_policy.py",
      "the opt-in Codex model-policy merger preserves unrelated settings, validates the generated four-model catalog, "
      "and leaves config untouched on a failed native preflight (#793)"),
