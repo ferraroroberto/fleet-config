@@ -83,9 +83,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 

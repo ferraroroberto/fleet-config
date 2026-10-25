@@ -66,7 +66,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import state_dir  # noqa: E402
+from fleet_core.hooks_state import state_dir  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 THRESHOLD_S = 1.0

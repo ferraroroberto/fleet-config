@@ -70,7 +70,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import hooks_state  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 
 from . import filing, report  # noqa: E402
 

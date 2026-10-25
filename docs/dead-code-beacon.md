@@ -1,6 +1,6 @@
 # Dead-code start beacon
 
-Static analysis can't tell whether a script that only a human, a desktop shortcut or a Stream Deck button starts is still used. The Step 1 inventory (`skills/_lib/entry_inventory.py`) left 170 of `automation`'s 191 files `unknown` for that reason. The start beacon (`skills/_lib/start_beacon.py`) records which scripts actually run, so a 90-day window can move them to `live` or `cold`. It is report-only: nothing is deleted on its evidence.
+Static analysis can't tell whether a script that only a human, a desktop shortcut or a Stream Deck button starts is still used. The Step 1 inventory (`skills/_lib/dead_code/entry_inventory.py`) left 170 of `automation`'s 191 files `unknown` for that reason. The start beacon (`skills/_lib/dead_code/start_beacon.py`) records which scripts actually run, so a 90-day window can move them to `live` or `cold`. It is report-only: nothing is deleted on its evidence.
 
 ## How it works
 
@@ -26,11 +26,11 @@ One file, `fleet_start_beacon.pth`, goes into the target repo's `.venv` site-pac
 
 ```powershell
 # install: adds the one .pth file (idempotent; refuses when the venv is missing, never creates one)
-& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/start_beacon.py install E:/automation/automation
+& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/dead_code/start_beacon.py install E:/automation/automation
 # status: installed / current / ledger headers / last hit / a logged failure
-& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/start_beacon.py status E:/automation/automation
+& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/dead_code/start_beacon.py status E:/automation/automation
 # remove: deletes the .pth and records the uninstall header; the ledger stays for the report
-& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/start_beacon.py uninstall E:/automation/automation
+& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/dead_code/start_beacon.py uninstall E:/automation/automation
 ```
 
 Deleting `E:\automation\automation\.venv\Lib\site-packages\fleet_start_beacon.pth` by hand also removes it. Without the uninstall header, the inventory reads that as `removed` and keeps no-hit entries `unknown`. The `.venv` itself is never created, deleted or rebuilt, and nothing in the target repo's git tree changes. Recreating the venv drops the `.pth` the same way.

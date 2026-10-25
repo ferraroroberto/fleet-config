@@ -19,8 +19,8 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import scheduled_runner as runner
-from runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
-import process_scope
+from scheduled.runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
+from scheduled import process_scope
 sys.path.insert(0, str(ROOT / "tests" / "_lib"))
 from orphan_fixtures import held_provider_script, kernel32_handles
 from readiness_clock import ReadinessClock
@@ -584,7 +584,7 @@ class ScheduledRunnerTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
     def test_ownership_rejection_never_launches_provider(self):
-        from process_scope import _WindowsJob
+        from scheduled.process_scope import _WindowsJob
         with tempfile.TemporaryDirectory(prefix="runner_ownership_") as folder:
             marker = Path(folder) / "provider_started"
             script = f"from pathlib import Path; Path({str(marker)!r}).touch()"
@@ -595,7 +595,7 @@ class ScheduledRunnerTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
     def test_orphan_pipe_matrix_and_unconfirmed_cleanup_are_bounded(self):
-        from process_scope import _WindowsJob
+        from scheduled.process_scope import _WindowsJob
         flags = subprocess.CREATE_NO_WINDOW
         good = "\n".join(json.dumps(e) for e in self.fixtures["Codex"])
         for pipe in ("stdout", "stderr", "both", "neither"):

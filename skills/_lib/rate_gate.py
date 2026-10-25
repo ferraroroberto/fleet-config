@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import state_dir  # noqa: E402
+from fleet_core.hooks_state import state_dir  # noqa: E402
 
 DEFAULT_THRESHOLD_PCT = 70.0
 DEFAULT_MAX_AGE_SECONDS = 1800  # 30 min — a statusline render is "recent" within this

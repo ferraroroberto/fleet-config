@@ -33,8 +33,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import skill_description as sd  # noqa: E402
-from fleet_repo_scan import is_linked_worktree as sd_is_wt  # noqa: E402
+from fleet_core import skill_description as sd  # noqa: E402
+from fleet_core.fleet_repo_scan import is_linked_worktree as sd_is_wt  # noqa: E402
 
 
 def _load(name: str, rel: str):

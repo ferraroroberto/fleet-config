@@ -2,7 +2,7 @@
 
 #816 fixed ``hooks/session_state.py``; this extends the same contract to the
 two other writers into the same shared directory, now both routed through one
-helper per tree (``hooks/_lib.py`` and ``skills/_lib/hooks_state.py``):
+helper per tree (``hooks/_lib.py`` and ``skills/_lib/fleet_core/hooks_state.py``):
 
 * ``hooks/codex_attention.py`` -> ``codex-attention-dedup.json``
 * ``skills/_lib/active_issue.py`` -> ``active-issues.json`` (and
@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT / "hooks"))
 import _lib as hooks_lib  # noqa: E402
 import codex_attention  # noqa: E402
 import active_issue  # noqa: E402
-import hooks_state  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location(
     "session_state_under_test_864", ROOT / "hooks" / "session_state.py")

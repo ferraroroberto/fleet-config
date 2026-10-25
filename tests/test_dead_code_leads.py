@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/dead_code_leads.py (fleet-config#1527).
+"""Unit tests for skills/_lib/dead_code/dead_code_leads.py (fleet-config#1527).
 
 `/codebase-audit` bucket 2 gets vulture leads at floor 60 filtered by kind, a
 caller search, and an honest `not-confirmed` state when the tool cannot run.
@@ -19,7 +19,7 @@ from typing import Dict
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import dead_code_leads as dcl  # noqa: E402
+from dead_code import dead_code_leads as dcl  # noqa: E402
 from git_run import run_git  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))

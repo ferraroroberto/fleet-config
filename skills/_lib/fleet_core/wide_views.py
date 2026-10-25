@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_toml  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import fleet_toml  # noqa: E402
 
 
 def load_wide_views(root: Optional[Path]) -> Tuple[List[str], Optional[str]]:

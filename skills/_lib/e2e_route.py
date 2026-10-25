@@ -68,9 +68,9 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fleet_toml  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 

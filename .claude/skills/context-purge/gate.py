@@ -63,9 +63,9 @@ FLEET_ROOT = REPO_ROOT.parent
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 import git_run  # noqa: E402
-from audit_issue_client import run_audit_issue  # noqa: E402
-from fleet_repo_scan import ignored_repos, is_linked_worktree  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from audit_ledger.audit_issue_client import run_audit_issue  # noqa: E402
+from fleet_core.fleet_repo_scan import ignored_repos, is_linked_worktree  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Repo-relative, matching every other _lib cross-reference
 # in the tree (e.g. .claude/skills/learning-log/gather.py's HELPER) — the

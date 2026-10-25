@@ -54,8 +54,8 @@ def _names_an_attribute(*attrs: str) -> Callable[[ast.AST], bool]:
 
 
 RULES: Tuple[Rule, ...] = (
-    Rule("fleet_toml", "skills/_lib/fleet_toml.py (`load_checked` / `load_state`)",
-         ("skills/", ".claude/skills/"), frozenset({"skills/_lib/fleet_toml.py"}),
+    Rule("fleet_toml", "skills/_lib/fleet_core/fleet_toml.py (`load_checked` / `load_state`)",
+         ("skills/", ".claude/skills/"), frozenset({"skills/_lib/fleet_core/fleet_toml.py"}),
          frozenset({
              ".claude/skills/system-map/build_data.py",
              "skills/_lib/perf_review/report.py",
@@ -63,8 +63,8 @@ RULES: Tuple[Rule, ...] = (
              "skills/_lib/vendored_drift.py",
          }),
          _reads_fleet_toml_itself),
-    Rule("atomic_write", "skills/_lib/hooks_state.py `atomic_write_text`",
-         ("skills/", ".claude/skills/", "config_edit.py"), frozenset({"skills/_lib/hooks_state.py"}),
+    Rule("atomic_write", "skills/_lib/fleet_core/hooks_state.py `atomic_write_text`",
+         ("skills/", ".claude/skills/", "config_edit.py"), frozenset({"skills/_lib/fleet_core/hooks_state.py"}),
          frozenset({
              "config_edit.py",
              "skills/_lib/chief/mailbox.py",

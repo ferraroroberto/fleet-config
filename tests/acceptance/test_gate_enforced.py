@@ -31,7 +31,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / ".claude" / "skills" / "prompt-audit"))
-import dead_code_leads as dcl  # noqa: E402
+from dead_code import dead_code_leads as dcl  # noqa: E402
 import prompt_audit as pa  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from gate_coverage import enforced, reader  # noqa: E402

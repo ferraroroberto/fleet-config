@@ -18,7 +18,7 @@ into step 10's report.
 
 ## Step 5a — dead-code leads (fleet-config#1527)
 
-`skills/_lib/dead_code_leads.py leads <repo> --ruff` prints one JSON verdict:
+`skills/_lib/dead_code/dead_code_leads.py leads <repo> --ruff` prints one JSON verdict:
 `state` (`ok` | `not-applicable` | `skipped` | `not-confirmed`), `reason`, `gate`, `hits[]` (`file`,
 `line`, `kind`, `name`, `test_only`) and a `ruff` block. It runs vulture at floor
 60, because vulture scores an unused function, class, method or property at

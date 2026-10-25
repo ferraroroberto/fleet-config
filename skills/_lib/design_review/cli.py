@@ -82,8 +82,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import fleet_repo_scan  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 from . import capture, evaluate, filing, fleet, inventory, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
 

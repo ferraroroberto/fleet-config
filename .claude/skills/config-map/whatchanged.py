@@ -13,7 +13,7 @@ surface. Coverage counts are intentionally excluded (numeric churn, not a
 structural change).
 
 The generic diff/CLI scaffolding (shared with ``/system-map``'s twin) lives in
-``skills/_lib/snapshot_diff.py`` — this module supplies only the
+``skills/_lib/fleet_core/snapshot_diff.py`` — this module supplies only the
 config-specific ``parse_config``/``format_line``.
 
 Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-import snapshot_diff  # noqa: E402
+from fleet_core import snapshot_diff  # noqa: E402
 
 
 def parse_config(js_text: str) -> Dict[str, dict]:

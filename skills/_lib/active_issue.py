@@ -31,7 +31,7 @@ from typing import AbstractSet, Any, Callable, Dict, Iterator, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
-from hooks_state import atomic_write_text, state_dir  # noqa: E402
+from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 from worktree_residue import WT_SEP  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"

@@ -73,8 +73,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 SCHEMA = 1
 

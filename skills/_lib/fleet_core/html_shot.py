@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 from urllib.parse import urlsplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from no_window import NO_WINDOW  # noqa: E402
 
 _DEFAULT_CHROME = r"C:/Program Files/Google/Chrome/Application/chrome.exe"

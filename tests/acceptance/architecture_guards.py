@@ -312,7 +312,7 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
     import tomllib
 
     spec = importlib.util.spec_from_file_location(
-        "fleet_repo_scan", REPO / "skills" / "_lib" / "fleet_repo_scan.py"
+        "fleet_repo_scan", REPO / "skills" / "_lib" / "fleet_core" / "fleet_repo_scan.py"
     )
     scan = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(scan)  # type: ignore[union-attr]
@@ -355,7 +355,7 @@ def _fleet_gate_check() -> Tuple[int, int, int]:
     """
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("fleet_gate", REPO / "skills" / "_lib" / "fleet_gate.py")
+    spec = importlib.util.spec_from_file_location("fleet_gate", REPO / "skills" / "_lib" / "fleet_core" / "fleet_gate.py")
     gate = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = gate  # @dataclass resolves its module through sys.modules
     spec.loader.exec_module(gate)  # type: ignore[union-attr]

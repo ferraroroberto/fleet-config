@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import fleet_toml  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from structure_debt.baseline import Unknown, read_ref_file  # noqa: E402
 

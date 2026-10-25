@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import hooks_state
+from fleet_core import hooks_state
 
 from . import digest
 

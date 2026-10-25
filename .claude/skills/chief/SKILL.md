@@ -233,7 +233,7 @@ every poll:
   `curl -sk -X POST https://127.0.0.1:8445/api/board/github/refresh`
   (not covered by the helper — a one-off action, not a recurring read).
 - Fleet membership (what repos exist): `fleet_repos()` from
-  `skills/_lib/fleet_repo_scan.py`, or `hooks/projects.toml` directly.
+  `skills/_lib/fleet_core/fleet_repo_scan.py`, or `hooks/projects.toml` directly.
 
 ## Acting (only these — never spawn processes yourself)
 
@@ -395,7 +395,7 @@ checkout of the merged default branch** — never a feature branch, never one of
 the worktrees (whose `.venv` is a junction into the primary's real venv). That
 buys the guarantee that the merged tree is what ran.
 
-**It also costs coverage, invisibly unless reported.** A fresh checkout lacks the repo's gitignored runtime files and host state, so tests needing either skip rather than fail, and a skip is not a pass. A merge-verification report is complete only when it names that skip delta (`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`), and never closes the gap by copying a live config into a scratch checkout. Procedure, unknown states and the measured incident: [merge-verification.md](merge-verification.md).
+**It also costs coverage, invisibly unless reported.** A fresh checkout lacks the repo's gitignored runtime files and host state, so tests needing either skip rather than fail, and a skip is not a pass. A merge-verification report is complete only when it names that skip delta (`skills/_lib/chief/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`), and never closes the gap by copying a live config into a scratch checkout. Procedure, unknown states and the measured incident: [merge-verification.md](merge-verification.md).
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check

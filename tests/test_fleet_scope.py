@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import design_sweep_scan as dss  # noqa: E402
 import fleet_audit_scan as fas  # noqa: E402
-import fleet_repo_scan as frs  # noqa: E402
+from fleet_core import fleet_repo_scan as frs  # noqa: E402
 import fleet_status as fst  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))

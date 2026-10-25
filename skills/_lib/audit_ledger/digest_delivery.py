@@ -59,7 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 
 DEFAULT_MAX_AGE_HOURS = 12.0

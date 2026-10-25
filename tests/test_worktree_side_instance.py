@@ -41,7 +41,7 @@ os.environ["CLAUDE_HOOKS_STATE_DIR"] = _STATE_DIR
 _LIB = Path(__file__).resolve().parent.parent / "skills" / "_lib"
 sys.path.insert(0, str(_LIB))
 import worktree_claim as wc  # noqa: E402
-import worktree_config as wcfg  # noqa: E402
+from worktree import worktree_config as wcfg  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402

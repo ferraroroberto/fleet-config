@@ -119,7 +119,7 @@ def atomic_write_text(
     ``open()`` unchanged (``None`` = platform line endings), so every file
     keeps its bytes. ``temp_stem`` (a sibling of ``path``) names and sweeps the temps
     instead of ``path`` itself, for a writer whose every target is unique.
-    Mirrored in ``skills/_lib/hooks_state.py``.
+    Mirrored in ``skills/_lib/fleet_core/hooks_state.py``.
     """
     stem = temp_stem or path
     sweep_stale_atomic_temps(stem)
@@ -314,7 +314,7 @@ def repair_mojibake(text: Optional[str]) -> Optional[str]:
 # import carries no ordering hazard. The `_ACTIVE_AGENT` / `_ACTIVE_EVENT`
 # globals the emitters read live there, not here.
 
-from harness_wire import (  # noqa: E402
+from hook_wire.harness_wire import (  # noqa: E402
     AGENT_HINT_KEY as AGENT_HINT_KEY,
     allow as allow,
     block as block,
@@ -803,7 +803,7 @@ def command_string(payload: Dict[str, Any]) -> str:
 # makes this reverse import safe despite `_lib` not having finished loading
 # yet at the point it reaches this line.
 
-from edit_events import (  # noqa: E402
+from hook_wire.edit_events import (  # noqa: E402
     EditEvent as EditEvent,
     EditTarget as EditTarget,
     edit_event as edit_event,
@@ -819,7 +819,7 @@ from edit_events import (  # noqa: E402
 # import. registry.py has no dependency on `_lib`, so this import carries no
 # ordering hazard.
 
-from registry import (  # noqa: E402
+from hook_wire.registry import (  # noqa: E402
     BOARD_URL_ENV_VAR as BOARD_URL_ENV_VAR,
     DOTENV_PATH_ENV_VAR as DOTENV_PATH_ENV_VAR,
     PROJECTS_TOML as PROJECTS_TOML,

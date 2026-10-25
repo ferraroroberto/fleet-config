@@ -18,8 +18,8 @@ from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
-import fleet_toml  # noqa: E402
-import hooks_state  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 from .http_probe import SKIPPED_STREAM  # noqa: E402
 
 BUDGETS_PATH = Path(__file__).resolve().parent / "budgets.toml"

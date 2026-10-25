@@ -29,11 +29,11 @@ import tomllib
 from pathlib import Path
 from typing import Dict, FrozenSet, Iterator, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 
-# skills/_lib/fleet_repo_scan.py -> repo root is two levels up.
-_DEFAULT_PROJECTS_TOML = Path(__file__).resolve().parent.parent.parent / "hooks" / "projects.toml"
+# skills/_lib/fleet_core/fleet_repo_scan.py -> repo root is two levels up.
+_DEFAULT_PROJECTS_TOML = Path(__file__).resolve().parents[3] / "hooks" / "projects.toml"
 # Redirects fleet-run reads only, never the hooks' registry (`CLAUDE_HOOKS_PROJECTS_TOML`):
 # suites that build their own temp registry tree must not be pulled onto another file.
 # Only the acceptance run sets it, to the tracked example; an unset variable never

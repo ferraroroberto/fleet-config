@@ -20,7 +20,7 @@ import threading
 import time
 from typing import BinaryIO, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from no_window import NO_WINDOW
 
 TERMINATE_TIMEOUT_SECONDS = 2.0

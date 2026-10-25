@@ -1,4 +1,4 @@
-"""Unit tests for the pure logic in skills/_lib/skip_delta.py (fleet-config#846).
+"""Unit tests for the pure logic in skills/_lib/chief/skip_delta.py (fleet-config#846).
 
 Exercises `parse_pytest_output` / `compare` directly against realistic pytest
 terminal output, plus the `capture` + `compare` CLI end-to-end through a
@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import skip_delta as sd  # noqa: E402
+from chief import skip_delta as sd  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -206,7 +206,7 @@ except ValueError as exc:
 # ---- CLI end-to-end ----
 
 PYTHON = sys.executable
-CLI = REPO / "skills" / "_lib" / "skip_delta.py"
+CLI = REPO / "skills" / "_lib" / "chief" / "skip_delta.py"
 
 tmp = Path(tempfile.mkdtemp(prefix="skip-delta-"))
 try:

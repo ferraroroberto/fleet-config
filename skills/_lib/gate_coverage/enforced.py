@@ -26,10 +26,10 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import fleet_toml  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 from gate_coverage import reader  # noqa: E402
 from structure_debt.baseline import Unknown, read_ref_file  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Each ratchet table -> the (codebase-audit bucket label, check) pairs it enforces. A ratchet
 # owns one detectable class inside a bucket, never the bucket's judgment, so the rest of the

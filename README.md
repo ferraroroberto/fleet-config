@@ -104,10 +104,10 @@ fleet-config/
 ├── shell/
 │   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
-│   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports harness_wire.py + registry.py + edit_events.py so no hook's import line changes (fleet-config#819, #931)
-│   ├── harness_wire.py             # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound (split from _lib.py, fleet-config#931)
-│   ├── registry.py                 # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing (split from _lib.py, fleet-config#819)
-│   ├── edit_events.py              # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
+│   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports hook_wire/ (harness_wire.py + registry.py + edit_events.py) so no hook's import line changes (fleet-config#819, #931)
+│   ├── hook_wire/harness_wire.py   # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound (split from _lib.py, fleet-config#931)
+│   ├── hook_wire/registry.py       # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing (split from _lib.py, fleet-config#819)
+│   ├── hook_wire/edit_events.py    # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
 │   ├── projects.toml.example       # tracked template of the machine-local, gitignored projects.toml: per-project nuance (ports, gate triggers, never-kill ports) + the fleet-scope switch (docs/fleet-scope.md)
 │   ├── run-hook.ps1                # Claude Code shim — settings.template.json routes hooks through this
 │   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it (fleet-config#1274)
@@ -140,7 +140,7 @@ fleet-config/
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
-│   ├── transcript_readers.py       # native Claude/Codex stored transcript normalization
+│   ├── conversation/transcript_readers.py  # native Claude/Codex stored transcript normalization
 │   ├── conversation_capture.py     # Stop hook: captures a session to markdown (projects.toml-driven, opt-in; wired from the project's own settings.json)
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json

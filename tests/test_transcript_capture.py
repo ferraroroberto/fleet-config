@@ -14,7 +14,7 @@ import _lib
 import conversation_capture as cc
 import conversation_search as cs
 import conversation_index as ci
-import transcript_readers as tr
+from conversation import transcript_readers as tr
 
 SID = '11111111-1111-4111-8111-111111111111'
 OTHER = '22222222-2222-4222-8222-222222222222'

@@ -39,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import design_lint  # noqa: E402
-import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 
 
 def _token_css_files(root: Path) -> list[Path]:

@@ -24,7 +24,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-from transcript_readers import Transcript, read_transcript  # noqa: E402
+from conversation.transcript_readers import Transcript, read_transcript  # noqa: E402
 
 logger = logging.getLogger("conversation_capture")
 

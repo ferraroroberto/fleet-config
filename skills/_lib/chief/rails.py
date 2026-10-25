@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-import fleet_repo_scan
+from fleet_core import fleet_repo_scan
 
 
 # Worker cap used when the launcher's /api/board/chief/settings carries no

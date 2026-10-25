@@ -18,7 +18,7 @@ Exit 0 = a digest comment landed inside the window. Non-zero = it did not, or
 the question could not be answered at all; both are "not confirmed", which is
 the whole reason this exists.
 
-The predicate itself now lives in `skills/_lib/digest_delivery.py`, shared with
+The predicate itself now lives in `skills/_lib/audit_ledger/digest_delivery.py`, shared with
 `/context-purge`'s check (fleet-config#627) -- two ~100-line near-copies of the
 rule "an unestablished delivery is not a delivery" were free to drift on
 exactly the property that matters. This caller stays **lenient**: a dated
@@ -39,7 +39,7 @@ from pathlib import Path
 # this repo's own <repo>-wt-N worktrees would silently use main's helper rather
 # than the one it is being tested against.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-import digest_delivery  # noqa: E402
+from audit_ledger import digest_delivery  # noqa: E402
 
 REPO = "ferraroroberto/fleet-config"
 KIND = "digest"

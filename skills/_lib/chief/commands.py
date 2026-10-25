@@ -23,14 +23,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import active_issue
 import chief_managed
 import chief_plan
-import chief_sweep
+from chief import chief_sweep
 import dirty_tree_check
-import hooks_state
+from fleet_core import hooks_state
 from no_window import NO_WINDOW
 import worktree_claim
 # `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
-from steer_delivery import (
+from chief.steer_delivery import (
     INPUT_DEFERRED,
     INPUT_NEGATIVE_REASONS,
     VERDICT_REASONS,

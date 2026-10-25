@@ -26,7 +26,7 @@ A dry run (`scan=dry-run`) posts no comment, so it fails (1) unless an earlier
 real run's digest is still inside the window. No stamp, no fields, or an
 unreadable ledger are "not confirmed", never a pass.
 
-The shared predicate lives in `skills/_lib/digest_delivery.py`; messages stay
+The shared predicate lives in `skills/_lib/audit_ledger/digest_delivery.py`; messages stay
 pure ASCII (stdout is a pipe). Behaviour pinned by
 `tests/test_delivery_check_contract.py`.
 
@@ -42,7 +42,7 @@ from typing import Optional
 
 # Repo-relative, matching audit.py.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-import digest_delivery  # noqa: E402
+from audit_ledger import digest_delivery  # noqa: E402
 
 REPO = "ferraroroberto/fleet-config"
 KIND = "prompt-audit"

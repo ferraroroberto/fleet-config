@@ -466,7 +466,7 @@ def iter_repos(source_root: Path) -> Iterator[Path]:
     `.git` must be a **directory**: a linked worktree's `.git` is a *file*, and a
     sibling `<repo>-wt-<N>` tree would otherwise be snapshotted as a second repo
     (the same guard, and the same reasoning, as
-    `skills/_lib/fleet_repo_scan.iter_fleet_repos`).
+    `skills/_lib/fleet_core/fleet_repo_scan.iter_fleet_repos`).
     """
     if not source_root.is_dir():
         return

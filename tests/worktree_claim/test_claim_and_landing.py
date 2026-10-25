@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 
-from _suite import _h, check, sp, wc  # noqa: E402
+from _suite import _h, check, sp, wc, wclaim, wgit  # noqa: E402
 
 
 # ---- worktree_path: sibling convention, prefix-matches cwd_prefix ----
@@ -167,7 +167,7 @@ try:
             race_lock, {"created": time.time(), "issue": "B"}, time.time(), 8)[0]
         release_first.set()
 
-    wc.write_meta = paced_write_meta
+    wclaim.write_meta = paced_write_meta
     try:
         ta = threading.Thread(target=racer_a)
         tb = threading.Thread(target=racer_b)
@@ -176,7 +176,7 @@ try:
         ta.join(timeout=10)
         tb.join(timeout=10)
     finally:
-        wc.write_meta = real_write_meta
+        wclaim.write_meta = real_write_meta
 
     check(not ta.is_alive() and not tb.is_alive(), "race: both racers finished (no deadlock)")
     modes = list(race_results.values())
@@ -185,7 +185,7 @@ try:
     check(sorted(modes) == ["primary", "worktree"],
           "race: the loser falls back to worktree, not a second primary (#334)")
 finally:
-    wc.write_meta = real_write_meta
+    wclaim.write_meta = real_write_meta
     shutil.rmtree(race_base, ignore_errors=True)
 
 
@@ -277,7 +277,7 @@ for _name in ("SERVICE_LIVE", "live_service_check", "declared_service",
               "listening_ports", "probe_service"):
     check(not hasattr(wc, _name),
           f"service_probe: {_name} has exactly one home -- worktree_claim no longer carries it")
-check("worktree_claim" not in sys.modules["service_probe"].__dict__,
+check("worktree_claim" not in sys.modules["worktree.service_probe"].__dict__,
       "service_probe: does not import worktree_claim back -- the dependency runs one way")
 
 
@@ -651,7 +651,7 @@ try:
     def _dead_common_dir(_wt):
         raise _sp.CalledProcessError(128, ["git", "rev-parse"])
 
-    wc.common_dir = _dead_common_dir
+    wgit.common_dir = _dead_common_dir
 
     check(wc.primary_for_worktree(leftover) == primary,
           "primary_for_worktree: falls back to the <repo>-wt-<N> convention when git is dead (#526)")
@@ -660,8 +660,8 @@ try:
 
     # Full teardown over the leftover: must not raise, must strip first, must go.
     order = []
-    wc._strip_junction = lambda p: order.append(("strip", p))
-    wc._git = lambda repo, *a, **k: order.append(("git", a[0])) or _sp.CompletedProcess([], 0, "", "")
+    wgit._strip_junction = lambda p: order.append(("strip", p))
+    wgit._git = lambda repo, *a, **k: order.append(("git", a[0])) or _sp.CompletedProcess([], 0, "", "")
 
     rc = wc.remove_worktree(leftover)
     check(rc == 0, "remove_worktree: deregistered-but-present leftover removed, exit 0 (#526)")
@@ -691,9 +691,9 @@ try:
     finally:
         shutil.rmtree = real_rmtree
 finally:
-    wc.common_dir = real_common_dir
-    wc._git = real_git
-    wc._strip_junction = real_strip
+    wgit.common_dir = real_common_dir
+    wgit._git = real_git
+    wgit._strip_junction = real_strip
     shutil.rmtree(deregistered_base, ignore_errors=True)
 
 _h.report_and_exit("test_claim_and_landing")

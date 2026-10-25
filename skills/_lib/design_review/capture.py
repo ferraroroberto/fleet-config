@@ -66,9 +66,9 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import browser_verify  # noqa: E402
-import fleet_toml  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
-import hooks_state  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import measure  # noqa: E402

@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from active_issue import _iso_z, _now, state_lock, write_rows  # noqa: E402
-from hooks_state import state_dir  # noqa: E402
+from fleet_core.hooks_state import state_dir  # noqa: E402
 
 STATE_FILENAME = "chief-plan.json"
 VERSION = 1

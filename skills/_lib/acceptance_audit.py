@@ -61,7 +61,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from git_run import run_gh  # noqa: E402
-from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 PROOF_LOCATIONS = ("DIFF", "CROSS-REPO", "EXTERNAL")
 VERDICTS = ("DONE", "NOT DONE", "UNVERIFIABLE")

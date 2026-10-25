@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/fleet_toml.py, the one `.fleet.toml` reader (fleet-config#1062).
+"""Unit tests for skills/_lib/fleet_core/fleet_toml.py, the one `.fleet.toml` reader (fleet-config#1062).
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_toml.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
-import fleet_toml  # noqa: E402
-import worktree_config  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
+from worktree import worktree_config  # noqa: E402
 
 
 def _repo(text: str | None) -> tuple[tempfile.TemporaryDirectory, Path]:
