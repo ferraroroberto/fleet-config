@@ -108,7 +108,7 @@ def count_hits(text: str, field: Optional[str]) -> int:
 
 
 def read_repo(repo_path: str) -> dict:
-    """`{"state": "adopted", "hits": {table: n}, "rules": [...]}`, `not_adopted` or `unknown` with a reason."""
+    """`{"state": "adopted", "hits": {table: n}, "rules": [...], "ref": ...}`, `not_adopted` or `unknown` with a reason."""
     repo = Path(repo_path)
     ref = git_run.resolve_default_branch_ref(repo, candidates=("origin/main", "origin/master"), final_fallback="")
     if not ref:
@@ -124,6 +124,6 @@ def read_repo(repo_path: str) -> dict:
                 hits[table] = 0 if text is None else count_hits(text, RATCHETS[table])
             except Unknown as exc:
                 raise Unknown(f"{path}: {exc}") from exc
-        return {"state": "adopted", "hits": hits, "rules": config["rules"]}
+        return {"state": "adopted", "hits": hits, "rules": config["rules"], "ref": ref}
     except Unknown as exc:
         return {"state": "unknown", "reason": str(exc)}

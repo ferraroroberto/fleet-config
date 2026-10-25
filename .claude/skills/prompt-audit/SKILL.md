@@ -144,7 +144,7 @@ Nothing to scan (`scan=0`) → skip steps 5–6; the digest still posts and list
 <py> <audit> inventory [--only <repo>]
 ```
 
-`HIT=<path>:<line>|rule=…|cap=violation|consider|count=…|text=…` per candidate and `HITS=<path>|audience=…|kind=…|lines=…|size=…|hits=…|neg=…|desc_words=…` per file; `inventory` adds each file's `audience` and any `SECTION=` scoped to one vendor's agent. `kind=skill-ref` is a `.md` file a `SKILL.md` references (its skill-structure rules live in `rules.md`'s `## Skill structure`); only rules scoped `skill-ref` apply to it. A hit is a **candidate** — the judgment pass confirms or rejects it. `cap` is the strongest verdict the rule can reach for that reader (from the rule's tag and the file's audience); a judgment never exceeds it.
+`HIT=<path>:<line>|rule=…|cap=violation|consider|count=…|text=…` per candidate and `HITS=<path>|audience=…|kind=…|lines=…|size=…|hits=…|neg=…|desc_words=…` per file; `inventory` adds each file's `audience` and any `SECTION=` scoped to one vendor's agent. `kind=skill-ref` is a `.md` file a `SKILL.md` references (its skill-structure rules live in `rules.md`'s `## Skill structure`); only rules scoped `skill-ref` apply to it. `GATE=<repo>|state=adopted|unknown|not_adopted|enforced=R-NN,…|baselined=N` once per repo: the lint rules that repo's enabled `[instruction_ratchet]` fails at ship time (read from `origin/<default>` by `skills/_lib/gate_coverage/enforced.py`). For each file inside that ratchet's scope, `GATE_ENFORCED=<path>|ratchet=instruction_ratchet|rules=…` precedes its `HITS=` line and those rules' hits are already dropped; they are the gate's, not this audit's. A repo whose gate cannot be read is `unknown` and every rule is linted there. Judgment-tier rules are never gate-enforced. A hit is a **candidate** — the judgment pass confirms or rejects it. `cap` is the strongest verdict the rule can reach for that reader (from the rule's tag and the file's audience); a judgment never exceeds it.
 
 ### 6. Judgment pass
 
@@ -162,8 +162,8 @@ Brief each worker with exactly this, filled in:
 
 > Read-only task: do not edit, create, move or delete any file, and do not run git, gh or any command that changes state. Read `<absolute path of this checkout>/.claude/skills/prompt-audit/rules.md` first, then each file below in full.
 > Files, with audience/kind and scoped sections: `<inventory FILE= / SECTION= lines>`.
-> Lint candidates: `<HIT= and HITS= lines for these files>`.
-> For every file, assess every rule whose `file:` scope covers the file's kind and whose tag applies to its reader (a single-vendor rule does not apply inside a section scoped to the other vendor; a `[conflict]` rule applies only to neutral readers). Every lint candidate gets a verdict: `violation` or `consider` (never stronger than its `cap`) when the rule's `Why:` genuinely applies, `compliant` with a one-clause note when it is a false positive. Judgment rules get `violation`, `consider` or `compliant` from your reading; a rule you could not establish is `unmeasured`, never `compliant`. `text` is the offending line copied verbatim.
+> Lint candidates: `<HIT=, HITS= and GATE_ENFORCED= lines for these files>`.
+> For every file, assess every rule whose `file:` scope covers the file's kind, except the rules its `GATE_ENFORCED=` line lists (the repo's gate enforces those; give them no verdict), and whose tag applies to its reader (a single-vendor rule does not apply inside a section scoped to the other vendor; a `[conflict]` rule applies only to neutral readers). Every lint candidate gets a verdict: `violation` or `consider` (never stronger than its `cap`) when the rule's `Why:` genuinely applies, `compliant` with a one-clause note when it is a false positive. Judgment rules get `violation`, `consider` or `compliant` from your reading; a rule you could not establish is `unmeasured`, never `compliant`. `text` is the offending line copied verbatim.
 > Return only one fenced `json` block: a list of `{"path": "<path>", "findings": [{"rule": "R-NN", "verdict": "…", "line": <n or null>, "text": "<verbatim line or empty>", "note": "<one clause>"}]}` — one object per file, every file present. List only `violation`, `consider` and `unmeasured` verdicts; a rule you assessed and found compliant is left out, and a file with nothing to report has `"findings": []`.
 
 Validate each result: valid JSON, every briefed path present, verdicts from the allowed values. Keeping compliant verdicts out of the payload is what makes a fleet-wide result small enough to carry into `run.json` intact; a file's presence is what marks it judged. A missing, malformed or failed result → each of that worker's files is `null` (unmeasured). Never re-spawn a worker to fill a gap in an unattended run; report it.
@@ -181,6 +181,7 @@ Write `<scratch>/run.json`:
   "coverage": ["<the coverage.json list from step 2b>"],
   "leads": "<the leads.json object from step 2c, or null>",
   "evals": "<the evals.json object from step 2d>",
+  "gate": ["<every GATE= line from step 5>"],
   "scan_ran": true,
   "plan": ["<every PLAN= line from step 4>"],
   "judgments": {"<path>": [<findings>] }
@@ -193,7 +194,7 @@ Write `<scratch>/run.json`:
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
 ```
 
-The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), a leads section (`**Leads:** not-checked` when step 2c did not run), an evals section (`evals: not-checked` when there is no fresh aggregate), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
+The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), a leads section (`**Leads:** not-checked` when step 2c did not run), an evals section (`evals: not-checked` when there is no fresh aggregate), a gate-enforced section (the repos whose instruction ratchet owns lint rules, with their baselined hits, and every `unknown` repo; `not-checked` when `gate` is absent), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
 
 `--dry-run` → print `digest.md`, then `<py> <audit> drift --run <scratch>/run.json --dry-run` (the issue bodies that would be filed), and stop here.
 

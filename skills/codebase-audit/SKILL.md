@@ -157,6 +157,11 @@ trailer", "tests must hit a real database", "use `.venv` not `venv`",
 "forward slashes in `settings.json` commands"). These are the inputs to
 bucket 3.
 
+**3a. Gate-enforced checks.** Run `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gate_coverage/enforced.py <repo-root>`
+and **do not look for** any check it prints as `gate-enforced:` — the repo's gate
+fails it at ship time; the rest of that bucket is still read. `state=unknown`
+claims nothing: scan everything. Details: [reference.md](reference.md), step 3a.
+
 ### 4. Inventory the files to read
 
 `git ls-files` (or `git ls-files <scope-path>`) to get the tracked-file list.
@@ -237,7 +242,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 Its hits are **leads, not findings**: confirm each with `refs` per
 [reference.md](reference.md), step 5a before it enters the `stale` issue. Exit 3
 or `state` `not-confirmed` is reported as `not confirmed (<reason>)` in step 10,
-never as "no dead code".
+never as "no dead code". `state` `skipped` means the repo's `[dead_code_ratchet]`
+owns these kinds (step 3a), reported as `gate-enforced (dead_code_ratchet)`.
 
 ### 6. Dedupe against existing open issues
 

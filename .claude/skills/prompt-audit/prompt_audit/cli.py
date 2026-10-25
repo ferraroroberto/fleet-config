@@ -27,6 +27,7 @@ from .state import load_state, save_state, source_due
 from .ledger import _audit_issue, merge_ledger, plan_scan, read_ledger_issue, render_ledger_body
 from .digest import partition_run, provisional_rules, render_digest, render_ping
 from .drift import DRIFT_KIND, DRIFT_LABEL, DRIFT_LABEL_COLOR, DRIFT_LABEL_DESC, DRIFT_TITLE, OWNER, drift_items, merge_drift
+from gate_coverage import enforced as gate_enforced
 
 
 # `gh` call timeouts (seconds), stated bounds rather than measured ones, so an unattended weekly run
@@ -286,6 +287,22 @@ def cmd_inventory(args: argparse.Namespace, cfg: dict) -> int:
     return 0
 
 
+def _gate_rules(entry: Entry, gates: Dict[str, dict]) -> List[str]:
+    """The lint rules the entry's repo gate enforces for this file; prints its repo's `GATE=` line once.
+
+    A gate that cannot be read is `unknown` and enforces nothing, so every rule is linted.
+    """
+    if not entry.repo or entry.repo_dir is None:
+        return []
+    if entry.repo not in gates:
+        gate = gates[entry.repo] = gate_enforced.read_gate(str(entry.repo_dir))
+        reason = f"|reason={clean(gate['reason'])}" if gate["reason"] else ""
+        rules = ",".join(gate["prompt"]["rules"]) if gate["prompt"] else "none"
+        baselined = f"|baselined={gate['prompt']['baselined']}" if gate["prompt"] else ""
+        print(f"GATE={entry.repo}|state={gate['state']}{reason}|enforced={rules}{baselined}")
+    return gate_enforced.prompt_rules_for(gates[entry.repo], entry.key.split("/", 1)[1])
+
+
 def cmd_lint(args: argparse.Namespace, cfg: dict) -> int:
     rules = parse_rules(RULES_MD.read_text(encoding="utf-8"))
     audiences = cfg.get("audiences", {})
@@ -310,11 +327,17 @@ def cmd_lint(args: argparse.Namespace, cfg: dict) -> int:
                              rules_rubric(), args.rescan_all)
             entries = [e for e in entries if plan[e.key][0] == "scan"]
     total = 0
+    gates: Dict[str, dict] = {}
     for e in entries:
         if e.data is None:
             print(f"HITS={e.key}|audience={e.audience}|kind={e.kind}|lines=unmeasured|hits=unmeasured")
             continue
         res = lint_entry(e, rules, audiences, vocab)
+        owned = _gate_rules(e, gates)
+        if owned:
+            # The repo's instruction ratchet fails these at ship time; the weekly audit leaves them to it.
+            res.hits = [h for h in res.hits if h.rule not in owned]
+            print(f"GATE_ENFORCED={e.key}|ratchet=instruction_ratchet|rules={','.join(owned)}")
         if args.detail or args.file:
             for line in hit_detail(res):
                 print(line)
