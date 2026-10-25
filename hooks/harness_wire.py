@@ -219,41 +219,7 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     # adapters retain their existing pass-through contract.
     if payload.get("fleet_harness") == "pi":
         _ACTIVE_AGENT = "pi"
-        event = payload.get("type")
-        raw_tool = payload.get("toolName")
-        names = {"bash": "Bash", "powershell": "PowerShell", "edit": "Edit", "write": "Write"}
-        if event not in {"tool_call", "tool_result"} or raw_tool not in names:
-            raise ValueError("unsupported Pi policy event/tool")
-        args = payload.get("input")
-        if not isinstance(args, dict):
-            raise ValueError("missing Pi tool input")
-        field = "command" if raw_tool in {"bash", "powershell"} else "path"
-        if not isinstance(args.get(field), str) or not args[field].strip():
-            raise ValueError("missing Pi " + field)
-        if "\0" in args[field]:
-            raise ValueError("invalid Pi " + field)
-        base = payload.get("cwd")
-        if not isinstance(base, str) or not Path(base).is_absolute():
-            raise ValueError("missing or relative Pi cwd")
-        out = {
-            "hook_event_name": "PreToolUse" if event == "tool_call" else "PostToolUse",
-            "tool_name": names[raw_tool], "tool_input": dict(args),
-            "cwd": payload.get("cwd"), "session_id": payload.get("session_id"),
-            "tool_use_id": payload.get("toolCallId"), AGENT_HINT_KEY: "pi",
-        }
-        if field == "path":
-            # Pi's own write/edit resolver supplies the target. Raw aliases are
-            # not filesystem paths (e.g. @docs/... writes docs/...).
-            resolved = payload.get("fleet_resolved_path")
-            if (not isinstance(resolved, str) or "\0" in resolved
-                    or not Path(resolved).is_absolute()):
-                raise ValueError("Pi resolved edit target unavailable")
-            out["tool_input"]["file_path"] = resolved
-        if event == "tool_result":
-            # A missing flag is unknown, never a successful post-edit event.
-            flag = payload.get("isError")
-            out["_fleet_edit_outcome"] = "failed" if flag is True else "success" if flag is False else "unknown"
-        return out
+        return _from_pi(payload)
 
     # Antigravity's `agy` CLI: its PreToolUse payload is
     # `{"toolCall": {"name", "args": {"CommandLine", "Cwd", ...}},
@@ -272,43 +238,12 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw_args = payload.get("toolArgs")
     if isinstance(raw_args, (str, dict)) and "hookEventName" not in payload and "toolCall" not in payload:
         _ACTIVE_AGENT = "copilot"
-        if isinstance(raw_args, dict):
-            parsed_args = dict(raw_args)
-        else:
-            try:
-                parsed_args = json.loads(raw_args or "{}")
-            except json.JSONDecodeError:
-                parsed_args = {}
-        if not isinstance(parsed_args, dict):
-            parsed_args = {}
-        raw_tool = str(payload.get("toolName") or "").lower()
-        out = {
-            "hook_event_name": "PreToolUse",
-            "session_id": payload.get("sessionId"),
-            "cwd": payload.get("cwd") or "",
-            "tool_name": _COPILOT_TOOLS.get(raw_tool, payload.get("toolName") or ""),
-            "tool_input": parsed_args,
-            AGENT_HINT_KEY: "copilot",
-        }
-        return out
+        return _from_copilot(payload, raw_args)
 
     tool_call = payload.get("toolCall")
     if isinstance(tool_call, dict):
         _ACTIVE_AGENT = "antigravity"
-        args = tool_call.get("args") if isinstance(tool_call.get("args"), dict) else {}
-        raw_tool = str(tool_call.get("name") or "")
-        out = {
-            "hook_event_name": "PreToolUse",
-            "session_id": payload.get("conversationId"),
-            "transcript_path": payload.get("transcriptPath"),
-            "tool_name": _AGY_TOOLS.get(raw_tool, raw_tool),
-            "tool_input": {"command": args.get("CommandLine") or ""},
-            "cwd": args.get("Cwd") or "",
-            AGENT_HINT_KEY: "antigravity",
-        }
-        if raw_tool in _AGY_TOOLS:
-            out[SHELL_AMBIGUOUS_KEY] = True
-        return out
+        return _from_antigravity(payload, tool_call)
 
     if "hookEventName" not in payload:
         # Codex uses Claude-shaped input. The invoked entry point is provenance;
@@ -329,6 +264,91 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return payload
 
     _ACTIVE_AGENT = "grok"
+    return _from_grok(payload)
+
+
+def _from_pi(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Pi's policy-extension envelope; raises ValueError on anything it cannot vouch for."""
+    event = payload.get("type")
+    raw_tool = payload.get("toolName")
+    names = {"bash": "Bash", "powershell": "PowerShell", "edit": "Edit", "write": "Write"}
+    if event not in {"tool_call", "tool_result"} or raw_tool not in names:
+        raise ValueError("unsupported Pi policy event/tool")
+    args = payload.get("input")
+    if not isinstance(args, dict):
+        raise ValueError("missing Pi tool input")
+    field = "command" if raw_tool in {"bash", "powershell"} else "path"
+    if not isinstance(args.get(field), str) or not args[field].strip():
+        raise ValueError("missing Pi " + field)
+    if "\0" in args[field]:
+        raise ValueError("invalid Pi " + field)
+    base = payload.get("cwd")
+    if not isinstance(base, str) or not Path(base).is_absolute():
+        raise ValueError("missing or relative Pi cwd")
+    out = {
+        "hook_event_name": "PreToolUse" if event == "tool_call" else "PostToolUse",
+        "tool_name": names[raw_tool], "tool_input": dict(args),
+        "cwd": payload.get("cwd"), "session_id": payload.get("session_id"),
+        "tool_use_id": payload.get("toolCallId"), AGENT_HINT_KEY: "pi",
+    }
+    if field == "path":
+        # Pi's own write/edit resolver supplies the target. Raw aliases are
+        # not filesystem paths (e.g. @docs/... writes docs/...).
+        resolved = payload.get("fleet_resolved_path")
+        if (not isinstance(resolved, str) or "\0" in resolved
+                or not Path(resolved).is_absolute()):
+            raise ValueError("Pi resolved edit target unavailable")
+        out["tool_input"]["file_path"] = resolved
+    if event == "tool_result":
+        # A missing flag is unknown, never a successful post-edit event.
+        flag = payload.get("isError")
+        out["_fleet_edit_outcome"] = "failed" if flag is True else "success" if flag is False else "unknown"
+    return out
+
+
+def _from_copilot(payload: Dict[str, Any], raw_args: Any) -> Dict[str, Any]:
+    """Copilot CLI's camelCase envelope; `toolArgs` arrives as a JSON string or an object."""
+    if isinstance(raw_args, dict):
+        parsed_args = dict(raw_args)
+    else:
+        try:
+            parsed_args = json.loads(raw_args or "{}")
+        except json.JSONDecodeError:
+            parsed_args = {}
+    if not isinstance(parsed_args, dict):
+        parsed_args = {}
+    raw_tool = str(payload.get("toolName") or "").lower()
+    out = {
+        "hook_event_name": "PreToolUse",
+        "session_id": payload.get("sessionId"),
+        "cwd": payload.get("cwd") or "",
+        "tool_name": _COPILOT_TOOLS.get(raw_tool, payload.get("toolName") or ""),
+        "tool_input": parsed_args,
+        AGENT_HINT_KEY: "copilot",
+    }
+    return out
+
+
+def _from_antigravity(payload: Dict[str, Any], tool_call: Dict[str, Any]) -> Dict[str, Any]:
+    """Antigravity's `toolCall` envelope."""
+    args = tool_call.get("args") if isinstance(tool_call.get("args"), dict) else {}
+    raw_tool = str(tool_call.get("name") or "")
+    out = {
+        "hook_event_name": "PreToolUse",
+        "session_id": payload.get("conversationId"),
+        "transcript_path": payload.get("transcriptPath"),
+        "tool_name": _AGY_TOOLS.get(raw_tool, raw_tool),
+        "tool_input": {"command": args.get("CommandLine") or ""},
+        "cwd": args.get("Cwd") or "",
+        AGENT_HINT_KEY: "antigravity",
+    }
+    if raw_tool in _AGY_TOOLS:
+        out[SHELL_AMBIGUOUS_KEY] = True
+    return out
+
+
+def _from_grok(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Grok's camelCase keys and event names, mapped onto Claude's."""
     out: Dict[str, Any] = {}
     for key, value in payload.items():
         out[_GROK_KEYS.get(key) or _camel_to_snake(key)] = value

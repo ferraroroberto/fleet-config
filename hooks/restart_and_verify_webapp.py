@@ -315,6 +315,11 @@ def main() -> int:
         print(recovery_hint(project.name, port, project_root, restart_cmd, project.tray_cmd), file=sys.stderr)
         return 2
 
+    return _verify_build(port, api_path, project_root)
+
+
+def _verify_build(port: int, api_path: str, project_root: Path) -> int:
+    """0 when the live build is HEAD, 3 when it cannot be identified, 2 when it never converged."""
     # 4) Verify the new build via /api/version. Three outcomes, never two:
     #    matched (0), answered-but-unidentifiable (3), never converged (2).
     expected_sha = _git_head(project_root)

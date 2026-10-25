@@ -799,10 +799,17 @@ def main() -> None:
                 "so you hit the venv, not the system Python."
             )
 
+    _refuse_venv_deletes(payload, cmd)
+
+    _lib.allow()
+
+
+def _refuse_venv_deletes(payload: dict, cmd: str) -> None:
+    """Rules 4 and 5: refuse a `.venv` delete or rebuild, recording every destructive clause first."""
     # 4 + 5) Anything that would delete or rebuild a `.venv` — through a
     # worktree's junction, or aimed at a primary checkout's real one. Checked
-    # last: these are the only rules that read the filesystem, so the three
-    # pure-text rules above answer first and these run only on a command that
+    # last: these are the only rules that read the filesystem, so `main`'s three
+    # pure-text rules answer first and these run only on a command that
     # is otherwise fine.
     #
     # Every clause is recorded before anything is refused, because `_lib.block`
@@ -856,8 +863,6 @@ def main() -> None:
             "really must be deleted outright, that is a human's call — say so "
             "and stop."
         )
-
-    _lib.allow()
 
 
 if __name__ == "__main__":

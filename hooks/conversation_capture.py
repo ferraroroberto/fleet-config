@@ -467,6 +467,41 @@ def record_capture_event(event: dict) -> None:
         logger.warning("Capture breadcrumb not written: %s", exc)
 
 
+def _find_existing_capture(cfg: CaptureConfig, transcript: Transcript,
+                           key: str) -> tuple[Optional[Path], dict, list[str]]:
+    """This session's first capture across the routing folders, its header, and any duplicates."""
+    from conversation_index import _read_header, conversations_dirs
+
+    out_path = None
+    prior: dict = {}
+    duplicates: list[str] = []
+    for directory, _label in conversations_dirs(cfg):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            if path.name == "index.md":
+                continue
+            # Bounded 6-line header read, not a full-file slurp: the dedup check
+            # below only ever inspects the header fields `parse_capture_header`
+            # extracts from the first lines. This scan runs once per Stop hook
+            # per capture in every routed directory, so re-reading whole
+            # transcripts here re-slurps the entire capture corpus on every
+            # turn-end for a project routing to many skill directories;
+            # `conversation_index._read_header` already
+            # does the bounded read.
+            header = _read_header(path)
+            same = (header.get("agent") == transcript.harness and
+                    ((transcript.session_id and header.get("sid") == transcript.session_id)
+                     or (not transcript.session_id and header.get("key") == key)))
+            if not same:
+                continue
+            if out_path is None:
+                out_path, prior = path, header
+            else:
+                duplicates.append(str(path))
+    return out_path, prior, duplicates
+
+
 def write_capture(
     cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript,
     *, filename_time: Optional[datetime] = None, dry_run: bool = False,
@@ -498,39 +533,11 @@ def write_capture(
     order) is ever updated, so a duplicate goes stale silently; that is what
     left a resumed session's skill-folder capture weeks old (#983).
     """
-    from conversation_index import _read_header, conversations_dirs
-
     note = outcome if outcome is not None else {}
     identity = transcript.session_id or str(source.resolve())
     key = hashlib.sha256(f"{transcript.harness}\0{identity}".encode()).hexdigest()
     digest = hashlib.sha256(json.dumps(transcript.messages, ensure_ascii=False).encode()).hexdigest()
-    out_path = None
-    prior: dict = {}
-    duplicates: list[str] = []
-    for directory, _label in conversations_dirs(cfg):
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.glob("*.md")):
-            if path.name == "index.md":
-                continue
-            # Bounded 6-line header read, not a full-file slurp: the dedup check
-            # below only ever inspects the header fields `parse_capture_header`
-            # extracts from the first lines. This scan runs once per Stop hook
-            # per capture in every routed directory, so re-reading whole
-            # transcripts here re-slurps the entire capture corpus on every
-            # turn-end for a project routing to many skill directories;
-            # `conversation_index._read_header` already
-            # does the bounded read.
-            header = _read_header(path)
-            same = (header.get("agent") == transcript.harness and
-                    ((transcript.session_id and header.get("sid") == transcript.session_id)
-                     or (not transcript.session_id and header.get("key") == key)))
-            if not same:
-                continue
-            if out_path is None:
-                out_path, prior = path, header
-            else:
-                duplicates.append(str(path))
+    out_path, prior, duplicates = _find_existing_capture(cfg, transcript, key)
     note.update(path=str(out_path) if out_path else "", duplicates=duplicates)
     if out_path is not None:
         try:
