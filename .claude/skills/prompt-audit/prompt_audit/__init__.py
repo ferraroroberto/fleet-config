@@ -23,7 +23,7 @@ Layout, in dependency order (no module imports a later one):
   drift.py      the prompt-drift cleanup-issue merge/backlog engine
   cli.py        argparse + the `cmd_*` handlers
 
-The names below are the public surface `tests/test_prompt_audit.py` drives.
+The names below are the public surface the `tests/prompt_audit/` suites drive.
 """
 
 from __future__ import annotations

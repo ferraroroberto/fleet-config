@@ -96,7 +96,7 @@ try:
     _untrack(up)
 
     # Relocate the library so `myrepo` is a declared, tray-less project (the
-    # same isolation tests/test_worktree_claim.py uses for land-primary).
+    # same isolation tests/worktree_claim/ uses for land-primary).
     lib_dst = base / "skills" / "_lib"
     lib_dst.mkdir(parents=True)
     for mod in (ROOT / "skills" / "_lib").glob("*.py"):
