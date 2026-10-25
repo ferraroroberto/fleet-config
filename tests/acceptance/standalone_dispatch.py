@@ -506,6 +506,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "Claude-shaped payload is returned as the *identical object*, so a "
      "change that reaches the whole fleet the moment it merges cannot "
      "alter Claude behaviour (fleet-config#491)"),
+    ("payload_normalization_grok_aliases",
+     "payload_normalization/test_grok_snake_aliases.py",
+     "Grok's snake_case alias keys (`hook_event_name: \"Stop\"` beside "
+     "`hookEventName: \"stop\"`) never override its own camelCase values in "
+     "either key order, so a session-end Stop stays `StopAtSessionEnd` "
+     "instead of reaching the chief inbox as a turn end"),
     ("vendored_drift", "test_vendored_drift.py",
      "the /propagate-vendored [vendored]-manifest drift core -- "
      "manifest parsing, the hash-diff/classify local-drift-vs-behind-HEAD "

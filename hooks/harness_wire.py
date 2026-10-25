@@ -349,9 +349,16 @@ def _from_antigravity(payload: Dict[str, Any], tool_call: Dict[str, Any]) -> Dic
 
 def _from_grok(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Grok's camelCase keys and event names, mapped onto Claude's."""
+    # Grok also sends snake_case aliases of its camelCase keys, and the alias
+    # can carry a differently-cased value (`hook_event_name: "Stop"` beside
+    # `hookEventName: "stop"`). Translated keys are written last so Grok's own
+    # value wins whatever order the keys arrive in.
     out: Dict[str, Any] = {}
+    translated: Dict[str, Any] = {}
     for key, value in payload.items():
-        out[_GROK_KEYS.get(key) or _camel_to_snake(key)] = value
+        target = _GROK_KEYS.get(key) or _camel_to_snake(key)
+        (out if target == key else translated)[target] = value
+    out.update(translated)
 
     event = str(out.get("hook_event_name") or "")
     # Grok fires a second, observe-only Stop at session end (`reason` is
