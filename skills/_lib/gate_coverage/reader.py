@@ -4,7 +4,9 @@ The read is `git ls-tree` + `git show` against the default ref, never the workin
 tree, so a dirty or off-branch checkout cannot change the answer. Three states stay
 distinct and none folds into a zero: `adopted` (at least one ratchet table enabled),
 `not_adopted` (no `.fleet.toml`, or no enabled ratchet table) and `unknown` (no
-default ref, a git failure, an unparseable `.fleet.toml` or baseline).
+default ref, a git failure or an unparseable `.fleet.toml`). A baseline that cannot be
+counted makes only its own table unknown, with its reason in `unknown`; the other
+tables still count.
 
 An enabled ratchet whose baseline file is absent counts zero hits: the ratchet
 itself reads a missing baseline as empty.
@@ -108,7 +110,7 @@ def count_hits(text: str, field: Optional[str]) -> int:
 
 
 def read_repo(repo_path: str) -> dict:
-    """`{"state": "adopted", "hits": {table: n}, "rules": [...], "ref": ...}`, `not_adopted` or `unknown` with a reason."""
+    """`{"state": "adopted", "hits": {table: n}, "unknown": {table: reason}, "rules": [...], "ref": ...}`, `not_adopted` or `unknown` with a reason."""
     repo = Path(repo_path)
     ref = git_run.resolve_default_branch_ref(repo, candidates=("origin/main", "origin/master"), final_fallback="")
     if not ref:
@@ -117,13 +119,14 @@ def read_repo(repo_path: str) -> dict:
         config = read_config(read_ref_file(repo, ref, fleet_toml.FILENAME))
         if not config["ratchets"]:
             return {"state": "not_adopted"}
-        hits = {}
+        hits: dict[str, int] = {}
+        unknown: dict[str, str] = {}
         for table, path in config["ratchets"].items():
             text = read_ref_file(repo, ref, path)
             try:
                 hits[table] = 0 if text is None else count_hits(text, RATCHETS[table])
             except Unknown as exc:
-                raise Unknown(f"{path}: {exc}") from exc
-        return {"state": "adopted", "hits": hits, "rules": config["rules"], "ref": ref}
+                unknown[table] = f"{path}: {exc}"
+        return {"state": "adopted", "hits": hits, "unknown": unknown, "rules": config["rules"], "ref": ref}
     except Unknown as exc:
         return {"state": "unknown", "reason": str(exc)}
