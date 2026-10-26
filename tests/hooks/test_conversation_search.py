@@ -386,9 +386,9 @@ try:
     check(cs.search(cfg, WORD[:-2])[0]["file"] == titled,
           "title rank: the still-typing prefix of the title also ranks it first")
     check(set(hits[0]) == {"skill", "file", "path", "date", "slug", "sid", "agent", "title",
-                           "topic", "summary", "decisions", "open_loops", "turns", "rank",
+                           "topic", "summary", "decisions", "open_loops", "turns", "rank", "tier",
                            "resume", "resumable"},
-          "title rank: the result shape (the app-launcher --json contract) is unchanged")
+          "title rank: the result shape is the app-launcher --json contract plus the additive tier")
     # Untitled conversations rank exactly as before: no title column content to add.
     check(len(cs.search(cfg, "migration")) == 9
           and all(h["file"] != titled for h in cs.search(cfg, "migration")),
@@ -429,17 +429,18 @@ try:
     filler = " ".join(f"filler{i % 97}" for i in range(20_000))
     owner_titled = "2026-09-01-0900-journal-daily-owner0001.md"
     topic_titled = "2026-09-02-0900-journal-daily-topic0001.md"
+    topic_owned = "2026-09-03-0900-journal-daily-topic0002.md"
     summary_only = [f"2026-08-{d:02d}-0900-journal-daily-digest{d:03d}.md" for d in range(1, 6)]
     body_only = [f"2026-07-{d:02d}-0900-journal-daily-bodyon{d:03d}.md" for d in range(1, 6)]
-    idx_entries, titles_map = {}, {owner_titled: f"{WORD} notes"}
-    for name in [owner_titled, topic_titled, *summary_only, *body_only]:
+    idx_entries, titles_map = {}, {owner_titled: f"{WORD} notes", topic_owned: "weekend errands"}
+    for name in [owner_titled, topic_titled, topic_owned, *summary_only, *body_only]:
         long_capture = name in (owner_titled, topic_titled)
         text = (f"we looked at the {WORD} once. {filler}" if long_capture else
                 (f"{WORD} {WORD} {WORD} chat" if name in body_only else "a short chat"))
         (cdir / name).write_text(cc.render_markdown("d", [("user", text)]), encoding="utf-8")
         if name == owner_titled:
             digest = "- **Topic:** errands\n- **Summary:** a long unrelated afternoon"
-        elif name == topic_titled:
+        elif name in (topic_titled, topic_owned):
             digest = f"- **Topic:** {WORD} sighting\n- **Summary:** a long unrelated afternoon"
         elif name in summary_only:
             digest = f"- **Topic:** errands\n- **Summary:** {WORD} {WORD} {WORD} came up, {WORD} again"
@@ -451,15 +452,24 @@ try:
     (cdir / ci.TITLES_NAME).write_text(json.dumps(titles_map), encoding="utf-8")
     cfg = cc.CaptureConfig(root=root, routing="skills", conversations_dir="conversations",
                            skills_dir=".claude/skills", active_marker=".active-skill")
-    check(cs.sync(cfg) == 12, "visible-title tier: synced the fixture conversations")
-    order = [h["file"] for h in cs.search(cfg, WORD)]
-    check(len(order) == 12, f"visible-title tier: every match is returned (got {len(order)})")
+    check(cs.sync(cfg) == 13, "visible-title tier: synced the fixture conversations")
+    hits = cs.search(cfg, WORD)
+    order = [h["file"] for h in hits]
+    check(len(order) == 13, f"visible-title tier: every match is returned (got {len(order)})")
     check(order[0] == owner_titled,
           "visible-title tier: an owner-title hit on a long capture ranks first")
     check(order[1] == topic_titled,
           "visible-title tier: an untitled conversation's topic hit ranks next, still on a long capture")
-    check(set(order[2:7]) == set(summary_only) and set(order[7:]) == set(body_only),
+    check(order[2] == topic_owned,
+          "visible-title tier: a topic hit under an owner title ranks below the visible-title hits")
+    check(set(order[3:8]) == set(summary_only) and set(order[8:]) == set(body_only),
           "visible-title tier: then digest-only hits, then body-only hits")
+    by_file = {h["file"]: h["tier"] for h in hits}
+    check(by_file[owner_titled] == 0 and by_file[topic_titled] == 0 and by_file[topic_owned] == 1
+          and {by_file[f] for f in summary_only} == {2} and {by_file[f] for f in body_only} == {3},
+          "visible-title tier: each --json row carries its match tier (0 title, 1 topic, 2 digest, 3 body)")
+    check([h["tier"] for h in hits] == sorted(h["tier"] for h in hits),
+          "visible-title tier: results come back in non-decreasing tier order")
     check([h["file"] for h in cs.search(cfg, WORD[:-2])][:2] == [owner_titled, topic_titled],
           "visible-title tier: holds for the still-typing prefix too")
     check(cs.search(cfg, f'"{WORD}" OR zzzabsent')[0]["file"] == owner_titled,

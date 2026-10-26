@@ -25,6 +25,9 @@ Tiers, not bm25 column weights: FTS5 ``bm25()`` saturates term frequency within
 a column and normalises by the whole row's length, so a title hit on a long
 capture lost to short rows that merely mentioned the word (#1521).
 
+Each ``--json`` row reports its tier (0-3, as numbered above) next to the blended
+``rank``, so a caller can tell a title-level fit from a passing mention.
+
 Storage is a single SQLite **FTS5** database (stdlib, no dependency) for the
 whole project, so one query spans every skill. It is a pure derivative of the
 captures plus the index: **deleting it is always safe**, and the next indexer
@@ -427,7 +430,7 @@ def search(
     sql = (
         "SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, "
         "       c.title, c.topic, c.summary, c.decisions, c.open_loops, c.turns, "
-        f"      {_BLEND} AS rank "
+        f"      {_BLEND} AS rank, {_TIER} AS tier "
         "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
         f"WHERE {' AND '.join(where)} ORDER BY {_TIER}, rank LIMIT ?"
     )
@@ -453,7 +456,7 @@ def search(
         conn.close()
 
     cols = ["skill", "file", "path", "date", "slug", "sid", "agent",
-            "title", "topic", "summary", "decisions", "open_loops", "turns", "rank"]
+            "title", "topic", "summary", "decisions", "open_loops", "turns", "rank", "tier"]
     out = []
     for row in rows:
         item = dict(zip(cols, row))
