@@ -28,7 +28,7 @@ GIT_TIMEOUT_S = 300
 FILE_LIMIT, BIG_FILE_LIMIT = 1000, 2000
 FN_LIMITS = (100, 200, 300)
 # "Just under the limit": the band a split aims for when it stops as soon as the gate passes.
-NEAR_FILE, NEAR_FN = (900, FILE_LIMIT), (90, FN_LIMITS[0])
+NEAR_FILE, NEAR_FN = measure.near_band(FILE_LIMIT), measure.near_band(FN_LIMITS[0])
 TOP_FUNCTIONS = 10
 # A gate file, and the checks the census recognises inside one.
 GATE_FILE_NAMES = ("verify-before-ship.ps1", "run_acceptance.py", "Makefile")
@@ -78,7 +78,7 @@ def read_tree(repo: Path, sha: str) -> dict[str, bytes]:
     return blobs
 
 
-def _text(raw: bytes) -> Optional[str]:
+def text_of(raw: bytes) -> Optional[str]:
     """The file as text, or None for a binary file (a NUL in its first 4 KiB)."""
     return None if b"\0" in raw[:4096] else raw.decode("utf-8", "replace")
 
@@ -125,7 +125,7 @@ def ratchets(blobs: dict[str, bytes]) -> dict:
 
 def guess_shape(blobs: dict[str, bytes]) -> str:
     """A shape id for a repo that declares none in `.fleet.toml`, from what its code imports."""
-    py = [t for p, raw in blobs.items() if p.endswith(".py") and measure.is_code(p) and (t := _text(raw))]
+    py = [t for p, raw in blobs.items() if p.endswith(".py") and measure.is_code(p) and (t := text_of(raw))]
     if any("FastAPI(" in t for t in py):
         return "webapp-tray"
     if any("import streamlit" in t for t in py):
@@ -146,7 +146,7 @@ def gate_checks(blobs: dict[str, bytes]) -> tuple[list[str], list[str]]:
     )
     found = set()
     for path in files:
-        text = (_text(blobs[path]) or "").lower()
+        text = (text_of(blobs[path]) or "").lower()
         found.update(kw for kw in GATE_KEYWORDS if kw in text)
     return files, sorted(found)
 
@@ -172,7 +172,7 @@ def _code_metrics(blobs: dict[str, bytes]) -> dict:
     layer: list[str] = []
     unparsed: list[str] = []
     for path, raw in blobs.items():
-        if not measure.is_code(path) or (text := _text(raw)) is None:
+        if not measure.is_code(path) or (text := text_of(raw)) is None:
             continue
         lines[path] = measure.count_lines(text)
         found = measure.functions(path, text)
@@ -187,10 +187,10 @@ def _code_metrics(blobs: dict[str, bytes]) -> dict:
         "loc": sum(lines.values()), "files": len(lines),
         "loc_vendored": sum(n for p, n in lines.items() if _is_vendored(p, dests)),
         # The near-limit bands count the repo's own code: a vendored copy was sized upstream.
-        "files_near_limit": sum(1 for p, n in lines.items() if NEAR_FILE[0] <= n <= NEAR_FILE[1] and not _is_vendored(p, dests)),
+        "files_near_limit": sum(1 for p, n in lines.items() if measure.in_band(n, NEAR_FILE) and not _is_vendored(p, dests)),
         "fns_near_limit": sum(
             1 for n, where in spans
-            if NEAR_FN[0] <= n <= NEAR_FN[1] and not _is_vendored(where.rsplit(":", 1)[0], dests)
+            if measure.in_band(n, NEAR_FN) and not _is_vendored(where.rsplit(":", 1)[0], dests)
         ),
         "largest": list(ranked[0]) if ranked else None,
         "over_1k": [[p, n, measure.kind(p)] for p, n in ranked if n > FILE_LIMIT],
