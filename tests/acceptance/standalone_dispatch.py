@@ -35,6 +35,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`not adopted` and `unknown` as their own states, a grown baseline in the "
      "headline and a shrunk one not, and the numbers read from origin's default "
      "branch while the working tree differs (fleet-config#1552)"),
+    ("structure_census", "structure_census/test_structure_census.py",
+     "the fleet census's definitions, a repo read at origin/main or at an "
+     "earlier moment while the working tree differs, a missing checkout as "
+     "unknown, and the before-and-after totals"),
     ("gate_coverage", "acceptance/test_gate_coverage.py",
      "the digest's gate-coverage section -- enabled ratchets, conventions "
      "rules and baselined hits per repo, `not adopted` and `unknown` as their "
