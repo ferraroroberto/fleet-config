@@ -1,6 +1,6 @@
 ---
 name: propagate-vendored
-description: Fan out a byte-for-byte re-vendor of one project-scaffolding component to every adopter in its [vendored] manifest — copy, hash-verify, bump the sha, run the gate, open an auto-merging PR, no per-repo issue. Dry-run reports who is behind, touching nothing. Invoke explicitly, never per scaffold commit. E.g. "/propagate-vendored nav", "/propagate-vendored nav a1b2c3d", or "/propagate-vendored nav --dry-run".
+description: Fan out a byte-for-byte re-vendor of project-scaffolding components to every adopter in their [vendored] manifest — one PR per repo carrying every component it is behind on; copy, hash-verify, bump the sha, run the gate, auto-merge, no per-repo issue. Dry-run reports per repo what is behind, touching nothing. Invoke explicitly, never per scaffold commit. E.g. "/propagate-vendored nav", "/propagate-vendored nav,usage_log", "/propagate-vendored --all-behind", or "/propagate-vendored nav --dry-run".
 ---
 
 # propagate-vendored
@@ -26,24 +26,31 @@ scaffold changes, propagate once. Nothing here schedules itself; there is no
 
 ## Arguments
 
-`/propagate-vendored <component> [scaffold-sha] [--dry-run | check]`
+`/propagate-vendored <component>[,<component>…] | --all-behind [scaffold-sha] [--dry-run | check]`
 
-- **`<component>`** — required. The manifest key (`nav`, `tray_lifecycle`, …)
-  — same name adopters use in their `[vendored].<component>` entry.
+- **`<component>[,<component>…]`** — the manifest keys (`nav`, `tray_lifecycle`, …)
+  — same names adopters use in their `[vendored].<component>` entry. Several
+  names, comma-separated, make one wave: each repo gets **one PR** carrying every
+  named component it is behind on.
+- **`--all-behind`** — every component, instead of a list. Same one-PR-per-repo wave.
 - **`[scaffold-sha]`** — optional. The scaffold commit to propagate to.
   Default: `project-scaffolding`'s current `origin/HEAD` (default branch tip).
 - **`--dry-run`** (or the bare word `check`) — report-only. Runs the drift
   scan, prints who's behind, touches nothing: no branch, no clone, no PR. Safe
   to run any time.
 
-No component argument → stop: "Pass a component name, e.g.
-`/propagate-vendored nav` or `/propagate-vendored nav --dry-run`."
+Neither a component nor `--all-behind` → stop: "Pass a component name, e.g.
+`/propagate-vendored nav`, a list (`nav,usage_log`), or `--all-behind`."
 
 ## Rules (read before running anything)
 
 - **Model tier: `easy`** (per `docs/model-tiers.md`) — narrow, mechanical,
   zero design decisions. Claude Code only: Sonnet at high effort, fanned
   out **all at once** (Sonnet is exempt from the Opus concurrency cap).
+- **One PR per repo per wave.** A repo behind on several components in the wave
+  gets one branch, one gate run and one PR carrying all of them, hash-verified per
+  component; never one PR per component. The branch, commit text and PR body come
+  from `vendored_wave/plan.py` (step 2), not from the agent.
 - **One sub-agent per adopter repo**, never two against the same checkout.
   Respect `skills/_lib/worktree_claim.py` exactly as `/issue-batch` does — a
   repo another session is actively working gets `MODE=worktree`, never a
@@ -101,8 +108,10 @@ No component argument → stop: "Pass a component name, e.g.
 ### 2. Run the drift scan (always — dry-run and real runs both start here)
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_drift.py scan --component <component>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_drift.py scan --component <component>[,<component>…]
 ```
+
+Omit `--component` for `--all-behind`.
 
 Prints one JSON object: `adopters` (every fleet repo with a
 `[vendored].<component>` entry, each carrying `local_drift` and `behind_head`
@@ -159,12 +168,29 @@ and carry its `GATE_ROUTING` into the step-3 report and the step-6 summary:
 ship past silently, so name it per repo; `not-consumed` means the re-vendor
 changes nothing that repo's gate runs.
 
-### 3. `--dry-run` / `check` stops here
-
-Print the report and stop — no clone, no branch, no PR, nothing written:
+Then group the same scan by repo — read-only, the same call the real wave starts from:
 
 ```
-/propagate-vendored <component> --dry-run — scaffold @ <short-sha> (<ref>)
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/plan.py plan --component <component>[,<component>…] [--allow-breaking <component>[,<component>…]] [--part-of <scaffold-issue-or-PR-url>] [--format text]
+```
+
+JSON (default) is one entry per repo: `components` (each with `action`
+`re-vendor`|`adopt`, `old_sha`, `new_sha`, `files`), plus the `branch`,
+`worktree_key`, `commit_subject`, `commit_body` and `pr_body` that repo's single PR
+uses, and top-level `held_contract` (components stopped for removed selectors) and
+`held_carriers` (carriers that differ from the tip). A one-component plan keeps
+exactly the per-component branch, commit subject and one-line PR body the skill
+always produced. `--allow-breaking` is passed only for a component a human approved
+in step 4. `--format text` is the per-repo block of the dry-run report below.
+
+### 3. `--dry-run` / `check` stops here
+
+Print the report and stop — no clone, no branch, no PR, nothing written. Lead with
+the per-repo block from `plan.py plan --format text` (each repo, the components it is
+behind on, the PRs the wave would open against one per component), then:
+
+```
+/propagate-vendored <component>[,<component>…] --dry-run — scaffold @ <short-sha> (<ref>)
 
   adopters (declared in [vendored]):
     <repo>   pinned <short-sha>   local: OK|DRIFT (<n> files)   vs HEAD: current|BEHIND (<n> files)   [classify_e2e: gate <GATE_ROUTING>]
@@ -193,10 +219,12 @@ selectors went). Include the component only on an explicit yes naming it; a yes 
 one component never covers another. Adopters of other components are not held up.
 The README note rides along in the report.
 
-Target repos = every `behind_head`/`local_drift` adopter from step 2, plus
-every `matches_head: true` carrier (adopt-only — its bytes are already current).
-A `matches_head: false` carrier is **not** a target by default: surface it and
-ask, then include it only on an explicit yes. For each target, dispatch a background
+Target repos = the `repos` of the step-2 plan: every `behind_head`/`local_drift`
+adopter, plus every `matches_head: true` carrier (adopt-only — its bytes are already
+current), grouped so a repo appears once with all its components. Re-run the plan
+with `--allow-breaking` for any component the human approved above. A
+`matches_head: false` carrier is **not** a target by default: surface it and
+ask, then include it only on an explicit yes. For each target **repo**, dispatch one background
 worker through the capability contract (easy tier, bounded by available slots). Worktree
 setup mirrors `/issue-batch` step 6 — pre-create the branch in the orchestrator
 via `worktree_claim.py`, sequentially, before any agent launches:
@@ -207,20 +235,21 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 
 `MODE=primary` → work in place on `main`. `MODE=worktree` → 
-`setup-worktree E:\automation\<repo> <component>-<shortsha> chore/revendor-<component>-<shortsha>`
-(same helper `/issue-batch` uses; junctions `.venv`, reparse-safe teardown).
+`setup-worktree E:\automation\<repo> <worktree_key> <branch>` (both from the repo's
+plan entry; same helper `/issue-batch` uses; junctions `.venv`, reparse-safe teardown).
 
 #### Agent prompt
 
 ```
-You are re-vendoring the "<component>" component from project-scaffolding
-into <repo>, off scaffold commit <scaffold-sha> (short: <shortsha>).
-Working tree: <path>. Branch: chore/revendor-<component>-<shortsha>.
-You are the only agent touching this checkout.
+You are re-vendoring these components from project-scaffolding into <repo>,
+off scaffold commit <scaffold-sha> (short: <shortsha>), as ONE change and ONE PR:
+<one line per plan component: name, action, scaffold-src, dest-path, old sha -> new sha>
+Working tree: <path>. Branch: <branch>.
+You are the only agent touching this checkout. Steps 2a-4 run once per component
+above; steps 5-8 run once for the whole repo.
 
 1. cd to <path>. Confirm you are on the branch (cut it if MODE was primary
-   and it doesn't exist yet: `git checkout -b chore/revendor-<component>-<shortsha>`
-   off fresh origin/main).
+   and it doesn't exist yet: `git checkout -b <branch>` off fresh origin/main).
 
 2a. ADOPT (only if <repo> has no [vendored].<component> entry yet): add one
     to .fleet.toml's [vendored] table —
@@ -234,7 +263,8 @@ You are the only agent touching this checkout.
     <repo>'s <dest-path>, overwriting verbatim. Never hand-edit a copied file.
 
 3. HASH-VERIFY: confirm every copied file's bytes match the scaffold source
-   exactly (sha256 compare). If any mismatch, STOP and report — do not guess-fix.
+   exactly (sha256 compare), component by component. If any mismatch, STOP and
+   report — do not guess-fix, and do not land the other components without it.
 
 4. Bump .fleet.toml: [vendored].<component>.sha = "<scaffold-sha>" (write the
    FULL sha, not the short form).
@@ -246,16 +276,15 @@ You are the only agent touching this checkout.
    fails non-interactively). A gate
    FAILURE is a genuine blocker: STOP, do not weaken or skip it, report FAILED.
 
-6. Commit (conventional, no AI-attribution trailer):
-   "chore: re-vendor <component> from project-scaffolding@<shortsha>"
-   Push. Open a PR whose body:
-     - Summary: one line, what changed + why (byte-for-byte re-vendor).
-     - "Part of <scaffold-issue-or-PR-url>" — NEVER "Closes" (substring-match
-       gotcha: GitHub's closing parser fires on `close(s|d)?`/`fix(es|ed)?`
-       anywhere in the text, so a literal Closes/Fixes here could close the
-       *scaffold's* tracking issue on merge).
-     - Test plan: gate result, hash-verify result.
-   No paragraph hard-wraps (rendered markdown).
+6. Commit (conventional, no AI-attribution trailer) with the plan's
+   `commit_subject` and `commit_body`. Push. Open the PR with the plan's
+   `pr_body` verbatim, ticking a Test plan box only once you have observed it.
+   It carries a one-line summary (a table of component, old sha, new sha when
+   there are several), "Part of <scaffold-issue-or-PR-url>" — NEVER "Closes"
+   (substring-match gotcha: GitHub's closing parser fires on
+   `close(s|d)?`/`fix(es|ed)?` anywhere in the text, so a literal Closes/Fixes
+   here could close the *scaffold's* tracking issue on merge) — and the Test
+   plan. No paragraph hard-wraps (rendered markdown).
 
 7. Auto-merge on green: `gh pr merge --auto --squash --delete-branch` (or the
    repo's own merge convention if its CLAUDE.md states one). Do not force-merge
@@ -264,7 +293,7 @@ You are the only agent touching this checkout.
    half fails (`'main' is already used by worktree at <primary>`). Once merged:
    `remove-worktree <worktree-path>`, then land the primary so the re-vendor is
    actually live there —
-   `worktree_claim.py land-primary E:\automation\<repo> <component>-<shortsha>`
+   `worktree_claim.py land-primary E:\automation\<repo> <worktree_key>`
    — and report its `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line.
    Then delete the refs explicitly: `git push origin --delete <branch>`, and the
    local ref with `-D` **only after** confirming the tip landed in
@@ -276,9 +305,9 @@ You are the only agent touching this checkout.
 
 Report back, in this exact shape:
   - Repo: <repo>
-  - Action: ADOPTED | RE-VENDORED | BOTH
+  - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several)
   - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
-  - Branch: chore/revendor-<component>-<shortsha>
+  - Branch: <branch>
   - Gate: PASS | FAIL (<reason>)
   - Result: MERGED (<merge-sha>) | PR-OPEN (<url>, gate/CI pending) | BLOCKED (<reason>)
   - PR: <url or n/a>
@@ -298,7 +327,7 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 `⚠️ PR open, pending` / `❌ blocked`). After all have returned:
 
 ```
-/propagate-vendored <component> @ <shortsha> — wave complete
+/propagate-vendored <component>[,<component>…] @ <shortsha> — wave complete (<n> PRs for <k> component-repo pairs)
 
   ✅ merged:  <repo> <pr-url>, …
   ⚠️ open:    <repo> <pr-url> (<reason>), …

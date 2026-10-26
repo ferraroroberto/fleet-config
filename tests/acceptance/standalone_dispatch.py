@@ -535,6 +535,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "manifest parsing, the hash-diff/classify local-drift-vs-behind-HEAD "
      "signals, and an end-to-end scan_fleet against a real throwaway "
      "scaffold + adopter repos -- is testable on its own (fleet-config#338)"),
+    ("vendored_wave", "repo/test_vendored_wave.py",
+     "/propagate-vendored's per-repo wave plan -- every component a repo is "
+     "behind on collapses into one entry with one branch and one PR body "
+     "listing each old and new sha, a one-component run keeps its per-"
+     "component branch and commit subject, and held components and carriers "
+     "are reported instead of targeted -- is testable on its own against a "
+     "throwaway scaffold and adopter repos"),
     ("watchlist", "audit/test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),

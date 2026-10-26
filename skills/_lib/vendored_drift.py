@@ -89,6 +89,9 @@ from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 
+# no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
+DEFAULT_SCAFFOLD = "E:/automation/project-scaffolding"
+
 
 # ---- pure helpers (unit-tested without git) --------------------------------
 
@@ -192,6 +195,21 @@ def classify_adopter(local: Dict[str, str], pinned: Dict[str, str],
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def parse_component_filter(spec: Optional[str]) -> Optional[frozenset]:
+    """A comma-separated `--component` value as a set of names; `None` (every component) when empty."""
+    names = frozenset(n.strip() for n in (spec or "").split(",") if n.strip())
+    return names or None
+
+
+def _wanted(component: str, component_filter: Optional[object]) -> bool:
+    """Whether `component` passes a scan filter: one name, a collection of names, or `None` for all."""
+    if not component_filter:
+        return True
+    if isinstance(component_filter, str):
+        return component == component_filter
+    return component in component_filter
 
 
 _OPAQUE_AT_RULES = ("@keyframes", "@-webkit-keyframes", "@font-face", "@page", "@property", "@counter-style",
@@ -455,7 +473,7 @@ def scan_fleet(
             continue
 
         for component, entry in manifest.items():
-            if component_filter and component != component_filter:
+            if not _wanted(component, component_filter):
                 continue
             src, sha, dest = entry.get("src"), entry.get("sha"), entry.get("dest")
             if not (src and sha and dest):
@@ -592,7 +610,7 @@ def scan_undeclared_carriers(
         if declared is None:  # unreadable .fleet.toml — reported as unknown, not clean
             continue
         for component, src in sorted(catalog.items()):
-            if component_filter and component != component_filter:
+            if not _wanted(component, component_filter):
                 continue
             if component in declared:
                 continue
@@ -622,9 +640,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p_scan = sub.add_parser("scan", help="whole-fleet [vendored] drift report (JSON)")
     # no-drive-path-exempt: fleet-root default for this machine; a flag or config overrides it
-    p_scan.add_argument("--scaffold", default="E:/automation/project-scaffolding",
+    p_scan.add_argument("--scaffold", default=DEFAULT_SCAFFOLD,
                          help="project-scaffolding root (the canonical source)")
-    p_scan.add_argument("--component", default=None, help="restrict to one component name")
+    p_scan.add_argument("--component", default=None,
+                         help="restrict to one component name, or several separated by commas")
 
     args = ap.parse_args(argv)
     if args.cmd == "scan":
@@ -632,7 +651,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not scaffold.is_dir():
             print(json.dumps({"error": f"scaffold not found: {scaffold}"}))
             return 0
-        print(json.dumps(scan_fleet(scaffold, args.component), indent=2))
+        print(json.dumps(scan_fleet(scaffold, parse_component_filter(args.component)), indent=2))
         return 0
     return 1
 
