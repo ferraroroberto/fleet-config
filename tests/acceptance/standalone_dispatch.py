@@ -542,6 +542,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "component branch and commit subject, and held components and carriers "
      "are reported instead of targeted -- is testable on its own against a "
      "throwaway scaffold and adopter repos"),
+    ("vendored_gate_ledger", "repo/test_vendored_gate_ledger.py",
+     "/propagate-vendored's gate-time ledger -- each repo's gate is timed "
+     "by the helper that runs it, recorded with its result, and summed into "
+     "a run total, and a duration that could not be read (an unspawnable "
+     "gate, a planned repo with no record) prints as unknown, never 0 -- is "
+     "testable on its own against a throwaway hooks-state dir"),
     ("watchlist", "audit/test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),
