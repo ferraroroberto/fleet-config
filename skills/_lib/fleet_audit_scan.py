@@ -80,6 +80,7 @@ import untrack_guard  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from gate_coverage import reader as gate_reader  # noqa: E402
 from gate_coverage import section as gate_section  # noqa: E402
+from structure_census import near_limit  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
 
@@ -157,11 +158,16 @@ def structure_report(root: str, only: str | None, load_state=_load_digest_state)
 
     Each repo's baseline is read from its `origin/<default>` ref, so the checkout's branch and
     dirty state cannot change it; a repo the gate skipped before its fetch is read from the
-    previous fetch. A repo that cannot be read is `unknown`, never a zero count.
+    previous fetch. A repo that cannot be read is `unknown`, never a zero count. The near-limit
+    rows (`near_lines`, own-code files and functions just under each repo's limits) are report
+    only: they add no headline and their state lines are appended to `state_lines`.
     """
-    entries = [{"repo": d.name, **structure_baseline.read_repo(str(d))}
-               for d in fleet_repo_scan.iter_fleet_repos(root, only)]
-    return structure_section.build(entries, load_state(), time.strftime("%Y-%m-%d"))
+    repos = list(fleet_repo_scan.iter_fleet_repos(root, only))
+    state = load_state()
+    section = structure_section.build(
+        [{"repo": d.name, **structure_baseline.read_repo(str(d))} for d in repos], state, time.strftime("%Y-%m-%d"))
+    near = structure_section.build_near([{"repo": d.name, **near_limit.read_repo(str(d))} for d in repos], state)
+    return {**section, "near_lines": near["lines"], "state_lines": section["state_lines"] + near["state_lines"]}
 
 
 def gate_report(root: str, only: str | None, load_state=_load_digest_state) -> dict:

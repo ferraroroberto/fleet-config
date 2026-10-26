@@ -39,6 +39,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the fleet census's definitions, a repo read at origin/main or at an "
      "earlier moment while the working tree differs, a missing checkout as "
      "unknown, and the before-and-after totals"),
+    ("near_limit", "structure_census/test_near_limit.py",
+     "the digest's near-limit reading -- the band edges, a repo's own limits, "
+     "vendored, excluded and generated files left out, `not adopted` and "
+     "`unknown` as their own states, and the numbers read from origin's default "
+     "branch while the working tree differs"),
     ("gate_coverage", "acceptance/test_gate_coverage.py",
      "the digest's gate-coverage section -- enabled ratchets, conventions "
      "rules and baselined hits per repo, `not adopted` and `unknown` as their "

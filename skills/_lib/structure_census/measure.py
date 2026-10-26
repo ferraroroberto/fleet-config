@@ -52,6 +52,8 @@ _JS_KEYWORDS = frozenset({"if", "for", "while", "switch", "catch", "with", "retu
 _JS_MIN_SPAN = 20
 
 LAYER_LOWER, LAYER_UPPER = "src", "app"
+# "Just under the limit" is the last tenth below it: a split that stops as soon as the gate passes lands here.
+NEAR_PERCENT = 10
 
 
 def _parse(text: str) -> Optional[ast.Module]:
@@ -62,6 +64,16 @@ def _parse(text: str) -> Optional[ast.Module]:
             return ast.parse(text)
         except (SyntaxError, ValueError):
             return None
+
+
+def near_band(limit: int) -> tuple[int, int]:
+    """`(low, high)` of the near-limit band, both inclusive: 900-1000 for a 1,000-line limit, 90-100 for 100."""
+    return limit - limit * NEAR_PERCENT // 100, limit
+
+
+def in_band(size: int, band: tuple[int, int]) -> bool:
+    """True when `size` lies in `band`; the limit itself is inside because the gate fails only above it."""
+    return band[0] <= size <= band[1]
 
 
 def is_code(path: str) -> bool:

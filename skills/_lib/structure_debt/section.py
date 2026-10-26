@@ -10,6 +10,10 @@ prior that was itself a reading; a repo with no prior reading (newly adopted,
 last week `unknown`, no state at all) has nothing to grow from and is never
 flagged. If the previous state could not be read at all, every delta is
 withheld and the section says so rather than printing zero change.
+
+The near-limit rows (files and functions just under a repo's limits) ride the same
+call and the same state issue under `structure-near:<repo>:` keys. They are report
+only: they never reach the headline and no repo is flagged for them.
 """
 
 from __future__ import annotations
@@ -22,6 +26,9 @@ FIELDS = ("files", "fns", "dirs", "excess")
 STATE_LINE = re.compile(r"^structure:(?P<name>[^:\s]+):\s*(?P<rest>.*?)\s*$")
 READING = re.compile(r"\b(files|fns|dirs|excess)=(\d+)")
 LARGEST = 3
+NEAR_PREFIX = "structure-near:"
+NEAR_FIELDS = ("files", "fns")
+NEAR_STATE_LINE = re.compile(r"^structure-near:(?P<name>[^:\s]+):\s*(?P<rest>.*?)\s*$")
 
 
 def _total(reading: dict) -> int:
@@ -38,6 +45,19 @@ def parse_state(body: str) -> dict[str, dict]:
         found = dict((k, int(v)) for k, v in READING.findall(m["rest"]))
         if all(f in found for f in FIELDS):
             prior[m["name"]] = found
+    return prior
+
+
+def parse_near_state(body: str) -> dict[str, dict]:
+    """`{repo: {files, fns}}` from the digest-state body; a repo not adopted/unknown/malformed has no reading."""
+    prior: dict[str, dict] = {}
+    for line in body.splitlines():
+        m = NEAR_STATE_LINE.match(line.strip())
+        if not m:
+            continue
+        found = dict((k, int(v)) for k, v in READING.findall(m["rest"]))
+        if all(f in found for f in NEAR_FIELDS):
+            prior[m["name"]] = {f: found[f] for f in NEAR_FIELDS}
     return prior
 
 
@@ -71,6 +91,49 @@ def _state_line(entry: dict) -> str:
     if entry["state"] == "adopted":
         return f"{STATE_PREFIX}{entry['repo']}: " + " ".join(f"{f}={entry[f]}" for f in FIELDS)
     return f"{STATE_PREFIX}{entry['repo']}: " + ("not adopted" if entry["state"] == "not_adopted" else "unknown")
+
+
+def _near_row(entry: dict, before: dict | None, deltas: bool) -> str:
+    name, state = entry["repo"], entry["state"]
+    if state == "not_adopted":
+        return f"- {name}  not adopted"
+    if state == "unknown":
+        return f"- {name}  unknown ({entry.get('reason', 'not established')})"
+    cells = []
+    for field in NEAR_FIELDS:
+        cell = f"{field} {entry[field]}"
+        if deltas:
+            cell += " " + _delta(entry[field], before[field] if before else None)
+        cells.append(cell)
+    return f"- {name}  " + "  ".join(cells)
+
+
+def _near_state_line(entry: dict) -> str:
+    if entry["state"] == "adopted":
+        return f"{NEAR_PREFIX}{entry['repo']}: " + " ".join(f"{f}={entry[f]}" for f in NEAR_FIELDS)
+    return f"{NEAR_PREFIX}{entry['repo']}: " + ("not adopted" if entry["state"] == "not_adopted" else "unknown")
+
+
+def build_near(entries: list[dict], prior_body: str | None) -> dict:
+    """The near-limit rows and state lines for `entries` (one `near_limit.read_repo` result plus `repo` each).
+
+    `prior_body` has the same three cases as in `build`. Returns `lines` (one row per repo, then the
+    fleet total, then a note when no delta could be shown) and `state_lines`.
+    """
+    entries = sorted(entries, key=lambda e: e["repo"])
+    deltas = prior_body is not None
+    prior = parse_near_state(prior_body or "")
+    adopted = [e for e in entries if e["state"] == "adopted"]
+    unknown = sum(e["state"] == "unknown" for e in entries)
+    lines = [_near_row(e, prior.get(e["repo"]), deltas) for e in entries]
+    lines.append(
+        f"- fleet total: {sum(e['files'] for e in adopted)} files and {sum(e['fns'] for e in adopted)} functions "
+        f"in the last tenth below their limit across {len(adopted)} adopted repos; "
+        f"{len(entries) - len(adopted) - unknown} not adopted, {unknown} unknown"
+    )
+    if not deltas:
+        lines.append("- week-over-week: unknown (previous digest state could not be read), no deltas shown")
+    return {"lines": lines, "state_lines": [_near_state_line(e) for e in entries]}
 
 
 def build(entries: list[dict], prior_body: str | None, today: str) -> dict:
