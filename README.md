@@ -79,6 +79,9 @@ Per-topic references that the intro used to carry, one file each:
 - **[`docs/conversation-capture.md`](docs/conversation-capture.md)** —
   native Claude/Codex transcript capture, the explicit Codex opt-in and
   current limits.
+- **[`docs/structure-census.md`](docs/structure-census.md)** — the read-only
+  fleet code-structure census and its before-and-after comparison, with what
+  each number means.
 
 The rest of `docs/` is one file per durable topic — see the directory.
 

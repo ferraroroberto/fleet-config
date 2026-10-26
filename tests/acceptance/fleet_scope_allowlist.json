@@ -10,6 +10,11 @@
     "reason": "resolves a repo name the user typed; a dormant repo must still resolve"
   },
   {
+    "pattern": "include_ignored",
+    "files": ["skills/_lib/structure_census/census.py"],
+    "reason": "a read-only measurement that marks dormant repos rather than dropping them, so a comparison can report all repos and active repos side by side"
+  },
+  {
     "pattern": "gh_repo_list",
     "files": [".claude/skills/learning-log/gather.py", ".claude/skills/learning-log/SKILL.md"],
     "reason": "reads merged history across the owner's repos; it is not a run over repos"
