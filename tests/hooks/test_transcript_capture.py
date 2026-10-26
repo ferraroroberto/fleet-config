@@ -71,7 +71,7 @@ class CaptureTests(unittest.TestCase):
         return [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
 
     def capture(self, records, agent=None, sid=SID):
-        self.path.write_text('\n'.join(json.dumps(x) for x in records) + '\n', encoding='utf-8')
+        self.path.write_text('\n'.join(json.dumps(x, ensure_ascii=False) for x in records) + '\n', encoding='utf-8')
         payload = {'cwd': str(self.root), 'transcript_path': str(self.path), 'session_id': sid}
         if agent:
             payload[_lib.AGENT_HINT_KEY] = agent
@@ -101,6 +101,29 @@ class CaptureTests(unittest.TestCase):
         header_key = cc.parse_capture_header(files[0].read_text(encoding='utf-8'))['key']
         self.assertEqual(len(header_key), 64)
         self.assertTrue(header_key.startswith(token))
+
+    def test_unicode_line_separators_inside_strings_do_not_split_records(self):
+        """JSON allows U+0085/U+2028/U+2029 raw inside a string; only "\\n" ends a JSONL record."""
+        later = 'Later turn marker'
+        records = claude() + [
+            dict(type='user', sessionId=SID, timestamp='2026-09-05T12:00:02Z',
+                 message={'content': 'fetched\u0085page with separators\x1c\x0b\x0c'}),
+            dict(type='assistant', sessionId=SID, timestamp='2026-09-05T12:00:03Z',
+                 message={'content': later}),
+        ]
+        text = self.capture(records, 'claude')[0].read_text(encoding='utf-8')
+        self.assertIn(later, text)
+        self.assertEqual(len(tr.read_transcript(self.path).messages), 4)
+
+    def test_split_jsonl_keeps_unicode_separators_and_drops_crlf(self):
+        self.assertEqual(_lib.split_jsonl('a\u0085b c\r\nd\n'), ['a\u0085b c', 'd', ''])
+
+    def test_chief_inbox_excerpt_reads_past_unicode_separators(self):
+        import chief_inbox
+        rows = [{'type': 'assistant', 'message': {'role': 'assistant', 'content': 'finalreply'}},
+                {'type': 'user', 'message': {'role': 'user', 'content': 'tail\u0085 '}}]
+        self.path.write_text('\n'.join(json.dumps(x, ensure_ascii=False) for x in rows) + '\n', encoding='utf-8')
+        self.assertEqual(chief_inbox._transcript_excerpt(str(self.path)), ('finalreply', ''))
 
     def test_same_prompt_unrelated_sessions_and_providers(self):
         self.capture(claude(), 'claude')
