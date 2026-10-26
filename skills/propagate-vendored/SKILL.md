@@ -104,6 +104,9 @@ Neither a component nor `--all-behind` → stop: "Pass a component name, e.g.
   resolution — reuse it rather than re-deriving with raw `git` calls). If
   given, verify it resolves (`git -C ... rev-parse --verify <sha>`); else
   stop: "`<sha>` doesn't resolve in project-scaffolding."
+- Real runs only: mint the wave id every agent records its gate time under —
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/gate_ledger.py wave-id --sha <scaffold-sha>`
+  — and keep it for the agent prompts and the step-6 summary.
 
 ### 2. Run the drift scan (always — dry-run and real runs both start here)
 
@@ -273,7 +276,10 @@ above; steps 5-8 run once for the whole repo.
    gate_cmd — e.g.
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`,
    never bare `pwsh`: on this machine that is a 0-byte WindowsApps stub which
-   fails non-interactively). A gate
+   fails non-interactively). Run it through the gate-time ledger so its
+   wall-clock and result are recorded, prefixing the gate command:
+   `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/gate_ledger.py run --wave <wave-id> --repo <repo> -- <gate command>`
+   — it exits with the gate's own exit code. A gate
    FAILURE is a genuine blocker: STOP, do not weaken or skip it, report FAILED.
 
 6. Commit (conventional, no AI-attribution trailer) with the plan's
@@ -308,7 +314,7 @@ Report back, in this exact shape:
   - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several)
   - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
   - Branch: <branch>
-  - Gate: PASS | FAIL (<reason>)
+  - Gate: PASS | FAIL (<reason>) | NOT CONFIRMED (<reason>)   (+ the `LEDGER=recorded` line)
   - Result: MERGED (<merge-sha>) | PR-OPEN (<url>, gate/CI pending) | BLOCKED (<reason>)
   - PR: <url or n/a>
 
@@ -343,6 +349,18 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 
   no per-repo issues filed (by design — see the scaffold record).
 ```
+
+Then print the run's gate time, built from the ledger and the step-2 plan's repos
+(`--expect` makes a planned repo that recorded nothing show as unknown):
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/gate_ledger.py summary --wave <wave-id> --expect <repo>,<repo>,…
+```
+
+It lists each repo's gate time and result and a run total. A gate whose time could not
+be read prints `unknown` and makes the total a lower bound; never restate it as 0 or as
+a clean total. The records live in the machine-local `propagate-vendored/gate-ledger.jsonl`
+under the hooks state directory.
 
 **The coverage block is not decoration — it is the finding.** A wave that
 prints only the re-vendored adopters reads as complete whether it covered
