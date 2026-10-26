@@ -123,7 +123,7 @@ def _transcript_excerpt(path: str) -> Tuple[Optional[str], str]:
             tail = handle.read()
     except OSError as exc:
         return None, f"transcript unreadable ({type(exc).__name__})"
-    for line in reversed(tail.decode("utf-8", errors="replace").splitlines()):
+    for line in reversed(_lib.split_jsonl(tail.decode("utf-8", errors="replace"))):
         try:
             text = _assistant_text(json.loads(line))
         except ValueError:
@@ -142,7 +142,7 @@ def _tail_lines(path: Path) -> Optional[list]:
             tail = handle.read()
     except OSError:
         return None
-    return tail.decode("utf-8", errors="replace").splitlines()
+    return _lib.split_jsonl(tail.decode("utf-8", errors="replace"))
 
 
 def _call_detail(tool_input: Any) -> str:

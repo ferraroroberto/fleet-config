@@ -327,6 +327,19 @@ from hook_wire.harness_wire import (  # noqa: E402
 )
 
 
+# ------------------------------------------------------------ JSONL records
+
+
+def split_jsonl(text: str) -> List[str]:
+    """Split JSONL text into records on ``"\\n"`` alone, dropping a trailing ``"\\r"``.
+
+    ``str.splitlines()`` also breaks on U+0085, U+2028, U+2029, ``\\x0b``, ``\\x0c``
+    and ``\\x1c``-``\\x1e``, all of which JSON allows raw inside a string, so it cuts
+    a transcript record in half mid-string.
+    """
+    return [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
+
+
 # --------------------------------------------------------- Python resolution
 
 

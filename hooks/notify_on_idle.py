@@ -109,7 +109,7 @@ def session_link(transcript_path: object) -> str | None:
     except (OSError, TypeError, ValueError):
         return None
 
-    for line in head.splitlines():
+    for line in _lib.split_jsonl(head):
         try:
             entry = json.loads(line)
         except ValueError:

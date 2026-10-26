@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 from typing import Optional
 
+from _lib import split_jsonl
+
 
 @dataclass(frozen=True)
 class Transcript:
@@ -69,7 +71,7 @@ def read_transcript(path: Path, *, harness: Optional[str] = None, session_id: st
     except UnicodeError:
         return Transcript("parse_failure", detail="invalid UTF-8")
     entries = []
-    for number, line in enumerate(raw.splitlines(), 1):
+    for number, line in enumerate(split_jsonl(raw), 1):
         if not line.strip():
             continue
         try:
