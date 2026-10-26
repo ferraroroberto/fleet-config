@@ -74,7 +74,7 @@ Per-topic references that the intro used to carry, one file each:
   (pilot: `automation`).
 - **[`docs/scheduled-runners.md`](docs/scheduled-runners.md)** — the shared
   Claude/Codex scheduled-skill runner, with its ownership probe
-  (`tests/probe_scheduled_runner.py --ownership-only`). Pi/Grok and Codex
+  (`tests/harness/probe_scheduled_runner.py --ownership-only`). Pi/Grok and Codex
   delegated-child execution remain unverified.
 - **[`docs/conversation-capture.md`](docs/conversation-capture.md)** —
   native Claude/Codex transcript capture, the explicit Codex opt-in and

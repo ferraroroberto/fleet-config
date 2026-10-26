@@ -54,7 +54,7 @@ lock past the threshold is surfaced whether or not the process probe worked.
 
 Pure/impure split, the way `audit_issue.is_fleet_repo` does it: `classify()`
 takes plain values and is unit-tested with no filesystem or git anywhere near
-it (`tests/test_index_lock.py`); `inspect()` is the I/O around it.
+it (`tests/repo/test_index_lock.py`); `inspect()` is the I/O around it.
 
 CLI
 ---

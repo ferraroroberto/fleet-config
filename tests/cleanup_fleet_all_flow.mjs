@@ -17,7 +17,7 @@
 // that family, teardown's checks are scoped to its own lane, and SKILL.md must
 // carry the same rules as the prompt.
 //
-// Driven by tests/test_cleanup_fleet_all_flow.py (which run_acceptance.py owns).
+// Driven by tests/audit/test_cleanup_fleet_all_flow.py (which run_acceptance.py owns).
 // Run directly with: node tests/cleanup_fleet_all_flow.mjs
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

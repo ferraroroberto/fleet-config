@@ -46,7 +46,7 @@ States, most severe first:
   no_criteria   the issue has no checkbox criteria (exit 0)
 
 Pure logic (``parse_criteria``, ``tally``) is unit-tested in
-``tests/test_acceptance_audit.py``. stdlib only.
+``tests/audit/test_acceptance_audit.py``. stdlib only.
 """
 
 from __future__ import annotations

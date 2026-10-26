@@ -40,7 +40,7 @@ test. Callers must render `UNKNOWN` as `❓` and never fold it into `✅`/`❌`.
 
 This never blocks or auto-fixes -- it only reports, so the caller can
 downgrade a self-reported status line. Always exits 0. The decision logic
-(`evaluate`) is pure and unit-tested (`tests/test_dirty_tree_check.py`)
+(`evaluate`) is pure and unit-tested (`tests/repo/test_dirty_tree_check.py`)
 independent of the git plumbing around it. stdlib only.
 """
 

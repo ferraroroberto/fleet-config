@@ -113,4 +113,4 @@ from .report import *  # noqa: E402,F401,F403
 from .routing import *  # noqa: E402,F401,F403
 from .parallel import *  # noqa: E402,F401,F403
 from .budget import *  # noqa: E402,F401,F403
-from .sources import _wall_s  # noqa: E402,F401  (tests/test_e2e_value.py calls it)
+from .sources import _wall_s  # noqa: E402,F401  (tests/e2e_value/test_e2e_value.py calls it)

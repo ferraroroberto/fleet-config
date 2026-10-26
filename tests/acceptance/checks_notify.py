@@ -562,7 +562,7 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
     chief-managed sid): that would query whatever launcher happens to be
     listening on 127.0.0.1:8445 on the machine running this suite. The
     managed path end to end -- lookup stubbed, mailbox write real -- is
-    tests/test_chief_needs_input.py (fleet-config#1456).
+    tests/chief_ops/test_chief_needs_input.py (fleet-config#1456).
     """
     sys.path.insert(0, str(HOOKS))
     import notify_on_idle  # noqa: E402

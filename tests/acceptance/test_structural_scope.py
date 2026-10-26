@@ -8,7 +8,7 @@ Two layers, both pure (no `gh`, no network, no git):
      comment-only on closed, two markers for one name), and `promote` against a fake `gh`
      that records every call: one issue per name, never a reopen, `unknown` on a `gh` failure.
 
-The end-to-end gate on real git branches lives in tests/test_audit_issue.py. This file is
+The end-to-end gate on real git branches lives in tests/audit/test_audit_issue.py. This file is
 under tests/acceptance/ because the flat tests/ directory is baselined in
 `.structure-ratchet-baseline.json` and takes no new module.
 

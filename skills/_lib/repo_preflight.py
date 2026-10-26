@@ -84,7 +84,7 @@ worktree, not an unreachable network. A fetch failure is recorded in the
 item's `note` so it is visible without being conflated with a skip.
 
 The decision logic (`classify_repo`, `partition_working_set`) is pure and
-unit-tested (`tests/test_repo_preflight.py`) independent of the `git`
+unit-tested (`tests/repo/test_repo_preflight.py`) independent of the `git`
 plumbing around it. stdlib only.
 """
 

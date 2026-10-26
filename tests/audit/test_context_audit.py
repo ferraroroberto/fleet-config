@@ -1,0 +1,424 @@
+"""Pure-logic tests for /context-audit's skill-description cap gate (fleet-config#626).
+
+The gate had never worked, in two independent ways, and reported `over_cap=0`
+across a fleet where 21 of 49 descriptions were over:
+
+  1. `audit.py`'s `["'].*?["']` "quoted phrase" regex matched apostrophes, so a
+     possessive pair opened a span that swallowed the prose between them —
+     `chief` measured 29 words against a real 58.
+  2. `SKILLS_DIRS` named only fleet-config's own two tiers, so every sister
+     repo's `.claude/skills/*/SKILL.md` was never looked at at all.
+
+Neither subsumes the other, so both are pinned here: the regex against `chief`'s
+real pre-fix description text (the exact case the sweep measured), and the scan
+against a synthetic multi-repo tree. Plus the requirement the symptoms don't
+state — a description that *cannot* be measured is its own state, never folded
+into the compliant count.
+
+Standalone (like test_context_purge_check) so the gate is testable without the
+live fleet on disk, and reachable from the one acceptance gate.
+
+Run: E:/automation/fleet-config/.venv/Scripts/python.exe tests/audit/test_context_audit.py
+Exit 0 = all pass.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent.parent
+
+sys.path.insert(0, str(REPO / "skills" / "_lib"))
+from fleet_core import skill_description as sd  # noqa: E402
+from fleet_core.fleet_repo_scan import is_linked_worktree as sd_is_wt  # noqa: E402
+
+
+def _load(name: str, rel: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / rel)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+audit = _load("context_audit", ".claude/skills/context-audit/audit.py")
+purge_check = _load("context_purge_check", ".claude/skills/context-purge/check.py")
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+sys.path.insert(0, str(REPO / "tests" / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
+
+_h = CheckHarness()
+check = _h.check
+
+
+# ---------------------------------------------------------------- defect 1 ----
+# `chief`'s description exactly as it stood before the 2026-08-15 purge — the
+# text the sweep measured. Two possessives (`Board's`, `launcher's`) plus one
+# apostrophe-free stretch between them is precisely what the old character class
+# ate. Pinned verbatim: this is a regression fixture, not an example.
+CHIEF_PRE_FIX = (
+    "Standing conversational fleet chief — the brain of the app-launcher Board's chat mode "
+    "(app-launcher#245). Invoked as the injected first prompt of the launcher-spawned chief "
+    "session; answers questions about the fleet from live Board/gh data and dispatches issue "
+    "work through the launcher's own HTTP API, under strict safety rails. Not for ad-hoc human "
+    "invocation in a normal coding session."
+)
+_OLD_BROKEN = re.compile(r"[\"'].*?[\"']")  # the shipped bug, kept to prove the delta
+
+check(sd.word_count(CHIEF_PRE_FIX) == 58, "chief pre-fix description is 58 words total")
+check(sd.prose_words(CHIEF_PRE_FIX) == 58,
+      f"chief pre-fix prose count is 58 (got {sd.prose_words(CHIEF_PRE_FIX)}) — no quoted triggers, so prose == total")
+check(sd.word_count(_OLD_BROKEN.sub(" ", CHIEF_PRE_FIX)) == 29,
+      "the old ['\"] class really did report chief as 29 — the delta this fixes is 29 vs 58")
+check(sd.prose_words(CHIEF_PRE_FIX) > 50,
+      "chief pre-fix is over the 50-word cap — the gate should have flagged it and did not")
+
+# The exemption itself must survive the fix: double-quoted triggers are still
+# subtracted, because they are the routing surface and must stay verbatim.
+_TRIGGERS = 'Do a thing. Use when asked, e.g. "/foo", "run foo now".'
+check(sd.word_count(_TRIGGERS) == 11 and sd.prose_words(_TRIGGERS) == 9,
+      'double-quoted trigger phrases are still exempt from the prose count')
+check(sd.quoted_phrases('a "one" b "two three" c') == ['"one"', '"two three"'],
+      "quoted_phrases returns each double-quoted span, in order")
+check(sd.quoted_phrases("it's the box's own") == [],
+      "apostrophes never open a quoted span")
+
+# ---- frontmatter parsing: an unparseable description returns '', not garbage ----
+check(sd.frontmatter_description("---\nname: x\ndescription: hello there\n---\nbody\n") == "hello there",
+      "frontmatter_description reads the description: value")
+check(sd.frontmatter_description("# no frontmatter\n") == "",
+      "no frontmatter -> ''")
+check(sd.frontmatter_description("---\nname: x\n---\n") == "",
+      "frontmatter without description: -> ''")
+check(sd.frontmatter_description("---\nname: x\ndescription: unterminated\n") == "unterminated",
+      "unterminated frontmatter still yields the description, not a crash")
+
+# ---- one implementation, not three (the fix that was never carried back) ----
+check(audit.prose_words is sd.prose_words and audit.frontmatter_description is sd.frontmatter_description,
+      "audit.py measures through skills/_lib/skill_description")
+check(purge_check.quoted_phrases is sd.quoted_phrases
+      and purge_check.frontmatter_description is sd.frontmatter_description,
+      "context-purge/check.py measures through the same helper — no third copy to diverge")
+
+
+# ---------------------------------------------------------------- defect 2 ----
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _skill(desc: str) -> str:
+    return f"---\nname: s\ndescription: {desc}\n---\n\n# s\nBody.\n"
+
+
+LEAN = "Does one thing well and says so briefly."          # 8 prose words
+FAT = " ".join(f"word{i}" for i in range(60))              # 60 prose words
+
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+
+    # fleet-config-shaped repo: two tiers.
+    _write(root / "self" / "skills" / "alpha" / "SKILL.md", _skill(LEAN))
+    _write(root / "self" / ".claude" / "skills" / "beta" / "SKILL.md", _skill(FAT))
+    # Eval cases (fleet-config#1130) sit beside a SKILL.md and must never be measured as one.
+    _write(root / "self" / "skills" / "alpha" / "evals" / "c1" / "prompt.md", "---\nmax_turns: 2\n---\n\n/alpha\n")
+    _write(root / "self" / "skills" / "alpha" / "evals" / "SKILL.md", _skill(FAT))
+    # A sister repo with a project-scoped skill — invisible to the old scan.
+    _write(root / "sister" / ".claude" / "skills" / "gamma" / "SKILL.md", _skill(FAT))
+    # A sister repo that carries no skills at all: nothing to measure, not a gap.
+    (root / "bare").mkdir()
+    # Unmeasurable: undecodable bytes, and valid text with no description key.
+    _write(root / "broken" / ".claude" / "skills" / "nodesc" / "SKILL.md", "---\nname: n\n---\n# n\n")
+    p = root / "broken" / ".claude" / "skills" / "unreadable" / "SKILL.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"---\nname: u\ndescription: \xff\xfe not utf-8\n---\n")
+    # Unparseable (fleet-config#845): a short, lean description the regex reads
+    # fine — it would have counted compliant — but a YAML loader rejects.
+    _write(root / "sister" / ".claude" / "skills" / "delta" / "SKILL.md",
+           _skill("Two modes: concise is default."))
+
+    repos = {
+        "self": root / "self",
+        "sister": root / "sister",
+        "bare": root / "bare",
+        "broken": root / "broken",
+        "gone": root / "does-not-exist",   # a repo in projects.toml, absent on disk
+    }
+    roots = audit.skill_roots(repos, user_tier_repo="self")
+
+    check([r for r in roots if r.repo == "self" and r.tier == "user"],
+          "the user-tier repo contributes its junctioned skills/ root")
+    check(len([r for r in roots if r.repo == "self"]) == 2,
+          "the user-tier repo contributes exactly two roots")
+    check(all(len([r for r in roots if r.repo == n]) == 1 for n in ("sister", "bare", "broken", "gone")),
+          "every other fleet repo contributes its .claude/skills root only")
+    check(len(roots) == 6, f"one root per repo + the user tier (got {len(roots)})")
+
+    over = audit.skill_roots(repos, user_tier_repo="self", self_root=root / "elsewhere")
+    check(all(r.repo_dir == root / "elsewhere" for r in over if r.repo == "self"),
+          "self_root replaces the user-tier repo's directory for both its tiers")
+
+    rows, unmeasured, unparseable = audit.scan_skills(50, roots)
+
+    measured = {(r["repo"], r["skill"]): r for r in rows}
+    check(set(measured) == {("self", "alpha"), ("self", "beta"), ("sister", "gamma")},
+          f"every repo's skills are measured, not just the audit's own (got {sorted(measured)})")
+    check(measured[("sister", "gamma")]["over_cap"] is True,
+          "a sister repo's over-cap description is finally flagged — the 20 that were never seen")
+    check(measured[("self", "alpha")]["over_cap"] is False and measured[("self", "alpha")]["tier"] == "user",
+          "the junctioned user tier is measured and tagged")
+    check(measured[("self", "beta")]["tier"] == "project",
+          "the project tier is tagged distinctly")
+
+    reasons = {(u["repo"], u["skill"]): u["reason"] for u in unmeasured}
+    check(("broken", "unreadable") in reasons and reasons[("broken", "unreadable")] == "unreadable",
+          "an undecodable SKILL.md is unmeasured, not compliant")
+    check(("broken", "nodesc") in reasons and reasons[("broken", "nodesc")] == "no frontmatter description",
+          "a SKILL.md with no description: is unmeasured, not silently skipped")
+    check(("gone", "*") in reasons and reasons[("gone", "*")] == "repo checkout not found",
+          "a missing repo checkout is one unmeasured entry, not silence")
+    check(not any(u["repo"] == "bare" for u in unmeasured),
+          "a repo with no skills dir is not unmeasured — there is nothing there to measure")
+    check(not any((u["repo"], u["skill"]) in measured for u in unmeasured),
+          "nothing unmeasured leaks into the measured rows")
+
+    check([(u["repo"], u["skill"]) for u in unparseable] == [("sister", "delta")],
+          f"a frontmatter YAML rejects is unparseable, not compliant (got {unparseable})")
+    check(bool(unparseable) and "': '" in unparseable[0]["reason"],
+          "the unparseable entry carries the loader-shaped reason")
+    check(("sister", "delta") not in measured and ("sister", "delta") not in reasons,
+          "unparseable is its own state — in neither the measured rows nor unmeasured")
+
+    by_repo = audit.per_repo_summary(rows, unmeasured, unparseable)
+    summary = {r["repo"]: r for r in by_repo}
+    check(summary["self"]["skills"] == 2 and summary["self"]["over_cap"] == 1,
+          "per-repo summary counts skills and over-cap per repo")
+    check(summary["sister"]["over_cap"] == 1,
+          "an over-cap description names the repo it lives in")
+    check(summary["sister"]["unparseable"] == 1 and summary["sister"]["skills"] == 1,
+          "per-repo summary counts unparseable separately from measured skills")
+    check(summary["broken"]["skills"] == 0 and summary["broken"]["unmeasured"] == 2,
+          "a repo whose skills could not be read reports 0 measured / 2 unmeasured")
+    check("bare" not in summary, "a repo with no surface at all adds no row")
+
+    # The load-bearing invariant: the three states partition the working set, so
+    # a gate that shrinks its own scope can never read the same as a clean run.
+    total_files = len(rows) + len(unmeasured) + len(unparseable)
+    check(total_files == 7,
+          f"measured (3) + unmeasured (2 files + 1 missing repo) + unparseable (1) "
+          f"accounts for everything probed (got {total_files})")
+
+
+# ------------------------------------------- budget scan: worktree siblings ----
+# fleet-config#629. The *budget* half of this file had no worktree guard, so a
+# transient `<repo>-wt-<N>` sibling was measured as a fleet project: phantom
+# rows in the budget and header-drift blocks, and — because worktrees appear
+# and vanish with whatever sessions are running — a `total_est_tokens` that
+# moved between runs with no file changed, corrupting the week-over-week trend
+# recorded in the #218 ledger.
+#
+# A linked worktree's `.git` is a FILE containing a `gitdir:` pointer; a real
+# checkout's is a DIRECTORY. That byte-level difference is the whole
+# discriminator, so the fixture reproduces that shape directly rather than
+# shelling out to `git worktree add`.
+with tempfile.TemporaryDirectory() as td:
+    fleet = Path(td)
+
+    def _repo(name: str, *, worktree: bool, claude_md: bool = True) -> Path:
+        d = fleet / name
+        d.mkdir()
+        if worktree:
+            (d / ".git").write_text("gitdir: E:/automation/real/.git/worktrees/x\n", encoding="utf-8")
+        else:
+            (d / ".git").mkdir()
+        if claude_md:
+            (d / "CLAUDE.md").write_text("# " + name + "\n\nproject instructions.\n", encoding="utf-8")
+        return d
+
+    real_a = _repo("alpha", worktree=False)
+    real_b = _repo("beta", worktree=False)
+    wt = _repo("alpha-wt-42", worktree=True)
+    plain = fleet / "not-a-repo"          # no .git at all — not a worktree
+    plain.mkdir()
+    (plain / "CLAUDE.md").write_text("# loose\n\nstill costs context.\n", encoding="utf-8")
+
+    check(sd_is_wt(wt) is True, "a .git FILE identifies a linked worktree")
+    check(sd_is_wt(real_a) is False, "a .git DIRECTORY is a real checkout, not a worktree")
+    check(sd_is_wt(plain) is False, "a directory with no .git at all is not a worktree either")
+
+    found = {n for n, _ in audit.find_project_claude_mds(fleet)}
+    check("alpha-wt-42" not in found,
+          "a worktree sibling contributes no budget row — the #629 defect")
+    check({"alpha", "beta"} <= found,
+          "real repo checkouts are still measured")
+    check("not-a-repo" in found,
+          "a non-repo directory carrying a CLAUDE.md is still measured — the guard "
+          "excludes worktrees only, it does not silently shrink the budget")
+    check(len(found) == 3, f"exactly the three non-worktree dirs are measured (got {sorted(found)})")
+
+    # The load-bearing property: the answer must not depend on which worktrees
+    # happen to exist when the weekly job fires.
+    before = audit.find_project_claude_mds(fleet)
+    _repo("beta-wt-7", worktree=True)
+    _repo("alpha-wt-99", worktree=True)
+    after = audit.find_project_claude_mds(fleet)
+    check(before == after,
+          "adding two more worktrees changes nothing — the budget total is now "
+          "stable across runs, which is what the #218 trend depends on")
+
+    # Dormant repos (docs/fleet-scope.md) leave the budget but are named as
+    # not measured; an undeclared directory is still measured.
+    _real_root = audit.FLEET_ROOT
+    audit.FLEET_ROOT = fleet
+    try:
+        everyone = audit.scan_budget_and_drift(set())
+        slept = audit.scan_budget_and_drift(set(), {"beta"})
+    finally:
+        audit.FLEET_ROOT = _real_root
+    measured = {b["file"] for b in slept["budget"]}
+    check("beta/CLAUDE.md" in {b["file"] for b in everyone["budget"]} and everyone["not_measured_dormant"] == [],
+          "with no dormant repo the budget measures every CLAUDE.md and reports nothing as not measured")
+    check("beta/CLAUDE.md" not in measured and {"alpha/CLAUDE.md", "not-a-repo/CLAUDE.md"} <= measured,
+          "a dormant repo leaves the budget; live and undeclared repos stay in it")
+    check(slept["not_measured_dormant"] == ["beta"] and slept["total_est_tokens"] < everyone["total_est_tokens"],
+          "the dormant repo is listed as not measured and its tokens are absent from the total")
+
+# ------------------------------------------------ bootstrap loads (#1014) ----
+# What a declaring repo's skills auto-load on every invocation. Synthetic tree
+# only: sizes and pattern counts are what's under test, never private content.
+
+boot = _load("context_audit_bootstrap", ".claude/skills/context-audit/bootstrap_loads.py")
+
+with tempfile.TemporaryDirectory() as tmp:
+    repo = Path(tmp) / "privy"
+    skills = repo / ".claude" / "skills"
+    (repo / "identity").mkdir(parents=True)
+    (repo / "identity" / "who.md").write_text("tiny identity\n", encoding="utf-8")
+    for name in ("alpha", "beta", "_shared"):
+        (skills / name / "context").mkdir(parents=True)
+    (skills / "alpha" / "SKILL.md").write_text(
+        "# alpha\n\n## Step 1 — load\n\n"
+        "- `Read <privy-root>/.claude/skills/alpha/context/setup.md` for setup.\n"
+        "- `Read <privy-root>/.claude/skills/alpha/context/absent.md` if present.\n"
+        "- `ls <privy-root>/.claude/skills/alpha/context/` to discover more.\n\n"
+        "## Email\n\n`Read <privy-root>/.claude/skills/_shared/email.md` only when needed.\n",
+        encoding="utf-8")
+    (skills / "alpha" / "context" / "setup.md").write_text(
+        "router admin\nwifi password: correct-horse-battery\napi_key = SYNTHETIC-NOT-REAL-1234\n"
+        "password policy is described elsewhere\n", encoding="utf-8")
+    (skills / "alpha" / "conversations").mkdir()
+    (skills / "alpha" / "conversations" / "index.md").write_text("x" * 4 * 30_000, encoding="utf-8")
+    (skills / "beta" / "SKILL.md").write_text("# beta\n\n## Step 1\n\nNothing to load.\n", encoding="utf-8")
+    (skills / "beta" / "description.md").write_bytes(b"\xff\xfe not utf-8")
+    (skills / "_shared" / "SKILL.md").write_text("# shared, not a skill\n", encoding="utf-8")
+    decl = {"bootstrap_shared": ["identity/who.md"],
+            "bootstrap_skill": ["{skill}/description.md", "{skill}/conversations/index.md"],
+            "bootstrap_sections": ["Step 1"]}
+
+    refs = boot.section_refs((skills / "alpha" / "SKILL.md").read_text(encoding="utf-8"), ["Step 1"])
+    check(refs == [".claude/skills/alpha/context/setup.md", ".claude/skills/alpha/context/absent.md"],
+          f"section_refs: Step 1's file refs only -- no directory to `ls`, nothing from a later section ({refs})")
+
+    rep = boot.scan_repo("privy", repo, decl)
+    by_skill = {r["skill"]: r for r in rep["skills"]}
+    check(sorted(by_skill) == ["alpha", "beta"], "scan_repo: `_`-prefixed folders are not skills")
+    alpha = {f["path"]: f for f in by_skill["alpha"]["files"]}
+    check(alpha[".claude/skills/alpha/conversations/index.md"]["state"] == "over-cap"
+          and by_skill["alpha"]["over_cap"] == [".claude/skills/alpha/conversations/index.md"],
+          "a file past the read cap is over-cap, never ok")
+    check(alpha[".claude/skills/alpha/context/absent.md"]["state"] == "missing"
+          and alpha[".claude/skills/alpha/description.md"]["state"] == "missing",
+          "a declared file that is absent is missing (optional), not unmeasured and not ok")
+    check(alpha["identity/who.md"]["state"] == "ok", "a small shared file is ok")
+    beta = {f["path"]: f for f in by_skill["beta"]["files"]}
+    check(beta[".claude/skills/beta/description.md"]["state"] == "unmeasured"
+          and by_skill["beta"]["unmeasured"] == [".claude/skills/beta/description.md"],
+          "a present file that can't be read is unmeasured, its own state")
+    check(rep["credential_files"] == [{"path": ".claude/skills/alpha/context/setup.md", "hits": 2}],
+          f"credential-shaped assignments counted per file; prose mentioning 'password' is not one ({rep['credential_files']})")
+    check("correct-horse" not in repr(rep) and "SYNTHETIC-NOT-REAL" not in repr(rep),
+          "the report never carries a credential value")
+    check(boot.scan_repo("privy", repo, decl, read_cap=60_000)["skills"][0]["over_cap"] == [],
+          "the read cap is a parameter (audit.py --read-cap)")
+    # The one measured fact (#1014): Read truncated a 69,139-byte generated index
+    # (~29k real tokens). A ~4 chars/token estimate called it ~17k and "ok".
+    measured = Path(tmp) / "measured_index.md"
+    measured.write_text(("- 2026-09-01 · slug-" + "a" * 20 + " — decision; open loop\n") * 1032, encoding="utf-8")
+    check(len(measured.read_bytes()) >= 69_000 and boot.measure_file(measured, boot.READ_CAP_TOKENS)["state"] == "over-cap",
+          "a file the size of the index Read truncated is over-cap at the default cap, never ok")
+
+    toml = Path(tmp) / "projects.toml"
+    toml.write_text(
+        f'[privy]\ncwd_prefix = "{repo.as_posix()}"\nbootstrap_shared = ["identity/who.md"]\n\n'
+        f'[plain]\ncwd_prefix = "{repo.as_posix()}"\n\n'
+        f'[gone]\ncwd_prefix = "{(Path(tmp) / "nope").as_posix()}"\nbootstrap_sections = ["Step 1"]\n',
+        encoding="utf-8")
+    fleet = {b["repo"]: b["status"] for b in boot.scan_fleet(toml)}
+    check(fleet == {"privy": "ok", "gone": "unmeasured: checkout missing"},
+          f"scan_fleet: only declaring repos, a missing checkout unmeasured ({fleet})")
+
+# ------------------------------------- head-only loads by a declared cap (#1051) ----
+# A bootstrap that reads only the newest entries of an index is measured by
+# the lines it loads. Synthetic indexes and a synthetic declaring file only.
+
+with tempfile.TemporaryDirectory() as tmp:
+    repo = Path(tmp) / "capped"
+    skills = repo / ".claude" / "skills"
+    for name in ("big", "dense", "_shared"):
+        (skills / name / "conversations").mkdir(parents=True)
+    (skills / "big" / "SKILL.md").write_text("# big\n", encoding="utf-8")
+    (skills / "dense" / "SKILL.md").write_text("# dense\n", encoding="utf-8")
+    header = "# Conversations\n\nnewest first\n\n"
+    entry = "## 2026-09-01 · slug\n- decision\n- open loop\n- file\n- tags\n\n"
+    # 100 entries: whole file past the read cap, the newest 40 (4 + 6*40 = 244 lines) well under it.
+    (skills / "big" / "conversations" / "index.md").write_text(
+        header + entry.replace("decision", "d" * 1000) * 100, encoding="utf-8")
+    # Entries so heavy that even the newest 40 exceed the cap.
+    (skills / "dense" / "conversations" / "index.md").write_text(
+        header + entry.replace("decision", "d" * 3000) * 60, encoding="utf-8")
+    bootstrap_md = skills / "_shared" / "bootstrap.md"
+    bootstrap_md.write_text("Load only the newest 40 entries. Read the file's first **244 lines**.\n",
+                            encoding="utf-8")
+    decl = {"bootstrap_skill": ["{skill}/conversations/index.md"],
+            "bootstrap_line_caps": {"{skill}/conversations/index.md": ".claude/skills/_shared/bootstrap.md"}}
+
+    check(boot.read_line_cap(bootstrap_md) == (244, ""), "read_line_cap: reads the cap from the declaring file")
+
+    def index_row(rep, skill):
+        rows = {r["skill"]: r for r in rep["skills"]}
+        return rows[skill], rows[skill]["files"][0]
+
+    rep = boot.scan_repo("capped", repo, decl)
+    big_row, big = index_row(rep, "big")
+    check(big["whole_est_tokens"] > boot.READ_CAP_TOKENS and big["state"] == "ok"
+          and big["capped"] is True and big["line_cap"] == 244 and big_row["over_cap"] == [],
+          f"an index over the cap whole, whose newest 40 entries fit, is not over budget ({big['est_tokens']} of {big['whole_est_tokens']})")
+    dense_row, dense = index_row(rep, "dense")
+    check(dense["state"] == "over-cap" and dense_row["over_cap"] == [".claude/skills/dense/conversations/index.md"],
+          "an index whose newest 40 entries exceed the budget still is over-cap")
+    check(big_row["cap_unconfirmed"] == [] and "cap" not in big, "a readable cap is not flagged")
+
+    for label, content in (("reworded", "Load the newest forty entries.\n"),
+                           ("ambiguous", "first **244 lines** ... or first **300 lines**\n")):
+        bootstrap_md.write_text(content, encoding="utf-8")
+        big_row, big = index_row(boot.scan_repo("capped", repo, decl), "big")
+        check(big["state"] == "over-cap" and big["cap"].startswith("not confirmed")
+              and big_row["cap_unconfirmed"] == [".claude/skills/big/conversations/index.md"],
+              f"a {label} cap is not confirmed: whole-file measurement, flagged, never passing")
+    bootstrap_md.unlink()
+    big_row, big = index_row(boot.scan_repo("capped", repo, decl), "big")
+    check(big["state"] == "over-cap" and "unreadable" in big["cap"],
+          "a missing cap source is not confirmed, never passing")
+
+    no_caps = {"bootstrap_skill": ["{skill}/conversations/index.md"]}
+    big_row, big = index_row(boot.scan_repo("capped", repo, no_caps), "big")
+    check(big["state"] == "over-cap" and "cap" not in big and big_row["cap_unconfirmed"] == [],
+          "a repo that declares no cap is measured whole, as before, and not flagged")
+
+_h.report_and_exit("test_context_audit")

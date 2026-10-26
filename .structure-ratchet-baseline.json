@@ -1,9 +1,4 @@
 {
   "version": 1,
-  "entries": [
-    {"key": "dir:tests", "modules": 106},
-    {"key": "size:tests/test_design_review_browser.py", "lines": 1355},
-    {"key": "size:tests/test_e2e_value.py", "lines": 1114},
-    {"key": "size:tests/test_fleet_private_backup.py", "lines": 1485}
-  ]
+  "entries": []
 }

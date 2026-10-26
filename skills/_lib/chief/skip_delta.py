@@ -60,7 +60,7 @@ helper exists to close:
 baseline, and every `NEW=` line names a test that stopped running.
 
 Report-only, always exits 0 -- callers key on `STATUS`/`SET`, the same contract
-as `dirty_tree_check.py`. Pure logic, unit-tested in `tests/test_skip_delta.py`.
+as `dirty_tree_check.py`. Pure logic, unit-tested in `tests/chief_ops/test_skip_delta.py`.
 stdlib only (matches the `_lib` module contract).
 """
 

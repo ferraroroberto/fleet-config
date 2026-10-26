@@ -59,7 +59,7 @@ NOTIFY_ON_IDLE_CASES: List[Case] = [
     # it is the id space that used to key this decision. The genuinely
     # chief-managed branch is covered by direct unit tests on
     # chief_managed_state/parse_chief_sid below and by
-    # tests/test_chief_needs_input.py (lookup stubbed) — never end-to-end
+    # tests/chief_ops/test_chief_needs_input.py (lookup stubbed) — never end-to-end
     # here, since that would let chief_live query a real launcher.
     (
         "notify_on_idle: permission_prompt in a non-launcher session -> allow (falls through to human ping)",

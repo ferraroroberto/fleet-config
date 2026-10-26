@@ -1,6 +1,6 @@
 """Fixtures shared by the design-review suites (fleet-config#1481).
 
-The suites in `tests/design_review/` are the pure-logic leg; `tests/test_design_review_browser.py` is the
+The suites in `tests/design_review/` are the pure-logic leg; `tests/design_review_browser/test_design_review_browser.py` is the
 browser leg, which the gate routes to only when the design-review surface changed. Both read the
 same rubric, fixture specs and fixture metrics, so they load them from here once. The
 `test_design_judgment.py` and `test_design_report.py` CLI legs share `cli_runner` and `SPEC_ARGS`.

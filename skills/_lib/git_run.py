@@ -68,7 +68,7 @@ def git_env(base: Optional[dict] = None) -> dict:
 
     `GIT_OPTIONAL_LOCKS=0` suppresses only *optional* locks — a requested
     write still takes the real index lock, and still refuses when one is
-    already held. Verified, not assumed: `tests/test_git_run.py` drives both
+    already held. Verified, not assumed: `tests/repo/test_git_run.py` drives both
     halves against a real repo.
     """
     env = dict(os.environ if base is None else base)

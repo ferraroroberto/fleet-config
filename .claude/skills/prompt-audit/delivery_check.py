@@ -28,7 +28,7 @@ unreadable ledger are "not confirmed", never a pass.
 
 The shared predicate lives in `skills/_lib/audit_ledger/digest_delivery.py`; messages stay
 pure ASCII (stdout is a pipe). Behaviour pinned by
-`tests/test_delivery_check_contract.py`.
+`tests/audit/test_delivery_check_contract.py`.
 
 Usage: delivery_check.py [--max-age-hours N]   (default 12)
 """

@@ -69,7 +69,7 @@ Subcommands
       safety net for a worker killed too hard to fire a hook. v2 events add
       ` kind=<kind>` to their line and indented excerpt lines below it; the
       header, the v1 lines and the closing `Next:` line are unchanged
-      (pinned by tests/test_chief_wait_event_compat.py, fleet-config#1455).
+      (pinned by tests/chief_ops/test_chief_wait_event_compat.py, fleet-config#1455).
 
   inbox [--count] [--stale-after SECS]
       Mailbox v2 reader (fleet-config#1455; contract: docs/chief-mailbox.md).

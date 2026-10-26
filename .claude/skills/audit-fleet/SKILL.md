@@ -320,7 +320,7 @@ One concise block: the plan line from step 2, per-repo results, where the digest
 
 ## Hard rules
 
-- **The ledger gate is one shared Python implementation, not prose.** Step 2's `fleet_audit_scan.py` and `/codebase-audit`'s own step 2 both call `audit_issue.py`'s `evaluate_repo` — exactly one implementation of the skip/audit/self-fix decision. Unit-tested independent of `gh`/`git` in `tests/test_audit_issue.py`.
+- **The ledger gate is one shared Python implementation, not prose.** Step 2's `fleet_audit_scan.py` and `/codebase-audit`'s own step 2 both call `audit_issue.py`'s `evaluate_repo` — exactly one implementation of the skip/audit/self-fix decision. Unit-tested independent of `gh`/`git` in `tests/audit/test_audit_issue.py`.
 - **Read-only on source — except a sub-agent's step-8b security self-heal** (redacted issue + auto-fix + auto-merge, gated: claim, mandatory regression test, generic artifacts, green-gate-only merge, escalate on failure). Every other write is an audit issue, the per-repo ledger, the digest-state issue, the digest comment, or the cross-fleet practices ledger in `project-scaffolding` (the one issue-write target outside `fleet-config` — still an issue, never source).
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are skipped and reported, never stashed or force-switched.
 - **One sub-agent per repo, `hard` tier (Opus — Claude Code only, today), through a ≤3 sliding window.** Refill as each returns. No worktrees (audits don't collide). Don't read repo source in the orchestrator.

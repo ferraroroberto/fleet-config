@@ -214,7 +214,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
     ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner · single_home_gate · dead_function_gate ·\ntree_boundary · static_ratchet_gate (vendored scripts/static_ratchet.py vs .static-ratchet-baseline.json; exit 3 = NOT CONFIRMED, fails) · instruction_ratchet_gate (vendored scripts/instruction_ratchet.py vs .instruction-ratchet-baseline.json) · doc_refs_ratchet_gate (vendored scripts/doc_refs_ratchet.py vs .doc-refs-ratchet-baseline.json) · dead_code_ratchet_gate (vendored scripts/dead_code_ratchet.py vs .dead-code-ratchet-baseline.json) · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers ·\nhook_cases/ (hook-matrix case data) · context_filter_sections/ (context-filter sections + tables) ·
 guard_checks/ · notify_checks/ · prose_guards/ (domains continued past one module)"]
     TESTS --> ACCPKG
-    SUITES["design_lint/ · design_review/ · chief_ops/ · claude_progress/ · prompt_audit/ · worktree_claim/\nsuites split by subject (a shared _suite.py + test_*.py parts), one standalone_dispatch row per file"]
+    SUITES["audit/ · chief_ops/ · chief_plan/ · claude_progress/ · design_checks/ · design_lint/ · design_review/ · design_review_browser/ · e2e/ · e2e_value/ · fleet_private_backup/ · harness/ · hooks/ · payload_normalization/ · prompt_audit/ · repo/ · statusline/ · web_review/ · worktree_claim/\nsuites grouped by subject, each under 40 modules; a large suite is a shared _suite.py + test_*.py parts (or ordered parts imported by one entry); one standalone_dispatch row per entry file"]
     TESTS --> SUITES
   end
   ACCPKG --> HOOKFILES

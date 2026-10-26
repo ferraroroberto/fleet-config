@@ -74,20 +74,20 @@ A Pi/Grok reader must add sanitized native fixtures and demonstrate: exact host/
 
 ## Verification and native evidence
 
-Run `tests/test_transcript_capture.py`, `tests/test_conversation_search.py`, `tests/test_conversation_backfill.py`, and the full acceptance gate. Four regressions were observed against pre-change code: Codex captured no turns, same-prompt Claude sessions overwrote one another, missing agent yielded a Claude resume command, and unidentified input acquired a Claude label. The replacement tests exercise native-session isolation, fork/resume updates, parsing failures, atomic write failure, routing, ignored private storage in the native replay, and rebuild preservation. Claude fixtures are synthetic; the Codex fixtures are sanitized projections of the actual disposable saved rollouts. `test_conversation_backfill.py` additionally covers markerless Codex routing by transcript inference, session-start filename stamping, idempotent re-runs, and scoped discovery across synthetic Claude/Codex transcript stores.
+Run `tests/hooks/test_transcript_capture.py`, `tests/hooks/test_conversation_search.py`, `tests/hooks/test_conversation_backfill.py`, and the full acceptance gate. Four regressions were observed against pre-change code: Codex captured no turns, same-prompt Claude sessions overwrote one another, missing agent yielded a Claude resume command, and unidentified input acquired a Claude label. The replacement tests exercise native-session isolation, fork/resume updates, parsing failures, atomic write failure, routing, ignored private storage in the native replay, and rebuild preservation. Claude fixtures are synthetic; the Codex fixtures are sanitized projections of the actual disposable saved rollouts. `test_conversation_backfill.py` additionally covers markerless Codex routing by transcript inference, session-start filename stamping, idempotent re-runs, and scoped discovery across synthetic Claude/Codex transcript stores.
 
 On 2026-09-05, installed Codex CLI 0.153.3 completed three harmless, tool-free subscription turns: new session `01a07363-fdd1-7561-a7da-3681f2d06cdd` → `CAPTURE753_ALPHA 42`; resume of the same ID → `CAPTURE753_BETA 63`; fork `01a07369-a5be-7380-826b-4fc268b35cd0` → `CAPTURE753_FORK 84`, with the original ID in `forked_from_id`. All native processes exited 0. The original rollout began at 21:05:28 UTC (23:05:28 local, observed +02:00); stored JSONL timestamps are UTC. CLI help confirmed resume/fork and persistence flags; the actual saved JSONL established the store schema.
 
 Each invocation used process-only `exec --ignore-user-config --approve-for-me --disable hooks -c project_doc_max_bytes=0 -c check_for_update_on_startup=false --skip-git-repo-check -C <temporary-project> --json`, with `resume <id>` or `fork <id>` as applicable. No `--ephemeral`, credential copying, API-key fallback, profile ACL changes, production rewiring, live-service changes or external notifications were used.
 
-`tests/probe_conversation_capture.py --rollout <exact-disposable-rollout> --session-id <native-id>` then replayed the saved source through the real capture entry point and temporary opt-in registry. It confirmed ordered turns (4 original/resumed, 2 fork), exact identity/parent, unchanged repeat capture, real CLI search/rebuild, gitignored capture storage, unchanged originals, and no unrelated-project capture. It preserves `evidence.json` and `search.json` under its printed temporary root. The probe accepts only short `CAPTURE753` marker conversations and never calls a model.
+`tests/harness/probe_conversation_capture.py --rollout <exact-disposable-rollout> --session-id <native-id>` then replayed the saved source through the real capture entry point and temporary opt-in registry. It confirmed ordered turns (4 original/resumed, 2 fork), exact identity/parent, unchanged repeat capture, real CLI search/rebuild, gitignored capture storage, unchanged originals, and no unrelated-project capture. It preserves `evidence.json` and `search.json` under its printed temporary root. The probe accepts only short `CAPTURE753` marker conversations and never calls a model.
 
 ### Automatic native Stop proof
 
 Run the separately opted-in native probe from this checkout using the existing interpreter:
 
 ```powershell
-& E:/automation/fleet-config/.venv/Scripts/python.exe tests/probe_codex_capture.py --model gpt-5.6-sol
+& E:/automation/fleet-config/.venv/Scripts/python.exe tests/harness/probe_codex_capture.py --model gpt-5.6-sol
 ```
 
 The probe creates two disposable TEMP repositories and reviewed project `.codex/hooks.json` wrappers, then runs harmless new/resume/fork turns and an unregistered-project control. It requires a positive project `UserPromptSubmit` observation before each matching native `Stop`, readable saved conversation at Stop time, the expected completed model response, and CLI exit 0. The wrapper calls the real `conversation_capture.main()` with the original stdin envelope; only detached digest scheduling is suppressed. A second invocation is explicitly a replay check of bytes, mtime and trigger idempotence. Real CLI search/rebuild must preserve both originals and return their exact native resume commands. Capture storage must be gitignored, and the unregistered project must remain uncaptured even with identical opening text.
@@ -102,11 +102,11 @@ The printed TEMP root preserves `evidence.json`, `search.json`, per-run argv/str
 
 ### Installed-global Stop proof
 
-The proof above wires its own project-level `.codex/hooks.json`, which is sufficient for native dispatch but does not establish that the *installed* global `~/.codex/hooks.json` (this repo's own `hooks.json`, junctioned live) is what actually fires for an opted-in project with no project-level override. `tests/probe_indexer_boundary.py` and `tests/probe_codex_capture_global.py` close that gap.
+The proof above wires its own project-level `.codex/hooks.json`, which is sufficient for native dispatch but does not establish that the *installed* global `~/.codex/hooks.json` (this repo's own `hooks.json`, junctioned live) is what actually fires for an opted-in project with no project-level override. `tests/harness/probe_indexer_boundary.py` and `tests/harness/probe_codex_capture_global.py` close that gap.
 
 ```powershell
-& E:/automation/fleet-config/.venv/Scripts/python.exe tests/probe_indexer_boundary.py
-& E:/automation/fleet-config/.venv/Scripts/python.exe tests/probe_codex_capture_global.py --model gpt-5.6-sol
+& E:/automation/fleet-config/.venv/Scripts/python.exe tests/harness/probe_indexer_boundary.py
+& E:/automation/fleet-config/.venv/Scripts/python.exe tests/harness/probe_codex_capture_global.py --model gpt-5.6-sol
 ```
 
 **`probe_indexer_boundary.py`** is model-free: it invokes the real `conversation_capture.py` directly against a disposable opted-in project and lets `_trigger_delayed_index` spawn its real, non-detached `conversation_index.py` child. `conversation_index.apply_delay()` sleeps for the full `_INDEX_DELAY_SECONDS` (60s) before ever reaching `hub_client.complete()` (`conversation_index.py:403`), so identifying that child by argv and terminating it anywhere inside that window — proven here with ~0.2s latency — guarantees zero live digest calls, with terminal exit accounting and no orphan. This validates the "job ownership controls lifetime, not I/O" boundary without any Codex CLI invocation or model call.

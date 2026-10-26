@@ -124,7 +124,7 @@ which shell ran it.
 
 Codex shell tools stay marked unknown: no observed shell metadata establishes Bash versus PowerShell. The shared ambiguity marker is the same contract used by Grok and agy; future adapters, including Pi safety adapters, must carry that marker whenever their terminal tool cannot establish a shell. `safe_kill_guard` checks both blanket-kill sets and PowerShell protected-port patterns, logs an info-level breadcrumb without command text, and includes `Shell unknown` in relevant refusals. Unknown-shell quoted kill literals are conservatively refused; genuine Claude Bash/PowerShell tools retain their existing cross-shell literal behavior. This policy is heuristic, not a shell parser.
 
-Verify dangerous-looking commands only as stdin JSON. Run `tests/probe_codex_refusal.py --workspace ./tmp/codex-shell-check --model gpt-6-astra --policy shell-safety` for the live shell-policy check. It imports the real `safe_kill_guard.main()` and replaces only its PowerShell match with a harmless marker in the disposable hook. Success requires the allowed control file, absent sentinel, an actual structured refusal with `Shell unknown`, and observed `Bash` tool labels with unknown-shell metadata. This extends the transport probe below; no test policy reaches installed hooks and no process-kill command is executed.
+Verify dangerous-looking commands only as stdin JSON. Run `tests/harness/probe_codex_refusal.py --workspace ./tmp/codex-shell-check --model gpt-6-astra --policy shell-safety` for the live shell-policy check. It imports the real `safe_kill_guard.main()` and replaces only its PowerShell match with a harmless marker in the disposable hook. Success requires the allowed control file, absent sentinel, an actual structured refusal with `Shell unknown`, and observed `Bash` tool labels with unknown-shell metadata. This extends the transport probe below; no test policy reaches installed hooks and no process-kill command is executed.
 
 **Translation, not duplication.** When a harness's payload differs in shape,
 normalize it at `hooks/_lib.read_stdin_json()` — the one entry point every hook
@@ -174,7 +174,7 @@ The Windows Codex CLI 0.153.3 `exec --ephemeral --approve-for-me` probe establis
 Run the opt-in, bounded probe from the checkout being tested with its existing venv:
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/probe_codex_refusal.py --workspace ./tmp/codex-refusal-check --model gpt-6-astra
+& ./.venv/Scripts/python.exe tests/harness/probe_codex_refusal.py --workspace ./tmp/codex-refusal-check --model gpt-6-astra
 ```
 
 The directory must not already exist. The probe creates a disposable nested git repo and reviewed project hook, invokes the real shared `block()`, and allows at most 150 seconds for two harmless file-creation attempts. It leaves sanitized hook observations and the local CLI transcript for inspection. `conformance: pass` requires the control contents, absent sentinel, two observed hook calls, a matching actual block call, the exact deny wire format and model-visible reason. A missing hook invocation or failed/timed-out CLI is `unknown`; it never counts as refusal.
@@ -192,7 +192,7 @@ The syntax consumer checks each surviving `.py` path once (rename destination, n
 Run the bounded opt-in runtime check from the checkout being tested:
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/probe_codex_patch.py --workspace ./tmp/codex-patch-check --model gpt-6-astra
+& ./.venv/Scripts/python.exe tests/harness/probe_codex_patch.py --workspace ./tmp/codex-patch-check --model gpt-6-astra
 ```
 
 This reuses the refusal probe's normal account discovery, invocation-only project trust, reviewed disposable hooks and isolated session state; no credential copies or live wiring changes. It creates a new disposable git repository, submits a six-target patch (two invalid Python files, valid Python, text, rename, deletion), then a patch that fails verification on a missing file. Pass requires the exact attempts, four actual compiler targets once each, both SyntaxErrors in structured hook context and the model transcript, expected file effects, and observed patch failure. The sanitized successful hook payload is `tests/fixtures/codex_patch_post.json`. `--expect-bug` reproduces the original zero-compiler-call failure against old code.
@@ -202,7 +202,7 @@ In the tested client the failed verification attempt fires PreToolUse but neithe
 Run the broader command/edit policy probe when changing Codex wiring or any shared edit-policy consumer:
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/probe_codex_policies.py --workspace ./tmp/codex-policy-check --model gpt-6-astra
+& ./.venv/Scripts/python.exe tests/harness/probe_codex_policies.py --workspace ./tmp/codex-policy-check --model gpt-6-astra
 ```
 
 It uses normal config discovery, invocation-scoped trust, `--approve-for-me`, and reviewed wrappers under disposable `.codex/hooks/`; it neither copies credentials nor changes live hooks. The feature-branch leg proves a safe multi-file patch runs, the PreToolUse GitHub-body advisory and both PostToolUse advisories reach the model, and an installed dated-doc policy refuses the dated target. The default-branch leg proves a gitignored control edit runs while a committable target is refused. Two project-only controls establish the tested runtime and mode: normal discovery must invoke the disposable hook and record its refusal/effect, while `--ignore-user-config` must run the same harmless tool successfully with no project-hook marker or observation. The latter does not assume global hooks are absent; installed user-scope policies may still act, so their behavior is reported separately. Missing or malformed observations, an unattempted control action, or a failed CLI never counts as suppression. Pass depends on actual file effects and transcript evidence, not registration alone.
@@ -210,7 +210,7 @@ It uses normal config discovery, invocation-scoped trust, `--approve-for-me`, an
 When changing Codex session lifecycle wiring, run the dedicated end-to-end probe:
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/probe_codex_session_end.py --workspace ./tmp/codex-session-end-check --model gpt-6-astra
+& ./.venv/Scripts/python.exe tests/harness/probe_codex_session_end.py --workspace ./tmp/codex-session-end-check --model gpt-6-astra
 ```
 
 It uses normal config discovery, invocation-scoped project trust, reviewed disposable project hooks, isolated state, and `codex exec --ephemeral` so neither the workspace nor the thread enters normal session history. Normal process exit must emit `UserPromptSubmit` → `Stop` → `SessionEnd`, and the matching row must transition `working` → `needs-you` → removed. The probe records the installed CLI version and `SessionEnd.reason`; a missing event, unexpected order, surviving row, timeout, or CLI failure is unknown/fail rather than a pass. Do not add `--ignore-user-config`: that suppresses project hooks while global hooks remain active, so it tests a different configuration surface.
@@ -311,14 +311,14 @@ This is heuristic shared-policy coverage, not a shell sandbox. Writes made insid
 Run focused fixtures through the existing interpreter:
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/test_pi_policy_coverage.py
+& ./.venv/Scripts/python.exe tests/harness/test_pi_policy_coverage.py
 ```
 
 Run the installed Pi loop with the committed deterministic test provider (replace `<pi-cli>` with the installed `dist/bundle/cli.js` path):
 
 ```powershell
-& ./.venv/Scripts/python.exe tests/probe_pi_policies.py --cli <pi-cli> --synthetic
-& ./.venv/Scripts/python.exe tests/probe_pi_policies.py --cli <pi-cli> --synthetic --policy-first
+& ./.venv/Scripts/python.exe tests/harness/probe_pi_policies.py --cli <pi-cli> --synthetic
+& ./.venv/Scripts/python.exe tests/harness/probe_pi_policies.py --cli <pi-cli> --synthetic --policy-first
 ```
 
 Observed on 2026-09-06 with Pi 0.84.4 and Node 24.15.0: all 27 cases passed in both extension orders. The native probe covers the original six cases plus blocked write, successful write with syntax feedback, and successful edit with syntax feedback for each of seven aliases (`@`, file URL, tilde, MSYS, WSL, Cygwin, Unicode space). Tilde targets use a temporary home. Real PowerShell writes the allowed control; shell and dated-document sentinels must remain absent after actual refused calls. Native `write` and `edit` must produce syntax feedback while retaining successful tool outcomes. A native Bash result must be compressed and retain its pre-call advisory. The deterministic provider records the exact result content Pi delivers back into model context. The real lifecycle writer must report working, needs-you, then remove the row after the test requests Pi's documented `ctx.shutdown()`. This proves native Pi tool/middleware execution with simulated model responses; it does not prove authenticated model behavior or automatic shutdown in every CLI mode.

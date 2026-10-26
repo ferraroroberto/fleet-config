@@ -71,7 +71,7 @@ It prints (KEY=VALUE, JSON where structured):
   - `PROFILE_LOCK_EXHAUSTED` — the persistent profile stayed locked past the 60/120/240/480s backoff (a sibling job holds it — **wait**, never kill the holder, or use a distinct profile dir).
   - `RENDER_FAILED` — Playwright launched and the app is reachable but a capture errored (inspect the page error for that view).
 
-The pure decision logic (backend choice, launch kwargs, capture plan, failure classification) is covered by `tests/test_browser_verify.py`, run from `tests/run_acceptance.py`.
+The pure decision logic (backend choice, launch kwargs, capture plan, failure classification) is covered by `tests/web_review/test_browser_verify.py`, run from `tests/run_acceptance.py`.
 
 ## What this repo does and doesn't own
 

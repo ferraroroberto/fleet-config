@@ -41,7 +41,7 @@ cycles instead of being killed as a hung job. Interactive behaviour is unchanged
 There is deliberately no flag that makes an unattended run *less* cautious.
 
 Like `audit_retry.py`, the correctness-critical decision (`decide`) is pure and
-unit-tested (`tests/test_rate_gate.py`) independent of the file I/O around it.
+unit-tested (`tests/claude_progress/test_rate_gate.py`) independent of the file I/O around it.
 stdlib + `hooks_state.state_dir()` only.
 """
 

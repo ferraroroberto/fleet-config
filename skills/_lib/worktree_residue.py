@@ -68,7 +68,7 @@ Subcommand
         reports, the caller decides.
 
 The decision core (`is_own`, `classify_worktree`, `overall_verdict`) is pure
-and unit-tested in `tests/test_worktree_residue.py`, alongside real-git
+and unit-tested in `tests/repo/test_worktree_residue.py`, alongside real-git
 fixtures for each class. stdlib only.
 """
 
