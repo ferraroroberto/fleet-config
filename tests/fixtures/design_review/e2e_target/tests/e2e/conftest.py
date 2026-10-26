@@ -1,6 +1,6 @@
 """Conftest of the `measure --e2e` fixture target's suite (fleet-config#1498).
 
-`_surface.py` is not checked in here: tests/test_design_review_browser.py copies project-scaffolding's vendored
+`_surface.py` is not checked in here: tests/design_review_browser/test_design_review_browser.py copies project-scaffolding's vendored
 hook in beside this file when it builds the throwaway copy, as an adopting app vendors it.
 """
 from __future__ import annotations

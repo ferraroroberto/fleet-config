@@ -250,7 +250,7 @@ __all__ = [
     "plan_retention", "prune", "freshness",
     "collect_repos", "run_leg", "run", "main",
     "report", "logger",
-    # Private helpers tests/test_fleet_private_backup.py reaches as `backup.<name>`.
+    # Private helpers tests/fleet_private_backup/test_fleet_private_backup.py reaches as `backup.<name>`.
     "_apply_bulk_guard", "_dedupe_by_rel", "_denied", "_index_manifest", "_matches_any",
     "_notify_summary", "_preflight", "_previous_snapshot", "_read_toml", "_same_volume",
     "_worst",

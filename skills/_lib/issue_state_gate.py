@@ -48,7 +48,7 @@ Subcommands
           DISPATCH=<n> SKIPPED_CLOSED=<n> UNRESOLVED=<n>
 
 The decision logic (`classify_state`, `partition_working_set`) is pure and
-unit-tested (`tests/test_issue_state_gate.py`) independent of the `gh`
+unit-tested (`tests/repo/test_issue_state_gate.py`) independent of the `gh`
 plumbing around it. stdlib only.
 """
 

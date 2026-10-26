@@ -39,7 +39,7 @@ Subcommand
         the list. A missing list exits 2: a run never guesses its own scope.
 
 The aggregation logic (`aggregate`) is pure and unit-tested
-(`tests/test_gh_issue_fetch.py`) independent of the `gh` plumbing around
+(`tests/repo/test_gh_issue_fetch.py`) independent of the `gh` plumbing around
 it. stdlib only.
 """
 

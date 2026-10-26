@@ -16,19 +16,19 @@ from typing import Tuple
 # docstrings, several of which cite the issue that motivated splitting the
 # suite out).
 _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
-    ("pi_policy_coverage", "test_pi_policy_coverage.py",
+    ("pi_policy_coverage", "harness/test_pi_policy_coverage.py",
      "Pi shared decisions and real extension middleware failure/composition boundaries"),
-    ("fleet_health", "test_fleet_health.py",
+    ("fleet_health", "audit/test_fleet_health.py",
      "the three defects the weekly /fleet-health run kept surviving on "
      "hand-applied workarounds -- the cp1252-under-capture crash at both "
      "entry points, the run date recomputed per invocation across midnight, "
      "and peer addresses read from a hub config file they had moved out of -- "
      "are testable on their own against synthetic runs and a temp ledger "
      "(fleet-config#812)"),
-    ("audit_issue", "test_audit_issue.py",
+    ("audit_issue", "audit/test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),
-    ("fleet_audit_scan", "test_fleet_audit_scan.py",
+    ("fleet_audit_scan", "audit/test_fleet_audit_scan.py",
      "`is_fleet_repo` is testable on its own"),
     ("structure_debt", "acceptance/test_structure_debt.py",
      "the digest's structure-baseline section -- counts and excess per kind, "
@@ -50,24 +50,24 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "scaffold-owned, n/a; an unreadable scaffold catalog is unknown) and the "
      "deduped scaffold promotion issue per rule name, against a fake gh "
      "(fleet-config#1619)"),
-    ("fleet_scope", "test_fleet_scope.py",
+    ("fleet_scope", "repo/test_fleet_scope.py",
      "the architecture_ignore switch across both enumerators and both fleet "
      "sweeps, the loud missing-registry error, and the writer's byte-exact "
      "round trip and refusals run against throwaway registries and fixture repos"),
-    ("fleet_gate", "test_fleet_gate.py",
+    ("fleet_gate", "repo/test_fleet_gate.py",
      "each recognised gate form, the unknown states and the dormant skip run "
      "against fixture repos, and a bare package.json is proven not to be a gate"),
-    ("repo_preflight", "test_repo_preflight.py",
+    ("repo_preflight", "repo/test_repo_preflight.py",
      "the per-repo availability gate -- classify_repo's ordering, the "
      "repos-vs-issues count split, `unknown` as its own state, and the "
      "statelessness that makes the end-of-run retry re-establish facts "
      "rather than replay a cached verdict -- is testable on its own "
      "against synthetic facts (fleet-config#642)"),
-    ("design_sweep_scan", "test_design_sweep_scan.py",
+    ("design_sweep_scan", "design_checks/test_design_sweep_scan.py",
      "the fleet-wide web-app gate -- `classify_web_app` over synthetic "
      "trees, the FastAPI-vs-Streamlit disambiguation, and the reuse of "
      "design_lint's token detection -- is testable on its own (fleet-config#180)"),
-    ("worktree_side_instance", "test_worktree_side_instance.py",
+    ("worktree_side_instance", "repo/test_worktree_side_instance.py",
      "the side-instance staging guards -- the primary-checkout refusal at "
      "boot time (the one step a lane that never runs /issue-start still has "
      "to take), the fail-closed read-safe/write-unsafe config split, and the "
@@ -86,38 +86,38 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("worktree_claim_git_cli", "worktree_claim/test_git_backed_cli.py",
      "the git-backed CLI -- reparse-safe teardown, land-primary, root-config "
      "mirroring and mode -- runs against real temp repos"),
-    ("untrack_guard", "test_untrack_guard.py",
+    ("untrack_guard", "repo/test_untrack_guard.py",
      "a fast-forward keeps every live file the merged range untracks -- "
      "the automation#144 config loss reproduced through land-primary against "
      "a fixture repo, plus the refusal and unknown-ignore paths that must "
      "never lose a file (fleet-config#1086)"),
-    ("shell_parse", "test_shell_parse.py",
+    ("shell_parse", "hooks/test_shell_parse.py",
      "the shell guards' three tokeniser splits, pinned in tables to what "
      "each guard read before they moved into one `_lib` home, so the move "
      "provably changes nothing a guard refuses (fleet-config#1304)"),
-    ("cleanup_fleet_all_flow", "test_cleanup_fleet_all_flow.py",
+    ("cleanup_fleet_all_flow", "audit/test_cleanup_fleet_all_flow.py",
      "the cleanup-fleet-all workflow script's control flow -- strict lane "
      "seriality, teardown on every terminal path, and halt-on-residue -- is "
      "exercised against the real .js with stubbed agents, so the 2026-07-30 "
      "fan-out cannot be reintroduced silently (fleet-config#518)"),
-    ("active_issue", "test_active_issue.py",
+    ("active_issue", "repo/test_active_issue.py",
      "the helper's tolerant/pruned/concurrent JSON lifecycle and every "
      "workflow path that adds or removes a marker stay reachable from "
      "the one gate"),
-    ("session_state_writes", "test_session_state_writes.py",
+    ("session_state_writes", "hooks/test_session_state_writes.py",
      "session_state's atomic-write floor -- temps that name their target and "
      "expire by age (the cleanup a hard-killed writer can never do itself), "
      "and an exhausted retry loop that reports the write it discarded -- sits "
      "below the row-level behaviour checks_session_state.py drives through "
      "hook payloads, and is testable on its own (fleet-config#816)"),
-    ("atomic_state_temps", "test_atomic_state_temps.py",
+    ("atomic_state_temps", "hooks/test_atomic_state_temps.py",
      "the same target-named, age-swept temp contract for every other writer "
      "into the shared hooks/state/ dir -- codex_attention and active_issue -- "
      "plus prefix scoping that spares a sibling writer's live temp and the "
      "hooks/ vs skills/_lib helper mirror staying in lockstep (fleet-config#864)"),
-    ("scheduled_runner", "test_scheduled_runner.py",
+    ("scheduled_runner", "claude_progress/test_scheduled_runner.py",
      "provider adapters share completion, delivery, retry and owned-cancellation conformance"),
-    ("scheduled_run_hooks", "test_scheduled_run_hooks.py",
+    ("scheduled_run_hooks", "hooks/test_scheduled_run_hooks.py",
      "the capture hooks' detached indexer triggers stay off inside a scheduled "
      "run -- whose owned job would count the child and turn a delivered run "
      "into exit 118 -- and on interactively, proven through the real runner "
@@ -135,26 +135,26 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("claude_progress_retry", "claude_progress/test_retry.py",
      "a transient upstream 5xx is retried under the retry policy and each "
      "attempt is judged on its own evidence"),
-    ("cpu_burn", "test_cpu_burn.py",
+    ("cpu_burn", "repo/test_cpu_burn.py",
      "the load-proof helper runs its burners and the command under proof "
      "below normal priority, so a burn can't starve scheduled jobs, and "
      "stops only the burners it started, even when the helper is hard-killed "
      "(fleet-config#1076)"),
-    ("context_purge_check", "test_context_purge_check.py",
+    ("context_purge_check", "audit/test_context_purge_check.py",
      "the purge's mechanical preservation rules -- marked-block "
      "byte-identity and quoted trigger survival in SKILL.md descriptions "
      "-- are testable on their own (fleet-config#287)"),
-    ("context_audit", "test_context_audit.py",
+    ("context_audit", "audit/test_context_audit.py",
      "/context-audit's skill-description cap gate -- the apostrophe regression "
      "pinned against `chief`'s real pre-fix text (29 reported vs 58 actual), "
      "the fleet-wide scan that finally sees sister repos' descriptions, and the "
      "three-state compliant/over-cap/unmeasured partition -- is testable on its "
      "own against a synthetic multi-repo tree (fleet-config#626)"),
-    ("skill_frontmatter", "test_skill_frontmatter.py",
+    ("skill_frontmatter", "audit/test_skill_frontmatter.py",
      "every SKILL.md frontmatter this repo ships must parse as YAML, not just "
      "carry a line a regex reads as a description -- the purge wrote one that "
      "the harness dropped while check.py printed PASS (fleet-config#845)"),
-    ("context_purge_gate", "test_context_purge_gate.py",
+    ("context_purge_gate", "audit/test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),
     ("prompt_audit_lint", "prompt_audit/test_lint_and_inventory.py",
@@ -173,7 +173,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("prompt_audit_evals", "prompt_audit/test_evals_and_contracts.py",
      "skill-eval verdict tiers, weekly eval rotation and the rules.md / "
      "sources.toml / vendor-neutrality contracts"),
-    ("context_purge_digest", "test_context_purge_digest.py",
+    ("context_purge_digest", "audit/test_context_purge_digest.py",
      "the per-run digest's rendering layer -- the three-way "
      "probed/not-probed/not-recorded split that keeps an unknown from "
      "rendering as a zero, per-file (not per-repo) probe coverage, the "
@@ -181,7 +181,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "unreached repos, and validate() rejecting run data that would make the "
      "digest lie -- is testable on its own without gh or Telegram "
      "(fleet-config#627)"),
-    ("delivery_check_contract", "test_delivery_check_contract.py",
+    ("delivery_check_contract", "audit/test_delivery_check_contract.py",
      "the shared digest-delivery post-condition -- /audit-fleet's "
      "pre-refactor exit codes pinned verbatim as a characterization "
      "baseline, /context-purge's strict-when-invoked-bare mode, and the "
@@ -190,41 +190,41 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "exercises claude_progress's DELIVERY_NOT_CONFIRMED sentinel end to "
      "end, since a sentinel that silently stops matching turns a loud "
      "failure into a green run (fleet-config#627, #560)"),
-    ("ux_surface", "test_ux_surface.py",
+    ("ux_surface", "web_review/test_ux_surface.py",
      "the UX-gate trigger -- `## UX surface` block parsing, brace "
      "expansion, glob->regex, and the diff intersection -- is testable "
      "on its own (fleet-config#195)"),
-    ("deploy_coverage", "test_deploy_coverage.py",
+    ("deploy_coverage", "e2e/test_deploy_coverage.py",
      "/issue-finish's deploy-coverage gate -- the declared-component "
      "parser (fence-skipping, the four-bullet template), the path-token "
      "filter, the diff-touch matcher, and the three-state "
      "(`yes`/`no`/`unknown`) touch decision -- is testable on its own "
      "(fleet-config#459)"),
-    ("e2e_test_audit", "test_e2e_test_audit.py",
+    ("e2e_test_audit", "e2e/test_e2e_test_audit.py",
      "the `/e2e-audit` skill's measurement layer -- CI-expectations "
      "e2e-surface parsing, test-dir resolution, near-duplicate-name "
      "clustering, size-outlier and coverage-gap detection -- is testable "
      "on its own (fleet-config#406)"),
-    ("e2e_value", "test_e2e_value.py",
+    ("e2e_value", "e2e_value/test_e2e_value.py",
      "/e2e-audit's time and failure layer -- progress-log parsing, "
      "per-projection time, buckets, tail, runtime-drift candidates, the "
      "race-candidate rule and the unknown states -- is testable on its own "
      "(fleet-config#1018)"),
-    ("html_shot", "test_html_shot.py",
+    ("html_shot", "web_review/test_html_shot.py",
      "the shared headless-browser measure-then-shoot helper -- shell discovery, "
      "full-Chrome fallback, loopback TLS scoping, URL construction, and the "
      "DIMS-log parser -- is testable on its own (fleet-config#96/#536)"),
-    ("docs_shots_plan", "test_docs_shots_plan.py",
+    ("docs_shots_plan", "audit/test_docs_shots_plan.py",
      "the `/docs-shots` discovery + diff-intersection layer -- manifest "
      "discovery, source_globs matching, the unmapped-surface heuristic, "
      "and the README-marker precondition check -- is testable on its own "
      "(fleet-config#93)"),
-    ("browser_verify", "test_browser_verify.py",
+    ("browser_verify", "web_review/test_browser_verify.py",
      "the visual-gate fallback -- iab-preferred backend selection, the "
      "browser-safety launch kwargs, the KEY_VIEWS x light/dark capture "
      "plan, and the distinct capability failures -- is testable on its "
      "own (fleet-config#351)"),
-    ("cert_drift", "test_cert_drift.py",
+    ("cert_drift", "repo/test_cert_drift.py",
      "the tailnet-cert drift truth table -- LAN-only stays clean, an "
      "already-migrated app stays clean, only a tailnet-reachable "
      "self-signed-only app trips -- is testable on its own (fleet-config#210)"),
@@ -271,22 +271,22 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "-- error classification, oversize captures, every walk_context arm "
      "and its golden browser trace -- are testable on their own (fleet- "
      "config#1085, #1244)"),
-    ("design_review_browser", "test_design_review_browser.py",
+    ("design_review_browser", "design_review_browser/test_design_review_browser.py",
      "/design-review's browser leg -- the measure and walk CLIs against the "
      "static fixture pages through a sibling venv's Playwright, skipped honestly "
      "when none has it. ~34 min, so the gate routes it by diff "
      "(`gate_routing.ROUTED_SURFACES`; GATE_FULL=1 forces it) (fleet-config#1481)"),
-    ("gate_routing", "test_gate_routing.py",
+    ("gate_routing", "e2e/test_gate_routing.py",
      "which diffs run the slow browser suite -- a path matches a routed prefix "
      "exactly or under a directory, an empty or unreadable diff never narrows "
      "past what it can prove, GATE_FULL=1 forces it -- is testable on its own "
      "against a stubbed diff (fleet-config#1481)"),
-    ("throwaway_dir", "test_throwaway_dir.py",
+    ("throwaway_dir", "repo/test_throwaway_dir.py",
      "the design-review suites' temp state dir -- removed when the process "
      "exits on a pass, a failed check and an uncaught exception alike, and "
      "both suites take it from the helper rather than a bare mkdtemp -- is "
      "testable on its own (fleet-config#1484)"),
-    ("design_report", "test_design_report.py",
+    ("design_report", "design_checks/test_design_report.py",
      "/design-review's report renderer + mock-up library -- placeholder "
      "filling that never raises, the rubric <-> library agreement in both "
      "directions, every template from the violating fixture, the no-mock-up "
@@ -294,7 +294,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "no screenshot and no external request, render determinism, and the "
      "probe / evaluate --out / render CLI legs -- is testable on its own "
      "(fleet-config#972)"),
-    ("design_judgment", "test_design_judgment.py",
+    ("design_judgment", "design_checks/test_design_judgment.py",
      "/design-review's bounded judgment stage -- the [[judgment]] checklist "
      "loading + validation, the deterministic judge prompt bounded to the "
      "run's own screenshots and metrics, the partial answer schema "
@@ -304,7 +304,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "title-matched uncatalogued only), grades untouched by a judgment, and "
      "the judge-prompt / judge-merge / render CLI legs -- is testable on its "
      "own (fleet-config#973)"),
-    ("design_ledger", "test_design_ledger.py",
+    ("design_ledger", "design_checks/test_design_ledger.py",
      "/design-review's ledger, filing and fleet legs -- the few-KB ledger "
      "entry (ids, statuses, grades, stamps; nothing captured), record / trim "
      "/ previous, the rule-id diff (identical -> all unchanged, one flipped "
@@ -316,7 +316,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "(a rule failing in two apps promoted once, an accepted app excluded) "
      "and the ledger / file / fleet CLI legs on dead-port fixtures -- is "
      "testable on its own, with no real issue touched (fleet-config#974)"),
-    ("design_inventory", "test_design_inventory.py",
+    ("design_inventory", "design_checks/test_design_inventory.py",
      "/design-review fleet's cross-app inventory comparator -- three "
      "invented fixture apps give exactly the expected INV-01..INV-04 "
      "findings with counts and scopes, byte-identical in any input order; "
@@ -325,7 +325,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "screenshot path in any line; and with no inventory the digest, "
      "bodies and scores unchanged -- is testable on its own, with no real "
      "issue touched (fleet-config#1500)"),
-    ("perf_review", "test_perf_review.py",
+    ("perf_review", "web_review/test_perf_review.py",
      "/perf-review's probe self-test against a local fixture server (slow vs "
      "fast endpoint at short spacing, cold request kept apart, GET only; a "
      "plain vs gzip+ETag+304 entry document), the budget verdict "
@@ -335,40 +335,40 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "and the no-route() guard that keeps the warm leg's HTTP cache on -- "
      "is testable on its own, with no live app or issue touched "
      "(fleet-config#1121)"),
-    ("rate_gate", "test_rate_gate.py",
+    ("rate_gate", "claude_progress/test_rate_gate.py",
      "/audit-fleet's and /cleanup-fleet's proactive session-rate-limit "
      "gate -- OK/PAUSE/UNKNOWN decisions, staleness handling, and the "
      "wait-seconds computation from resets_at -- is testable on its own, "
      "with no real rate-limits.json touched. Replaces the retired "
      "audit_retry dead-man's-switch check. (fleet-config#261)"),
-    ("send_file", "test_send_file.py",
+    ("send_file", "repo/test_send_file.py",
      "the any-harness `send_file.py` result lines -- SENT only for an accepted "
      "entry, each launcher refusal relayed under its own reason, and "
      "no-session / launcher-down / endpoint-missing / session-host-down / "
      "unreadable-reply each their own UNAVAILABLE -- against a loopback fake "
      "launcher, with no real file sent (fleet-config#1376)"),
-    ("chief_inbox", "test_chief_inbox.py",
+    ("chief_inbox", "chief_ops/test_chief_inbox.py",
      "the chief inbox's writer -- Claude/Codex/Pi turn-end and exit through "
      "the real adapter hooks, managed vs human-started vs undetermined -- "
      "against a temp state dir (fleet-config#999)"),
-    ("chief_needs_input", "test_chief_needs_input.py",
+    ("chief_needs_input", "chief_ops/test_chief_needs_input.py",
      "a chief-managed worker's needs-input through the mailbox -- Claude's "
      "permission_prompt and Codex's PermissionRequest each write one "
      "needs-input event and type nothing into the chief; no live chief or a "
      "failed write pings Telegram as before, unretried; the real wait-event "
      "digest line the chief sees (fleet-config#1456)"),
-    ("chief_job_failed", "test_chief_job_failed.py",
+    ("chief_job_failed", "chief_ops/test_chief_job_failed.py",
      "a failed app-launcher Job through the mailbox -- the real inbox and "
      "wait-event render a job-failed event (head line, detail line, excerpt, "
      "null exit_code/repo, not-confirmed, any trigger as-is), count and ack it "
      "like every kind, and leave v1, v2 and needs-input lines unchanged "
      "(fleet-config#1539)"),
-    ("chief_mailbox", "test_chief_mailbox.py",
+    ("chief_mailbox", "chief_ops/test_chief_mailbox.py",
      "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
      "an unacked claim after the stale window (injected clock), the "
      "file-name pending count docs/chief-mailbox.md defines, coexistence "
      "with wait-event, and the dispatch_id row field (fleet-config#1455)"),
-    ("chief_wait_event_compat", "test_chief_wait_event_compat.py",
+    ("chief_wait_event_compat", "chief_ops/test_chief_wait_event_compat.py",
      "wait-event's contract across mailbox v2 -- exact v1 output lines, "
      "claim exactly once (also under two concurrent claimers), old-format "
      "events still read, .claimed/ and temps untouched; passes unchanged on "
@@ -387,32 +387,32 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("chief_ops_sessions", "chief_ops/test_session_commands.py",
      "say/stop prefix resolution, the wait-event inbox, the wake doorbell "
      "and context + self-compact work with the launcher stubbed"),
-    ("chief_sweep", "test_chief_sweep.py",
+    ("chief_sweep", "chief_ops/test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
      "squash-merged branch, in-use, has-work incl. a dirty tree, "
      "orphan-empty, unknown) against throwaway worktrees, --apply removing "
      "only finished and orphan-empty and reporting a folder that stays, an "
      "unreadable board degrading removable verdicts to unknown, and the "
      "idle-finished session list (fleet-config#1496)"),
-    ("audit_quote", "test_audit_quote.py",
+    ("audit_quote", "audit/test_audit_quote.py",
      "/codebase-audit's quote check -- a finding's verbatim quote matched "
      "whitespace- and CRLF-tolerantly against the named file, MISMATCH, "
      "NO_QUOTE and UNREADABLE as distinct non-passing verdicts, ticked and "
      "carried items skipped, and the CLI exit codes -- is testable on its "
      "own, against a synthetic repo (fleet-config#960)"),
-    ("dead_code_leads", "test_dead_code_leads.py",
+    ("dead_code_leads", "audit/test_dead_code_leads.py",
      "/codebase-audit's dead-code pre-pass -- vulture at floor 60 filtered to "
      "function/class/method/property, framework names and whitelists dropped, "
      "test-only symbols tagged, the whole-word caller search, ruff leads "
      "skipped under the ratchet, and every failure to run (missing, crash, "
      "timeout, garbage, unreadable file list) as not-confirmed -- is testable "
      "on its own against synthetic git repos (fleet-config#1527)"),
-    ("chief_managed", "test_chief_managed.py",
+    ("chief_managed", "chief_ops/test_chief_managed.py",
      "the chief-managed session marker -- mark read back through "
      "notify_on_idle.chief_managed_state (the one reader), cross-sid "
      "isolation, and the 24h TTL prune -- is testable on its own, with "
      "no real chief-managed.json touched (fleet-config#443)"),
-    ("chief_plan", "test_chief_plan.py",
+    ("chief_plan", "chief_plan/test_chief_plan.py",
      "the chief's plan-file writer -- v1 validation (enums, local vs "
      "qualified refs, one-line text, duplicates, unknown fields), every "
      "one-line mutation, the byte-identical no-write on a rejected "
@@ -438,22 +438,22 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "as one `channels` line rather than a worker, through the predicate "
      "`repo_occupancy` uses, and marks the caller's own card "
      "(fleet-config#1613)"),
-    ("dirty_tree_check", "test_dirty_tree_check.py",
+    ("dirty_tree_check", "repo/test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "
      "branch with real evidence of work -- is testable on its own, with "
      "a real throwaway git repo (fleet-config#247)"),
-    ("dir_holders", "test_dir_holders.py",
+    ("dir_holders", "repo/test_dir_holders.py",
      "the repo-agnostic live-holder probe -- path matching, ancestor "
      "exclusion so the probe never reports itself, and a real spawned "
      "holder going LIVE then CLEAR -- is testable on its own, in a repo "
      "with no tests/e2e, no Playwright and no venv (fleet-config#571)"),
-    ("worktree_residue", "test_worktree_residue.py",
+    ("worktree_residue", "repo/test_worktree_residue.py",
      "teardown's worktree classifier -- a foreign, clean, squash-merged "
      "worktree defers while the run's own leftover and a dirty or "
      "unmerged foreign one still halt -- is testable on its own against "
      "real throwaway git repos (fleet-config#1077)"),
-    ("branch_residue", "test_branch_residue.py",
+    ("branch_residue", "repo/test_branch_residue.py",
      "teardown's branch report -- `landed` only on a closed issue plus a "
      "proven-merged tip plus no open PR, `unknown` as its own state, "
      "checked-out/default/no-issue/open-issue never landed, and orphan "
@@ -462,26 +462,26 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "is testable "
      "on its own against real throwaway git repos with injected `gh` "
      "lookups (fleet-config#1516, #1528)"),
-    ("stall_probe", "test_stall_probe.py",
+    ("stall_probe", "claude_progress/test_stall_probe.py",
      "the host stall probe -- a late sleep, a slow loopback GET and a slow "
      "per-volume disk read logged as UTC stall records, evidence captured "
      "once per cooldown, one "
      "instance per state dir -- is testable on its own with injected "
      "delays, since a real whole-box stall can't be caused (fleet-config#1106)"),
-    ("entry_inventory", "test_entry_inventory.py",
+    ("entry_inventory", "repo/test_entry_inventory.py",
      "the dead-code spike's entry-point inventory and four-state verdict "
      "-- job/launcher/manual/doc/no-launcher entries, import reachability "
      "with tests never roots, dynamic dispatch forced unknown, seasonal "
      "keeps, byte-identical reruns, a clean target tree, and the start "
      "beacon's live/cold/young/inactive reading -- is testable on its own "
      "against a synthetic git repo (fleet-config#961, #1114)"),
-    ("start_beacon", "test_start_beacon.py",
+    ("start_beacon", "repo/test_start_beacon.py",
      "the interpreter-start beacon -- one ledger record per process even "
      "when site loads a venv twice, the `-m` module name, an unwritable "
      "ledger leaving the host's exit code and output untouched and logged "
      "once, install/uninstall adding and deleting only the .pth -- is "
      "testable on its own with real child interpreters (fleet-config#1114)"),
-    ("git_run", "test_git_run.py",
+    ("git_run", "repo/test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
      "`candidates=()` shape `dirty_tree_check.py` depends on -- is "
@@ -490,22 +490,22 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "rather than a mock because the change rests entirely on git's own "
      "semantics -- reads take no optional lock, output is unchanged, writes "
      "still take the real one (fleet-config#667)"),
-    ("index_lock", "test_index_lock.py",
+    ("index_lock", "repo/test_index_lock.py",
      "the stranded-`.git/index.lock` detector -- a pure verdict lattice "
      "whose two could-not-establish paths must not collapse into a settled "
      "answer, plus a real reproduction of the 2026-08-01 condition proving "
      "`git status` still exits 0 and reads clean while every write is "
      "frozen -- is testable on its own (fleet-config#667)"),
-    ("scoped_discovery", "test_scoped_discovery.py",
+    ("scoped_discovery", "repo/test_scoped_discovery.py",
      "real scoped links, collisions, worktree sources, and uninstall ownership (fleet-config#748)"),
-    ("discovery_probe", "test_discovery_probe.py",
+    ("discovery_probe", "repo/test_discovery_probe.py",
      "native source identity, unstable scope, and failed/unknown instruction evidence stay nonpassing (fleet-config#748)"),
-    ("edit_targets", "test_edit_targets.py",
+    ("edit_targets", "hooks/test_edit_targets.py",
      "shared native/patch edit targets and multi-file Python syntax feedback (fleet-config#744)"),
-    ("codex_policy_coverage", "test_codex_policy_coverage.py",
+    ("codex_policy_coverage", "harness/test_codex_policy_coverage.py",
      "Codex command/edit policy delivery, multi-target patch behavior, and Claude/Grok compatibility "
      "are exercised through real hook subprocesses (fleet-config#745)"),
-    ("payload_normalization", "test_payload_normalization.py",
+    ("payload_normalization", "payload_normalization/test_payload_normalization.py",
      "the Grok camelCase -> Claude snake_case translation every hook "
      "now routes through, and -- the load-bearing half -- that a "
      "Claude-shaped payload is returned as the *identical object*, so a "
@@ -517,110 +517,110 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "`hookEventName: \"stop\"`) never override its own camelCase values in "
      "either key order, so a session-end Stop stays `StopAtSessionEnd` "
      "instead of reaching the chief inbox as a turn end"),
-    ("vendored_drift", "test_vendored_drift.py",
+    ("vendored_drift", "repo/test_vendored_drift.py",
      "the /propagate-vendored [vendored]-manifest drift core -- "
      "manifest parsing, the hash-diff/classify local-drift-vs-behind-HEAD "
      "signals, and an end-to-end scan_fleet against a real throwaway "
      "scaffold + adopter repos -- is testable on its own (fleet-config#338)"),
-    ("watchlist", "test_watchlist.py",
+    ("watchlist", "audit/test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),
-    ("fleet10x", "test_fleet10x.py",
+    ("fleet10x", "audit/test_fleet10x.py",
      "/fleet-10x's deterministic halves -- active-repo selection, the "
      "recommendation schema, evidence links, impact-over-cost ranking, the "
      "rendered read-only brief and the run footer -- are testable on their "
      "own against fixtures and a throwaway repo (fleet-config#1253)"),
-    ("fleet_toml_reader", "test_fleet_toml.py",
+    ("fleet_toml_reader", "repo/test_fleet_toml.py",
      "the one `.fleet.toml` reader: absent / invalid / ok stay distinct states, a non-table is never a "
      "table, and a non-positive-int budget is never accepted (fleet-config#1062)"),
-    ("e2e_route", "test_e2e_route.py",
+    ("e2e_route", "e2e/test_e2e_route.py",
      "the /e2e skill's deterministic front-end -- classifier/table/"
      "suite/web-surface probing, the byte-verbatim bootstrap with its "
      "refuse-on-divergence contract, and the route fail-safe (no "
      "classifier -> explicit unknown, broken classifier -> full) -- is "
      "testable on its own against synthetic trees (fleet-config#556)"),
-    ("transcript_capture", "test_transcript_capture.py",
+    ("transcript_capture", "hooks/test_transcript_capture.py",
      "native readers, opt-in routing, session/fork identity and non-destructive rebuilds (#753)"),
-    ("conversation_search", "test_conversation_search.py",
+    ("conversation_search", "hooks/test_conversation_search.py",
      "the resume-identity + search layer -- capture header round trip, the "
      "content signature surviving a resume, the index.json twin, and FTS "
      "build/query/prune -- runs against synthetic captures in a temp tree "
      "(fleet-config#586)"),
-    ("conversation_title", "test_conversation_title.py",
+    ("conversation_title", "hooks/test_conversation_title.py",
      "a user title surviving every re-index path (re-digest, a resumed "
      "conversation's re-capture, --force, an index rebuilt from nothing), "
      "clear-falls-back-to-topic, title search incl. title-only changes, and "
      "the writer CLI's call shape and refusals -- invented fixtures in a "
      "temp tree, digest model stubbed (fleet-config#1348)"),
-    ("conversation_backfill", "test_conversation_backfill.py",
+    ("conversation_backfill", "hooks/test_conversation_backfill.py",
      "recovering a stored transcript no live Stop ever captured -- Codex "
      "transcript-inference routing with no marker, session-start filename "
      "stamping instead of datetime.now(), idempotent re-runs, and scoped "
      "discovery across the Claude/Codex transcript stores -- runs against "
      "synthetic transcripts in a temp tree (fleet-config#785)"),
-    ("fleet_private_backup", "test_fleet_private_backup.py",
+    ("fleet_private_backup", "fleet_private_backup/test_fleet_private_backup.py",
      "the daily backup engine -- three-layer selection over a real git repo, "
      "junction traversal, hardlink dedup proven by st_nlink, retention, the "
      "sample verification, the zero-file regression guard, and three-state "
      "freshness -- needs real temp trees rather than mocks (fleet-config#590)"),
-    ("wait_for_sentinel", "test_wait_for_sentinel.py",
+    ("wait_for_sentinel", "claude_progress/test_wait_for_sentinel.py",
      "/audit-fleet step 2's foreground blocking wait -- injected-clock pure "
      "logic, the real CLI's exit-0-only-if-found / exit-2-if-not contract, "
      "and the SKILL.md wiring that routes the orchestrator through it instead "
      "of a model-composed Monitor loop -- is testable on its own "
      "(fleet-config#609, reopened)"),
-    ("acceptance_audit", "test_acceptance_audit.py",
+    ("acceptance_audit", "audit/test_acceptance_audit.py",
      "/issue-finish's per-criterion acceptance tally -- checkbox parsing, a "
      "missing verdict as incomplete, every state, and the unattended rule -- "
      "is testable on its own with gh stubbed out (fleet-config#958)"),
-    ("gate_evidence", "test_gate_evidence.py",
+    ("gate_evidence", "e2e/test_gate_evidence.py",
      "FRESH/STALE/MISSING/UNKNOWN gate evidence bound to a working-tree hash "
      "-- tracked edits, untracked files, identical commits, mid-run changes, "
      "a linked worktree and the untouched real index -- against temp repos "
      "(fleet-config#957)"),
-    ("issue_state_gate", "test_issue_state_gate.py",
+    ("issue_state_gate", "repo/test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "
      "partition proving a closed issue never reaches the dispatch bucket -- "
      "is testable on its own, with gh monkeypatched out (fleet-config#623)"),
-    ("gh_issue_fetch", "test_gh_issue_fetch.py",
+    ("gh_issue_fetch", "repo/test_gh_issue_fetch.py",
      "the direct-Issues-API fetch that replaces `gh search issues --owner` "
      "as the primary working-set source -- per-repo aggregation and the "
      "degrade-don't-block path when one repo's fetch fails -- is testable "
      "on its own, with gh monkeypatched out (fleet-config#623)"),
-    ("workflow_capabilities", "test_workflow_capabilities.py",
+    ("workflow_capabilities", "audit/test_workflow_capabilities.py",
      "interactive cleanup request/result gates and portable skill contracts (#749)"),
-    ("quota_snapshots", "test_quota_snapshots.py",
+    ("quota_snapshots", "claude_progress/test_quota_snapshots.py",
      "native source validation, account scope, freshness and atomic concurrent producer writes (#751)"),
-    ("codex_statusline", "test_codex_statusline.py",
+    ("codex_statusline", "statusline/test_codex_statusline.py",
      "the opt-in Codex footer merger preserves custom settings/comments, appends native quota items, "
      "and stays idempotent against synthetic config files (#752)"),
     ("grok_statusline", "statusline/test_grok_statusline.py",
      "the Grok status row labels Claude's limits as Claude's, never shows a Grok limit or a zero for "
      "an unknown, and the opt-in config merge only adds a row where none is set"),
-    ("codex_model_policy", "test_codex_model_policy.py",
+    ("codex_model_policy", "harness/test_codex_model_policy.py",
      "the opt-in Codex model-policy merger preserves unrelated settings, validates the generated four-model catalog, "
      "and leaves config untouched on a failed native preflight (#793)"),
-    ("session_retention", "test_session_retention.py",
+    ("session_retention", "hooks/test_session_retention.py",
      "the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
-    ("hook_dispatch", "test_hook_dispatch.py",
+    ("hook_dispatch", "hooks/test_hook_dispatch.py",
      "the one-process dispatcher's failure paths -- a crash, a raw "
      "sys.exit(2), stray stdout, a swallowed verdict -- need throwaway hook "
      "modules no real hook resembles (#1274)"),
-    ("bash_windows_path_guard", "test_bash_windows_path_guard.py",
+    ("bash_windows_path_guard", "hooks/test_bash_windows_path_guard.py",
      "the guard's root-cause attribution -- a trailing backslash immediately "
      "before a closing double-quote escapes it instead of closing the "
      "string -- is pinned against the exact command that misattributed the "
      "break to the wrong path (#800)"),
-    ("static_ratchet_gate", "test_static_ratchet_gate.py",
+    ("static_ratchet_gate", "repo/test_static_ratchet_gate.py",
      "the ratchet stage's exit-code mapping -- 3 (a detector could not run) "
      "fails as NOT CONFIRMED instead of landing in SKIP the way "
      "`shared.SKIP_EXIT` would read it -- and the acceptance criteria on a "
      "throwaway tree with the real ruff and jscpd: baselined hits pass, a new "
      "unused import or duplicate block fails by name, a missing prerequisite "
      "is a hard failure (fleet-config#1514)"),
-    ("docs_ratchet_gate", "test_docs_ratchet_gate.py",
+    ("docs_ratchet_gate", "repo/test_docs_ratchet_gate.py",
      "the docs ratchet stage's exit-code mapping -- 3 (could not count) fails "
      "as NOT CONFIRMED instead of landing in SKIP the way `shared.SKIP_EXIT` "
      "would read it -- and the acceptance criteria on a throwaway git tree: a "
@@ -669,7 +669,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "library code, drive-path literal or raw git spawn fails naming the "
      "file and the rule and reverting passes, an unparseable tracked file "
      "is exit 3"),
-    ("skip_delta", "test_skip_delta.py",
+    ("skip_delta", "chief_ops/test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "
      "and the 17->19 app-launcher fresh-checkout round pinned as the anchor "

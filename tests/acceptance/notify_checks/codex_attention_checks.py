@@ -173,7 +173,7 @@ def _codex_attention_stop_cases(check: _Checker, codex_attention: Any, permissio
 def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
     """A chief-managed Codex worker's PermissionRequest reaches the chief first,
     falling back to Telegram when delivery is not confirmed (fleet-config#999).
-    The mailbox write itself is pinned by tests/test_chief_needs_input.py
+    The mailbox write itself is pinned by tests/chief_ops/test_chief_needs_input.py
     (#1456); this covers the routing decision around it.
     Every managed-path case here sent Telegram only on pre-#999 code, and the
     no-chat case sent nothing at all."""
@@ -249,6 +249,7 @@ def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
 
 def _codex_native_probe_unit_checks() -> Tuple[int, int]:
     """The native lifecycle evidence verifier rejects false-positive sequences."""
+    sys.path.insert(0, str(REPO / "tests" / "harness"))
     from probe_codex_permission_request import evaluate
 
     check = _Checker()

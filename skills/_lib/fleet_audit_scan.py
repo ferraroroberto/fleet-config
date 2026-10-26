@@ -56,7 +56,7 @@ same sentinel from a normal synchronous run, useful for direct/manual
 invocations and tests.
 
 Like `audit_issue.py`, the correctness-critical piece (`is_fleet_repo`) is
-pure and unit-tested (`tests/test_fleet_audit_scan.py`) independent of the
+pure and unit-tested (`tests/audit/test_fleet_audit_scan.py`) independent of the
 filesystem/git/gh I/O around it. stdlib + the `git`/`gh` CLIs only.
 """
 

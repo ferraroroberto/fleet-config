@@ -11,7 +11,7 @@ One file, `fleet_start_beacon.pth`, goes into the target repo's `.venv` site-pac
 ```
 
 - **The ledger:** `~/.claude/hooks/state/dead_code/<repo>/starts.tsv`, which is gitignored and never committed. `install` adds a `# installed <utc>` header and `uninstall` adds `# uninstalled <utc>`.
-- **It never breaks the host.** Everything runs inside `try`. A failure is written once to `%TEMP%\fleet_start_beacon.<repo>.error` (created only when absent), never to the host's stdout or stderr. `tests/test_start_beacon.py` proves an unwritable ledger leaves the host's exit code and output untouched.
+- **It never breaks the host.** Everything runs inside `try`. A failure is written once to `%TEMP%\fleet_start_beacon.<repo>.error` (created only when absent), never to the host's stdout or stderr. `tests/repo/test_start_beacon.py` proves an unwritable ledger leaves the host's exit code and output untouched.
 - **One record per process.** On Windows with Python 3.14, `site` processes a venv's site-packages twice, so a guard attribute on `sys` stops a second record. Child interpreters still record their own start.
 - **It is self-contained.** The `.pth` embeds the code, so it imports nothing from fleet-config and keeps working whatever branch this repo's checkout is on. Re-run `install` after changing the beacon, and `status` reports `CURRENT=False` until you do.
 - **No network, no personal data:** only the script path is recorded.

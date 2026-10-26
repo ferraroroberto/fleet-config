@@ -66,7 +66,7 @@ The judgment document written into `evaluate.json["judgment"]`:
 Nothing here touches `categories` / `overall`: grades are the rubric's
 arithmetic over the metrics and the report prints them from the JSON, so an
 uncatalogued finding can never move a grade (asserted in
-`tests/test_design_judgment.py`). This module spawns no agent and reads no
+`tests/design_checks/test_design_judgment.py`). This module spawns no agent and reads no
 screenshot — the skill spawns the judge; this is the contract it must meet.
 
 stdlib only.

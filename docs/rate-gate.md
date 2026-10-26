@@ -23,7 +23,7 @@ itself. `rate_gate.py` reads that cache and lets a skill
 
 ## `skills/_lib/rate_gate.py` contract
 
-Pure logic, unit-tested in `tests/test_rate_gate.py` (same discipline as
+Pure logic, unit-tested in `tests/claude_progress/test_rate_gate.py` (same discipline as
 `audit_issue.py`: correctness-critical decisions
 live in Python, not the model):
 

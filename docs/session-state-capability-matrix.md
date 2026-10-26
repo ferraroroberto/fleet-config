@@ -111,7 +111,7 @@ transitioned `working` → `needs-you` → removed. Switching away from a thread
 calling `thread/unsubscribe` is explicitly non-terminal in the current Codex
 contract and does not fire `SessionEnd`; archive, delete, normal exit, or 30
 minutes inactive with no connected client does. The bounded live check is
-`tests/probe_codex_session_end.py`.
+`tests/harness/probe_codex_session_end.py`.
 
 **Grok is the exception**: unlike Codex and Pi, it fires the full turn-boundary
 set in headless `grok -p` mode, so every claimed cell above was confirmed

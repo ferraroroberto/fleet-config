@@ -1,6 +1,6 @@
 """Diff-based routing for the slow standalone suites (fleet-config#1481).
 
-`tests/test_design_review_browser.py` takes ~34 of the gate's ~40 minutes, so the gate runs it
+`tests/design_review_browser/` takes ~34 of the gate's ~40 minutes, so the gate runs it
 only when the diff touches the surface it exercises. A suite routed out reports as SKIP --
 its own state, never a pass -- and anything that stops the diff being established runs the
 suite: uncertainty escalates, it never narrows (same contract as `skills/_lib/e2e_route.py`).
@@ -25,7 +25,7 @@ ROUTED_SURFACES: Dict[str, Tuple[str, ...]] = {
         "skills/_lib/design_review/",
         "skills/_lib/design_lint/",
         "tests/fixtures/design_review/",
-        "tests/test_design_review_browser.py",
+        "tests/design_review_browser/",
         "tests/_lib/design_review_support.py",
         "tests/acceptance/gate_routing.py",
         "design.rubric.toml",

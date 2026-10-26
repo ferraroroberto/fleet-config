@@ -43,7 +43,7 @@ CLI (run from anywhere; `reconcile` also shells out to `gh`):
 
 Pure helpers (`parse_ledger_block`, `render_ledger_block`, `diff_ledger`,
 `plan_reconcile`, `classify_pr`) are unit-tested in
-tests/test_context_purge_gate.py without touching gh.
+tests/audit/test_context_purge_gate.py without touching gh.
 """
 
 from __future__ import annotations

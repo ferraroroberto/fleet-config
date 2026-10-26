@@ -40,7 +40,7 @@ the hash it records) and per worktree. Ignored files (``.env``, ``.venv``)
 stay out because nothing here ever passes ``-f``.
 
 stdlib only. Pure-ish logic is exercised end to end against temp repos in
-``tests/test_gate_evidence.py``.
+``tests/e2e/test_gate_evidence.py``.
 """
 
 from __future__ import annotations

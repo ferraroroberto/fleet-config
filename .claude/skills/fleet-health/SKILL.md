@@ -130,7 +130,7 @@ Print: how many machines were captured, how many not covered and why, each machi
 - **Known coverage gaps**, reported as not-covered rather than hidden: a peer hub that answers but 404s on the diagnostics API is on an older build and needs a host sync (engine landed in `ferraroroberto/local-llm-hub#315`); an SSH-only machine with no hub at all needs the portable sampler from `ferraroroberto/local-llm-hub#316`.
 - **A `healthy` verdict on a lightly-attributed platform means "unmeasured", not "fine".** The rules lean on app attribution and listening ports; where those are thin, the verdict is weak evidence. Say so in the entry rather than reporting a clean bill of health (a macOS run was 99% unattributed with zero ports).
 - **This skill reports; a human decides.** It never acts on its own recommendations — no killing processes, no uninstalling, no config changes.
-- **No hand-applied workaround is needed, and none should be re-derived from the previous ledger entry.** The three that runs once leaned on — a `PYTHONUTF8` wrapper, an address overlay, a pinned `--date` — are fixed in the helpers (fleet-config#812) and covered by `tests/test_fleet_health.py`. If a run looks like it needs one again, that is a regression to file, not a step to repeat.
+- **No hand-applied workaround is needed, and none should be re-derived from the previous ledger entry.** The three that runs once leaned on — a `PYTHONUTF8` wrapper, an address overlay, a pinned `--date` — are fixed in the helpers (fleet-config#812) and covered by `tests/audit/test_fleet_health.py`. If a run looks like it needs one again, that is a regression to file, not a step to repeat.
 
 ## Wiring the weekly schedule
 

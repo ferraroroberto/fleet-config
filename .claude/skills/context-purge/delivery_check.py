@@ -32,7 +32,7 @@ the whole reason this exists.
 
 The shared predicate lives in `skills/_lib/audit_ledger/digest_delivery.py` (fleet-config#627),
 with `/audit-fleet`'s lenient check. Behaviour pinned by
-`tests/test_delivery_check_contract.py`.
+`tests/audit/test_delivery_check_contract.py`.
 
 Usage: delivery_check.py [--max-age-hours N]   (default 12)
 """

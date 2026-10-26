@@ -427,7 +427,7 @@ def read_stdin_json() -> Dict[str, Any]:
     normalized = normalize_payload(data)
     # Read *after* normalization so a foreign harness's event name is already
     # Claude's. Never mutates the payload — Claude-shaped payloads must come
-    # back as the same object (tests/test_payload_normalization.py asserts it).
+    # back as the same object (tests/payload_normalization/test_payload_normalization.py asserts it).
     event = normalized.get("hook_event_name")
     _ACTIVE_EVENT = event if isinstance(event, str) and event else None
     return normalized

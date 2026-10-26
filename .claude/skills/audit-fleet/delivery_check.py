@@ -24,7 +24,7 @@ rule "an unestablished delivery is not a delivery" were free to drift on
 exactly the property that matters. This caller stays **lenient**: a dated
 comment inside the window is enough, and the digest stamp `/context-purge`
 writes is none of its business. Its observable behaviour is unchanged, pinned
-by `tests/test_delivery_check_contract.py`.
+by `tests/audit/test_delivery_check_contract.py`.
 
 Usage: delivery_check.py [--max-age-hours N]   (default 12)
 """

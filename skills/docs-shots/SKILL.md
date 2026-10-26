@@ -177,7 +177,7 @@ README/docs update and before the verification gate:
   contract: `content-management#110` / PR #162
   (`ferraroroberto/content-management`).
 - `skills/_lib/docs_shots_plan.py` owns the pure discovery + diff-
-  intersection logic (unit-tested, `tests/test_docs_shots_plan.py`), reusing
+  intersection logic (unit-tested, `tests/audit/test_docs_shots_plan.py`), reusing
   `ux_surface.py`'s glob-matching (`matches_any`) rather than reimplementing
   it.
 - Today's engine invocation (`python -m config.doc_capture`) is the fleet
