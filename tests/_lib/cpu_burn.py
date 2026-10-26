@@ -13,12 +13,21 @@ that parent is below normal and the spawn names no class of its own.
 Usage (from the repo root, through this repo's venv):
 
     python tests/_lib/cpu_burn.py [--burners N] [--runs K] [--over-cores]
-                                  [--max-minutes M] -- <command> [args...]
+                                  [--max-minutes M] [--lock-timeout-minutes L]
+                                  -- <command> [args...]
 
 ``--burners`` defaults to the core count, and more than that is refused
 unless ``--over-cores`` says the extra load is needed to reproduce. Each run's
 exit code and wall time is printed, then ``BURN-RESULT: red R of K`` (exit 1
-when any run was red, 0 when all were green, 2 on a usage error).
+when any run was red, 0 when all were green, 2 on a usage error, 3 when the
+box load lock stayed held past ``--lock-timeout-minutes``).
+
+A burn starves every other lane's browser gate, so the whole burn holds the
+box-wide load lock (``skills/_lib/box_lock.py``) exclusively: it waits while
+any gate holds the lock in shared mode, and no gate starts while it burns. A
+lock state that can't be read counts as held. The lock is released on exit,
+and a hard-killed helper's marker is reclaimed by the next look because its
+pid is gone.
 
 A below-normal burn is gentler on the command than the old normal-priority
 one, because the system services a process start waits on are no longer
@@ -48,6 +57,7 @@ import time
 from typing import Iterator, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "_lib"))
+import box_lock  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 # Windows-only constant; POSIX lowers the niceness instead (see _lower_priority).
@@ -168,6 +178,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="allow more burners than cores")
     parser.add_argument("--max-minutes", type=float, default=DEFAULT_MAX_MINUTES,
                         help="burner self-exit deadline")
+    parser.add_argument("--lock-timeout-minutes", type=float,
+                        default=box_lock.DEFAULT_TIMEOUT_MINUTES,
+                        help="how long to wait for running gates to finish")
     parser.add_argument("command", nargs=argparse.REMAINDER,
                         help="-- then the command under proof")
     args = parser.parse_args(argv)
@@ -182,6 +195,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     command = [program, *command[1:]]
     if args.burners < 1 or args.runs < 1 or args.max_minutes <= 0:
         parser.error("--burners, --runs and --max-minutes must be positive")
+    if args.lock_timeout_minutes < 0:
+        parser.error("--lock-timeout-minutes must not be negative")
     cores = core_count()
     if args.burners > cores and not args.over_cores:
         parser.error(f"{args.burners} burners is more than the {cores} cores; "
@@ -193,14 +208,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"⚠️ burn: {args.burners} burners exceeds the core count "
               f"(--over-cores)", flush=True)
     red = 0
-    with burning(args.burners, args.max_minutes):
-        for run in range(1, args.runs + 1):
-            started = time.monotonic()
-            code = run_below_normal(command)
-            red += code != 0
-            verdict = "green" if code == 0 else "red"
-            print(f"ℹ️ burn run {run}/{args.runs}: exit {code} ({verdict}) "
-                  f"in {time.monotonic() - started:.1f}s", flush=True)
+    try:
+        with box_lock.held(box_lock.EXCLUSIVE, Path.cwd().name,
+                           args.lock_timeout_minutes,
+                           report=lambda line: print(line, flush=True)),                 burning(args.burners, args.max_minutes):
+            for run in range(1, args.runs + 1):
+                started = time.monotonic()
+                code = run_below_normal(command)
+                red += code != 0
+                verdict = "green" if code == 0 else "red"
+                print(f"ℹ️ burn run {run}/{args.runs}: exit {code} ({verdict}) "
+                      f"in {time.monotonic() - started:.1f}s", flush=True)
+    except box_lock.BoxLockTimeout as exc:
+        print(f"❌ {exc}; no burner was started", flush=True)
+        return box_lock.TIMEOUT_EXIT
     print(f"BURN-RESULT: red {red} of {args.runs}", flush=True)
     return 1 if red else 0
 

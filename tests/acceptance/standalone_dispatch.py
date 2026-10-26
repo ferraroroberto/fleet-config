@@ -144,6 +144,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "below normal priority, so a burn can't starve scheduled jobs, and "
      "stops only the burners it started, even when the helper is hard-killed "
      "(fleet-config#1076)"),
+    ("box_lock", "repo/test_box_lock.py",
+     "gates share the box load lock and a CPU burn holds it alone, a dead "
+     "holder's marker is reclaimed, and an unreadable lock state counts as "
+     "held, never free"),
     ("context_purge_check", "audit/test_context_purge_check.py",
      "the purge's mechanical preservation rules -- marked-block "
      "byte-identity and quoted trigger survival in SKILL.md descriptions "

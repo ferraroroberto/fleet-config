@@ -90,3 +90,16 @@ started, and refuses more burners than cores without `--over-cores`. Below
 normal priority it takes about four burners per core to reproduce what 1.5
 per core did at normal priority (the #1056 and #1069 reds needed 64 on 16
 cores), and that oversubscription leaves normal-priority work untouched.
+
+**A burn proof never overlaps another lane's gate.** Below-normal priority
+protects scheduled jobs, not browser e2e: a burn still starves another lane's
+dev server and browser enough to fail its page-load timeouts on unrelated
+tests. Before dispatching a lane whose brief asks for a burn proof, check
+`chief_ops.py sessions` for a lane mid-gate. If one is gating, either hold the
+dispatch, or tell the worker in the brief to hold its burn until you ping that
+the box is quiet. Never start a burn yourself while a lane gates. The helper
+enforces the same rule as a backstop: it holds the box load lock
+(`skills/_lib/box_lock.py`) exclusively, waits while any gate holds it shared,
+and exits 3 without burning if the gate outlasts `--lock-timeout-minutes`.
+Tell the worker that exit 3 means "gates are running, wait for the chief",
+never "retry with a longer timeout".
