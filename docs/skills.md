@@ -44,6 +44,7 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 - [Gate evidence (a green bound to the tree it ran against)](skills/gate-evidence.md) — `gate_evidence.py`: a pass bound to a content hash
 - [Skip delta (a gate that covered less, saying so)](skills/skip-delta.md) — `skip_delta.py`: merge verification that names what it skipped
 - [Design review core (rendered facts, scored from data)](skills/design-review-core.md) — `design_review/` measure, eval, judgment, ledger, filing, fleet and inventory stages
+- [Box load lock (burn proofs never overlap a gate)](skills/box-load-lock.md) — `box_lock.py`: gates share, a CPU burn runs alone
 - [Stranded index locks (a read that freezes a repo)](skills/stranded-index-locks.md) — `git status` stat-cache locks and the `GIT_OPTIONAL_LOCKS=0` fix
 - [Sending a file to the owner (`send_file.py`)](skills/send-file.md) — any-harness half of the launcher outbox
 - [Interactive capability adaptation](skills/interactive-capability-adaptation.md) — adapting shared workflows to the session's actual tools

@@ -6,6 +6,11 @@ Run from the repo root (invoke the resolved Python path directly — a bare
 
 Exit 0 if all cases pass, 1 otherwise. Prints a single line per case.
 
+The whole run holds the box-wide load lock (`skills/_lib/box_lock.py`) in
+shared mode: other gates run alongside it, but a CPU-burn proof waits for it
+to finish, and it waits for a running burn (bounded; a timeout fails the run
+with the holder named rather than gating on a starved box).
+
 This is the thin dispatcher (fleet-config#502): it sums every check module
 under `tests/acceptance/` and prints one summary line. Each module owns one
 concern the pre-split 3287-line file used to mix together — the hook-payload
@@ -48,6 +53,9 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
+
+import box_lock  # noqa: E402
 
 from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
 from acceptance.checks_dispatch import _hook_dispatch_checks  # noqa: E402
@@ -440,6 +448,16 @@ def _run_wiring_checks(tally: _Tally) -> None:
 
 
 def main() -> int:
+    try:
+        with box_lock.held(box_lock.SHARED, "fleet-config",
+                           report=lambda line: print(line, flush=True)):
+            return _run_all()
+    except box_lock.BoxLockTimeout as exc:
+        print(f"FAIL  box_load_lock: {exc}")
+        return 1
+
+
+def _run_all() -> int:
     seed_fleet_list_env()
     tally = _Tally()
     _run_hook_checks(tally)

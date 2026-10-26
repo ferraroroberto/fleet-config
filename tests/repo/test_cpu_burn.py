@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,12 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+# The box load lock lives under the hooks-state root. Run under the acceptance
+# gate, the live root holds the gate's own shared marker, which every burn here
+# would wait on, so the suite gets a private root of its own.
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="cpu-burn-state-")
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
+import box_lock  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
@@ -196,5 +202,34 @@ if WINDOWS:
             _k32.CloseHandle(h)
 else:
     _h.skip("hard-kill cleanup is only checked on Windows")
+
+# ---- a gate holding the box load lock keeps the burn from starting ----
+gate = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                        creationflags=NO_WINDOW)
+box_lock.lock_dir().mkdir(parents=True, exist_ok=True)
+fake = box_lock.lock_dir() / f"{box_lock.SHARED}.{gate.pid}.fakegate.json"
+fake.write_text('{"repo": "fake-gate", "started": "now"}', encoding="utf-8")
+started.clear()
+cpu_burn.start_burners = recording_start
+try:
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        code = cpu_burn.main(["--burners", "1", "--lock-timeout-minutes", "0.02",
+                              "--", sys.executable, "-c", "pass"])
+finally:
+    cpu_burn.start_burners = real_start
+check(code == box_lock.TIMEOUT_EXIT, f"a burn under a held gate lock exits 3 (got {code})")
+check(not started, "no burner starts while a gate holds the lock")
+check("fake-gate" in out.getvalue() and "BURN-RESULT" not in out.getvalue(),
+      f"the refusal names the holding gate and reports no result ({out.getvalue()!r})")
+
+# ---- the gate's crash frees the lock: its marker is reclaimed, the burn runs ----
+gate.kill()
+gate.wait()
+with contextlib.redirect_stdout(io.StringIO()) as out:
+    code = cpu_burn.main(["--burners", "1", "--lock-timeout-minutes", "0.02",
+                          "--", sys.executable, "-c", "pass"])
+check(code == 0 and not fake.exists(),
+      f"a dead gate's marker is reclaimed and the burn runs (exit {code})")
+check(box_lock.holders() == [], "the burn releases the lock when it finishes")
 
 _h.report_and_exit("test_cpu_burn")
