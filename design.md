@@ -630,9 +630,10 @@ hand-picked per app.
   for a warning or critical state (the status tone's `*-text`, never colour
   alone: the value is the text). It is a button at the 44px hit target that
   **opens a sheet** on tap; it is never a navigation target, never a second
-  Settings entry, and never a second readout. On a phone it **yields first**:
-  it hides before the context line is cut when that line carries a
-  warning and needs the room. An occasional tool the readout's sheet leads to
+  Settings entry, and never a second readout. It **never hides**, on a phone
+  too: when the header is tight, the context line's warning switches to a
+  compact form of its parts (shorter words, never an ellipsis) and the
+  readout stays. An occasional tool the readout's sheet leads to
   (app-launcher's Screen view) opens **from that sheet**, never as another
   header icon. Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
