@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 import fleet_audit_scan as fas  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
-from gate_coverage import reader, section  # noqa: E402
+from gate_coverage import enforced, reader, section  # noqa: E402
 from git_fixtures import run_git  # noqa: E402
 from structure_debt.baseline import Unknown  # noqa: E402
 
@@ -117,6 +117,16 @@ check(section.parse_state("\n".join(_sec["state_lines"])) == {"alpha": {"ratchet
       "parse_state: the stored lines read back; not adopted and unknown carry no reading")
 _same = section.build(_ENTRIES, "\n".join(_sec["state_lines"]), "2026-10-31")
 check("ratchets 2 (±0)  rules 1 (±0)  hits 5 (±0)" in _same["lines"][0], "build: an unchanged repo shows ±0")
+_MIXED = {"repo": "echo", "state": "adopted", "hits": {"docs_ratchet": 7}, "rules": [],
+          "unknown": {"comment_ratchet": ".comment-ratchet-baseline.json: baseline is not an object with version 1"}}
+_msec = section.build([_MIXED], "gate:echo: ratchets=2 rules=0 hits=7\n", "2026-10-24")
+check(_msec["lines"][0] == "- echo  ratchets 2 (±0)  rules 0 (±0)  hits 7 (partial)  [comment unknown "
+                           "(.comment-ratchet-baseline.json: baseline is not an object with version 1), docs 7]",
+      f"build: an uncountable table is its own unknown cell beside the counted ones, its hit change withheld, got {_msec['lines'][0]!r}")
+check(_msec["state_lines"][1] == "gate:echo: ratchets=2 rules=0 hits=unknown" and section.parse_state(_msec["state_lines"][1]) == {},
+      f"build: a partial reading stores no hit count, so next week shows (new) not a fake delta, got {_msec['state_lines'][1]!r}")
+check("7 baselined hits (1 uncountable ratchet baselines not included)" in _msec["lines"][-1],
+      f"build: the fleet total names the uncountable baselines, got {_msec['lines'][-1]!r}")
 _blind = section.build(_ENTRIES, None, "2026-10-24")
 check("(" not in _blind["lines"][0].split("[")[0] and "unknown (previous digest state" in _blind["lines"][-1],
       "build: an unreadable prior state withholds every delta and says so")
@@ -155,15 +165,27 @@ try:
     _make_repo(_tmp, "alpha", {".fleet.toml": "[static_ratchet]\nenabled = true\n[comment_ratchet]\nenabled = true\n",
                                ".static-ratchet-baseline.json": _baseline([{"key": "dup:a"}, {"key": "dup:b"}])})
     _make_repo(_tmp, "beta", {})
-    _make_repo(_tmp, "gamma", {".fleet.toml": "[static_ratchet]\nenabled = true\n", ".static-ratchet-baseline.json": "{nope"})
+    _make_repo(_tmp, "gamma", {".fleet.toml": "[static_ratchet]\nenabled = true\n[docs_ratchet]\nenabled = true\n",
+                               ".static-ratchet-baseline.json": "{nope",
+                               ".docs-ratchet-baseline.json": _baseline([{"key": "a", "markers": ["x", "y", "z"]}])})
+    _make_repo(_tmp, "delta", {".fleet.toml": "[static_ratchet\n"})
     with mock.patch.object(fas.fleet_repo_scan, "ignored_repos", return_value=frozenset()):
         _report = fas.gate_report(str(_tmp), None, load_state=lambda: "gate:alpha: ratchets=2 rules=0 hits=1\n")
-        _by = {ln.split()[1]: ln for ln in _report["lines"][:3]}
+        _by = {ln.split()[1]: ln for ln in _report["lines"][:4]}
         check(_by["alpha"] == "- alpha  ratchets 2 (±0)  rules 0 (±0)  hits 2 (+1)  [comment 0, static 2]",
               f"gate_report: alpha read from origin/main while the working tree disables it; a missing baseline is 0, got {_by['alpha']!r}")
         check(_by["beta"] == "- beta  not adopted", f"gate_report: no .fleet.toml -> not adopted, got {_by['beta']!r}")
-        check(_by["gamma"].startswith("- gamma  unknown (.static-ratchet-baseline.json: baseline is not valid JSON"),
-              f"gate_report: an unparseable baseline -> unknown with its path, got {_by['gamma']!r}")
+        check(_by["gamma"].startswith("- gamma  ratchets 2 (new)  rules 0 (new)  hits 3 (partial)  [docs 3, static unknown "
+                                      "(.static-ratchet-baseline.json: baseline is not valid JSON"),
+              f"gate_report: an unparseable baseline marks only its table unknown, docs still counts, got {_by['gamma']!r}")
+        check(_by["delta"].startswith("- delta  unknown (") and "does not parse" in _by["delta"],
+              f"gate_report: an unparseable .fleet.toml still makes the whole repo unknown, got {_by['delta']!r}")
+        _gamma = reader.read_repo(str(_tmp / "gamma"))
+        check(_gamma["hits"] == {"docs_ratchet": 3} and list(_gamma["unknown"]) == ["static_ratchet"],
+              f"read_repo: counted tables in hits, the uncountable one in unknown with its reason, got {_gamma!r}")
+        _gate = enforced.read_gate(str(_tmp / "gamma"))
+        check(_gate["state"] == "unknown" and not _gate["checks"] and "not valid JSON" in _gate["reason"],
+              f"read_gate: the audit-side gate stays unknown when any baseline is uncountable, got {_gate!r}")
 
         # scan() carries the section inside the one sweep, reading the digest state once.
         with mock.patch.object(fas, "_scan_gates", return_value={"enumerated": 0}), \

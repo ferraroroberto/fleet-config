@@ -6,7 +6,9 @@ existing digest-state issue under `gate:<repo>:` keys, beside the `structure:`
 ones, so there is no second store.
 
 A repo with no prior reading (newly adopted, last week `unknown`, no state at all)
-shows `(new)`. If the previous state could not be read at all, every delta is
+shows `(new)`. A table whose baseline could not be counted prints as `unknown (<reason>)`
+beside the tables that did count; the repo's hit total is then partial, so its hit change
+is withheld and its state line stores no hit count. If the previous state could not be read at all, every delta is
 withheld and the section says so rather than printing zero change.
 """
 
@@ -28,8 +30,9 @@ def short_name(table: str) -> str:
 
 
 def totals(entry: dict) -> dict:
-    """`{ratchets, rules, hits}` for one adopted reading."""
-    return {"ratchets": len(entry["hits"]), "rules": len(entry["rules"]), "hits": sum(entry["hits"].values())}
+    """`{ratchets, rules, hits}` for one adopted reading; `hits` sums only the tables that counted."""
+    return {"ratchets": len(entry["hits"]) + len(entry.get("unknown", {})), "rules": len(entry["rules"]),
+            "hits": sum(entry["hits"].values())}
 
 
 def parse_state(body: str) -> dict[str, dict]:
@@ -59,8 +62,13 @@ def _row(entry: dict, before: Optional[dict], deltas: bool) -> str:
     if entry["state"] == "unknown":
         return f"- {name}  unknown ({entry.get('reason', 'not established')})"
     now = totals(entry)
-    cells = "  ".join(f"{f} {now[f]}" + (f" {_change(now[f], before, f)}" if deltas else "") for f in FIELDS)
-    per = ", ".join(f"{short_name(t)} {n}" for t, n in sorted(entry["hits"].items()))
+    unknown = entry.get("unknown", {})
+    cells = "  ".join(
+        f"{f} {now[f]}" + (" (partial)" if f == "hits" and unknown else f" {_change(now[f], before, f)}" if deltas else "")
+        for f in FIELDS)
+    counted = [(short_name(t), str(n)) for t, n in entry["hits"].items()]
+    counted += [(short_name(t), f"unknown ({why})") for t, why in unknown.items()]
+    per = ", ".join(f"{name} {value}" for name, value in sorted(counted))
     rules = f"; rules: {', '.join(entry['rules'])}" if entry["rules"] else ""
     return f"- {name}  {cells}  [{per}{rules}]"
 
@@ -68,7 +76,10 @@ def _row(entry: dict, before: Optional[dict], deltas: bool) -> str:
 def _state_line(entry: dict) -> str:
     head = f"{STATE_PREFIX}{entry['repo']}: "
     if entry["state"] == "adopted":
-        return head + " ".join(f"{f}={v}" for f, v in totals(entry).items())
+        now = totals(entry)
+        if entry.get("unknown"):
+            return head + f"ratchets={now['ratchets']} rules={now['rules']} hits=unknown"
+        return head + " ".join(f"{f}={v}" for f, v in now.items())
     return head + ("not adopted" if entry["state"] == "not_adopted" else "unknown")
 
 
@@ -85,10 +96,12 @@ def build(entries: list[dict], prior_body: Optional[str], today: str) -> dict:
     lines = [_row(e, prior.get(e["repo"]), deltas) for e in entries]
     adopted = [totals(e) for e in entries if e["state"] == "adopted"]
     unknown = sum(1 for e in entries if e["state"] == "unknown")
+    partial = sum(len(e.get("unknown", {})) for e in entries if e["state"] == "adopted")
+    uncounted = f" ({partial} uncountable ratchet baselines not included)" if partial else ""
     lines.append(
         f"- fleet total: {sum(t['ratchets'] for t in adopted)} ratchets and {sum(t['rules'] for t in adopted)} "
         f"conventions rules enabled across {len(adopted)} adopted repos; "
-        f"{sum(t['hits'] for t in adopted)} baselined hits; "
+        f"{sum(t['hits'] for t in adopted)} baselined hits{uncounted}; "
         f"{len(entries) - len(adopted) - unknown} not adopted, {unknown} unknown"
     )
     if not deltas:

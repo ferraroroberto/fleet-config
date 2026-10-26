@@ -107,6 +107,10 @@ def read_gate(repo_path: str) -> dict:
     base = reader.read_repo(repo_path)
     if base["state"] != "adopted":
         return {"state": base["state"], "reason": base.get("reason", ""), "checks": [], "prompt": None}
+    if base["unknown"]:
+        # The digest keeps counting around an uncountable baseline; the audit must not, or it would
+        # skip checks the gate may not actually enforce.
+        return {"state": "unknown", "reason": "; ".join(base["unknown"].values()), "checks": [], "prompt": None}
     repo, ref, hits = Path(repo_path), base["ref"], base["hits"]
     try:
         data = fleet_toml.parse(read_ref_file(repo, ref, fleet_toml.FILENAME)) or {}
