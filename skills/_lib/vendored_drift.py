@@ -42,6 +42,12 @@ A fourth is about what a wave would *change* for a behind adopter (fleet-config#
      marks the adopter `breaking` and lands it in `coverage.contract_breaking`,
      which the skill treats as a stop for the wave.
 
+A fifth is about what an adopter's agents search (`ignore_block`):
+
+  5. **ignore block** — does the adopter's `.ignore` carry a generated block listing
+     its `[vendored]` dest paths, so a Grep of its own repo skips the copies? Reported
+     per adopter in `ignore_blocks`; `coverage.ignore_drift` names every repo not `ok`.
+
 Both `/propagate-vendored --dry-run` and any future audit call `scan_fleet`
 directly rather than re-deriving any of these checks by hand.
 
@@ -85,6 +91,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
+from vendored_wave import ignore_block  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -452,6 +459,7 @@ def scan_fleet(
     errors: List[Dict[str, str]] = []
     manifests: Dict[str, Dict[str, Dict[str, str]]] = {}
     unreadable: List[str] = []
+    ignore_blocks: Dict[str, str] = {}
 
     for repo_name, repo_dir in sorted(repos.items()):
         if repo_dir.resolve() == scaffold_resolved:
@@ -466,11 +474,14 @@ def scan_fleet(
         except (OSError, tomllib.TOMLDecodeError) as exc:
             errors.append({"repo": repo_name, "error": f"unreadable/invalid .fleet.toml: {exc}"})
             unreadable.append(repo_name)
+            ignore_blocks[repo_name] = "unknown"
             continue
         manifests[repo_name] = manifest
         if not manifest:
             no_manifest.append(repo_name)
             continue
+        ignore_blocks[repo_name] = ignore_block.repo_state(
+            repo_dir, [str(e["dest"]) for e in manifest.values() if e.get("dest")])
 
         for component, entry in manifest.items():
             if not _wanted(component, component_filter):
@@ -483,16 +494,13 @@ def scan_fleet(
                 })
                 continue
 
-            pinned = hash_dir_at_ref(scaffold_root, sha, src)
             if src not in head_cache:
                 head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
-            local = hash_component_local(repo_dir, dest)
-            result = classify_adopter(local, pinned, head_cache[src])
+            result = classify_adopter(hash_component_local(repo_dir, dest),
+                                      hash_dir_at_ref(scaffold_root, sha, src), head_cache[src])
             row: Dict[str, object] = {
-                "repo": repo_name, "component": component,
-                "src": src, "dest": dest,
-                "pinned_sha": sha, "head_sha": head_sha,
-                **result,
+                "repo": repo_name, "component": component, "src": src, "dest": dest,
+                "pinned_sha": sha, "head_sha": head_sha, **result,
             }
             if result["behind_head"]:
                 row["contract"] = _contract_for(scaffold_root, head_ref, sha, src,
@@ -508,7 +516,7 @@ def scan_fleet(
     )
 
     return _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
-                        catalog, catalog_error, carriers, unreadable)
+                        catalog, catalog_error, carriers, unreadable, ignore_blocks)
 
 
 def _contract_for(scaffold_root: Path, head_ref: str, sha: str, src: str,
@@ -527,7 +535,7 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
                  adopters: List[Dict[str, object]], no_manifest: List[str],
                  errors: List[Dict[str, str]], catalog: Dict[str, str],
                  catalog_error: Optional[str], carriers: List[Dict[str, object]],
-                 unreadable: List[str]) -> Dict[str, object]:
+                 unreadable: List[str], ignore_blocks: Dict[str, str]) -> Dict[str, object]:
     """`scan_fleet`'s result, with the coverage line every caller must state."""
     return {
         "scaffold": str(scaffold_root),
@@ -544,6 +552,9 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
             "error": catalog_error,
         },
         "undeclared_carriers": carriers,
+        # Per adopter: does its `.ignore` block match its manifest (`ok`), or is it
+        # `missing`/`stale`/`malformed`/`unknown`. Only `ok` is clean.
+        "ignore_blocks": dict(sorted(ignore_blocks.items())),
         # The coverage line every caller must state out loud. `carriers_unknown`
         # is deliberately its own number rather than folded into either bucket:
         # a repo whose `.fleet.toml` could not be parsed is not "declared" and
@@ -554,6 +565,7 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
             "undeclared_carriers": len({str(c["repo"]) for c in carriers}),
             "carriers_unknown": sorted(unreadable),
             "catalog_known": catalog_error is None,
+            "ignore_drift": sorted(r for r, state in ignore_blocks.items() if state != "ok"),
             # Behind adopters whose pin has selectors the tip dropped: the wave must stop for these.
             "contract_breaking": [
                 {"repo": a["repo"], "component": a["component"], "pinned_sha": a["pinned_sha"],
