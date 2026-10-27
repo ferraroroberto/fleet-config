@@ -6,6 +6,11 @@ without declaring it (adopt). Everything else is reported, never targeted: a sel
 the tip drops holds that component until a human names it in `allow_breaking`, and a
 carrier that differs from the tip is a human call.
 
+A repo behind on nothing can still need a PR: its `.ignore` block (ignore_block.py) is
+missing or stale against its manifest. Those repos get their own `ignore_only` entry;
+a repo already in the wave gets the block regenerated inside its one PR. A block that
+is malformed or whose state could not be read is held for a human, never rewritten.
+
 CLI:
 
   plan [--scaffold <path>] [--component a,b,...] [--allow-breaking a,b] [--part-of <url>]
@@ -91,6 +96,18 @@ def pr_body(entries: List[Dict[str, object]], new_sha: str, part_of: Optional[st
             "- [ ] the repo's verification gate passes\n")
 
 
+def _ignore_entry(repo: str, state: str, new_sha: str, part_of: Optional[str]) -> Dict[str, object]:
+    ref = part_of or f"project-scaffolding@{short(new_sha)}"
+    body = ("## Summary\n\nGenerates the marked vendored-copies block in `.ignore` from the `[vendored]` dest paths in "
+            "`.fleet.toml`, so agent search skips the vendored copies; hand-written lines are untouched and a direct "
+            f"read of a vendored file still works.\n\nPart of {ref}\n\n"
+            "## Test plan\n\n- [ ] `ignore_block.py check` reports `IGNORE=ok`\n"
+            "- [ ] the repo's verification gate passes\n")
+    return {"repo": repo, "state": state, "branch": "chore/vendored-ignore", "worktree_key": "vendored-ignore",
+            "commit_subject": "chore: generate .ignore so agent search skips vendored copies",
+            "commit_body": "- .ignore: marked block built from the .fleet.toml [vendored] dest paths", "pr_body": body}
+
+
 def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozenset(),
               part_of: Optional[str] = None) -> Dict[str, object]:
     """The per-repo plan for a `vendored_drift.scan_fleet` report."""
@@ -126,9 +143,19 @@ def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozen
             "commit_subject": commit_subject(names, head), "commit_body": commit_body(entries),
             "pr_body": pr_body(entries, head, part_of),
         })
+    ignore_only: List[Dict[str, object]] = []
+    held_ignore: List[Dict[str, str]] = []
+    for repo, state in sorted(report.get("ignore_blocks", {}).items()):
+        if state == "ok" or repo in per_repo:
+            continue
+        if state in ("missing", "stale"):
+            ignore_only.append(_ignore_entry(repo, state, head, part_of))
+        else:
+            held_ignore.append({"repo": repo, "state": state})
     return {
         "scaffold_sha": head, "repos": repos, "held_contract": held, "held_carriers": held_carriers,
-        "prs": len(repos), "component_prs_before": sum(len(r["components"]) for r in repos),
+        "ignore_only": ignore_only, "held_ignore": held_ignore,
+        "prs": len(repos) + len(ignore_only), "component_prs_before": sum(len(r["components"]) for r in repos),
         "coverage": report["coverage"], "errors": report["errors"],
     }
 
@@ -148,6 +175,10 @@ def render_text(plan: Dict[str, object]) -> str:
     if not plan["repos"]:
         lines.append("  no repo is behind on the selected components")
     lines += ["", f"  PRs this wave opens: {plan['prs']}  (one per component per repo would open {plan['component_prs_before']})", ""]
+    for i in plan["ignore_only"]:
+        lines.append(f"  {i['repo']}   .ignore block {i['state']} -> 1 PR ({i['branch']})")
+    for h in plan["held_ignore"]:
+        lines.append(f"  HUMAN CALL (.ignore block {h['state']}): {h['repo']}")
     for h in plan["held_contract"]:
         lines.append(f"  HELD (selectors removed): {h['repo']} {h['component']} @ {short(h['pinned_sha'])}: "
                      + ", ".join(h["removed_selectors"]))
@@ -156,7 +187,7 @@ def render_text(plan: Dict[str, object]) -> str:
     cov = plan["coverage"]
     unknown = ", ".join(cov["carriers_unknown"]) or "none"
     lines.append(f"  coverage: {cov['declared_adopters']} declared adopters, {cov['undeclared_carriers']} undeclared "
-                 f"carriers, unknown: {unknown}; catalog {'known' if cov['catalog_known'] else 'NOT KNOWN - carrier detection did not run'}")
+                 f"carriers, unknown: {unknown}; .ignore drift: {len(cov['ignore_drift'])}; catalog {'known' if cov['catalog_known'] else 'NOT KNOWN - carrier detection did not run'}")
     if plan["errors"]:
         lines.append(f"  scan errors: {len(plan['errors'])} (see the JSON `errors`; never read as clean)")
     return "\n".join(lines) + "\n"

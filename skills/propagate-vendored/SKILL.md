@@ -208,6 +208,7 @@ behind on, the PRs the wave would open against one per component), then:
             catalog: <c> components known | NOT KNOWN (<reason>)
             contract: <j> adopter(s) would lose selectors (<repo> @ <short-pin>: <removed selectors>, or "none")
             README changed for: <repos, or "none">
+            .ignore: <n> repo(s) with a missing/stale/malformed/unknown block (<repo: state>, or "none")
 
 Run `/propagate-vendored <component>` (no --dry-run) to fan out the real wave.
 ```
@@ -272,6 +273,12 @@ above; steps 5-8 run once for the whole repo.
 4. Bump .fleet.toml: [vendored].<component>.sha = "<scaffold-sha>" (write the
    FULL sha, not the short form).
 
+4b. Regenerate the repo's `.ignore` block, which keeps agent search off the vendored
+    copies (hand-written lines are kept; the file is part of this commit):
+    `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/ignore_block.py write <path>`
+    then `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/ignore_block.py check <path>` must print `IGNORE=ok`. Exit 3 (a malformed
+    block or unreadable manifest) is NOT CONFIRMED: report BLOCKED, do not hand-edit the block.
+
 5. Run this repo's verification gate (its own CLAUDE.md / hooks/projects.toml
    gate_cmd — e.g.
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`,
@@ -279,7 +286,12 @@ above; steps 5-8 run once for the whole repo.
    fails non-interactively). Run it through the gate-time ledger so its
    wall-clock and result are recorded, prefixing the gate command:
    `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/gate_ledger.py run --wave <wave-id> --repo <repo> -- <gate command>`
-   — it exits with the gate's own exit code. A gate
+   — it streams the gate's own output through and exits with the gate's own exit code.
+   A red gate's cause is in the last lines of that output: the tail (last 60 lines / 8 KiB) is
+   written to `gate-output/<wave-id>/<repo>-<utc>.log` under the hooks state directory's
+   `propagate-vendored/` folder, and the ledger record's `output` and `failed_stage` name it
+   (`gate_ledger.py summary` prints both beside each red repo; `unknown` when no stage was found).
+   Quote the stage and the tail's failing lines in the FAILED report. A gate
    FAILURE is a genuine blocker: STOP, do not weaken or skip it, report FAILED.
 
 6. Commit (conventional, no AI-attribution trailer) with the plan's
@@ -322,6 +334,12 @@ If the gate fails or a merge conflict appears, STOP and report BLOCKED — never
 guess-fix, weaken the gate, or force anything.
 ```
 
+**`.ignore`-only repos.** `ignore_only` in the plan lists a repo that is behind on nothing but
+whose `.ignore` block is `missing` or `stale` against its manifest. It gets the same agent
+prompt reduced to steps 1, 4b (no component to copy or bump), 5, 6 and 7, using that entry's
+`branch`, `commit_subject`, `commit_body` and `pr_body`. `held_ignore` (a `malformed` or
+`unknown` block) is reported, never targeted: a human fixes the file first.
+
 ### 5. Confirm fan-out and stand by
 
 Print a confirmation block listing every dispatched agent (repo, action,
@@ -346,6 +364,7 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
             <k> repo(s) unknown (manifest unreadable): <repos, or "none">
             catalog: <c> components known | NOT KNOWN — carrier detection did not run (<reason>)
             contract: <j> adopter(s) held for removed selectors: <repo/component, or "none">
+            .ignore: <n> repo(s) not current after the wave: <repo: state, or "none">
 
   no per-repo issues filed (by design — see the scaffold record).
 ```
