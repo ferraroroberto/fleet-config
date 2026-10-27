@@ -542,6 +542,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "component branch and commit subject, and held components and carriers "
      "are reported instead of targeted -- is testable on its own against a "
      "throwaway scaffold and adopter repos"),
+    ("vendored_ignore", "repo/test_vendored_ignore.py",
+     "the generated .ignore block that hides vendored copies from agent "
+     "search -- built from the [vendored] dest paths, hand-written lines kept, "
+     "a missing/stale/malformed block reported as its own state through the "
+     "drift scan and the wave plan, and this repo's own block matching its "
+     "own manifest -- is testable on its own against throwaway repos"),
     ("vendored_gate_ledger", "repo/test_vendored_gate_ledger.py",
      "/propagate-vendored's gate-time ledger -- each repo's gate is timed "
      "by the helper that runs it, recorded with its result, and summed into "

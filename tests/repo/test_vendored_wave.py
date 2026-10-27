@@ -20,6 +20,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import vendored_drift as vd  # noqa: E402
+from vendored_wave import ignore_block as ib  # noqa: E402
 from vendored_wave import plan as vw  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
@@ -55,6 +56,7 @@ def _adopter(root: Path, name: str, pins: dict) -> Path:
         entries.append(f'{comp} = {{ src = "{SRC[comp]}", sha = "{sha}", dest = "{SRC[comp]}" }}')
     (d / ".fleet.toml").write_text('layer = "working-web"\nicon = "x"\ndescription = "d"\n\n[vendored]\n'
                                    + "\n".join(entries) + "\n", encoding="utf-8")
+    ib.write_repo(d, [SRC[comp] for comp in pins])
     return d
 
 
