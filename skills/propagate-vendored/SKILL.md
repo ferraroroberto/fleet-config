@@ -286,7 +286,12 @@ above; steps 5-8 run once for the whole repo.
    fails non-interactively). Run it through the gate-time ledger so its
    wall-clock and result are recorded, prefixing the gate command:
    `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/gate_ledger.py run --wave <wave-id> --repo <repo> -- <gate command>`
-   — it exits with the gate's own exit code. A gate
+   — it streams the gate's own output through and exits with the gate's own exit code.
+   A red gate's cause is in the last lines of that output: the tail (last 60 lines / 8 KiB) is
+   written to `gate-output/<wave-id>/<repo>-<utc>.log` under the hooks state directory's
+   `propagate-vendored/` folder, and the ledger record's `output` and `failed_stage` name it
+   (`gate_ledger.py summary` prints both beside each red repo; `unknown` when no stage was found).
+   Quote the stage and the tail's failing lines in the FAILED report. A gate
    FAILURE is a genuine blocker: STOP, do not weaken or skip it, report FAILED.
 
 6. Commit (conventional, no AI-attribution trailer) with the plan's
