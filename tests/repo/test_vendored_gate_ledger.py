@@ -30,6 +30,7 @@ check = _h.check
 
 CLI = REPO / "skills" / "_lib" / "vendored_wave" / "gate_ledger.py"
 WAVE = "abc1234-20261026T200000Z"
+RED_WAVE = "def5678-20261026T210000Z"
 
 
 def cli(state: Path, *args: str) -> subprocess.CompletedProcess:
@@ -71,6 +72,51 @@ try:
     rows = {r["repo"]: r for r in ledger_rows(state)}
     check(rows["alpha"]["seconds"] is not None and rows["alpha"]["seconds"] >= 0.25, f"run: the gate's wall-clock is recorded ({rows['alpha']['seconds']})")
     check(rows["delta"]["seconds"] is None and rows["delta"]["result"] == "NOT_CONFIRMED", "ledger: an unspawnable gate has a null duration, not 0")
+
+    # ---- a red gate keeps its cause: output streams through, a tail and the failed stage are recorded ----
+    stage_gate = py("import sys\n" + "\n".join(f"print('line {i}')" for i in range(80)) +
+                    "\nprint('>> lint'); print('[PASS] lint'); print('>> unit tests', flush=True); print('boom', file=sys.stderr); sys.exit(1)")
+    out = cli(state, "run", "--wave", RED_WAVE, "--repo", "red", "--", *stage_gate)
+    check(out.returncode == 1 and "boom" in out.stdout and "line 79" in out.stdout and out.stdout.index("boom") < out.stdout.index("LEDGER=recorded"),
+          f"run: the gate's stdout and stderr stream through, before the LEDGER line ({out.stdout[-120:]!r})")
+    red = {r["repo"]: r for r in ledger_rows(state)}["red"]
+    check(red.get("failed_stage") == "unit tests", f"run: failed_stage names the last stage banner ({red.get('failed_stage')!r})")
+    tail_file = state / gl.LEDGER_DIRNAME / str(red.get("output"))
+    tail_lines = tail_file.read_text(encoding="utf-8").splitlines() if red.get("output") else []
+    check(len(tail_lines) == gl.TAIL_LINES and tail_lines[-1] == "boom" and tail_lines[-2] == ">> unit tests",
+          f"run: the tail file holds the last {gl.TAIL_LINES} lines of the combined output ({len(tail_lines)})")
+    check(str(red.get("output")).startswith(f"{gl.OUTPUT_DIRNAME}/{RED_WAVE}/red-") and "\\" not in str(red.get("output")),
+          f"run: the record names the tail file relative to the ledger dir ({red.get('output')!r})")
+
+    out = cli(state, "run", "--wave", RED_WAVE, "--repo", "nostage", "--", *py("print('something broke'); raise SystemExit(2)"))
+    nostage = {r["repo"]: r for r in ledger_rows(state)}["nostage"]
+    check(out.returncode == 2 and nostage.get("failed_stage") is None and "failed_stage" in nostage and nostage.get("output"),
+          f"run: output with no stage records failed_stage null, still keeps the tail ({nostage})")
+    out = cli(state, "run", "--wave", RED_WAVE, "--repo", "pyt", "--", *py(
+        "print('FAILED tests/test_a.py::test_x - assert 1 == 2'); print('FAILED tests/test_b.py::test_y'); raise SystemExit(1)"))
+    check({r["repo"]: r for r in ledger_rows(state)}["pyt"]["failed_stage"] == "tests/test_a.py::test_x",
+          "run: with no banner, failed_stage is the first pytest FAILED node")
+    out = cli(state, "run", "--wave", RED_WAVE, "--repo", "pass2", "--", *py("print('>> lint'); print('ok')"))
+    ok_row = {r["repo"]: r for r in ledger_rows(state)}["pass2"]
+    check(out.returncode == 0 and "output" not in ok_row and "failed_stage" not in ok_row
+          and not list((state / gl.LEDGER_DIRNAME / gl.OUTPUT_DIRNAME / RED_WAVE).glob("pass2-*")),
+          "run: a passing gate writes no tail file and keeps the original record fields")
+    check(set(rows["alpha"]) == {"wave", "repo", "result", "seconds", "utc"}, "ledger: a pass record has exactly the original fields")
+    big = cli(state, "run", "--wave", RED_WAVE, "--repo", "big", "--", *py("[print('y' * 400) for _ in range(60)]; raise SystemExit(1)"))
+    big_row = {r["repo"]: r for r in ledger_rows(state)}["big"]
+    big_bytes = (state / gl.LEDGER_DIRNAME / str(big_row["output"])).read_bytes()
+    check(0 < len(big_bytes) <= gl.TAIL_BYTES and big_bytes.endswith(b"y\n"), f"run: the tail file is capped at TAIL_BYTES ({len(big_bytes)})")
+    check(big.returncode == 1, "run: a capped tail does not change the exit code")
+
+    red_text = cli(state, "summary", "--wave", RED_WAVE).stdout
+    check("red   " in red_text and "failed stage: unit tests" in red_text and f"output tail: {state / gl.LEDGER_DIRNAME / red['output']}" in red_text,
+          f"summary: a red repo shows its failed stage and the tail path ({red_text!r})")
+    check("nostage" in red_text and "failed stage: unknown" in red_text, "summary: a red with no stage renders 'unknown'")
+    check("pass2   " in red_text and red_text.count("failed stage:") == 4, "summary: a passing repo shows no failed stage")
+    red_json = {r["repo"]: r for r in json.loads(cli(state, "summary", "--wave", RED_WAVE, "--format", "json").stdout)["repos"]}
+    check(red_json["red"]["failed_stage"] == "unit tests" and red_json["red"]["output"] == red["output"]
+          and red_json["nostage"]["failed_stage"] is None and red_json["pass2"]["output"] is None,
+          "summary json: carries failed_stage and output per repo, null when none")
 
     # ---- record, then summary ----
     cli(state, "record", "--wave", WAVE, "--repo", "epsilon", "--result", "PASS")
