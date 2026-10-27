@@ -79,7 +79,17 @@ the previous issue is merged and verified. Exceptions: a lane that owns an
 unmerged branch finishes that one issue first, and a small side fix the lane
 needs to unblock its own step stays in that lane.
 
-**A brief that asks for a red-under-load proof names the helper
+**A brief for a timing or retry fix asks for a deterministic proof first.**
+Reproduce the race with an injected delay, a fake clock, a mocked timeout or a
+readiness signal, add a mutation check, and guard the fix with that test. Ask
+for a red-under-load burn only when the race's cause is unobserved, reading the
+code does not settle it, and no such seam can reach it: the burn then captures
+the real failing assertion, and the deterministic test written afterwards is
+what guards the code. Tell the worker to stop after two burn levels that do not
+reproduce and to say so. A flake issue you file leads the same way: the
+injected delay or fake clock first, a burn named only for an unobserved cause.
+
+**A brief that does ask for a burn names the helper
 (fleet-config#1076).** Hand-rolled burners at normal priority saturate the
 whole box: 24 of them on the 16-core machine starved a scheduled life-os job
 until its watchdog killed it. Tell the worker to run every burn through
