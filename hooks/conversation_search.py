@@ -399,6 +399,37 @@ def _quote_terms(query: str) -> str:
     return " ".join(quoted)
 
 
+def _ranked(conn: sqlite3.Connection, match: str, where: "list[str]", params: list,
+            limit: int) -> list:
+    """Run the ranked query for one FTS5 expression; ``params[0]`` is replaced by it.
+
+    Inner select: the per-column scores plus whether the owner title alone satisfies the
+    whole expression (a column filter over the same expression). Middle: the level.
+    Outer: tier, rank and the order. SQLite cannot reuse a select alias in a sibling
+    column, hence the nesting.
+    """
+    sql = (
+        f"SELECT {_ROW_COLS}, {_RANK} AS rank, {_TIER} AS tier FROM ("
+        f"SELECT *, {_LEVEL} AS lvl FROM ("
+        f"SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, c.title, c.topic, "
+        f"       c.summary, c.decisions, c.open_loops, c.turns, c.mtime, {_SCORES}, "
+        "       t.rid IS NOT NULL AS all_title "
+        "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
+        "LEFT JOIN (SELECT rowid AS rid FROM conv_fts WHERE conv_fts MATCH ?) t ON t.rid = c.id "
+        f"WHERE {' AND '.join(where)})) "
+        "ORDER BY lvl, rank, date DESC, mtime DESC LIMIT ?"
+    )
+    # An expression that cannot take a title column filter (it parsed for the main
+    # match, so this is rare) degrades to "no row has every term in its title" rather
+    # than failing the search; `""` matches nothing.
+    title_match = f"title : ({match})"
+    try:
+        conn.execute("SELECT 1 FROM conv_fts WHERE conv_fts MATCH ? LIMIT 1", (title_match,))
+    except sqlite3.OperationalError:
+        title_match = '""'
+    return conn.execute(sql, [title_match, match, *params[1:], limit]).fetchall()
+
+
 def search(
     cfg: CaptureConfig,
     query: str,
@@ -434,36 +465,9 @@ def search(
     if since:
         where.append("c.date >= ?")
         params.append(since)
-    # Inner: the per-column scores plus whether the owner title alone satisfies the
-    # whole query (a column filter over the same expression). Middle: the level.
-    # Outer: tier, rank and the order. SQLite cannot reuse a select alias in a sibling
-    # column, hence the nesting.
-    sql = (
-        f"SELECT {_ROW_COLS}, {_RANK} AS rank, {_TIER} AS tier FROM ("
-        f"SELECT *, {_LEVEL} AS lvl FROM ("
-        f"SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, c.title, c.topic, "
-        f"       c.summary, c.decisions, c.open_loops, c.turns, c.mtime, {_SCORES}, "
-        "       t.rid IS NOT NULL AS all_title "
-        "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
-        "LEFT JOIN (SELECT rowid AS rid FROM conv_fts WHERE conv_fts MATCH ?) t ON t.rid = c.id "
-        f"WHERE {' AND '.join(where)})) "
-        "ORDER BY lvl, rank, date DESC, mtime DESC LIMIT ?"
-    )
-
-    def run(match: str) -> list:
-        # The all-terms test reuses the user's own expression under a title column
-        # filter. An expression that cannot take one (it parsed above, so this is rare)
-        # degrades to "no row has every term in its title" rather than failing the search.
-        try:
-            conn.execute("SELECT 1 FROM conv_fts WHERE conv_fts MATCH ? LIMIT 1", (f"title : ({match})",))
-            title_match = f"title : ({match})"
-        except sqlite3.OperationalError:
-            title_match = '"" '
-        return conn.execute(sql, [title_match, *([match] + params[1:]), limit]).fetchall()
-
     try:
         try:
-            rows = run(expr)
+            rows = _ranked(conn, expr, where, params, limit)
         except sqlite3.OperationalError as exc:
             # Operator syntax FTS5 refused — a bare `*`, `notion:`, an
             # unbalanced paren. Re-read it literally instead of surfacing a
@@ -475,7 +479,7 @@ def search(
                 return []
             params[0] = retry
             try:
-                rows = run(expr)
+                rows = _ranked(conn, expr, where, params, limit)
             except sqlite3.OperationalError as exc:
                 logger.error("unparseable query %r: %s", query, exc)
                 return []
