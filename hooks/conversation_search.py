@@ -6,27 +6,31 @@ answer *"what happened recently"* for one skill. This answers the other
 question — *"which conversation was the one about X, out of everything, across
 every skill"* — and hands back the identity needed to reopen it.
 
-Four layers are searched in strict tiers, because they fail differently:
+Four layers are searched, ranked in strict levels because they fail differently.
+A better level always wins; inside a level only that level's own column score orders
+rows, so a long capture or a word repeated in the body never lifts a row past a better
+hit on a stronger layer. Ties go to the newest conversation.
 
-  * the owner's **title** — the strongest statement of what a conversation is
-    about, and short, so it is its own column rather than a phrase lost inside
-    a long digest (fleet-config#1419); tier 0.
-  * the digest **topic** — the launcher shows it as the title when the owner
-    set none, so it is the visible title and shares tier 0 then; otherwise
-    tier 1 (fleet-config#1521).
-  * the rest of the **digest** (slug, summary — decisions / open loops on older
-    entries) — dense and abstracted, so a match here is usually the
-    conversation you meant; tier 2.
-  * the **full capture text** — verbatim, so it finds the offhand detail no
-    digest would ever mention ("the ferry booking reference"); tier 3, so it
-    ranks below a digest hit rather than drowning it.
+  0. the owner's **title** holds every query term. The title is the strongest
+     statement of what a conversation is about, and short, so it is its own column
+     rather than a phrase lost inside a long digest.
+  1. the owner's **title** holds some of the terms (the rest match elsewhere); then
+     the digest **topic** of an *untitled* conversation, which the launcher shows as
+     its title, so it is a title-level fit too.
+  2. the rest of the **digest** (slug, summary — decisions / open loops on older
+     entries) plus the topic of a titled conversation — dense and abstracted, so a
+     match here is usually the conversation you meant.
+  3. the **full capture text** — verbatim, so it finds the offhand detail no digest
+     would ever mention ("the ferry booking reference"), and ranks last.
 
-Tiers, not bm25 column weights: FTS5 ``bm25()`` saturates term frequency within
-a column and normalises by the whole row's length, so a title hit on a long
-capture lost to short rows that merely mentioned the word (#1521).
+Tiers, not bm25 column weights or a blend: FTS5 ``bm25()`` saturates term frequency
+within a column and normalises by the whole row's length, so a summed score let a
+long body that repeats the word outrank a short owner title that is exactly the query.
 
-Each ``--json`` row reports its tier (0-3, as numbered above) next to the blended
-``rank``, so a caller can tell a title-level fit from a passing mention.
+Each ``--json`` row reports its tier (0-3, as numbered above) and ``rank``, the bm25
+score of the column that decided its level (lower is better). Tiers 0-1 mean "a
+title-level fit"; relay callers read that. The sort inside tier 1 puts owner-title rows
+before untitled-topic rows, so the order is finer than the reported tier.
 
 Storage is a single SQLite **FTS5** database (stdlib, no dependency) for the
 whole project, so one query spans every skill. It is a pure derivative of the
@@ -317,29 +321,32 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
 
 # ------------------------------------------------------------------ query
 
-# Ranking is tiers first, a linear column blend second — see the module docstring.
-# ``bm25()`` with every other column weighted 0 is a per-column score: negative when
-# that column holds a query term, exactly 0 when it does not. Column order matches
-# the ``conv_fts`` schema: title, topic, digest, body.
-_COL_SCORE = {
-    "title": "bm25(conv_fts, 1.0, 0.0, 0.0, 0.0)",
-    "topic": "bm25(conv_fts, 0.0, 1.0, 0.0, 0.0)",
-    "digest": "bm25(conv_fts, 0.0, 0.0, 1.0, 0.0)",
-    "body": "bm25(conv_fts, 0.0, 0.0, 0.0, 1.0)",
-}
-# The visible title is the owner's title, else the digest topic (what the launcher
-# shows), so a topic hit is top tier only when no owner title is set.
-_TIER = (
-    f"CASE WHEN {_COL_SCORE['title']} < 0 OR (c.title = '' AND {_COL_SCORE['topic']} < 0) THEN 0 "
-    f"WHEN {_COL_SCORE['topic']} < 0 THEN 1 "
-    f"WHEN {_COL_SCORE['digest']} < 0 THEN 2 ELSE 3 END"
+# Ranking is strict levels, never a blend — see the module docstring. ``bm25()`` with
+# every other column weighted 0 is a per-column score: negative when that column holds
+# a query term, exactly 0 when it does not. Column order matches the ``conv_fts``
+# schema: title, topic, digest, body. ``s_sum`` scores topic and digest together, the
+# summary level.
+_SCORES = (
+    "bm25(conv_fts, 1.0, 0.0, 0.0, 0.0) AS s_title, "
+    "bm25(conv_fts, 0.0, 1.0, 0.0, 0.0) AS s_topic, "
+    "bm25(conv_fts, 0.0, 1.0, 1.0, 0.0) AS s_sum, "
+    "bm25(conv_fts, 0.0, 0.0, 0.0, 1.0) AS s_body"
 )
-# Within a tier, a linear blend (unlike bm25's own weights, which saturate) orders
-# rows; lower is better, like bm25 itself. It is also the ``rank`` the CLI reports.
-_BLEND = (
-    f"(100.0 * {_COL_SCORE['title']} + 30.0 * {_COL_SCORE['topic']} "
-    f"+ 10.0 * {_COL_SCORE['digest']} + {_COL_SCORE['body']})"
+# 0 the owner title holds every term, 1 some terms, 2 an untitled conversation's topic
+# (the title the launcher shows), 3 digest or a titled conversation's topic, 4 body.
+_LEVEL = (
+    "CASE WHEN all_title THEN 0 WHEN s_title < 0 THEN 1 "
+    "WHEN title = '' AND s_topic < 0 THEN 2 WHEN s_sum < 0 THEN 3 ELSE 4 END"
 )
+# The reported ``tier``: levels 0 and 1 stay the title-level fits relay callers key on.
+_TIER = "CASE lvl WHEN 0 THEN 0 WHEN 1 THEN 1 WHEN 2 THEN 1 WHEN 3 THEN 2 ELSE 3 END"
+# Lower is better, like bm25 itself. Only the deciding level's own column counts.
+_RANK = (
+    "CASE lvl WHEN 0 THEN s_title WHEN 1 THEN s_title WHEN 2 THEN s_topic "
+    "WHEN 3 THEN s_sum ELSE s_body END"
+)
+_ROW_COLS = ("skill, file, path, date, slug, sid, agent, title, topic, summary, decisions, "
+             "open_loops, turns")
 
 
 # Syntax FTS5 acts on. The operators are matched **uppercase only, and that is
@@ -427,16 +434,36 @@ def search(
     if since:
         where.append("c.date >= ?")
         params.append(since)
+    # Inner: the per-column scores plus whether the owner title alone satisfies the
+    # whole query (a column filter over the same expression). Middle: the level.
+    # Outer: tier, rank and the order. SQLite cannot reuse a select alias in a sibling
+    # column, hence the nesting.
     sql = (
-        "SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, "
-        "       c.title, c.topic, c.summary, c.decisions, c.open_loops, c.turns, "
-        f"      {_BLEND} AS rank, {_TIER} AS tier "
+        f"SELECT {_ROW_COLS}, {_RANK} AS rank, {_TIER} AS tier FROM ("
+        f"SELECT *, {_LEVEL} AS lvl FROM ("
+        f"SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, c.title, c.topic, "
+        f"       c.summary, c.decisions, c.open_loops, c.turns, c.mtime, {_SCORES}, "
+        "       t.rid IS NOT NULL AS all_title "
         "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
-        f"WHERE {' AND '.join(where)} ORDER BY {_TIER}, rank LIMIT ?"
+        "LEFT JOIN (SELECT rowid AS rid FROM conv_fts WHERE conv_fts MATCH ?) t ON t.rid = c.id "
+        f"WHERE {' AND '.join(where)})) "
+        "ORDER BY lvl, rank, date DESC, mtime DESC LIMIT ?"
     )
+
+    def run(match: str) -> list:
+        # The all-terms test reuses the user's own expression under a title column
+        # filter. An expression that cannot take one (it parsed above, so this is rare)
+        # degrades to "no row has every term in its title" rather than failing the search.
+        try:
+            conn.execute("SELECT 1 FROM conv_fts WHERE conv_fts MATCH ? LIMIT 1", (f"title : ({match})",))
+            title_match = f"title : ({match})"
+        except sqlite3.OperationalError:
+            title_match = '"" '
+        return conn.execute(sql, [title_match, *([match] + params[1:]), limit]).fetchall()
+
     try:
         try:
-            rows = conn.execute(sql, [*params, limit]).fetchall()
+            rows = run(expr)
         except sqlite3.OperationalError as exc:
             # Operator syntax FTS5 refused — a bare `*`, `notion:`, an
             # unbalanced paren. Re-read it literally instead of surfacing a
@@ -448,7 +475,7 @@ def search(
                 return []
             params[0] = retry
             try:
-                rows = conn.execute(sql, [*params, limit]).fetchall()
+                rows = run(expr)
             except sqlite3.OperationalError as exc:
                 logger.error("unparseable query %r: %s", query, exc)
                 return []
