@@ -79,6 +79,20 @@ def _lib_detect_project_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _repo_chief_registry(dest: Path) -> Dict[str, str]:
+    """Write a throwaway registry that opts this checkout into the chief handover.
+
+    The hook resolves its project through the machine-local `projects.toml`,
+    whose fleet-config prefix is the primary checkout; a worktree whose
+    directory name is not `<repo>-wt-<N>` would not match it. Returns the env
+    var pointing the hook at the throwaway file.
+    """
+    toml = dest / "projects.toml"
+    toml.write_text(f'[fleet-config]\ncwd_prefix = "{REPO.as_posix()}"\nchief_handover = true\n',
+                    encoding="utf-8")
+    return {"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)}
+
+
 def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
     """`build_context`/`handover_path` pure logic, plus one real end-to-end
     hook run with an isolated state dir (fleet-config#442).
@@ -127,7 +141,7 @@ def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
         code, stdout, stderr = run(
             "chief_handover_sessionstart",
             {"hook_event_name": "SessionStart", "source": "compact", "cwd": str(REPO)},
-            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(tmp)},
+            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(tmp), **_repo_chief_registry(tmp)},
         )
         check(f"chief_handover_sessionstart e2e: exits 0 ({stderr.strip()})", code == 0)
         check("chief_handover_sessionstart e2e: stdout carries the SessionStart hookSpecificOutput envelope",
@@ -178,7 +192,8 @@ def _chief_skill_refresh_cases(check: _Checker, chs: Any) -> None:
         (tmp / "sessions-state.json").write_text(json.dumps({
             "sid-chief": {"name": "chief", "launcher_session_id": "L-chief"},
             "sid-dev": {"name": None, "launcher_session_id": "L-dev"}}), encoding="utf-8")
-        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "APP_LAUNCHER_SESSION_ID": ""}
+        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "APP_LAUNCHER_SESSION_ID": "",
+               **_repo_chief_registry(tmp)}
         version = hashlib.sha256(chs.skill_path().read_bytes()).hexdigest()[:12]
 
         def refresh_out(sid: str, source: str, launcher: str = "") -> str:
