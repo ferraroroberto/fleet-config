@@ -460,14 +460,14 @@ try:
           "visible-title tier: an owner-title hit on a long capture ranks first")
     check(order[1] == topic_titled,
           "visible-title tier: an untitled conversation's topic hit ranks next, still on a long capture")
-    check(order[2] == topic_owned,
-          "visible-title tier: a topic hit under an owner title ranks below the visible-title hits")
-    check(set(order[3:8]) == set(summary_only) and set(order[8:]) == set(body_only),
-          "visible-title tier: then digest-only hits, then body-only hits")
+    check(set(order[2:8]) == {topic_owned, *summary_only},
+          "visible-title tier: a topic hit under an owner title ranks with the summary level, below the visible titles")
+    check(set(order[8:]) == set(body_only),
+          "visible-title tier: body-only hits come last")
     by_file = {h["file"]: h["tier"] for h in hits}
-    check(by_file[owner_titled] == 0 and by_file[topic_titled] == 0 and by_file[topic_owned] == 1
+    check(by_file[owner_titled] == 0 and by_file[topic_titled] == 1 and by_file[topic_owned] == 2
           and {by_file[f] for f in summary_only} == {2} and {by_file[f] for f in body_only} == {3},
-          "visible-title tier: each --json row carries its match tier (0 title, 1 topic, 2 digest, 3 body)")
+          "visible-title tier: each --json row carries its match tier (0 title, 1 partial title or topic, 2 summary, 3 body)")
     check([h["tier"] for h in hits] == sorted(h["tier"] for h in hits),
           "visible-title tier: results come back in non-decreasing tier order")
     check([h["file"] for h in cs.search(cfg, WORD[:-2])][:2] == [owner_titled, topic_titled],
@@ -475,6 +475,75 @@ try:
     check(cs.search(cfg, f'"{WORD}" OR zzzabsent')[0]["file"] == owner_titled,
           "visible-title tier: holds for a raw FTS5 operator query")
 
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+# ---- strict levels: owner title > untitled topic > summary > body, never a blend ----
+# A short owner title must beat untitled rows however often they repeat the words, and
+# inside one level only that level's own column decides, so a long capture never lifts a row.
+tmp = Path(tempfile.mkdtemp(prefix="conv_levels_"))
+try:
+    root = tmp / "life-os"
+    cdir = root / ".claude" / "skills" / "journal-daily" / "conversations"
+    cdir.mkdir(parents=True)
+    QUERY = "heron rookery"
+    heavy = " ".join([QUERY] * 400)
+    pad = " ".join(f"pad{i % 89}" for i in range(20_000))
+    plain = "- **Topic:** errands\n- **Summary:** a quiet afternoon"
+    spec: dict[str, tuple[str, str, str]] = {}  # file -> (owner title, digest, capture text)
+    f_all = "2026-09-01-0900-journal-daily-aaaa0001.md"
+    f_all_long = "2026-09-02-0900-journal-daily-aaaa0002.md"
+    f_some = "2026-09-03-0900-journal-daily-bbbb0001.md"
+    f_topic = [f"2026-08-{d:02d}-0900-journal-daily-cccc{d:04d}.md" for d in (1, 2)]
+    f_summary = [f"2026-07-{d:02d}-0900-journal-daily-dddd{d:04d}.md" for d in (1, 2)]
+    f_body_old = "2026-06-01-0900-journal-daily-eeee0001.md"
+    f_body_new = "2026-06-02-0900-journal-daily-eeee0002.md"
+    spec[f_all] = ("heron rookery", plain, "we talked briefly")
+    spec[f_all_long] = ("heron rookery survey", plain, f"{heavy} {pad}")
+    spec[f_some] = ("heron", "- **Topic:** errands\n- **Summary:** rookery counts", "we talked briefly")
+    for f in f_topic:
+        spec[f] = ("", f"- **Topic:** {heavy}\n- **Summary:** nothing of note", f"{heavy} {pad}")
+    for f in f_summary:
+        spec[f] = ("", f"- **Topic:** errands\n- **Summary:** {heavy}", f"{heavy} {pad}")
+    spec[f_body_old] = ("", plain, f"{QUERY} {QUERY}")
+    spec[f_body_new] = ("", plain, f"{QUERY} {QUERY}")
+    idx_entries, titles_map = {}, {}
+    for name, (owner, digest, text) in spec.items():
+        (cdir / name).write_text(cc.render_markdown("d", [("user", text)]), encoding="utf-8")
+        if owner:
+            titles_map[name] = owner
+        idx_entries[name] = ci.Entry(file=name, mtime=(cdir / name).stat().st_mtime,
+                                     turns=2, body=digest, sid="", agent="claude")
+    (cdir / "index.md").write_text(ci.render_index("journal-daily", idx_entries), encoding="utf-8")
+    (cdir / ci.TITLES_NAME).write_text(json.dumps(titles_map), encoding="utf-8")
+    cfg = cc.CaptureConfig(root=root, routing="skills", conversations_dir="conversations",
+                           skills_dir=".claude/skills", active_marker=".active-skill")
+    check(cs.sync(cfg) == len(spec), "strict levels: synced the fixture conversations")
+    hits = cs.search(cfg, QUERY)
+    order = [h["file"] for h in hits]
+    check(len(order) == len(spec), f"strict levels: every match is returned (got {len(order)})")
+    check(order[:2] == [f_all, f_all_long],
+          "strict levels: owner titles holding every term lead, the better title first, "
+          "however long the other capture is")
+    check(order[2] == f_some,
+          "strict levels: an owner title holding only some terms ranks below all-terms titles")
+    check(set(order[3:5]) == set(f_topic),
+          "strict levels: untitled topic hits come next, ahead of heavier summary and body hits")
+    check(set(order[5:7]) == set(f_summary),
+          "strict levels: summary-only hits come before body-only hits")
+    check(order[7:] == [f_body_new, f_body_old],
+          "strict levels: ties inside a level go to the newest conversation")
+    tiers = {h["file"]: h["tier"] for h in hits}
+    check(tiers[f_all] == 0 and tiers[f_all_long] == 0 and tiers[f_some] == 1
+          and {tiers[f] for f in f_topic} == {1}
+          and {tiers[f] for f in f_summary} == {2} and {tiers[f_body_old], tiers[f_body_new]} == {3},
+          "strict levels: tier 0-1 stay the title-level fits, 2 summary, 3 body")
+    check(cs.search(cfg, "heron roo")[0]["file"] == f_all,
+          "strict levels: holds for the still-typing prefix")
+    check(cs.search(cfg, '"heron" AND "rookery"')[0]["file"] == f_all,
+          "strict levels: holds for a raw FTS5 operator query")
+    check(cs.search(cfg, "title:heron")[0]["file"] in (f_all, f_all_long, f_some),
+          "strict levels: a column-filter query still ranks without error")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
