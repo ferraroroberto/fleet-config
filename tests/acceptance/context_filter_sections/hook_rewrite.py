@@ -149,6 +149,38 @@ def cd_prefix_runs_in_outer_shell(check: _Checker) -> None:
         )
 
 
+def cwd_reaches_wrapper_verbatim(check: _Checker) -> None:
+    # The payload cwd is data: whatever characters the directory name carries,
+    # the harness's shell must hand the wrapper that exact path and run nothing
+    # else on the way. Driven for real through both shells, like the cd test.
+    import _lib  # noqa: E402
+
+    shells = {"Bash": _lib.git_bash_exe(), "PowerShell": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"}
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "a$(touch m1)b$(ni m2)c'd\N{RIGHT SINGLE QUOTATION MARK}e f"
+        work.mkdir()
+        subprocess.run(["git", "init", "-q", str(work)], capture_output=True, timeout=60)
+        for tool, shell in shells.items():
+            code, stdout, stderr = run(
+                "context_filter_hook",
+                {"tool_name": tool, "cwd": str(work), "tool_input": {"command": "git rev-parse --show-toplevel"}},
+                {"FLEET_CONTEXT_FILTER_MODE": "rewrite", "FLEET_CONTEXT_FILTER_DIR": tmp},
+            )
+            rewritten = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"] if code == 0 and stdout.strip() else ""
+            argv = [shell, "-c", rewritten] if tool == "Bash" else [shell, "-NoProfile", "-Command", rewritten]
+            res = subprocess.run(
+                argv, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=tmp,
+                env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+            ) if rewritten and shell else None
+            out = (res.stdout + res.stderr) if res else ""
+            stray = [name for name in ("m1", "m2") if (Path(tmp) / name).exists()]
+            (check if shell else check.advisory)(
+                f"context_filter_hook: {tool} wrapper receives the session cwd unchanged",
+                res is not None and res.returncode == 0 and not stray and work.name in out,
+                f"rewritten={rewritten[:200]} stray={stray} out={out.strip()[:300]}",
+            )
+
+
 def mode_file_resolution(check: _Checker) -> None:
     # ---- mode file resolution: env override -> mode.json -> off (#541) ----
     # The machine-wide switch is ~/.fleet-context-filter/mode.json (written by
