@@ -21,6 +21,7 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 - [`/propagate-vendored`](skills/propagate-vendored.md) — byte-for-byte re-vendor of a scaffolding component to every adopter
 - [`/audit-fleet`](skills/audit-fleet.md) — scatter-gather `/codebase-audit` across every repo, one weekly digest
 - [`/design-sweep`](skills/design-sweep.md) — fleet-wide unattended `/design-sync`
+- [`/perf-sweep`](skills/perf-sweep.md) — weekly `/perf-review` over every web app, one digest
 - [`/cleanup-fleet`](skills/cleanup-fleet.md) — fix one audit bucket across every repo, one agent per repo
 - [`/cleanup-fleet-all`](skills/cleanup-fleet-all.md) — unattended all-bucket cleanup, seriality rules, deferred repos, independent-review shape
 - [`/issue-finish-batch`](skills/issue-finish-batch.md) — parallel `/issue-finish` over reviewed branches
