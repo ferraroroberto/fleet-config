@@ -504,6 +504,20 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   the pair. Without it, the pill lands one status-bar height too low, mostly
   off-screen (project-scaffolding#287, parking-manager#24). Desktop engines
   don't reproduce this, so the app's e2e smoke test asserts both tags.
+- **Installed app: content fades out under the status bar and into the
+  pill.** The translucent status bar the full-screen web view needs would
+  otherwise show scrolled content through the clock and battery. In
+  `@media (display-mode: standalone)` on the phone pill, the vendored nav
+  adds one inert full-screen `body::before` layer above `.app` and below the
+  pill (`z-index: 110`, `pointer-events: none`), painted in `canvas`
+  (`--bg`): a solid band of exactly `env(safe-area-inset-top)`, then a tail
+  of up to `--gap` (capped at the inset, so no notch paints nothing); and at
+  the bottom, transparent 32px above the pill's top edge to full `canvas`
+  from the pill's midline to the screen edge.
+  `prefers-reduced-transparency: reduce` keeps the solid band and drops both
+  gradients. CSS only, no transform on the bar; desktop and the browser tab
+  carry no layer. Apps must not style `body::before`
+  (project-scaffolding#488).
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
   icon-only. The icon is a **Lucide** glyph (see Icons).
 - **At most five primary destinations** (`nav-bar.maxTabs`), per HIG's
