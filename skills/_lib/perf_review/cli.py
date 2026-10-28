@@ -6,6 +6,7 @@ measure  resolve the target's loopback URL, refuse a dead port (never start
          score everything against the budgets, record the local ledger.
          Exit: 0 all within budget, 1 something over budget, 3 unmeasured
          (dead port, no Playwright, an unreadable leg).
+sweep    measure and file every fleet web app one at a time (exclusive box lock per app), print one digest.
 file     merge the latest run into the repo's one managed `perf-review`
          issue — a dry run unless `--apply`.
 """
@@ -255,7 +256,16 @@ def main(argv: Optional[list] = None) -> int:
     f.add_argument("--run", help="a run directory (default: the latest)")
     f.add_argument("--slug", help="owner/name override")
     f.add_argument("--apply", action="store_true")
+    w = sub.add_parser("sweep", help="measure and file every fleet web app, one at a time, and print one digest")
+    w.add_argument("--only", help="one repo name instead of the fleet")
+    w.add_argument("--duration", type=float, default=300.0, help="seconds of endpoint timing per app (default 300)")
+    w.add_argument("--settle", type=int, default=40, help="seconds each cold page is watched to learn poll intervals")
+    w.add_argument("--lock-wait", type=float, default=20.0, help="minutes to wait per app for the box to be free of gates")
+    w.add_argument("--no-file", action="store_true", help="measure only; touch no issue")
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if a.cmd == "sweep":
+        from .sweep import cmd_sweep  # sweep imports this module, so it loads on use
+        return cmd_sweep(a)
     return cmd_measure(a) if a.cmd == "measure" else cmd_file(a)

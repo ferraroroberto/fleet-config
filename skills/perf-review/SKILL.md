@@ -35,6 +35,9 @@ It assigns no status of its own.
   issue (step 4, `--apply`). Without it, run step 4's dry run: it prints the
   plan and the issue body and writes nothing.
 
+The whole fleet, weekly: `/perf-sweep` (fleet-only skill) runs `perf_review sweep`, which does steps 1 and 4 (`--apply`)
+for every non-dormant web app, one at a time under the exclusive box lock, and prints one digest.
+
 ## Steps
 
 Every command is this repo's venv Python on the package directory:

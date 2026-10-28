@@ -152,6 +152,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
   AUDITFLEET -->|invokes per repo| OTHERGLOBAL
   DESIGNSWEEP -->|invokes /design-sync per web app| OTHERGLOBAL
   DESIGNSWEEP -->|web-app gate| LIB
+  PERFSWEEP["perf-sweep\nSonnet relay of perf_review sweep (one app at a time, box_lock exclusive)"] -->|"sweep.py: fleet_targets × measure + file, one digest"| PERFREVIEW
   AUDITFLEET -.->|reports design-drift bucket count| DESIGNSWEEP
   CLEANUPFLEET -->|fans out fixes for| OTHERGLOBAL
   CLEANUPFLEET --> ISSUEEXTRA
