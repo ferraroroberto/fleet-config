@@ -121,8 +121,13 @@ def _cell(row: dict) -> Tuple[str, str]:
     return over or "-", "; ".join(moved) or "-"
 
 
-def render_digest(rows: List[dict], dormant: List[str], date: str) -> str:
-    """The markdown digest: counts, one table row per app, the unmeasured reasons. Numbers and repo names only."""
+def left_out(projects_toml: Optional[Path] = None, only: Optional[str] = None) -> List[Tuple[str, str]]:
+    """`(repo, reason)` for web-looking repos the sweep has no port for; empty when one app is named."""
+    return [] if only else fleet.left_out_targets(projects_toml)
+
+
+def render_digest(rows: List[dict], dormant: List[str], date: str, omitted: Optional[List[Tuple[str, str]]] = None) -> str:
+    """The markdown digest: counts, one table row per app, the unmeasured reasons, the repos left out. Numbers and repo names only."""
     count = {s: sum(1 for r in rows if r["state"] == s) for s in ("pass", "over-budget", "unmeasured")}
     worse = [r for r in rows if r["regressed"] or r["slower"]]
     lines = [f"# Perf sweep {date}", "",
@@ -140,6 +145,8 @@ def render_digest(rows: List[dict], dormant: List[str], date: str) -> str:
     down = [r for r in rows if r["state"] == "unmeasured" and r["reason"]]
     if down:
         lines += ["## Unmeasured", ""] + [f"- {r['repo']}: {r['reason']}" for r in down] + [""]
+    if omitted:
+        lines += ["## Left out", ""] + [f"- {name}: {why}" for name, why in omitted] + [""]
     return "\n".join(lines)
 
 
@@ -159,7 +166,7 @@ def cmd_sweep(a: argparse.Namespace) -> int:
         row = run_one(repo, a)
         rows.append(row)
         print(f"[{i}/{len(apps)}] {repo} -- {row['state']}" + (f" ({row['reason']})" if row["reason"] else ""))
-    digest = render_digest(rows, dormant, _dt.date.today().isoformat())
+    digest = render_digest(rows, dormant, _dt.date.today().isoformat(), left_out(only=a.only))
     out = hooks_state.state_dir() / "perf-review" / f"sweep-{_dt.datetime.now(_dt.timezone.utc):%Y%m%dT%H%M%SZ}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     hooks_state.atomic_write_text(out, digest)

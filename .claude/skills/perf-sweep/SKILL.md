@@ -11,7 +11,7 @@ description: Weekly phone-speed check of every fleet web app, one at a time — 
 
 ## Arguments
 
-- No argument → every web app in scope (a `webapp_port` in `hooks/projects.toml`, not dormant).
+- No argument → every web app in scope (a `webapp_port` in `hooks/projects.toml`, or a `working-web` repo's own `.fleet.toml` `port`; not dormant). The digest's `## Left out` section names every live repo that looks like a web app but has no port to measure, with the reason.
 - A bare repo name → just that app, even when dormant.
 
 ## Rules
