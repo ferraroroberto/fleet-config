@@ -55,6 +55,35 @@ check(off == ["hidden"], f"a repo marked dormant is named, not swept: {off}")
 check(sweep.web_apps(toml, "hidden") == (["hidden"], []), "a named repo runs even when dormant")
 check(sweep.web_apps(toml, "gamma") == ([], []), "a repo with no web port is not a web app, even when named")
 
+# ---- a web app that declares its port only in its own .fleet.toml ----
+cards = Path(tempfile.mkdtemp(prefix="perf-sweep-cards-"))
+for repo, card in {"card-web": 'layer = "working-web"\nport = ":8449"\n',
+                   "card-mirror": 'layer = "enabling"\nport = ":8000"\n',
+                   "card-noport": 'layer = "working-web"\n',
+                   "card-pipe": 'layer = "working-pipe"\n',
+                   "card-dormant": 'layer = "working-web"\nport = ":8460"\n'}.items():
+    (cards / repo).mkdir()
+    (cards / repo / ".fleet.toml").write_text(card, encoding="utf-8")
+(cards / "card-bare").mkdir()
+card_toml = cards / "projects.toml"
+card_toml.write_text("".join(f'[{n}]\ncwd_prefix = "{(cards / n).as_posix()}"\n' for n in
+                             ("card-web", "card-mirror", "card-noport", "card-pipe", "card-bare", "card-dormant"))
+                     + f'[declared]\ncwd_prefix = "{(cards / "card-pipe").as_posix()}"\nwebapp_port = 8010\n'
+                     + '[global]\narchitecture_ignore = ["card-dormant"]\n', encoding="utf-8")
+apps_c, off_c = sweep.web_apps(card_toml)
+check(apps_c == ["card-web", "declared"], f"a working-web repo with only a .fleet.toml port is swept, in file order: {apps_c}")
+check(off_c == ["card-dormant"] and "card-dormant" not in dict(sweep.left_out(card_toml)),
+      f"a dormant card-only app is named as dormant, not swept and not double-listed as left out: {off_c}")
+out_c = dict(sweep.left_out(card_toml))
+check(list(out_c) == ["card-mirror", "card-noport"], f"a mirror on another layer and a port-less working-web repo are named, a pipeline repo is not: {list(out_c)}")
+check(":8000" in out_c["card-mirror"] and "no port" not in out_c["card-mirror"] and "neither" in out_c["card-noport"],
+      f"each left-out repo carries its own reason: {out_c}")
+check(sweep.left_out(card_toml, only="card-mirror") == [], "a single named app has no left-out list")
+digest_c = sweep.render_digest([], [], "2026-10-28", sweep.left_out(card_toml))
+check("## Left out" in digest_c and "- card-mirror: " in digest_c and "- card-noport: " in digest_c and "card-pipe" not in digest_c,
+      f"the digest names every repo it left out with its reason: {digest_c}")
+check("## Left out" not in sweep.render_digest([], [], "2026-10-28"), "no left-out repos, no section")
+
 # ---- a dead port: unmeasured with the reason, nothing filed ----
 filed = []
 cli.cmd_file = lambda ns: filed.append(ns.repo) or 0  # type: ignore[assignment]

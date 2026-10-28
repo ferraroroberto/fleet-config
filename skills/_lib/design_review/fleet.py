@@ -62,6 +62,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
 
 from . import capture, evaluate as evaluate_mod, filing, inventory, ledger, plan, report  # noqa: E402
@@ -75,15 +76,57 @@ DIGEST_JSON = "fleet-digest.json"
 DIGEST_HTML = "fleet-digest.html"
 
 
+WEB_LAYER = "working-web"
+
+
+def _own_card(tbl: dict) -> Tuple[Optional[str], Optional[int]]:
+    """`(layer, port)` the repo's own `.fleet.toml` declares; each None when absent or unreadable."""
+    root = Path(str(tbl.get("cwd_prefix", "")))
+    data = fleet_toml.load(root) if root.is_dir() else None
+    layer = (data or {}).get("layer")
+    return (layer if isinstance(layer, str) else None), plan.declared_port(root)
+
+
 def _webapp_tables(projects_toml: Optional[Path]) -> List[Tuple[str, dict]]:
-    tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
-    return [(name, tbl) for name, tbl in tables.items() if tbl.get("webapp_port")]
+    """Tables with a `webapp_port`, plus working-web repos whose own `.fleet.toml` declares a `port`.
+
+    The fallback is the rule `plan.resolve_target` applies to a single app, so a repo that
+    declares its port only in its own card is walked too. The layer gate keeps a lite mirror
+    (`enabling`, sharing its sibling's port) from being measured twice under another name.
+    """
+    def walkable(tbl: dict) -> bool:
+        if tbl.get("webapp_port"):
+            return True
+        layer, port = _own_card(tbl)
+        return layer == WEB_LAYER and port is not None
+
+    return [(name, tbl) for name, tbl in fleet_repo_scan.fleet_repo_tables(projects_toml).items() if walkable(tbl)]
 
 
 def fleet_targets(projects_toml: Optional[Path] = None) -> List[Tuple[str, dict]]:
-    """Every projects.toml table with a `webapp_port` that is not dormant, in file order."""
+    """Every web app (see `_webapp_tables`) that is not dormant, in file order."""
     dormant = fleet_repo_scan.ignored_repos(projects_toml)
     return [(name, tbl) for name, tbl in _webapp_tables(projects_toml) if name not in dormant]
+
+
+def left_out_targets(projects_toml: Optional[Path] = None) -> List[Tuple[str, str]]:
+    """`(repo, reason)` for live repos that look like web apps yet have no walkable port, in file order.
+
+    A repo whose card declares a port outside the working-web layer, or is working-web with no
+    port at all, is named rather than dropped; a plain pipeline repo is not a web app and is not listed.
+    """
+    dormant = fleet_repo_scan.ignored_repos(projects_toml)
+    walked = {name for name, _ in _webapp_tables(projects_toml)}
+    out: List[Tuple[str, str]] = []
+    for name, tbl in fleet_repo_scan.fleet_repo_tables(projects_toml).items():
+        if name in dormant or name in walked:
+            continue
+        layer, port = _own_card(tbl)
+        if port:
+            out.append((name, f".fleet.toml declares :{port} but its layer is {layer!r}, not {WEB_LAYER!r}, and projects.toml has no webapp_port"))
+        elif layer == WEB_LAYER:
+            out.append((name, f"layer is {WEB_LAYER!r} but neither .fleet.toml nor projects.toml declares a port"))
+    return out
 
 
 def dormant_targets(projects_toml: Optional[Path] = None) -> List[str]:
