@@ -160,14 +160,14 @@ Each fleet repo declares its architecture-map card in a root `.fleet.toml` (`lay
 
 ### `local-llm-hub` local LLM hub
 
-`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list. Whisper-server (`:8090`) and the hub's audio proxy, SDK and `curl` examples, and the shape limitations (image/document blocks, dropped `image_url` parts and thinking blocks, no `/v1/messages` streaming, open-weight tool-use): `fleet-config`'s `docs/local-llm-hub-usage.md` — read it before building against the hub.
+`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list. The hub's audio proxy, SDK and `curl` examples, and the shape limitations (image/document blocks, dropped `image_url` parts and thinking blocks, no `/v1/messages` streaming, open-weight tool-use): `fleet-config`'s `docs/local-llm-hub-usage.md` — read it before building against the hub.
 
 ### Don't duplicate hub functionality in downstream apps
 
 Route downstream LLM access — Anthropic- or OpenAI-shape, subscription or open-weight — through the hub via standard SDKs; never re-implement an inline agent-CLI subprocess wrapper (`claude -p`, `codex exec`, `gemini -p`) (the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
 
 - LLM call → `Anthropic(api_key="local-dummy", base_url="http://127.0.0.1:8000")` or `OpenAI(api_key="local-dummy", base_url="http://127.0.0.1:8000/v1")`.
-- Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
+- Audio → POST `http://127.0.0.1:8000/v1/audio/transcriptions` (or `/translations`); the hub owns which machine runs whisper, so never hard-code a whisper port.
 - Hub lacks a feature → write a plan for `local-llm-hub` to add it; don't bypass the hub.
 
 ### Prefer scripts over session-injected MCP connectors for automation
