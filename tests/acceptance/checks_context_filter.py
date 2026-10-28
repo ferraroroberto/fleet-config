@@ -45,6 +45,7 @@ _SECTIONS = (
     hook_rewrite.skill_helper_passthrough,
     hook_rewrite.rewrite_decisions,
     hook_rewrite.cd_prefix_runs_in_outer_shell,
+    hook_rewrite.cwd_reaches_wrapper_verbatim,
     wrapper_cli.survives_non_cp1252_output,
     wrapper_cli.bash_body_runs_non_login,
     wrapper_cli.import_paths_defer_heavy_modules,

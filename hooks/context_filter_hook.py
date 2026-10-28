@@ -27,8 +27,24 @@ def _python_command() -> str:
     return _lib.find_python_executable() or sys.executable
 
 
-def _quote_path(path: Path) -> str:
-    return '"' + str(path).replace("\\", "/") + '"'
+# PowerShell closes a single-quoted string on the ASCII quote and on these
+# typographic ones alike; each is escaped by doubling it.
+_POWERSHELL_QUOTES = ("'", "\N{LEFT SINGLE QUOTATION MARK}", "\N{RIGHT SINGLE QUOTATION MARK}",
+                      "\N{SINGLE LOW-9 QUOTATION MARK}", "\N{SINGLE HIGH-REVERSED-9 QUOTATION MARK}")
+
+
+def _quote_path(path: Path, shell_tool: str) -> str:
+    """`path` as one literal word for the shell that re-parses the rewrite.
+
+    Single quotes, because both shells still interpret `$` inside double
+    quotes; within single quotes only the quote character itself is special.
+    """
+    text = str(path).replace("\\", "/")
+    if shell_tool == "PowerShell":
+        for quote in _POWERSHELL_QUOTES:
+            text = text.replace(quote, quote * 2)
+        return f"'{text}'"
+    return "'" + text.replace("'", "'\\''") + "'"
 
 
 def _invoking_agent(payload: dict) -> str:
@@ -99,20 +115,20 @@ def main() -> None:
 
     encoded = base64.b64encode(decision.body.encode("utf-8")).decode("ascii")
     cli = Path(__file__).resolve().parent / "context_filter_cli.py"
-    py_cmd = _quote_path(Path(_python_command()))
+    py_cmd = _quote_path(Path(_python_command()), shell_tool)
     if shell_tool == "PowerShell":
         # A quoted path as a bare statement isn't invocable in PowerShell
         # without the call operator -- unlike Bash, which strips the quotes
         # and executes directly.
         py_cmd = f"& {py_cmd}"
-    rewritten = f"{py_cmd} {_quote_path(cli)} run --tool {shell_tool} --mode {mode} --encoded {encoded}"
+    rewritten = f"{py_cmd} {_quote_path(cli, shell_tool)} run --tool {shell_tool} --mode {mode} --encoded {encoded}"
     if decision.prefix:
         # `cd X && …`: the harness's shell keeps its cwd between calls, so the
         # cd runs there, verbatim, and the wrapper inherits the directory it
         # moved to instead of being pinned to the old one.
         rewritten = f"{decision.prefix.rstrip()} {rewritten}"
     else:
-        rewritten += f" --cwd {_quote_path(Path(str(_lib.cwd(payload))))}"
+        rewritten += f" --cwd {_quote_path(Path(str(_lib.cwd(payload))), shell_tool)}"
     # Sanitized to a shell-neutral charset rather than quoted: the rewritten
     # string is re-parsed by whichever shell the tool runs, and Bash and
     # PowerShell disagree on quoting rules.
