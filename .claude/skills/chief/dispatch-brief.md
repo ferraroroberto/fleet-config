@@ -79,6 +79,10 @@ the previous issue is merged and verified. Exceptions: a lane that owns an
 unmerged branch finishes that one issue first, and a small side fix the lane
 needs to unblock its own step stays in that lane.
 
+**A brief for a UI-touching issue adds one line, never a re-explanation:**
+"UI proof per `/issue-finish` step 3b: capture each criterion's state, `ui_proof
+check` fresh before merge, send the walkthrough privately."
+
 **A brief for a timing or retry fix asks for a deterministic proof first.**
 Reproduce the race with an injected delay, a fake clock, a mocked timeout or a
 readiness signal, add a mutation check, and guard the fix with that test. Ask
