@@ -52,6 +52,8 @@ _CODEX_POLICY_COVERAGE = (
      "Edit|Write|MultiEdit", "advises"),
     ("Chief question suppression", "block_askuserquestion_chief", None, None,
      "not applicable"),
+    ("Chief turn end needs an armed waiter", "chief_waiter_stop", None, None,
+     "not applicable"),
     ("Telegram file replies", "telegram_file_reply_guard", None, None,
      "not applicable"),
 )

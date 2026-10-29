@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -44,7 +45,7 @@ from chief.steer_delivery import (
     recent_output_window,
 )
 
-from . import compact, digest, launcher, mailbox, rails
+from . import compact, digest, launcher, mailbox, rails, waiter_heartbeat
 
 DEFAULT_TAIL = 2000
 
@@ -132,7 +133,8 @@ def cmd_wait_event(args: argparse.Namespace) -> int:
     so it must never loop past a batch (fleet-config#637, #999). The timeout is
     the safety net for a worker killed too hard to fire any hook.
     """
-    events = mailbox.wait_for_events(mailbox.chief_inbox_dir(), args.timeout, args.interval)
+    with waiter_heartbeat.armed(args.timeout, pid=os.getpid()):
+        events = mailbox.wait_for_events(mailbox.chief_inbox_dir(), args.timeout, args.interval)
     if events:
         print(mailbox.format_inbox_digest(events))
         return 0
@@ -141,6 +143,16 @@ def cmd_wait_event(args: argparse.Namespace) -> int:
         print(digest.format_board_digest(launcher._request(args.base_url, "/api/board")))
     except (ValueError, urllib.error.URLError) as exc:
         print(f"board unavailable: {exc}")
+    return 0
+
+
+def cmd_fleet_jobs(args: argparse.Namespace) -> int:
+    """`FLEET_JOBS=<n>` running fleet-wide jobs; exit 1 with `unknown` when the jobs API can't be read."""
+    running, error = launcher.fetch_running_fleet_jobs(args.base_url)
+    if running is None:
+        print(f"FLEET_JOBS=unknown reason={error}")
+        return 1
+    print(f"FLEET_JOBS={len(running)}")
     return 0
 
 
