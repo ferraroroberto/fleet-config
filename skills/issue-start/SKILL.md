@@ -203,6 +203,9 @@ Pick the mode:
     because shape decisions are expensive to undo.
   - No type label or unknown label → **plan mode** (safe default).
 
+For a behaviour change, build the enforcing mechanism (hook, lint, test, code)
+rather than instruction text; a PR that adds prose says why in its body.
+
 In **fast mode**: think the approach through, then go straight to implementing.
 Do **not** enter plan mode and do **not** wait for approval. Only pause to ask
 a question if there is genuine, expensive, or hard-to-undo ambiguity.

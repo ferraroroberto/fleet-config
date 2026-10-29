@@ -466,6 +466,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "as one `channels` line rather than a worker, through the predicate "
      "`repo_occupancy` uses, and marks the caller's own card "
      "(fleet-config#1613)"),
+    ("instruction_delta", "repo/test_instruction_delta.py",
+     "the instruction-line delta a branch reports -- instruction files "
+     "only, added and removed lines summed, new untracked files counted, an "
+     "unresolvable base reported as a reason rather than +0 -0 -- is testable "
+     "on its own, with a throwaway upstream and clone"),
     ("dirty_tree_check", "repo/test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "
