@@ -96,7 +96,9 @@ no padding.
     alternatives only when they matter. Don't design the whole implementation.
   - **Acceptance criteria** — a short checklist of "done". Each criterion must
     be decidable pass/fail by a reader with the repo in hand; "works
-    correctly" / "is robust" is not a criterion. Visual sameness is proved by
+    correctly" / "is robust" is not a criterion. A UI criterion names its
+    state: "state `<view>.<state>` at phone/desktop shows Y", so the finish
+    gate has a state to capture. Visual sameness is proved by
     the agent through the repo's screenshot baseline (phone and desktop, light
     and dark), quoted in the PR body. Write a "validate on a real device"
     criterion only for behaviour a desktop browser engine cannot reproduce

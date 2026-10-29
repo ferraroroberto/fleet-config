@@ -210,6 +210,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the UX-gate trigger -- `## UX surface` block parsing, brace "
      "expansion, glob->regex, and the diff intersection -- is testable "
      "on its own (fleet-config#195)"),
+    ("ui_proof", "web_review/test_ui_proof.py",
+     "the visual-proof gate -- n/a without a UX surface, missing / stale / "
+     "failing proof named, refusal only where layout_lint is vendored, and a "
+     "self-contained walkthrough stored by repo#PR outside the tree -- "
+     "against a temp repo (fleet-config#1707)"),
     ("deploy_coverage", "e2e/test_deploy_coverage.py",
      "/issue-finish's deploy-coverage gate -- the declared-component "
      "parser (fence-skipping, the four-bullet template), the path-token "

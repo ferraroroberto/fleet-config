@@ -142,8 +142,11 @@ Pick the smallest mode that genuinely covers the change:
   **and** dark) and the nav contract to `~/.claude/design.md` +
   `design.dark.md`, fix material drift in-branch now (don't file-and-defer;
   that's `/design-sync`'s periodic job); (b) apply the **design-conformance
-  lens** to the screenshot just taken (nav pill, layout, palette per spec).
-  Overrides: `ux`/`design` force it, `no-ux` skips it, `ux-full` checks every
+  lens** to the screenshot just taken (nav pill, layout, palette per spec);
+  (c) the **visual-proof gate**: record and `check` the capture manifest with
+  `ui_proof`, exactly as `/issue-finish` step 3b says (a non-fresh proof
+  refuses the merge where `ENFORCED=yes`), and send the walkthrough after the
+  merge. Overrides: `ux`/`design` force it, `no-ux` skips it, `ux-full` checks every
   `KEY_VIEWS`. `SPEC_APPLIES=no` / `TOUCHED=no` → nothing to do here.
 - **CLI change:** invoke the CLI with realistic arguments against realistic
   input and show the actual output, not "the function returns X".
@@ -229,7 +232,8 @@ Three YOLO-specific deltas on top of the delegated steps:
 - **Step 3b (UX-conformance) is already satisfied by Phase 3e above** — do not
   re-run `ux_surface.py check` or re-screenshot in this phase; any drift was
   already fixed and the text-only conformance line already belongs in the PR
-  body from step 4.
+  body from step 4. Still re-run `ui_proof check .` just before the merge,
+  and build and send the walkthrough after it.
 - **Skip `/issue-finish`'s own step 8 Telegram ping** — Phase 5 below sends a
   single `--kind yolo` ping instead, so the run produces exactly one
   completion notification, not two.
