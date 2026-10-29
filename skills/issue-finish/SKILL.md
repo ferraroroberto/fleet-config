@@ -101,6 +101,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 It exits with the gate's own code; must exit 0. Do not proceed on a red gate.
 No checker → say so explicitly, never claim tests passed when there are none.
+A structure-ratchet failure on root layout or placement is fixed by moving the
+file to where `docs/layout.md` says, never by adding an `extra_roots` entry.
 Every later "is the gate still green?" question — steps 3c and 5 — is
 answered by `gate_evidence.py check --label gate`, never by memory:
 `FRESH` (the recorded pass matches the current tree), `STALE` (the tree
