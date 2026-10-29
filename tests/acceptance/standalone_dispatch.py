@@ -126,6 +126,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "hooks/ vs skills/_lib helper mirror staying in lockstep (fleet-config#864)"),
     ("scheduled_runner", "claude_progress/test_scheduled_runner.py",
      "provider adapters share completion, delivery, retry and owned-cancellation conformance"),
+    ("scheduled_runner_reap", "claude_progress/test_reap_read_only_search.py",
+     "a run whose only leftovers are read-only search tools is reaped with a "
+     "warning and exits by its other evidence; any other or unconfirmed leftover keeps 118"),
     ("scheduled_run_hooks", "hooks/test_scheduled_run_hooks.py",
      "the capture hooks' detached indexer triggers stay off inside a scheduled "
      "run -- whose owned job would count the child and turn a delivered run "
