@@ -190,6 +190,43 @@ def _capture_paths(conv_dir: Path) -> "list[Path]":
     return paths
 
 
+def _build_row(path: Path, label: str, mtime: float, title: str,
+               entry) -> "Optional[tuple[dict, str, str]]":
+    """Read one capture into its ``conversations`` row plus FTS digest and body text.
+
+    ``None`` when the file can't be read, so the caller skips it and keeps its row.
+    """
+    import conversation_index as ci
+
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    fields = ci._digest_fields(entry.body) if entry else {}
+    date, slug = ci._split_name(path.name)
+    header = parse_capture_header(text)
+    row = {
+        "skill": label,
+        "file": path.name,
+        "path": str(path),
+        "date": date,
+        "slug": slug,
+        "sid": (header.get("sid", "") if header else entry.sid if entry else ""),
+        "agent": (header.get("agent", "") if header else entry.agent if entry else ""),
+        "title": title,
+        "topic": fields.get("topic", ""),
+        "summary": fields.get("summary", ""),
+        "decisions": fields.get("decisions", ""),
+        "open_loops": fields.get("open_loops", ""),
+        "turns": entry.turns if entry else 0,
+        "mtime": mtime,
+    }
+    digest_text = " ".join(
+        v for v in (slug, row["summary"], row["decisions"], row["open_loops"]) if v
+    )
+    return row, digest_text, strip_capture_header(text)[:MAX_BODY_CHARS]
+
+
 def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
     """Bring the search db in line with the captures on disk. Returns # upserted.
 
@@ -218,28 +255,37 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
 
     upserted = 0
     try:
+        # Write lock first, then read what is known: two overlapping syncs (the
+        # indexer runs detached from SessionStart) would otherwise both see a
+        # moved capture as new and the second insert would hit the first's row.
+        conn.execute("BEGIN IMMEDIATE")
         if rebuild:
-            conn.executescript(
-                "DELETE FROM conversations; DELETE FROM conv_fts;"
-            )
+            conn.execute("DELETE FROM conversations")
+            conn.execute("DELETE FROM conv_fts")
         known = {
             row[0]: (row[1], row[2])
             for row in conn.execute("SELECT path, mtime, title FROM conversations")
         }
-        seen: set[str] = set()
+        dirs = [
+            (conv_dir, label, _capture_paths(conv_dir))
+            for conv_dir, label in ci.conversations_dirs(cfg)
+            if conv_dir.is_dir()
+        ]
+        # Drop rows whose capture is gone before any upsert, so a capture moved
+        # between skills never has its old row alive beside its new one.
+        seen = {str(path) for _, _, paths in dirs for path in paths if path.name != ci.INDEX_NAME}
+        for stale in [p for p in known if p not in seen]:
+            _delete(conn, stale)
 
-        for conv_dir, label in ci.conversations_dirs(cfg):
-            if not conv_dir.is_dir():
-                continue
+        for conv_dir, label, paths in dirs:
             entries = ci.parse_index(conv_dir / ci.INDEX_NAME)
             # One sidecar per dir covers its archive/ too: archiving moves the
             # capture but keeps its filename, so its title still applies.
             titles = ci.read_titles(conv_dir)
-            for path in _capture_paths(conv_dir):
+            for path in paths:
                 if path.name == ci.INDEX_NAME:
                     continue
                 key = str(path)
-                seen.add(key)
                 try:
                     mtime = path.stat().st_mtime
                 except OSError:
@@ -248,39 +294,13 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                 if (not rebuild and key in known and abs(known[key][0] - mtime) < 1
                         and known[key][1] == title):
                     continue
-                try:
-                    text = path.read_text(encoding="utf-8", errors="ignore")
-                except OSError:
+                built = _build_row(path, label, mtime, title, entries.get(path.name))
+                if built is None:
                     continue
-                entry = entries.get(path.name)
-                fields = ci._digest_fields(entry.body) if entry else {}
-                date, slug = ci._split_name(path.name)
-                header = parse_capture_header(text)
-                row = {
-                    "skill": label,
-                    "file": path.name,
-                    "path": key,
-                    "date": date,
-                    "slug": slug,
-                    "sid": (header.get("sid", "") if header else entry.sid if entry else ""),
-                    "agent": (header.get("agent", "") if header else entry.agent if entry else ""),
-                    "title": title,
-                    "topic": fields.get("topic", ""),
-                    "summary": fields.get("summary", ""),
-                    "decisions": fields.get("decisions", ""),
-                    "open_loops": fields.get("open_loops", ""),
-                    "turns": entry.turns if entry else 0,
-                    "mtime": mtime,
-                }
-                digest_text = " ".join(
-                    v for v in (slug, row["summary"], row["decisions"], row["open_loops"]) if v
-                )
-                body_text = strip_capture_header(text)[:MAX_BODY_CHARS]
+                row, digest_text, body_text = built
                 _upsert(conn, row, digest_text, body_text)
                 upserted += 1
 
-        for stale in [p for p in known if p not in seen]:
-            _delete(conn, stale)
         conn.commit()
     except sqlite3.Error as exc:
         logger.error("search sync failed: %s", exc)
