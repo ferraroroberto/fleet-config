@@ -547,4 +547,59 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+# A capture moved between skills must be findable under its new skill after an
+# incremental sync, also when a second sync overlaps the first.
+tmp = Path(tempfile.mkdtemp(prefix="conv_move_"))
+_read_titles = ci.read_titles
+_busy_ms = cs.BUSY_TIMEOUT_MS
+try:
+    root = tmp / "life-os"
+    skills = root / ".claude" / "skills"
+    for skill in ("house", "general"):
+        (skills / skill / "conversations").mkdir(parents=True)
+    moved = "2026-10-29-1324-house-56f5766d.md"
+    other = "2026-10-29-1330-house-0a0a0a0a.md"
+    for name in (moved, other):
+        (skills / "house" / "conversations" / name).write_text(
+            cc.render_markdown("d", [("user", "flight delay to alicante")],
+                               header=cc.capture_header(SID, "claude", "2026-10-29T13:24:00")),
+            encoding="utf-8")
+    cfg = cc.CaptureConfig(root=root, routing="skills", conversations_dir="conversations",
+                           skills_dir=".claude/skills", active_marker=".active-skill")
+    check(cs.sync(cfg) == 2, "moved capture: synced the fixture conversations")
+
+    shutil.move(str(skills / "house" / "conversations" / moved),
+                str(skills / "general" / "conversations" / moved))
+    check(cs.sync(cfg) == 1, "moved capture: an incremental sync picks up only the move")
+    hits = {h["file"]: h["skill"] for h in cs.search(cfg, "alicante")}
+    check(hits == {moved: "general", other: "house"},
+          "moved capture: found under the new skill, no --rebuild needed")
+
+    # An overlapping sync that commits first must not make this one fail: the
+    # inner call runs while the outer holds its write lock, as a detached indexer would.
+    shutil.move(str(skills / "general" / "conversations" / moved),
+                str(skills / "house" / "conversations" / moved))
+    cs.BUSY_TIMEOUT_MS = 200
+    inner: list[int] = []
+    entered = []
+
+    def _overlap(conv_dir):
+        if not entered:
+            entered.append(True)
+            inner.append(cs.sync(cfg))
+        return _read_titles(conv_dir)
+
+    ci.read_titles = _overlap
+    outer = cs.sync(cfg)
+    ci.read_titles = _read_titles
+    check(outer == 1 and inner == [0],
+          f"moved capture: an overlapping sync waits instead of racing it (outer {outer}, inner {inner})")
+    check({h["file"]: h["skill"] for h in cs.search(cfg, "alicante")}
+          == {moved: "house", other: "house"},
+          "moved capture: the sync that held the lock still moved the row")
+finally:
+    ci.read_titles = _read_titles
+    cs.BUSY_TIMEOUT_MS = _busy_ms
+    shutil.rmtree(tmp, ignore_errors=True)
+
 _h.report_and_exit("test_conversation_search")

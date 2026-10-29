@@ -218,28 +218,37 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
 
     upserted = 0
     try:
+        # Write lock first, then read what is known: two overlapping syncs (the
+        # indexer runs detached from SessionStart) would otherwise both see a
+        # moved capture as new and the second insert would hit the first's row.
+        conn.execute("BEGIN IMMEDIATE")
         if rebuild:
-            conn.executescript(
-                "DELETE FROM conversations; DELETE FROM conv_fts;"
-            )
+            conn.execute("DELETE FROM conversations")
+            conn.execute("DELETE FROM conv_fts")
         known = {
             row[0]: (row[1], row[2])
             for row in conn.execute("SELECT path, mtime, title FROM conversations")
         }
-        seen: set[str] = set()
+        dirs = [
+            (conv_dir, label, _capture_paths(conv_dir))
+            for conv_dir, label in ci.conversations_dirs(cfg)
+            if conv_dir.is_dir()
+        ]
+        # Drop rows whose capture is gone before any upsert, so a capture moved
+        # between skills never has its old row alive beside its new one.
+        seen = {str(path) for _, _, paths in dirs for path in paths if path.name != ci.INDEX_NAME}
+        for stale in [p for p in known if p not in seen]:
+            _delete(conn, stale)
 
-        for conv_dir, label in ci.conversations_dirs(cfg):
-            if not conv_dir.is_dir():
-                continue
+        for conv_dir, label, paths in dirs:
             entries = ci.parse_index(conv_dir / ci.INDEX_NAME)
             # One sidecar per dir covers its archive/ too: archiving moves the
             # capture but keeps its filename, so its title still applies.
             titles = ci.read_titles(conv_dir)
-            for path in _capture_paths(conv_dir):
+            for path in paths:
                 if path.name == ci.INDEX_NAME:
                     continue
                 key = str(path)
-                seen.add(key)
                 try:
                     mtime = path.stat().st_mtime
                 except OSError:
@@ -279,8 +288,6 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                 _upsert(conn, row, digest_text, body_text)
                 upserted += 1
 
-        for stale in [p for p in known if p not in seen]:
-            _delete(conn, stale)
         conn.commit()
     except sqlite3.Error as exc:
         logger.error("search sync failed: %s", exc)
