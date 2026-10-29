@@ -68,6 +68,10 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     we.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     we.set_defaults(func=commands.cmd_wait_event)
 
+    fj = sub.add_parser("fleet-jobs", help="count running fleet-wide jobs (the Stop hook's read)")
+    fj.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    fj.set_defaults(func=commands.cmd_fleet_jobs)
+
     ib = sub.add_parser("inbox", help="mailbox v2: claim the pending batch, or --count it (fleet-config#1455)")
     ib.add_argument("--count", action="store_true", help="print PENDING=<n> and claim nothing")
     ib.add_argument("--stale-after", type=float, default=mailbox.CLAIM_STALE_SECONDS,

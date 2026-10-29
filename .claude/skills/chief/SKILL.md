@@ -137,7 +137,8 @@ event, or a timeout), emit one digest, exit.
 `chief_ops.py wait-event` blocks until events exist, claims every pending
 one exactly once, prints them, and **exits** — so you wake within seconds of
 a lane finishing, asking a question in plain text, or giving up. Its timeout
-(default 1800 s) prints the board digest instead.
+(default 1800 s) prints the board digest instead. It holds the waiter heartbeat the `Stop` hook reads; a hand-rolled waiter brackets itself with
+`skills/_lib/chief/waiter_heartbeat.py start --seconds N` (prints an id) and `stop <id>`.
 
 Reference implementation — copy it rather than redesigning it, and launch it
 with the Bash tool's `run_in_background` whenever `wake` says `WAKE=waiter`:

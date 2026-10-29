@@ -98,6 +98,7 @@ from acceptance.checks_cross_agent import (  # noqa: E402
     _hook_transport_utf8_check,
     _session_state_agent_adapter_unit_checks,
 )
+from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
 from acceptance.checks_git_globals import _git_globals_unit_checks  # noqa: E402
 from acceptance.checks_guards import (  # noqa: E402
     _bash_cmdexe_syntax_guard_unit_checks,
@@ -256,6 +257,9 @@ def _run_hook_checks(tally: _Tally) -> None:
 
     # ---- block_askuserquestion_chief: enforce, don't just discourage (fleet-config#463) ----
     tally.run_unit(_block_askuserquestion_chief_unit_checks)
+
+    # ---- chief_waiter_stop: a chief turn end needs an armed waiter (fleet-config#1715) ----
+    tally.run_unit(_chief_waiter_stop_unit_checks)
 
     # ---- telegram_file_reply_guard: files only to the sender's private chat (fleet-config#1478) ----
     tally.run_unit(_telegram_file_reply_guard_unit_checks)
