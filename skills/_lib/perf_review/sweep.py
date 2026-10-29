@@ -4,6 +4,16 @@ Each app is measured and filed by the same `measure` / `file` code a single `/pe
 only the loop: who is in scope, the box lock around each measurement, and the digest. Apps run strictly in sequence
 because a second page load skews the timings of the first. A port that is down, an app that fails to measure or a
 box that stays busy is reported `unmeasured`; the sweep never starts, restarts or kills anything.
+
+`--detach` (fleet-config#1558): a full sweep runs long past the Bash tool's 600s ceiling, so
+`.claude/skills/perf-sweep/SKILL.md` must never drive the wait with a model-composed `Monitor` loop — the same
+failure shape `/audit-fleet` hit and fixed with `fleet_audit_scan.py`'s detach + sentinel pair (`fleet-config#609`).
+`dispatch_sweep` mirrors that module's three-way split: plain (synchronous, no sentinel), `--out` alone (synchronous,
+for manual/test polling) and `--detach` (spawns this package directory as an independent, console-less process —
+`CREATE_NEW_PROCESS_GROUP | NO_WINDOW`, `launch_detached` — and returns immediately, printing `LAUNCHED pid=... out=...
+log=...`). The child atomically publishes `{"rc": ..., "digest_file": ...}`, or `{"error": ...}` if `cmd_sweep` itself
+raises, to `out` on completion — one concrete file a caller polls with `skills/_lib/scheduled/wait_for_sentinel.py`
+instead of an opaque background task.
 """
 from __future__ import annotations
 
@@ -12,7 +22,10 @@ import contextlib
 import datetime as _dt
 import io
 import json
+import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -20,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import box_lock  # noqa: E402
 from design_review import fleet  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 from . import cli, report  # noqa: E402
 
@@ -175,3 +189,87 @@ def cmd_sweep(a: argparse.Namespace) -> int:
     measured = sum(1 for r in rows if not r["reason"])
     print(f"SWEEP=done measured={measured} unmeasured={len(rows) - measured}")
     return 0 if measured else cli.EXIT["unmeasured"]
+
+
+# ---- detached launch + sentinel publish ------------------------------
+
+def default_out_path() -> Path:
+    """A fresh, unique sentinel path per invocation — two overlapping sweeps (a manual retry alongside a still-live
+    scheduled one) must never collide on a fixed name and silently read each other's stale result. Same shape as
+    `fleet_audit_scan.default_out_path`.
+    """
+    base = hooks_state.state_dir() / "perf-review"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / f"sweep-result-{os.getpid()}-{time.time_ns()}.json"
+
+
+def write_result(out_path: Path, payload: dict) -> None:
+    """Atomically publish `payload` as JSON to `out_path` — the same temp-then-rename discipline
+    `fleet_audit_scan.write_result` uses, so a poller can never observe a partially written file.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    tmp.replace(out_path)
+
+
+def run_and_publish(a: argparse.Namespace, out_path: Path) -> int:
+    """Run the sweep and always leave a sentinel at `out_path` — success or error — so a poller waiting on that path
+    never waits past a sweep that raised. `cmd_sweep` already turns every per-app failure into an `unmeasured` row;
+    this only guards the sweep-level exception a programming bug would raise, which is otherwise invisible to a
+    detached child no one is watching interactively.
+    """
+    tee = _Tee(sys.stdout)
+    try:
+        with contextlib.redirect_stdout(tee):
+            rc = cmd_sweep(a)
+    except Exception as exc:  # noqa: BLE001 - deliberately broad, see docstring
+        write_result(out_path, {"error": f"{type(exc).__name__}: {exc}"})
+        raise
+    write_result(out_path, {"rc": rc, "digest_file": _tail(tee.text(), "DIGEST_FILE=")})
+    return rc
+
+
+def launch_detached(child_argv: List[str], log_path: Path) -> int:
+    """Spawn this package's directory (the same directory-execution shape `__main__.py` documents) as an
+    independent, console-less process that outlives this call — the `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` pattern
+    `fleet_audit_scan.launch_detached` already uses for the same reason. Does not wait for the child; returns its pid.
+    """
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    pkg_dir = Path(__file__).resolve().parent
+    with open(log_path, "wb") as log_file:
+        proc = subprocess.Popen(
+            [sys.executable, str(pkg_dir), *child_argv],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | NO_WINDOW,
+            close_fds=True,
+        )
+    return proc.pid
+
+
+def dispatch_sweep(a: argparse.Namespace) -> int:
+    """`sweep`'s three run shapes: plain (synchronous, no sentinel), `--out` alone (synchronous + sentinel, for
+    manual/test polling) and `--detach` (spawned + sentinel, fleet-config#1558) — the split `fleet_audit_scan.main`
+    uses for the same reason.
+    """
+    if getattr(a, "detach", False):
+        out_path = a.out or default_out_path()
+        log_path = a.log or out_path.with_suffix(out_path.suffix + ".log")
+        # A poller trusts "the sentinel exists" as "this run's result" — never launch onto a leftover from a prior
+        # run at the same path.
+        if out_path.exists():
+            out_path.unlink()
+        child_argv = ["sweep", "--duration", str(a.duration), "--settle", str(a.settle),
+                      "--lock-wait", str(a.lock_wait), "--out", str(out_path)]
+        if a.only:
+            child_argv += ["--only", a.only]
+        if a.no_file:
+            child_argv.append("--no-file")
+        pid = launch_detached(child_argv, log_path)
+        print(f"LAUNCHED pid={pid} out={out_path} log={log_path}")
+        return 0
+    if getattr(a, "out", None):
+        return run_and_publish(a, a.out)
+    return cmd_sweep(a)

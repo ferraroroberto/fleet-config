@@ -25,7 +25,8 @@ lint ratchet (`instruction_ratchet_gate`), the stale-doc-reference ratchet
 (`doc_refs_ratchet_gate`), the unreferenced-definition ratchet
 (`dead_code_ratchet_gate`), the fleet-convention rule ratchet
 (`conventions_ratchet_gate`), the
-fleet-scope enumeration guard (`fleet_scope_guard`), and the
+fleet-scope enumeration guard (`fleet_scope_guard`), the foreign-tool-id-leak
+scanner (`tool_id_leak_scanner`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
 The substantive per-hook unit-check functions are the `checks_*` modules, one
@@ -167,6 +168,7 @@ from acceptance.spawn_scanner import (  # noqa: E402
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
 from acceptance.structure_ratchet_gate import _structure_ratchet_check  # noqa: E402
+from acceptance.wire_checks.tool_id_leak_scanner import _tool_id_leak_unit_check  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 _RATCHET_CHECKS = (
@@ -431,6 +433,9 @@ def _run_wiring_checks(tally: _Tally) -> None:
 
     # ---- every runtime `git` spawn routes through run_git (#667 / #677) ----
     tally.run_unit(_git_wrapper_unit_check)
+
+    # ---- no hook names a foreign harness's own tool id outside edit_events.py (#1558) ----
+    tally.run_unit(_tool_id_leak_unit_check)
 
     # ---- baseline ratchets: duplicate/unused code (#1514), README + docs history
     # markers (#1542), file/function/directory size + root layout (#1549) ----

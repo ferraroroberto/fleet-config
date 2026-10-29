@@ -44,6 +44,11 @@ hook's *own* tree. It used to `sys.path`-insert `../skills/_lib` and import
 `git_run` directly, which broke the convention every other hook here states —
 the two trees install independently, so a hook must stay importable with
 nothing but its own directory on `sys.path` (fleet-config#564).
+
+Tool-id vocabulary stays in `_lib.edit_event()` (fleet-config#1558): this hook
+used to branch on a local `GUARDED_TOOLS` tuple naming Codex's own
+`apply_patch` id directly, instead of asking `edit_event()` (which already
+recognizes it) whether the payload is edit-shaped at all.
 """
 
 from __future__ import annotations
@@ -54,9 +59,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-
-
-GUARDED_TOOLS = ("Edit", "Write", "MultiEdit", "apply_patch")
 
 
 def _current_branch(target_dir: Path) -> "str | None":
@@ -112,8 +114,6 @@ def _is_ignored(target: Path) -> bool:
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) not in GUARDED_TOOLS:
-        _lib.allow()
 
     # Cheapest *and* most selective gate first. Only a
     # launcher-dispatched session can ever be blocked here, and the vast

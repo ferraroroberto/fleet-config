@@ -11,6 +11,13 @@ The issue + the PR that closes it + `git log` already are the changelog.
 Escape hatch: set `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1` for the rare intentional
 case (a genuine `docs/2026-Q2-roadmap.md`-style artifact). Edits to an existing
 file are unaffected — only `Write` (new-file / overwrite) is guarded.
+
+Tool-id vocabulary stays in `_lib.edit_event()` (fleet-config#1558): this used
+to branch on Codex's own `apply_patch` id directly to tell a brand-new file
+from an update to an existing one. `EditTarget.operation` already carries that
+distinction uniformly across harnesses — `"add"`/`"write"` only ever name a
+target being newly created — so filtering on it never needs to name a
+harness's own tool id.
 """
 
 from __future__ import annotations
@@ -27,26 +34,23 @@ import _lib  # noqa: E402
 # A leading `YYYY-MM-DD-` on the basename (the dated-retrospective shape).
 DATED_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
+# `EditTarget.operation` values that mean "this target did not exist before
+# this call" — native Write (always "write") or apply_patch's "Add File"
+# ("add"). An update/rename/delete of an existing artifact is unaffected.
+NEW_FILE_OPERATIONS = {"add", "write"}
+
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    tool = _lib.tool_name(payload)
-    if tool not in {"Write", "apply_patch"}:
+    edit = _lib.edit_event(payload)
+    if edit.status != "known":
         _lib.allow()
 
     if os.environ.get("CLAUDE_HOOKS_ALLOW_DATED_DOCS") == "1":
         _lib.allow()
 
-    edit = _lib.edit_event(payload)
-    if edit.status != "known":
-        _lib.allow()
-
     for change in edit.targets:
-        # Native Write retains its historical create/overwrite coverage. For a
-        # patch, only Add File creates the dated-document shape this policy
-        # forbids; updates, deletes and renames of an existing artifact remain
-        # possible.
-        if tool == "apply_patch" and change.operation != "add":
+        if change.operation not in NEW_FILE_OPERATIONS:
             continue
         target = change.path
         parts = [p.lower() for p in target.parts]

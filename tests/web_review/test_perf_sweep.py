@@ -180,4 +180,83 @@ with redirect_stdout(io.StringIO()):
     rc_empty = sweep.cmd_sweep(argparse.Namespace(only="nope", duration=1, settle=1, lock_wait=1, no_file=True))
 check(rc_empty == 2, "no app in scope is refused (exit 2), not an empty pass")
 
+# ---- detached launch + sentinel publish (fleet-config#1558) ----------------
+
+# write_result: atomic publish, no leftover temp files.
+sent = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "result.json"
+sweep.write_result(sent, {"hello": "world"})
+check(sent.exists(), "write_result: sentinel file exists after publish")
+check(json.loads(sent.read_text(encoding="utf-8")) == {"hello": "world"},
+      "write_result: sentinel content round-trips as JSON")
+check(list(sent.parent.glob("*.tmp-*")) == [], "write_result: no temp file left behind")
+sweep.write_result(sent, {"hello": "again"})
+check(json.loads(sent.read_text(encoding="utf-8")) == {"hello": "again"},
+      "write_result: atomic overwrite replaces a stale sentinel")
+
+check(sweep.default_out_path() != sweep.default_out_path(),
+      "default_out_path: two calls never collide on the same path")
+check(str(sweep.default_out_path()).endswith(".json"), "default_out_path: sentinel path is a .json file")
+
+# run_and_publish: success path writes the sentinel with the sweep's rc and digest file.
+sweep.web_apps = lambda projects_toml=None, only=None: (["alpha"], [])  # type: ignore[assignment]
+sweep.run_one = lambda repo, a: {"repo": repo, "state": "pass", "reason": "", "fails": [],  # type: ignore[assignment]
+                                 "unmeasured_checks": 0, "regressed": [], "slower": [], "fixed": [],
+                                 "build": "live", "issue": None}
+out_ok = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "result.json"
+rc_pub = sweep.run_and_publish(argparse.Namespace(only=None, duration=1, settle=1, lock_wait=1, no_file=True), out_ok)
+pub = json.loads(out_ok.read_text(encoding="utf-8"))
+check(rc_pub == 0 and pub["rc"] == 0 and pub["digest_file"] and Path(pub["digest_file"]).is_file(),
+      f"run_and_publish: the sentinel carries the sweep's rc and a real digest file path: {pub}")
+
+# run_and_publish: a cmd_sweep crash still publishes a sentinel (an error payload) instead of leaving a poller
+# waiting forever on a file that will never appear.
+orig_cmd_sweep = sweep.cmd_sweep
+sweep.cmd_sweep = lambda a: (_ for _ in ()).throw(RuntimeError("boom"))  # type: ignore[assignment]
+out_err = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "result.json"
+try:
+    sweep.run_and_publish(argparse.Namespace(only=None, duration=1, settle=1, lock_wait=1, no_file=True), out_err)
+    check(False, "run_and_publish: re-raises the original exception")
+except RuntimeError:
+    pass
+sweep.cmd_sweep = orig_cmd_sweep
+err_payload = json.loads(out_err.read_text(encoding="utf-8"))
+check("error" in err_payload and "boom" in err_payload["error"],
+      f"run_and_publish: a crash still publishes a sentinel carrying the error: {err_payload}")
+
+# dispatch_sweep: plain call with no --out/--detach behaves exactly like cmd_sweep.
+with redirect_stdout(io.StringIO()):
+    rc_plain = sweep.dispatch_sweep(argparse.Namespace(only=None, duration=1, settle=1, lock_wait=1, no_file=True,
+                                                         detach=False, out=None, log=None))
+check(rc_plain == 0, "dispatch_sweep: with neither flag, runs synchronously like cmd_sweep")
+
+# dispatch_sweep: --out alone runs synchronously but still publishes the sentinel.
+out_direct = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "result.json"
+with redirect_stdout(io.StringIO()):
+    rc_direct = sweep.dispatch_sweep(argparse.Namespace(only=None, duration=1, settle=1, lock_wait=1, no_file=True,
+                                                          detach=False, out=out_direct, log=None))
+check(rc_direct == 0 and out_direct.is_file(), "dispatch_sweep: --out alone still publishes the sentinel synchronously")
+
+# dispatch_sweep: --detach never blocks — it only launches a child and prints LAUNCHED, never running cmd_sweep itself.
+launched = {}
+
+
+def _fake_launch(argv, log_path):
+    launched["argv"] = argv
+    launched["log_path"] = log_path
+    return 4242
+
+
+sweep.launch_detached = _fake_launch  # type: ignore[assignment]
+out_detach = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "detach-result.json"
+with redirect_stdout(io.StringIO()) as buf_detach:
+    rc_detach = sweep.dispatch_sweep(argparse.Namespace(only="alpha", duration=1, settle=1, lock_wait=1, no_file=True,
+                                                          detach=True, out=out_detach, log=None))
+text_detach = buf_detach.getvalue()
+check(rc_detach == 0 and f"LAUNCHED pid=4242 out={out_detach}" in text_detach,
+      f"dispatch_sweep: --detach returns immediately and prints the sentinel path: {text_detach!r}")
+check("--only" in launched["argv"] and "alpha" in launched["argv"] and "--out" in launched["argv"],
+      f"dispatch_sweep: --detach forwards the run's own flags to the child: {launched['argv']}")
+
+check(sweep.default_out_path() != out_detach, "default_out_path: never reused across invocations")
+
 _h.report_and_exit("test_perf_sweep")

@@ -46,6 +46,8 @@ check("--enable-blink-features=IdleDetection" in kw["ignore_default_args"], "Idl
 check("--disable-blink-features=AutomationControlled" in kw["args"], "AutomationControlled arg present")
 check(all(a in kw["args"] for a in ("--disable-features=Translate", "--no-default-browser-check", "--no-first-run")),
       "translate/first-run/browser-check flags present")
+check(kw["chromium_sandbox"] is True,
+      "chromium_sandbox=True — Playwright's own default (False) injects --no-sandbox, itself a bot tell")
 check("navigator" in bv.WEBDRIVER_INIT_SCRIPT and "webdriver" in bv.WEBDRIVER_INIT_SCRIPT
       and "undefined" in bv.WEBDRIVER_INIT_SCRIPT,
       "webdriver init script hides navigator.webdriver")
