@@ -114,6 +114,10 @@ def playwright_launch_kwargs(profile_dir: str) -> Dict[str, object]:
         "ignore_https_errors": True,
         "ignore_default_args": list(IGNORE_DEFAULT_ARGS),
         "args": list(CHROME_ARGS),
+        # Playwright's own default (False) injects --no-sandbox, which pops
+        # Chrome's "the --no-sandbox flag you are using is not supported"
+        # infobar -- itself a bot tell the rest of this contract strips.
+        "chromium_sandbox": True,
     }
 
 
