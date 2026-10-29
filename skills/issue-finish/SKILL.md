@@ -138,6 +138,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
     periodic-sweep job; this gate's job is to not *introduce* drift).
     Materiality bar: a wrong canvas color, missing dark theme, hand-rolled nav,
     or broken layout is a blocker; a 1-unit radius nitpick is not.
+  - **Visual proof (merge gate).** Capture each UI criterion's state with `capture_states`, then `ui_proof record` and `ui_proof check .` (`C:/Users/rober/.claude/skills/_lib/ui_proof`, this venv). Not `fresh`/`n/a` with `ENFORCED=yes` **refuses the merge**: fix what `NEED=` names and re-check just before step 5. `ENFORCED=no` → the visual check below, and the `VISUAL_PROOF=` line goes verbatim into the PR body and step-7 report. After the merge, before branch/worktree cleanup, build `ui_proof walkthrough` and send it privately; report `SENT=`. Commands and states: [ux-conformance-gate](../../docs/skills/ux-conformance-gate.md).
   - **Visual check (in-session only — never attach the image).** Launch the
     feature-branch working tree, look at the touched view via the repo's own
     launch skill (app-launcher's project `verify`), else Claude Code's built-in
@@ -452,7 +453,7 @@ the step-5 `BEHIND=` line (`BEHIND=0` or `BEHIND=<n> merged`), gate result
 with its evidence state at merge time (`gate: FRESH` / re-run /
 `STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion
 listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
-any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
+any drift fixed, the `VISUAL_PROOF=` line and the walkthrough `SENT=` line — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not
 touched / confirmed live / merged but not yet live / unknown — step 6b), and
 the live build line. **Worktree mode also carries step 5's `PRIMARY=` line

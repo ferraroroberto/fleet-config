@@ -181,7 +181,7 @@ check(not ux.matches_any("app/webapp/static/app.css", [JS]), "brace glob exclude
 check(ux.matches_any("app\\webapp\\static\\main.css", [CSS]), "backslash paths normalized")
 
 
-# ---- diff intersection (touched_paths) ----
+# ---- diff intersection (ui_paths) ----
 
 PATHS = [CSS, TPL, JS]
 changed = [
@@ -191,11 +191,29 @@ changed = [
     "app/webapp/templates/home.html",      # UX
     "tests/test_x.py",                     # tests — not UX
 ]
-hit = ux.touched_paths(changed, PATHS)
+hit = ux.ui_paths(changed, PATHS)
 check(hit == ["app/webapp/static/theme.css", "app/webapp/templates/home.html"],
-      "touched_paths returns only UX-surface files, in order")
-check(ux.touched_paths(["app/server.py", "README.md"], PATHS) == [],
+      "ui_paths returns only UX-surface files, in order")
+check(ux.ui_paths(["app/server.py", "README.md"], PATHS) == [],
       "code/docs-only diff touches no UX surface")
+
+
+# ---- ui_paths: what renders counts even when the block names only CSS ----
+
+CSS_ONLY = ["app_web/static/**/*.css"]
+check(ux.ui_paths(["app_web/static/machines.js"], CSS_ONLY) == ["app_web/static/machines.js"],
+      "view JS under static/ counts as UI though the block declares only CSS")
+check(ux.ui_paths(["app/templates/home.html", "app/templates/partials/row.j2"], CSS_ONLY)
+      == ["app/templates/home.html", "app/templates/partials/row.j2"],
+      "templates count as UI")
+check(ux.ui_paths(["app/pages/2_Settings.py", "streamlit_app.py"], CSS_ONLY)
+      == ["app/pages/2_Settings.py", "streamlit_app.py"],
+      "Streamlit pages count as UI")
+check(ux.ui_paths(["tests/e2e/_fixtures/layout/sheet.html", "docs/demo.html", "app/server.py"], CSS_ONLY) == [],
+      "test fixtures, docs and backend code are not UI")
+check(ux.ui_paths(["tests/e2e/_fixtures/page.html"], ["tests/e2e/_fixtures/**"])
+      == ["tests/e2e/_fixtures/page.html"],
+      "a declared glob always counts, even under tests/")
 
 
 # ---- cmd_check: a diff that FAILED is `unknown`, never `no` (fleet-config#681) ----
@@ -231,6 +249,8 @@ check("TOUCHED=no" in _run_check([]),
       "cmd_check: a genuinely clean diff still reports TOUCHED=no — `unknown` did not swallow it")
 check("TOUCHED=yes" in _run_check(["app/webapp/templates/home.html"]),
       "cmd_check: a real UX hit still reports TOUCHED=yes")
+check("TOUCHED=yes" in _run_check(["app/static/pages.mjs"]),
+      "cmd_check: view JS off the declared paths still reports TOUCHED=yes")
 
 
 _h.report_and_exit("ux_surface")

@@ -29,7 +29,8 @@ Subcommands:
 
   check <repo-root> [--base <ref>]
       Also diff `<base>...HEAD` and glob-match the changed files against the
-      block's `paths`. Prints `SPEC_APPLIES`, `TOUCHED=yes|no|unknown`,
+      block's `paths` plus `DEFAULT_UI_PATTERNS` (view JS, templates, Streamlit
+      pages: what renders, not only the CSS a block names). Prints `SPEC_APPLIES`, `TOUCHED=yes|no|unknown`,
       `MATCHED=<csv>`, `KEY_VIEWS`. Used at `/issue-finish` and `/issue-yolo`
       to gate the design check on the actual diff. `--base` defaults to the
       repo's main branch. `TOUCHED=unknown` means the diff itself could not be
@@ -228,9 +229,31 @@ def matches_any(path: str, patterns: List[str]) -> bool:
     return False
 
 
-def touched_paths(changed_files: List[str], patterns: List[str]) -> List[str]:
-    """The subset of `changed_files` that fall on the declared UX surface."""
-    return [f for f in changed_files if matches_any(f, patterns)]
+# A repo's declared `paths` often name only its CSS and tokens, yet a change to
+# view JS, a template or a Streamlit page alters what renders just as much. These
+# always count once the spec applies, on top of whatever the block declares.
+DEFAULT_UI_PATTERNS = [
+    "**/*.css",
+    "**/static/**/*.{js,mjs,html}",
+    "**/templates/**",
+    "**/*.{html,jinja,jinja2,j2}",
+    "**/pages/**/*.py",
+    "**/streamlit_app.py",
+]
+# Test fixtures and docs carry HTML and page modules that never ship to a user.
+_DEFAULT_EXCLUDES = ["tests/**", "**/tests/**", "docs/**", "**/node_modules/**"]
+
+
+def ui_paths(changed_files: List[str], declared: List[str]) -> List[str]:
+    """`changed_files` on the UX surface: the declared globs plus `DEFAULT_UI_PATTERNS`.
+
+    A declared glob always counts; a default one skips test fixtures and docs.
+    """
+    return [
+        f for f in changed_files
+        if matches_any(f, declared)
+        or (matches_any(f, DEFAULT_UI_PATTERNS) and not matches_any(f, _DEFAULT_EXCLUDES))
+    ]
 
 
 # ---- git-backed CLI -------------------------------------------------------
@@ -275,7 +298,7 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
         print("MATCHED=")
         print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]
         return 0
-    matched = touched_paths(changed, block["paths"])  # type: ignore[index]
+    matched = ui_paths(changed, block["paths"])  # type: ignore[index]
     print(f"TOUCHED={'yes' if matched else 'no'}")
     print(f"MATCHED={','.join(matched)}")
     print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]
