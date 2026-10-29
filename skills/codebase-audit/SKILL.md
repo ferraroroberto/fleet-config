@@ -165,7 +165,7 @@ claims nothing: scan everything. Details: [reference.md](reference.md), step 3a.
 ### 4. Inventory the files to read
 
 `git ls-files` (or `git ls-files <scope-path>`) to get the tracked-file list.
-This automatically respects `.gitignore`.
+This automatically respects `.gitignore`. Search tracked files only: `git grep` per repo, never `grep -r`/`find` from `E:/automation` or a repo root — worktrees, `node_modules` and `.venv` are walked before any filter, and a leftover search turns a delivered unattended run into exit 118.
 
 Filter to source files worth reading — typically: `.py`, `.ts`, `.tsx`,
 `.js`, `.jsx`, `.go`, `.rs`, `.ps1`, `.sh`, `.md` (only top-level docs like

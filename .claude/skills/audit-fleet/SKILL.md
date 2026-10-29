@@ -25,6 +25,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 - **Shell:** Bash tool here is **Git Bash**. `gh`/`git` work identically. No PowerShell syntax (`&`, `$env:`, here-strings). Windows paths map as `/e/automation/...`.
 - **Orchestrator only does cheap, safe work:** enumeration, per-repo ledger gate, fast-forward syncs, windowed dispatch, collection, digest. **All file reading happens inside sub-agents** — keeps orchestrator context/token spend bounded.
+- **No unscoped recursive searches.** Neither the orchestrator nor a sub-agent runs `grep -r`/`find` from `E:/automation`; content searches use `git grep` per repo (`skills/codebase-audit/SKILL.md` step 4).
 - **Never disturb in-progress work.** Dirty or off-default-branch repo → skip and report, never stash or force-switch.
 - **Never end the turn to "wait for it."** Headless one-shot process via `run-weekly.bat` — no turn loop, no human, no wake-up after a turn ends. `run_in_background: true` + ending the turn = false success (`exit_code: 0`) while nothing past that point happens (`fleet-config#314`).
   - Extends to the harness auto-backgrounding a call past its own timeout ceiling: never let a single call span the sweep's real runtime (`fleet-config#609` — step 2 sweep ran 345s–1460s+, past the Bash tool's 600s ceiling; see step 2).
