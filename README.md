@@ -94,7 +94,7 @@ fleet-config/
 ├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.pi/agent/AGENTS.md, ~/.copilot/copilot-instructions.md (symlinks) — agent-neutral global instructions
 ├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
-├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own; runs are diffed by rule id from a local ledger under hooks/state/design-review/ and filed as one managed design-review issue per repo on request (fleet-config#971, #972, #973, #974)
+├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own; runs are diffed by rule id from a local ledger under hooks/state/design-review/ and filed as one managed design-review issue per repo on request
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
 ├── grok_statusline.py              # Grok Build status line (command row, Claude's limits labelled as Claude's) + its opt-in ~/.grok/config.toml merge
@@ -107,13 +107,13 @@ fleet-config/
 ├── shell/
 │   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
-│   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports hook_wire/ (harness_wire.py + registry.py + edit_events.py) so no hook's import line changes (fleet-config#819, #931)
-│   ├── hook_wire/harness_wire.py   # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound (split from _lib.py, fleet-config#931)
-│   ├── hook_wire/registry.py       # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing (split from _lib.py, fleet-config#819)
-│   ├── hook_wire/edit_events.py    # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
+│   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports hook_wire/ (harness_wire.py + registry.py + edit_events.py) so no hook's import line changes
+│   ├── hook_wire/harness_wire.py   # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound
+│   ├── hook_wire/registry.py       # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing
+│   ├── hook_wire/edit_events.py    # shared EditEvent normalization + apply_patch envelope parsing
 │   ├── projects.toml.example       # tracked template of the machine-local, gitignored projects.toml: per-project nuance (ports, gate triggers, never-kill ports) + the fleet-scope switch (docs/fleet-scope.md)
 │   ├── run-hook.ps1                # Claude Code shim — settings.template.json routes hooks through this
-│   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it (fleet-config#1274)
+│   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it
 │   ├── pre_commit_no_ai_trailer.py
 │   ├── secret_scan_guard.py
 │   ├── gh_body_file_guard.py       # PreToolUse on Bash: nudge gh --body heredocs/backticks → --body-file; PowerShell here-strings in Bash
@@ -128,8 +128,8 @@ fleet-config/
 │   ├── branch_before_edit_guard.py    # PreToolUse on Edit|Write|MultiEdit: block launcher-dispatched edits on the default branch, resolved from the target path (gitignored targets exempt)
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
-│   ├── chief_handover_sessionstart.py # SessionStart: hand the standing fleet chief its last-written run log back (fleet-config#442)
-│   ├── index_lock_sessionstart.py     # SessionStart: report any fleet repo sitting on a stranded `.git/index.lock` (fleet-config#939)
+│   ├── chief_handover_sessionstart.py # SessionStart: hand the standing fleet chief its last-written run log back
+│   ├── index_lock_sessionstart.py     # SessionStart: report any fleet repo sitting on a stranded `.git/index.lock`
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
 │   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see docs/hooks.md, Graduation)
@@ -139,7 +139,7 @@ fleet-config/
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
 │   ├── session_state_codex.py       # Codex working/needs-you/SessionEnd adapter → shared state
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
-│   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `wait-event` / `inbox` claims (fleet-config#999, v2 #1455: docs/chief-mailbox.md)
+│   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `wait-event` / `inbox` claims (docs/chief-mailbox.md)
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
@@ -150,27 +150,27 @@ fleet-config/
 │   ├── conversation_search.py      # CLI: ranked FTS5 search over captures, returns each hit's resume command
 │   ├── conversation_title.py       # CLI: set/clear a conversation's user title (titles.json sidecar, survives re-indexing)
 │   ├── conversation_backfill.py    # CLI: capture a stored transcript a live Stop hook never captured (harness store scan, session-start filename stamping)
-│   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program, fleet-config#590) → hooks/backup/'s `main`
-│   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py (fleet-config#731)
+│   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program) → hooks/backup/'s `main`
+│   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
 │   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
-├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1 (fleet-config#153)
+├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
-├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (fleet-config#370, docs/stream-deck-plugin.md)
+├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
 │   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
-├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter (#746)
-├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json (#349)
-├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction (#546); drift-guarded by tests/run_acceptance.py
-├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs, #547) — copied into ~/.copilot/hooks/, drift-guarded
+├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter
+├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json
+├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
+├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, codebase-audit, design-sync, design-review, perf-review, screen, _lib/, …
-├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, learning-log, prompt-audit, sota-watch, system-map (fleet-config#161)
+├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
-├── scripts/static_ratchet.py       # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `static_ratchet`) — the baseline-and-ratchet duplicate/unused-code stage `tests/run_acceptance.py` runs; findings already present live in `.static-ratchet-baseline.json` (fleet-config#1514)
+├── scripts/static_ratchet.py       # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `static_ratchet`) — the baseline-and-ratchet duplicate/unused-code stage `tests/run_acceptance.py` runs; findings already present live in `.static-ratchet-baseline.json`
 ├── scripts/docs_ratchet.py         # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `docs_ratchet`) — the README-size and history-marker stage `tests/run_acceptance.py` runs; markers already present live in `.docs-ratchet-baseline.json`
 ├── scripts/structure_ratchet.py    # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `structure_ratchet`) — the file-size, function-length, flat-directory and root-layout stage `tests/run_acceptance.py` runs; offenders already present live in `.structure-ratchet-baseline.json`
 ├── scripts/comment_ratchet.py      # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `comment_ratchet`) — the issue-reference-in-comment stage `tests/run_acceptance.py` runs; references already present live in `.comment-ratchet-baseline.json`
@@ -178,7 +178,7 @@ fleet-config/
 ├── scripts/doc_refs_ratchet.py     # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `doc_refs_ratchet`) — the stage over `README.md`, `CLAUDE.md` and `docs/**/*.md` that fails on a path, module or link that does not exist and that `tests/run_acceptance.py` runs; stale references already present live in `.doc-refs-ratchet-baseline.json`
 ├── scripts/dead_code_ratchet.py    # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `dead_code_ratchet`) — the stage that fails on a function, class or method nothing refers to and that `tests/run_acceptance.py` runs; dead definitions already present live in `.dead-code-ratchet-baseline.json`
 ├── scripts/conventions_ratchet.py  # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `conventions_ratchet`) — the fleet-convention `ast` rule stage (`no-window`, `logging-not-print`, `no-drive-path`, `git-wrapper`) that `tests/run_acceptance.py` runs; existing hits live in `.conventions-ratchet-baseline.json`
-├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs (fleet-config#1076); holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
+├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 ├── codex/                          # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
