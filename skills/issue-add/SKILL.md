@@ -55,6 +55,8 @@ Find and read the code the idea touches:
 - Which files / modules / functions are involved, and how they behave now.
 - Constraints, conventions, and patterns the change must respect.
 - Anything that makes the idea harder or different than it first sounds.
+- When the issue adds a module or folder, name the target folder from
+  `docs/layout.md` (if present) in Proposed approach.
 
 Gather enough that the issue can be picked up **cold** — no tribal knowledge.
 

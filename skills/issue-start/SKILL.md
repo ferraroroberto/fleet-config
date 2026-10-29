@@ -126,7 +126,8 @@ Run in parallel:
 In parallel:
 - `gh issue view <N> --json number,title,body,labels` — read the whole issue.
 - Read the project's `CLAUDE.md` (and `README.md` if present) — conventions,
-  layout, verification gate.
+  layout, verification gate. If `docs/layout.md` exists, read it too and
+  place new files where it says.
 
 ### 4. Sync the main branch
 
