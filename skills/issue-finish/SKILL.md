@@ -197,6 +197,8 @@ upkeep) on this branch. Integration rules:
   a `.gitignore` line over a tracked path), say so in the Summary, naming each
   path: every checkout that pulls it loses its live copy unless its
   fast-forward goes through `untrack_guard.py` (fleet-config#1086).
+  Paste the output of `skills/_lib/instruction_delta/delta.py` (`INSTRUCTION_DELTA=`)
+  verbatim into the Summary; it is the net instruction-line change.
   Match the PR-body style of recent merged PRs in the repo.
   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 

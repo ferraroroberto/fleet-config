@@ -43,6 +43,7 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 - [UX-conformance gate (diff-keyed design check)](skills/ux-conformance-gate.md) — `ux_surface.py`: does a diff touch a design-gated surface; `ui_proof`: the visual-proof merge gate and private walkthrough
 - [Deploy-coverage gate (merged is not shipped)](skills/deploy-coverage-gate.md) — `deploy_coverage.py`: a merged change is not a shipped change
 - [Gate evidence (a green bound to the tree it ran against)](skills/gate-evidence.md) — `gate_evidence.py`: a pass bound to a content hash
+- [Instruction delta (prose growth as a reported fact)](skills/instruction-delta.md) — `instruction_delta/delta.py`: net instruction-line change of a branch, in the gate and the PR body
 - [Skip delta (a gate that covered less, saying so)](skills/skip-delta.md) — `skip_delta.py`: merge verification that names what it skipped
 - [Design review core (rendered facts, scored from data)](skills/design-review-core.md) — `design_review/` measure, eval, judgment, ledger, filing, fleet and inventory stages
 - [Box load lock (burn proofs never overlap a gate)](skills/box-load-lock.md) — `box_lock.py`: gates share, a CPU burn runs alone

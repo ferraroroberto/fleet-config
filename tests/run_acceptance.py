@@ -158,7 +158,7 @@ from acceptance.dead_code_ratchet_gate import _dead_code_ratchet_check  # noqa: 
 from acceptance.doc_refs_ratchet_gate import _doc_refs_ratchet_check  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
-from acceptance.instruction_ratchet_gate import _instruction_ratchet_check  # noqa: E402
+from acceptance.instruction_ratchet_gate import _instruction_delta_check, _instruction_ratchet_check  # noqa: E402
 from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
 from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
@@ -173,7 +173,7 @@ from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 
 _RATCHET_CHECKS = (
     _static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check, _comment_ratchet_check,
-    _instruction_ratchet_check, _doc_refs_ratchet_check, _dead_code_ratchet_check,
+    _instruction_ratchet_check, _instruction_delta_check, _doc_refs_ratchet_check, _dead_code_ratchet_check,
     _conventions_ratchet_check,
 )
 # One named home per shared behaviour, no private copies: the single-home scan and

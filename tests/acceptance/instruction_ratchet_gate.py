@@ -19,9 +19,13 @@ never path-routed.
 """
 from __future__ import annotations
 
+import sys
 from typing import Tuple
 
-from acceptance.shared import REPO, run_ratchet_script
+from acceptance.shared import REPO, _Checker, run_ratchet_script
+
+sys.path.insert(0, str(REPO / "skills" / "_lib"))
+from instruction_delta import delta as delta_mod  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "instruction_ratchet.py"
 
@@ -46,3 +50,19 @@ def classify_exit(code: int) -> Tuple[bool, str]:
 
 def _instruction_ratchet_check() -> Tuple[int, int]:
     return run_ratchet_script(SCRIPT, RUN_TIMEOUT_S, classify_exit)
+
+
+def _instruction_delta_check() -> Tuple[int, int]:
+    """Print the net instruction-line growth of this branch as one gate line.
+
+    Report only: the ratchet above caps per-file size and rule hits, this makes the
+    growth a visible fact. A base that cannot be resolved is NOT CONFIRMED and fails,
+    never a quiet +0.
+    """
+    check = _Checker()
+    result = delta_mod.measure(REPO)
+    if isinstance(result, delta_mod.Delta):
+        check(delta_mod.render(result), True)
+    else:
+        check(f"instruction_delta: NOT CONFIRMED -- {result}", False)
+    return check.failures, check.total

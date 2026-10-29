@@ -94,6 +94,9 @@ no padding.
     alone.
   - **Proposed approach** — a concrete, sensible direction; note real
     alternatives only when they matter. Don't design the whole implementation.
+  - **Enforcement** — required when the issue changes agent behaviour: the
+    mechanism that makes it hold (hook refusal, lint, test, code path) before
+    any prose; added instruction text states why no mechanism can do it.
   - **Acceptance criteria** — a short checklist of "done". Each criterion must
     be decidable pass/fail by a reader with the repo in hand; "works
     correctly" / "is robust" is not a criterion. A UI criterion names its
