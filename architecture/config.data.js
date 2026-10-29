@@ -193,7 +193,7 @@ window.CONFIG = {
     },
     {
       "nm": "propagate-vendored",
-      "ds": "Fan out a byte-for-byte re-vendor of one project-scaffolding component to every adopter in its [vendored] manifest — copy, hash-v…",
+      "ds": "Re-vendor project-scaffolding components byte-for-byte into every adopter in its [vendored] manifest — one PR per repo with every…",
       "scope": "repo"
     },
     {
@@ -269,6 +269,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "perf-sweep",
+      "ds": "Weekly phone-speed check of every fleet web app, one at a time — runs /perf-review's measure and file for each, then prints one d…",
+      "sched": true
+    },
+    {
       "nm": "prompt-audit",
       "ds": "Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first…",
       "sched": true
@@ -316,6 +321,7 @@ window.CONFIG = {
     {
       "repo": "facilitation-suite",
       "items": [
+        "analyze-session",
         "verify-facilitation-suite"
       ]
     },
@@ -500,6 +506,13 @@ window.CONFIG = {
       "ds": "Persist per-session state for the Fleet Board (fleet-config#91)."
     },
     {
+      "nm": "chief_waiter_stop",
+      "ev": "Stop",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Stop hook: the chief may not end a turn with work in flight and no waiter armed."
+    },
+    {
       "nm": "restart_and_verify_webapp",
       "ev": "/restart-webapp (slash command)",
       "block": false,
@@ -563,14 +576,6 @@ window.CONFIG = {
       "ds": "Set or clear the owner's title on one captured conversation (fleet-config#1348)."
     },
     {
-      "nm": "edit_events",
-      "ds": "Shared normalized edit view + ``apply_patch`` envelope parsing (fleet-config#819)."
-    },
-    {
-      "nm": "harness_wire",
-      "ds": "The hooks' multi-harness wire protocol (split from `_lib.py`, fleet-config#931)."
-    },
-    {
       "nm": "hook_dispatch",
       "ds": "Run several hook modules in one process and answer once (fleet-config#1274)."
     },
@@ -587,20 +592,12 @@ window.CONFIG = {
       "ds": "Fleet-wide Telegram notifier - fire a real, bot-identity notification."
     },
     {
-      "nm": "registry",
-      "ds": "``projects.toml`` registry + notify-target routing (fleet-config#819)."
-    },
-    {
       "nm": "session_state_codex",
       "ds": "Codex adapter for the Fleet Board session-state writer (fleet-config#349)."
     },
     {
       "nm": "session_state_pi",
       "ds": "Pi adapter for the Fleet Board session-state writer (fleet-config#349)."
-    },
-    {
-      "nm": "transcript_readers",
-      "ds": "Native transcript readers; hook-envelope normalization remains in _lib."
     },
     {
       "nm": "work_summary",
@@ -636,7 +633,7 @@ window.CONFIG = {
   "coverage": {
     "total": 29,
     "claude_md": "28/29",
-    "fleet_toml": "28/29"
+    "fleet_toml": "29/29"
   },
   "principles": [
     [
