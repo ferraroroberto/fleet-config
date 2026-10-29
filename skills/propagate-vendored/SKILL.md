@@ -1,6 +1,6 @@
 ---
 name: propagate-vendored
-description: Fan out a byte-for-byte re-vendor of project-scaffolding components to every adopter in their [vendored] manifest — one PR per repo carrying every component it is behind on; copy, hash-verify, bump the sha, run the gate, auto-merge, no per-repo issue. Dry-run reports per repo what is behind, touching nothing. Invoke explicitly, never per scaffold commit. E.g. "/propagate-vendored nav", "/propagate-vendored nav,usage_log", "/propagate-vendored --all-behind", or "/propagate-vendored nav --dry-run".
+description: Re-vendor project-scaffolding components byte-for-byte into every adopter in its [vendored] manifest — one PR per repo with every behind component; hash-verify, bump sha, run the gate, auto-merge, no per-repo issue. Dry-run reports what is behind, touching nothing. Invoke explicitly, never per scaffold commit. E.g. "/propagate-vendored nav", "/propagate-vendored nav,usage_log", "/propagate-vendored --all-behind", or "/propagate-vendored nav --dry-run".
 ---
 
 # propagate-vendored
