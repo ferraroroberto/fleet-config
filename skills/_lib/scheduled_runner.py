@@ -225,6 +225,34 @@ def _owned_descendant_lines(members: Optional[list]) -> list[str]:
     return lines
 
 
+# A sub-agent's backgrounded search pipeline (`grep -r … | grep -v … | head`) is
+# the one leftover that proves nothing about the run: it reads, it never writes.
+# Anything else still alive after the provider exits may have been mid-write.
+READ_ONLY_SEARCH_TOOLS = frozenset({"grep", "egrep", "fgrep", "find", "head", "rg"})
+# Windows attaches a console host to a console-less child; it does nothing on its own.
+CONSOLE_HOST_IMAGE = "conhost"
+
+
+def _read_only_search_names(members: Optional[list]) -> Optional[list[str]]:
+    """Sorted tool names when every owned leftover is a read-only search tool, else ``None``.
+
+    An unreadable image, an empty list or an unnameable member list can never
+    qualify: a leftover nobody could identify keeps the not-confirmed verdict.
+    A console host qualifies only beside at least one search tool.
+    """
+    if not members:
+        return None
+    names = set()
+    for _pid, image, _command in members:
+        name = (image or "").lower().removesuffix(".exe")
+        if name == CONSOLE_HOST_IMAGE:
+            continue
+        if name not in READ_ONLY_SEARCH_TOOLS:
+            return None
+        names.add(name)
+    return sorted(names) or None
+
+
 def _child_environment(
     progress: ProgressFormatter, stall_timeout: float, env: Optional[dict[str, str]],
 ) -> dict[str, str]:
@@ -305,11 +333,15 @@ def _pump(
                 if orphaned:
                     # Named now: the teardown below kills them.
                     outcome["orphan_members"] = scope.describe_active()
+                    outcome["reap_names"] = _read_only_search_names(outcome["orphan_members"])
                 # This runner stopped watching before the run was over, so
                 # its outcome is a fact nobody established: verdict-bearing,
                 # and it closes the pre-effect replay gate even when both
-                # pipes reached EOF and the parent failed.
-                if active != 0 or not all(reader.eof for reader in readers):
+                # pipes reached EOF and the parent failed. Read-only search
+                # leftovers are exempt only while the teardown below proves it
+                # stopped them; an unconfirmed reap marks the run unverified there.
+                if ((active != 0 and outcome["reap_names"] is None)
+                        or not all(reader.eof for reader in readers)):
                     progress._mark_unverified("drain/deadline-reached")
                 outcome["drain_message"] = (
                     f"owned scope drain deadline reached · active processes "
@@ -329,9 +361,18 @@ def _verdict(
     """Turn the drained run's evidence into its final exit code and verdict line."""
     if outcome["drain_message"]:
         progress.emit_best_effort(outcome["drain_message"])
+    reaped = outcome["orphaned"] and outcome["reap_names"] is not None
     if outcome["orphaned"]:
         for line in _owned_descendant_lines(outcome["orphan_members"]):
             progress.emit_best_effort(line)
+    if reaped:
+        # A warning, not a verdict: the rest of the chain below still decides
+        # the run from its own evidence (delivery check, tool use, self-report).
+        progress.emit_best_effort(
+            f"⚠ reaped {outcome['orphan_count']} stray read-only search descendant(s) "
+            f"({', '.join(outcome['reap_names'])}) still running after the provider exited · "
+            "terminated, not counted toward this run's outcome"
+        )
     exit_code = outcome["exit_code"]
     if exit_code is None:
         exit_code = CANCELLATION_UNCONFIRMED_EXIT_CODE
@@ -342,7 +383,7 @@ def _verdict(
         return cancelled_code
     if stall_state["stalled"]:
         exit_code = STALL_EXIT_CODE
-    elif outcome["orphaned"] and exit_code == 0:
+    elif outcome["orphaned"] and not reaped and exit_code == 0:
         progress.emit_best_effort("unfinished owned descendants after provider exit")
         # Handed to the formatter as well as the log: the verdict line is what
         # the job card and the Telegram alert carry, and a breadcrumb printed
@@ -408,7 +449,7 @@ def run_process(
         watchdog.start()
 
     outcome: dict[str, Any] = {"exit_code": None, "orphaned": False, "orphan_count": 0,
-                               "orphan_members": None, "drain_message": None}
+                               "orphan_members": None, "reap_names": None, "drain_message": None}
     try:
         _pump(process, scope, readers, progress, stall_state, cancel_event, outcome)
     except KeyboardInterrupt:
@@ -427,7 +468,10 @@ def run_process(
         # Closing the Windows job is a final ownership-scoped safety net. It
         # cannot upgrade an unconfirmed cancellation into confirmed success.
         if scope.active() != 0:
-            scope.terminate()
+            terminated = scope.terminate()
+            if outcome["reap_names"] is not None and not terminated:
+                outcome["reap_names"] = None
+                progress._mark_unverified("drain/reap-unconfirmed")
         scope.close()
         if process.poll() is None:
             try:
