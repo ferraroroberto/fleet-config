@@ -10,16 +10,13 @@ import datetime as dt
 import hashlib
 import json
 import math
-import os
 import re
 import sys
-import tempfile
-import time
 from pathlib import Path
 from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fleet_core.hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS, state_dir  # noqa: E402
+from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 SCHEMA_VERSION = 1
 MAX_AGE_SECONDS = 600
@@ -189,60 +186,24 @@ def validate_source(raw: Any) -> dict[str, Any]:
     return result
 
 
-def sweep_stale_temps(target: Path) -> None:
-    """Unlink ``target``'s abandoned ``<name>.tmp.<random>`` temporaries, by age.
-
-    A status-line render killed between ``mkstemp`` and ``os.replace`` runs no
-    handler, so its temp is stranded; the next publish expires it instead. The
-    folder can hold thousands, so this is one ``scandir`` (``DirEntry.stat``
-    reuses the listing's data on Windows). The name must be exactly this target
-    plus one ``mkstemp`` segment, so another producer's shard or temp is never
-    touched. Advisory: a failure leaves the orphan for the next publish.
-    """
-    pattern = re.compile(re.escape(target.name + ".tmp.") + r"[a-z0-9_]+")
-    cutoff = time.time() - ATOMIC_TMP_SWEEP_AFTER_SECONDS
-    try:
-        with os.scandir(target.parent) as entries:
-            for entry in entries:
-                try:
-                    if pattern.fullmatch(entry.name) and entry.stat().st_mtime < cutoff:
-                        os.unlink(entry.path)
-                except OSError:
-                    continue
-    except OSError:
-        return
-
-
 def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:
     """Atomically replace only this producer's shard; never merge shared JSON.
 
-    Unique temp names + os.replace permit concurrent producers and readers.
-    A failed replacement retains the complete old shard and removes our temp;
-    a killed writer's stranded temp is expired by the next publish.
+    Routed through the shared `fleet_core.hooks_state.atomic_write_text`
+    rather than this module's own second copy of the
+    temp-write/replace/age-sweep it already owns: `fsync=True` keeps this
+    producer's durability-across-a-crash guarantee (a reader must never see a
+    shard torn by a kill between write and replace), and `replace_retries=5`
+    keeps the bounded <1s retry a Windows reader's brief sharing/access denial
+    on `os.replace` needs -- both now parameters there instead of a reason to
+    hand-roll a second writer.
     """
     source = validate_source(raw)
     folder = (directory or state_dir()) / "quota-v1"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / (source["producer"] + ".json")
-    sweep_stale_temps(target)
-    fd, temporary = tempfile.mkstemp(prefix=target.name + ".tmp.", dir=folder)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(source, stream, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
-            stream.flush()
-            os.fsync(stream.fileno())
-        # Windows readers can briefly deny replacement (native concurrent-I/O
-        # probe). Retry only that sharing/access condition, bounded <1s.
-        for attempt in range(6):
-            try:
-                os.replace(temporary, target)
-                break
-            except PermissionError:
-                if attempt == 5:
-                    raise
-                time.sleep(0.01 * (2 ** attempt))
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    text = json.dumps(source, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+    atomic_write_text(target, text, newline="\n", fsync=True, replace_retries=5)
     return target
 
 

@@ -82,7 +82,6 @@ rule 4 to exist, because the issue body quoted the hazard it describes
 from __future__ import annotations
 
 import datetime
-import json
 import os
 import re
 import sys
@@ -726,19 +725,9 @@ def record_destructive_action(payload: Dict[str, Any], cmd: str,
     every Bash call, which is a strictly worse failure than the one it records.
     """
     try:
-        path = audit_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            if path.stat().st_size > AUDIT_MAX_BYTES:
-                os.replace(path, path.with_suffix(path.suffix + ".1"))
-        except OSError:
-            pass
-        line = json.dumps(audit_record(payload, cmd, clause, verdict),
-                          ensure_ascii=False)
-        # One `open(..., "a")` + one write: O_APPEND makes a single short line
-        # atomic against the concurrent sessions this file is shared by.
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
+        _lib.append_jsonl_rotating(
+            audit_path(), audit_record(payload, cmd, clause, verdict), AUDIT_MAX_BYTES, ensure_ascii=False,
+        )
     except Exception:  # noqa: BLE001 - see docstring
         pass
 

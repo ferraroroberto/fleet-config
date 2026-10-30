@@ -144,11 +144,11 @@ def _git(path: Path, *args: str) -> str:
 
 def github_pr_lookup(remote_url: str, branch: str) -> Optional[List[Dict[str, Any]]]:
     """Every PR (any state) whose head is `branch`, or None if not established."""
-    match = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", remote_url)
-    if not match:
+    slug = git_run.slug_from_url(remote_url)
+    if not slug:
         return None
     res = git_run.run_gh(
-        ["pr", "list", "--repo", match.group(1), "--head", branch, "--state", "all",
+        ["pr", "list", "--repo", slug, "--head", branch, "--state", "all",
          "--json", "number,state,headRefOid", "--limit", "10"],
         timeout=GH_TIMEOUT_S,
     )

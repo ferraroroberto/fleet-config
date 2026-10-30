@@ -53,6 +53,7 @@ from typing import NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+import repo_preflight  # noqa: E402
 
 
 class Result(NamedTuple):
@@ -112,26 +113,33 @@ def evaluate(
 _run_git = git_run.run_git_or_raise
 
 
-def detect_default_branch(repo_path: Path) -> str:
-    """Bare branch name, no candidate probing on `symbolic-ref` failure (unlike
-    `git_run.resolve_default_branch_ref`'s other callers) -- `candidates=()`
-    reproduces that quirk on top of the shared helper (fleet-config#485)."""
-    ref = git_run.resolve_default_branch_ref(repo_path, candidates=(), final_fallback="main")
-    return ref[len("origin/"):] if ref.startswith("origin/") else ref
+# Was its own `candidates=()` copy that silently fell back to `"main"` and so
+# gave a different answer than `repo_preflight.py`'s candidate-probing version
+# for the same `master`-default repo. Delegating keeps `chief/commands.py`'s
+# `verify`, the only caller of this name, on the same resolver as everything
+# else in the repo.
+detect_default_branch = repo_preflight.detect_default_branch
 
 
 def gather(repo_path: Path, default_branch: str) -> tuple[str, bool, Optional[int]]:
     """Collect the live git facts `evaluate` needs.
 
-    Raises `Unreadable` when the branch or the working tree can't be read —
-    without those two there is nothing to judge. The commits-ahead count is
-    softer: `origin/<default>` legitimately may not exist (a repo with no
-    remote), so that one comes back as `None` and `evaluate` decides whether
-    it mattered.
+    Raises `Unreadable` when the branch or the working tree can't be read, or
+    when `default_branch` is empty -- `detect_default_branch` returns `""`
+    rather than a silent `"main"` when no candidate resolves,
+    and a judgment with no real default branch to compare against is not a
+    fact either. The commits-ahead count is softer: `origin/<default>`
+    legitimately may not exist (a repo with no remote), so that one comes back
+    as `None` and `evaluate` decides whether it mattered.
     """
     current_branch = _run_git(repo_path, "branch", "--show-current")
     porcelain = _run_git(repo_path, "status", "--porcelain")
     porcelain_empty = porcelain == ""
+    if not default_branch:
+        raise Unreadable(
+            f"default branch could not be resolved for {repo_path} "
+            "(no origin/HEAD, local main, or local master)"
+        )
     try:
         commits_ahead: Optional[int] = int(
             _run_git(repo_path, "rev-list", "--count", f"origin/{default_branch}..HEAD")

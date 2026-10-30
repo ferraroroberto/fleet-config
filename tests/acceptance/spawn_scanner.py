@@ -14,6 +14,13 @@ hand-rolled `subprocess.<spawn>(["git"/"gh", ...])` that bypasses the tier's
 `run_git`/`run_gh` wrapper and so silently opts out of `GIT_OPTIONAL_LOCKS=0`
 (fleet-config#667) or the `gh` UTF-8-decoding/NO_WINDOW combo (fleet-config#679).
 Same shape of defect, same static-AST answer, hence the same module.
+
+And `_origin_slug_wrapper_unit_check`: the same trees,
+scanned for a hand-rolled `re.compile`/`re.search`/`re.match`/`re.fullmatch`
+whose pattern string parses a GitHub remote URL, bypassing the shared
+`git_run.slug_from_url`/`origin_slug` parser -- four near-identical copies of
+that one regex existed before this check, caught by `/codebase-audit`'s
+duplication bucket two runs running.
 """
 from __future__ import annotations
 
@@ -181,6 +188,15 @@ def _spawn_import_style_offenders() -> "list[str]":
 # just wherever someone remembered (fleet-config#677, fleet-config#728).
 _GIT_WRAPPER_FILES = {"hooks/_lib.py", "skills/_lib/git_run.py"}
 _GH_WRAPPER_FILES = _GIT_WRAPPER_FILES
+
+# The one file allowed to parse a GitHub remote URL with its own regex: it
+# *is* the shared `slug_from_url`/`origin_slug` parser every other runtime
+# file routes through instead -- four near-identical
+# regexes existed before this gate (`design_review/filing.py`'s `_REMOTE_RE`,
+# `branch_residue.py`'s `_SLUG_RE`, `chief/chief_sweep.py`'s inline pattern,
+# `e2e_value/sources.py`'s), surfaced by `/codebase-audit` two runs in a row.
+_ORIGIN_SLUG_OWNER_FILE = "skills/_lib/git_run.py"
+_RE_PATTERN_ATTRS = {"compile", "search", "match", "fullmatch"}
 
 
 def _argv_head_exe(node) -> "str | None":
@@ -396,6 +412,101 @@ def _no_window_unit_check() -> Tuple[int, int]:
           6 not in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
     check("no_window: a spawn with no creationflags at all is reported as an offender",
           7 in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
+
+    return check.failures, check.total
+
+
+def _github_url_regex_sites_in_tree(tree, label: str) -> "list[str]":
+    """Every `re.compile`/`re.search`/`re.match`/`re.fullmatch` call in a
+    parsed `tree` whose pattern argument is a string literal containing
+    `github.com`, as `label:line` strings -- the shape of a hand-rolled
+    GitHub-remote-URL parser. Shared by the real file
+    scan below and its synthetic unit cases."""
+    import ast
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _RE_PATTERN_ATTRS
+                and isinstance(fn.value, ast.Name) and fn.value.id == "re"):
+            continue
+        if not node.args:
+            continue
+        pattern = node.args[0]
+        # The real patterns all escape the dot (`github\.com`) and strip an
+        # optional `.git` suffix, so match on the three substrings rather
+        # than a literal `github.com` -- narrow enough that an unrelated
+        # regex that merely mentions a github.com *issue/PR* URL (no `.git`
+        # clone-URL shape) is not reported.
+        if (isinstance(pattern, ast.Constant) and isinstance(pattern.value, str)
+                and "github" in pattern.value and ".com" in pattern.value and ".git" in pattern.value):
+            offenders.append(f"{label}:{node.lineno}")
+    return offenders
+
+
+def _github_url_regex_sites() -> "list[str]":
+    """Every hand-rolled GitHub-remote-URL regex under `_SPAWN_SCAN_DIRS`,
+    excluding `_ORIGIN_SLUG_OWNER_FILE` (the file that is supposed to
+    contain one)."""
+    import ast
+
+    offenders: list[str] = []
+    for py in _runtime_py_files():
+        label = py.relative_to(REPO).as_posix()
+        if label == _ORIGIN_SLUG_OWNER_FILE:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
+            offenders.append(f"{label}: unparseable ({exc})")
+            continue
+        offenders.extend(_github_url_regex_sites_in_tree(tree, label))
+    return offenders
+
+
+def _origin_slug_wrapper_unit_check() -> Tuple[int, int]:
+    """No runtime file hand-rolls its own GitHub-remote-URL -> `owner/repo`
+    regex around the shared `git_run.slug_from_url`/`origin_slug`
+   .
+
+    Four near-identical regexes parsed the same `origin` remote URL their
+    own way before this gate existed, surfaced by the same `/codebase-audit`
+    duplication bucket two runs in a row -- the defect is silent at runtime,
+    exactly like an unsuppressed console spawn: every copy parses correctly
+    today, so nothing fails until the next one drifts (a missing `.git`
+    strip, a tightened/loosened character class). So the gate is static,
+    mirroring `_git_wrapper_unit_check`'s shape.
+    """
+    check = _Checker()
+
+    offenders = _github_url_regex_sites()
+    check(f"origin_slug_wrapper: no hand-rolled GitHub-remote-URL regex in "
+          f"{', '.join(_SPAWN_SCAN_DIRS)} (route through git_run.slug_from_url / "
+          f"origin_slug; owner: {_ORIGIN_SLUG_OWNER_FILE})",
+          not offenders,
+          "hand-rolled GitHub-URL regex sites at:\n" + "\n".join(offenders))
+
+    import ast
+
+    synthetic = (
+        "import re\n"
+        "_SLUG_RE = re.compile(r'github\\.com[:/]([^/]+)/([^/\\s]+?)(?:\\.git)?/?$')\n"
+        "m = re.search(r'github\\.com[:/]([\\w.-]+/[\\w.-]+?)(?:\\.git)?/?$', url)\n"
+        "other = re.compile(r'^[A-Za-z][\\w-]*/(\\d+)(?:-|$)')\n"
+        "slug = git_run.slug_from_url(url)\n"
+    )
+    lines = {int(o.rsplit(":", 1)[1])
+             for o in _github_url_regex_sites_in_tree(ast.parse(synthetic), "synthetic")}
+    check("origin_slug_wrapper: a module-level `_SLUG_RE = re.compile(...github.com...)` is reported",
+          2 in lines, f"offending lines seen: {sorted(lines)}")
+    check("origin_slug_wrapper: an inline `re.search(...github.com...)` is reported",
+          3 in lines, f"offending lines seen: {sorted(lines)}")
+    check("origin_slug_wrapper: an unrelated regex (no github.com) is NOT reported",
+          4 not in lines, f"offending lines seen: {sorted(lines)}")
+    check("origin_slug_wrapper: a `git_run.slug_from_url` call is NOT reported",
+          5 not in lines, f"offending lines seen: {sorted(lines)}")
 
     return check.failures, check.total
 

@@ -272,14 +272,11 @@ def state_lock(
 
 
 def _remote_repo_name(repo_path: Path) -> Optional[str]:
-    # `git_run.run_git` owns the explicit UTF-8 decode and `NO_WINDOW` this used
-    # to hand-roll.
-    result = git_run.run_git(["-C", str(repo_path), "remote", "get-url", "origin"])
-    if result.returncode != 0:
-        return None
-    remote = result.stdout.strip().rstrip("/\\")
-    name = re.split(r"[/\\:]", remote)[-1]
-    return name[:-4] if name.lower().endswith(".git") else name or None
+    # The bare repo name out of `owner/repo` -- `git_run.origin_slug` owns the
+    # `remote get-url origin` call plus the regex, shared with the other
+    # call sites across the repo that need the same parse.
+    slug = git_run.origin_slug(repo_path)
+    return slug.rsplit("/", 1)[-1] if slug else None
 
 
 def resolve_repo_name(repo: str | Path) -> str:

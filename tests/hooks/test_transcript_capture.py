@@ -373,10 +373,13 @@ class CaptureTests(unittest.TestCase):
         before = original.read_bytes()
         changed = codex()
         changed[-1]['payload']['item']['content'][0]['text'] = 'updated answer'
-        with patch.object(cc.os, 'replace', side_effect=PermissionError('synthetic locked capture')):
+        # write_capture now goes through the shared `_lib.atomic_write_text`
+        #, so the `os.replace` it calls is `_lib`'s, not
+        # `conversation_capture`'s own import of the module.
+        with patch.object(_lib.os, 'replace', side_effect=PermissionError('synthetic locked capture')):
             self.capture(changed, 'codex')
         self.assertEqual(original.read_bytes(), before)
-        self.assertEqual(list(original.parent.glob('.capture-*.tmp')), [])
+        self.assertEqual(list(original.parent.glob(f'.{original.name}.*.tmp')), [])
 
     def test_sanitized_native_fixtures(self):
         fixture_dir = Path(__file__).parent.parent / 'fixtures'

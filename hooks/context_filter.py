@@ -226,20 +226,6 @@ def cache_raw_output(command: str, raw: str) -> str:
 SHADOW_LOG_MAX_BYTES = 20 * 1024 * 1024
 
 
-def _rotate_shadow_log(target: Path) -> None:
-    """Best-effort size-based rotation — a telemetry failure must never block
-    the wrapped command, so every OSError is swallowed (fleet-config#549)."""
-    try:
-        if target.stat().st_size < SHADOW_LOG_MAX_BYTES:
-            return
-    except OSError:
-        return
-    try:
-        target.replace(target.with_name(target.name + ".1"))
-    except OSError:
-        pass
-
-
 def append_shadow_log(record: dict[str, Any]) -> None:
     """Append one telemetry row, with the `command` field redacted.
 
@@ -250,14 +236,16 @@ def append_shadow_log(record: dict[str, Any]) -> None:
     (fleet-config#681). Redacting here rather than at the call site keeps the
     two fields symmetric for every future writer too. The caller's dict is
     copied, never mutated — it is the same object the caller may still read.
+
+    Rotation + append is `_lib.append_jsonl_rotating` --
+    the same best-effort size-cap-and-replace this used to hand-roll as its
+    own `_rotate_shadow_log`, shared now with `venv_discipline` and
+    `conversation_capture`'s equivalents.
     """
     if isinstance(record.get("command"), str):
         record = {**record, "command": redact_secret_markers(record["command"])}
     target = data_dir() / "shadow.jsonl"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _rotate_shadow_log(target)
-    with target.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    _lib.append_jsonl_rotating(target, record, SHADOW_LOG_MAX_BYTES, sort_keys=True)
 
 
 def command_base(command: str) -> str:

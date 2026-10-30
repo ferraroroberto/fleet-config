@@ -12,11 +12,9 @@ import hashlib
 import html
 import json
 import logging
-import os
 import re
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -451,18 +449,10 @@ def capture_log_path() -> Path:
 def record_capture_event(event: dict) -> None:
     """Append one breadcrumb line. Never raises: capture stays fail-open."""
     try:
-        path = capture_log_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            if path.stat().st_size > CAPTURE_LOG_MAX_BYTES:
-                os.replace(path, path.with_suffix(path.suffix + ".1"))
-        except OSError:
-            pass
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-        line = json.dumps({"ts": stamp, **event}, ensure_ascii=False)
-        # One short O_APPEND write is atomic against concurrent sessions.
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
+        _lib.append_jsonl_rotating(
+            capture_log_path(), {"ts": stamp, **event}, CAPTURE_LOG_MAX_BYTES, ensure_ascii=False,
+        )
     except (OSError, TypeError, ValueError) as exc:
         logger.warning("Capture breadcrumb not written: %s", exc)
 
@@ -570,16 +560,10 @@ def write_capture(
     content = render_markdown(make_description(transcript.messages), transcript.messages,
                               header=header, agent=transcript.harness)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=out_path.parent,
-                                         prefix=".capture-", suffix=".tmp", delete=False) as handle:
-            temporary = Path(handle.name)
-            handle.write(content)
-        os.replace(temporary, out_path)
-    finally:
-        if temporary and temporary.exists():
-            temporary.unlink()
+    # The shared atomic writer, rather than a hand-rolled tempfile +
+    # os.replace: it also sweeps this target's own orphaned temps, which
+    # the hand-rolled version never did on a hard kill mid-write.
+    _lib.atomic_write_text(out_path, content)
     logger.info("Captured %s session %s -> %s", transcript.harness, transcript.session_id or "unknown", out_path)
     note.update(result="captured", path=str(out_path))
     return True
