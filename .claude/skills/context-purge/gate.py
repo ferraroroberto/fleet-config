@@ -88,6 +88,10 @@ BLOCK_MARKER = "<!-- context-purge-ledger -->"
 # prefix (the one `/context-purge`'s SKILL.md commits every purge branch to)
 # is how `reconcile()` finds candidate PRs at all.
 PURGE_BRANCH_PREFIX = "chore/context-purge-"
+# The server-side `head:` search already narrows the list to purge branches, so
+# this cap only has to exceed one repo's purge-PR count (one per weekly run,
+# about two years of headroom at 100) -- a bound, not a measured value.
+PURGE_PR_FETCH_LIMIT = 100
 
 _ENTRY_RE = re.compile(r"^([^:#\s][^:]*?):[ \t]*([0-9a-f]{12})[ \t]*$", re.MULTILINE)
 _RUN_AT_RE = re.compile(r"^last-run-at:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
@@ -365,7 +369,8 @@ def _commit_hashes(repo_dir: Path, commit_sha: str, relpaths: list[str]) -> dict
 def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
     """Every `chore/context-purge-*` PR (any state) for one repo, `gh`-fetched.
 
-    One `gh pr list` call per repo carries `files` inline — no per-PR
+    The `head:` search filters server-side: a bare newest-N window would drop
+    older purge PRs behind unrelated traffic. One `gh pr list` call per repo carries `files` inline — no per-PR
     `gh pr view` round trip needed. A merged PR's files are additionally
     resolved to their hash *at that PR's own merge commit* here (the only
     place that needs a repo checkout), so `plan_reconcile` stays git/gh-free.
@@ -373,7 +378,7 @@ def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
     res = git_run.run_gh(
         ["pr", "list", "--repo", f"ferraroroberto/{repo_name}", "--state", "all",
          "--json", "number,title,url,headRefName,state,mergedAt,createdAt,mergeCommit,files",
-         "--limit", "200"],
+         "--search", f"head:{PURGE_BRANCH_PREFIX}", "--limit", str(PURGE_PR_FETCH_LIMIT)],
         timeout=git_run.GH_LIST_TIMEOUT_S,
     )
     if res.returncode != 0:

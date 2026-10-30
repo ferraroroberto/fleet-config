@@ -241,4 +241,29 @@ check("awake/CLAUDE.md" in _keys and "asleep/CLAUDE.md" not in _keys,
       "surface_files(--fleet): a dormant repo's files leave the surface, a live repo's stay")
 check(_dormant == ["asleep"], "dormant_repos names the dormant sister repo and not the worktree or this repo")
 
+# ---- _fetch_purge_prs: server-side branch filter ----
+import json  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+_gh_calls: list[list[str]] = []
+_real_run_gh = gate.git_run.run_gh
+gate.git_run.run_gh = lambda args, **_kw: (
+    _gh_calls.append(args)
+    or SimpleNamespace(returncode=0, stdout=json.dumps([
+        {"number": 1, "headRefName": "chore/context-purge-20261029", "files": []},
+        {"number": 2, "headRefName": "feat/unrelated", "files": []},
+    ]), stderr="")
+)
+try:
+    _fetched = gate._fetch_purge_prs("demo", Path("."))
+finally:
+    gate.git_run.run_gh = _real_run_gh
+_args = _gh_calls[0]
+check(_args[_args.index("--search") + 1] == f"head:{gate.PURGE_BRANCH_PREFIX}",
+      "_fetch_purge_prs: purge branches are selected server-side, not by a newest-N window")
+check(_args[_args.index("--limit") + 1] == str(gate.PURGE_PR_FETCH_LIMIT),
+      "_fetch_purge_prs: the --limit is the named PURGE_PR_FETCH_LIMIT")
+check([e["number"] for e in _fetched] == [1],
+      "_fetch_purge_prs: a non-purge branch in the response is still dropped")
+
 _h.report_and_exit("test_context_purge_gate")

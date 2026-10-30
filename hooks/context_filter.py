@@ -24,6 +24,14 @@ TOKEN_DIVISOR = 4
 DEFAULT_MAX_LINES = 80
 DEFAULT_MAX_CHARS = 12_000
 SMALL_OUTPUT_CHARS = 1_800
+# Generic head/signal/tail pick for output no command-specific summariser
+# claims. Guesses, not measured values: the head holds the command's banner and
+# first errors, the tail is wider because a failing run reports its verdict
+# last, and the floor keeps the end of a long output visible when max_lines is
+# small.
+GENERIC_HEAD_LINES = 12
+GENERIC_TAIL_LINES = 20
+MIN_TAIL_BUDGET_LINES = 8
 GIT_LOG_HEAD_LINES = 40
 
 SIGNAL_RE = re.compile(
@@ -589,13 +597,13 @@ def compress_output(
             candidate_lines = command_specific_lines(shaping, lines) or []
             if not candidate_lines:
                 signal = [line.rstrip() for line in lines if SIGNAL_RE.search(line)]
-                head = [line.rstrip() for line in lines[: min(12, len(lines))]]
-                tail = [line.rstrip() for line in lines[-min(20, len(lines)) :]] if len(lines) > 12 else []
+                head = [line.rstrip() for line in lines[:GENERIC_HEAD_LINES]]
+                tail = [line.rstrip() for line in lines[-GENERIC_TAIL_LINES:]] if len(lines) > GENERIC_HEAD_LINES else []
                 candidate_lines = head + ["[... middle omitted ...]"] + signal + tail
 
         candidate_lines = _collapse_identical_runs(_dedupe_exact(candidate_lines))
         if len(candidate_lines) > max_lines:
-            tail_budget = max(8, max_lines // 4)
+            tail_budget = max(MIN_TAIL_BUDGET_LINES, max_lines // 4)
             candidate_lines = (
                 candidate_lines[: max_lines - tail_budget - 1]
                 + [f"[fleet-context-filter: omitted {len(candidate_lines) - max_lines + 1} low-signal lines]"]
