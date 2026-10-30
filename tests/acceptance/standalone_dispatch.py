@@ -215,10 +215,17 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "failing proof named, refusal only where layout_lint is vendored -- "
      "against a temp repo (fleet-config#1707)"),
     ("ui_proof_store", "web_review/test_ui_proof_store.py",
-     "the per-repo .proof/ store -- before/after captures from a worktree, "
-     "the self-contained page with and without a layout_lint manifest, "
-     "index.json keyed by PR, the finish refusal without the page or on a "
-     "tracked/unignored .proof/, and prune by age (fleet-config#1718)"),
+     "the per-repo .proof/ store -- before/after captures kept inside the "
+     "worktree until `build --sha` publishes them to the primary, the "
+     "self-contained page with and without a layout_lint manifest, several "
+     "criteria per state, index.json keyed by PR, the finish gate reading "
+     "a built page as fresh, its refusal without the page or on a "
+     "tracked/unignored .proof/, and prune by age (fleet-config#1718, #1722)"),
+    ("ui_proof_capture", "web_review/test_ui_proof_capture.py",
+     "`ui_proof capture` -- viewport/theme arguments, the distinct "
+     "no-interpreter / no-Playwright / app-unreachable / failed-leg "
+     "outcomes, and staging into the checkout's own .proof/ with the "
+     "browser child stubbed (fleet-config#1722)"),
     ("deploy_coverage", "e2e/test_deploy_coverage.py",
      "/issue-finish's deploy-coverage gate -- the declared-component "
      "parser (fence-skipping, the four-bullet template), the path-token "

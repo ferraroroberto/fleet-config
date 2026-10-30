@@ -21,20 +21,33 @@ and answers the finish gate's question.
 
   check <repo> --pr <N>
       Also refuses, vendored or not, when `.proof/<PR>/index.html` is absent
-      or `.proof/` is tracked or not gitignored (`PROOF_PAGE=`, `NEED=`).
+      or `.proof/` is tracked or not gitignored (`PROOF_PAGE=`, `NEED=`). A
+      built page is itself the proof: with no recorded manifest it reads
+      `fresh`, and the lint findings its captures carry (or "not run") are
+      the only lint result.
+
+  capture <repo> --phase before|after --url <url> --state <name> [--viewport phone|desktop|<W>x<H>|<label>=<W>x<H>]...
+          [--theme light|dark]... [--click <selector>]... [--wait-ms N]
+      Drive a running app instance (the repo's gate instance) through the
+      repo's own `.venv` Playwright and stage one screenshot per viewport x
+      theme (default phone 390x844 and desktop 1280x900, light and dark),
+      so no lane writes its own capture test. `--click` reaches the state.
 
   capture-before|capture-after <repo> [--manifest <path>] [--image "<state>:<viewport>-<theme>=<png>"]
       Copy one phase's screenshots (before on main, after on the branch) into
-      `<primary checkout>/.proof/_branch/<branch>/`; a manifest also carries
+      `<this checkout>/.proof/_branch/<branch>/`; a manifest also carries
       its layout-lint findings.
 
   build <repo> --pr <N> --criterion "<state>=<what changed, where to look>" [--no-visual "<criterion>"]
         [--title ...] [--issue N] [--sha <merge sha>]
       Move the branch's captures into `.proof/<PR>/`, write its self-contained
       `index.html` (inline CSS, `data:` images, no scripts; before and after
-      side by side per criterion, lint result or "not run") and the
-      `.proof/index.json` row; copy it under `%TEMP%/claude` for `send_file.py`.
-      Re-run with `--sha` after the merge to stamp it. Never posted to GitHub.
+      side by side per state, one or more criterion lines each, lint result
+      or "not run") and the `.proof/index.json` row; copy it under
+      `%TEMP%/claude` for `send_file.py`. Re-run with `--sha` after the merge
+      to stamp it and copy the folder into the primary checkout's `.proof/`
+      (`PUBLISHED=`); before that a worktree lane writes only inside its own
+      tree. Never posted to GitHub.
 
   prune <repo> [--older-than 30d]
       Remove `.proof/` PR and staging folders older than the threshold.
