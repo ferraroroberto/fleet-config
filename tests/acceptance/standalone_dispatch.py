@@ -212,9 +212,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "on its own (fleet-config#195)"),
     ("ui_proof", "web_review/test_ui_proof.py",
      "the visual-proof gate -- n/a without a UX surface, missing / stale / "
-     "failing proof named, refusal only where layout_lint is vendored, and a "
-     "self-contained walkthrough stored by repo#PR outside the tree -- "
+     "failing proof named, refusal only where layout_lint is vendored -- "
      "against a temp repo (fleet-config#1707)"),
+    ("ui_proof_store", "web_review/test_ui_proof_store.py",
+     "the per-repo .proof/ store -- before/after captures from a worktree, "
+     "the self-contained page with and without a layout_lint manifest, "
+     "index.json keyed by PR, the finish refusal without the page or on a "
+     "tracked/unignored .proof/, and prune by age (fleet-config#1718)"),
     ("deploy_coverage", "e2e/test_deploy_coverage.py",
      "/issue-finish's deploy-coverage gate -- the declared-component "
      "parser (fence-skipping, the four-bullet template), the path-token "

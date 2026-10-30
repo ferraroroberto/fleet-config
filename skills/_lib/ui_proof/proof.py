@@ -13,6 +13,7 @@ import gate_evidence
 import git_run
 import ux_surface
 from fleet_core import fleet_toml, hooks_state
+from ui_proof import store
 
 RECORD_NAME = "ui-proof.json"
 # The legs `capture_states` takes by default; a criterion's state needs all four.
@@ -33,10 +34,15 @@ class Verdict:
     touched: str
     need: List[str] = field(default_factory=list)
     detail: str = ""
+    # `present|missing|not checked` for `.proof/<PR>/index.html`, and `.proof/` hygiene problems:
+    # both refuse whether or not layout_lint is vendored, since neither needs the capture helper.
+    page: str = "not checked"
+    hygiene: List[str] = field(default_factory=list)
 
     @property
     def blocks(self) -> bool:
-        return self.enforced and self.state not in ("n/a", "fresh")
+        return ((self.enforced and self.state not in ("n/a", "fresh"))
+                or self.page == "missing" or bool(self.hygiene))
 
 
 def file_sha256(path: Path) -> Optional[str]:
@@ -157,8 +163,23 @@ def _judge_record(repo: Path, rec: Optional[dict]) -> Tuple[str, List[str], str]
     return "fresh", [], f"states={','.join(criteria)} legs={len(entries)} errors=0 recorded={rec.get('utc')}"
 
 
-def evaluate(repo: Path, base: Optional[str] = None) -> Verdict:
-    """The finish gate's verdict for `repo`'s branch diff."""
+def evaluate(repo: Path, base: Optional[str] = None, pr: Optional[int] = None) -> Verdict:
+    """The finish gate's verdict for `repo`'s branch diff; with `pr`, `.proof/<PR>/index.html` is required."""
+    verdict = _evaluate_manifest(repo, base)
+    if verdict.touched == "no":
+        return verdict
+    verdict.hygiene = store.guard_lines(repo)
+    if pr is not None:
+        verdict.page = "present" if store.page_exists(repo, pr) else "missing"
+        if verdict.page == "missing":
+            verdict.need.append(f"no .proof/{pr}/index.html; `ui_proof capture-before`/`capture-after`, "
+                                f"then `ui_proof build . --pr {pr}`")
+    verdict.need += verdict.hygiene
+    return verdict
+
+
+def _evaluate_manifest(repo: Path, base: Optional[str]) -> Verdict:
+    """The layout-lint manifest's verdict for the branch diff."""
     block = ux_surface._load_block(repo)
     if not (block and block["spec_applies"]):
         return Verdict("n/a", False, "no", detail="no design-gated UX surface (SPEC_APPLIES=no)")

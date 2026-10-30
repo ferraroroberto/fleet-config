@@ -4,8 +4,8 @@ Covers the finish gate's states: no UX surface is `n/a`; a UI diff with no
 proof is `missing` and names what to capture, refusing only where
 `layout_lint` is vendored; missing legs, lint errors, an edited tree or an
 edited manifest each report their own state; an allowed finding passes; a
-failed diff names the key views; and the walkthrough is self-contained,
-indexed by `<repo>#<PR>` and written outside the tree.
+failed diff names the key views. The `.proof/` store and its page are
+covered by `test_ui_proof_store.py`.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/web_review/test_ui_proof.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -24,7 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 from git_run import run_git  # noqa: E402
-from ui_proof import cli, proof, walkthrough  # noqa: E402
+from ui_proof import cli, proof  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -80,10 +79,10 @@ def run_check(repo: Path, base: str = "main"):
 
 
 proof_root = Path(tempfile.mkdtemp(prefix="ui_proof_out_"))
-store = Path(tempfile.mkdtemp(prefix="ui_proof_store_"))
 repo = init_repo(empty_commit=False)
 try:
     (repo / "CLAUDE.md").write_text(CLAUDE_MD, encoding="utf-8")
+    (repo / ".gitignore").write_text(".proof/\n", encoding="utf-8")
     (repo / "app" / "static").mkdir(parents=True)
     (repo / "app" / "static" / "view.js").write_text("// v1\n", encoding="utf-8")
     commit_all(repo, "base")
@@ -168,26 +167,6 @@ try:
         code = cli.main(["record", str(repo), "--manifest", str(m), "--criterion", "no-equals-sign"])
     check(code == 2 and "PROOF=not_recorded" in buf.getvalue(), "a criterion without '=' is refused")
 
-    # The walkthrough: self-contained, indexed by repo#PR, outside the tree.
-    m = write_manifest(proof_root, ["home.sheet", "extra.state"])
-    with contextlib.redirect_stdout(io.StringIO()):
-        cli.main(["record", str(repo), "--manifest", str(m), "--criterion", "home.sheet=Sheet fits the phone"])
-    os.environ[walkthrough.STORE_ENV] = str(store)
-    lines = walkthrough.build(repo, "demo", 42, "abc1234", "Demo title", "What changed")
-    out = dict(line.split("=", 1) for line in lines)
-    page = Path(out["WALKTHROUGH"]).read_text(encoding="utf-8")
-    check(out["KEY"] == "demo#42" and Path(out["WALKTHROUGH"]).parent == store, f"stored by key — got {out}")
-    check(page.count("data:image/png;base64,") == 8 and "Sheet fits the phone" in page
-          and "abc1234" in page and "Other captured state" in page,
-          "the page embeds every leg, the criterion, the merge SHA and the other state")
-    check("<script" not in page and "src=\"http" not in page, "the page is self-contained")
-    index = json.loads((store / "index.json").read_text(encoding="utf-8"))
-    check(index["demo#42"]["sha"] == "abc1234", "index.json maps repo#PR to the walkthrough")
-    check(Path(out["SEND_PATH"]).is_file() and Path(out["SEND_PATH"]).parts[-3:-1] == ("claude", "ui-proof"),
-          "a sendable copy sits under %TEMP%/claude/ui-proof")
-    status = run_git(["-C", str(repo), "status", "--porcelain"]).stdout.strip()
-    check(status == "", f"nothing was written into the tree — got {status!r}")
-
     # A repo with no design-gated surface is untouched by all of this.
     plain = init_repo()
     try:
@@ -197,8 +176,7 @@ try:
     finally:
         shutil.rmtree(plain, ignore_errors=True)
 finally:
-    os.environ.pop(walkthrough.STORE_ENV, None)
-    for path in (repo, proof_root, store):
+    for path in (repo, proof_root):
         shutil.rmtree(path, ignore_errors=True)
 
 

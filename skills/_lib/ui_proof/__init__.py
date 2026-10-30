@@ -1,4 +1,4 @@
-"""Visual proof for UI-touching diffs: record, gate, and a private walkthrough.
+"""Visual proof for UI-touching diffs: record, gate, and the per-repo `.proof/<PR>` page.
 
 A UI change ships only with proof the agent looked at its own work: each UI
 acceptance criterion maps to a named state that project-scaffolding's
@@ -19,11 +19,25 @@ and answers the finish gate's question.
       fresh: enforcement switches on in a repo whose `.fleet.toml` `[vendored]`
       lists `layout_lint`, since before that no repo can produce the proof.
 
-  walkthrough <repo> --pr <N> --sha <merge sha> [--title ...] [--summary ...]
-      One self-contained HTML (inline CSS, `data:` images): each criterion
-      with its screenshots and lint result, plus the merge SHA. Stored
-      machine-locally keyed `<repo>#<PR>` (never in a tree) and copied under
-      `%TEMP%/claude` for `send_file.py`. Never posted to GitHub.
+  check <repo> --pr <N>
+      Also refuses, vendored or not, when `.proof/<PR>/index.html` is absent
+      or `.proof/` is tracked or not gitignored (`PROOF_PAGE=`, `NEED=`).
+
+  capture-before|capture-after <repo> [--manifest <path>] [--image "<state>:<viewport>-<theme>=<png>"]
+      Copy one phase's screenshots (before on main, after on the branch) into
+      `<primary checkout>/.proof/_branch/<branch>/`; a manifest also carries
+      its layout-lint findings.
+
+  build <repo> --pr <N> --criterion "<state>=<what changed, where to look>" [--no-visual "<criterion>"]
+        [--title ...] [--issue N] [--sha <merge sha>]
+      Move the branch's captures into `.proof/<PR>/`, write its self-contained
+      `index.html` (inline CSS, `data:` images, no scripts; before and after
+      side by side per criterion, lint result or "not run") and the
+      `.proof/index.json` row; copy it under `%TEMP%/claude` for `send_file.py`.
+      Re-run with `--sha` after the merge to stamp it. Never posted to GitHub.
+
+  prune <repo> [--older-than 30d]
+      Remove `.proof/` PR and staging folders older than the threshold.
 
 Directory execution: `python <...>/skills/_lib/ui_proof check .`.
 """
