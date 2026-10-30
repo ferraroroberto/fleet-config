@@ -58,7 +58,6 @@ _CUE = re.compile(
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z*`(\[_\"'])")
 _FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 _QUOTE = re.compile(r"^>\s?(.*)$")
-_REMOTE = re.compile(r"github\.com[:/](?P<owner>[\w.-]+)/(?P<name>[\w.-]+?)(?:\.git)?/?$")
 
 
 def norm(text: str) -> str:
@@ -240,11 +239,10 @@ class Unknown(RuntimeError):
 
 
 def default_repo(repo: Path) -> str:
-    res = git_run.run_git(["-C", str(repo), "remote", "get-url", "origin"])
-    m = _REMOTE.search(res.stdout.strip()) if res.returncode == 0 else None
-    if not m:
+    slug = git_run.origin_slug(repo)
+    if not slug:
         raise Unknown(f"cannot read the GitHub origin of {repo}")
-    return f"{m.group('owner')}/{m.group('name')}"
+    return slug
 
 
 def split_issue(key: str) -> Tuple[str, int]:

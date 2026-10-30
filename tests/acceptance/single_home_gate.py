@@ -69,7 +69,6 @@ RULES: Tuple[Rule, ...] = (
              "config_edit.py",
              "skills/_lib/chief/mailbox.py",
              "skills/_lib/design_review/capture.py",
-             "skills/_lib/quota_snapshot.py",
              "skills/_lib/stall_probe.py",
          }),
          lambda tree: _calls(tree, "os", {"replace"})),

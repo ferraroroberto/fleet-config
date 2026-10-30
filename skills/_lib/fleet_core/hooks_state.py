@@ -85,6 +85,7 @@ def sweep_stale_atomic_temps(path: Path) -> None:
 
 def atomic_write_text(
     path: Path, text: str, *, newline: Optional[str] = None, temp_stem: Optional[Path] = None,
+    fsync: bool = False, replace_retries: int = 0,
 ) -> None:
     """Replace `path` with `text` (UTF-8) so a reader never sees half a file.
 
@@ -95,6 +96,15 @@ def atomic_write_text(
     to `open()` unchanged (`None` = platform line endings).
     `temp_stem` (a sibling of `path`) names and sweeps the temps instead of
     `path` itself, for a writer whose every target is unique.
+
+    `fsync=True` flushes and `os.fsync`s the temp file before the replace, for
+    a writer whose target a sibling process reads expecting durability across
+    a crash. `replace_retries` retries `os.replace` on `PermissionError` with
+    capped exponential backoff (a Windows sharing violation from a concurrent
+    reader), up to `replace_retries` attempts beyond the first, before
+    letting the final `PermissionError` propagate. Both were `quota_snapshot
+    .publish`'s own reasons for hand-rolling a second copy of this writer
+    rather than calling this one; it now passes both.
     """
     stem = temp_stem or path
     sweep_stale_atomic_temps(stem)
@@ -103,7 +113,17 @@ def atomic_write_text(
         fd, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=atomic_tmp_prefix(stem), suffix=".tmp")
         with os.fdopen(fd, "w", encoding="utf-8", newline=newline) as handle:
             handle.write(text)
-        os.replace(temporary, path)
+            if fsync:
+                handle.flush()
+                os.fsync(handle.fileno())
+        for attempt in range(replace_retries + 1):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if attempt == replace_retries:
+                    raise
+                time.sleep(0.01 * (2 ** attempt))
     except OSError:
         if temporary:
             try:

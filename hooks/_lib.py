@@ -15,6 +15,7 @@ module re-exports them. Use the helpers below so each hook stays a few dozen lin
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -60,13 +61,11 @@ def state_dir() -> Path:
     return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
 
 
-# An abrupt death between mkstemp and os.replace runs no Python handler, so a
-# writer's own except-branch unlink never fires and the temp is stranded.
-# Nothing inside the dead process can clean up, so temps
-# are named after their target and expired by age by the next writer instead.
-# An hour is orders of magnitude beyond a real write's duration, so the sweep
-# cannot race a live writer's temp. Mirrored for skills/_lib in
-# `hooks_state.py` (the tree boundary forbids importing across).
+# An abrupt death between mkstemp and os.replace runs no Python handler, so a writer's own except-
+# branch unlink never fires and the temp is stranded. Nothing inside the dead process can clean
+# up, so temps are named after their target and expired by age by the next writer instead. An hour
+# is orders of magnitude beyond a real write's duration, so the sweep cannot race a live writer's
+# temp. Mirrored for skills/_lib in `hooks_state.py` (the tree boundary forbids importing across).
 ATOMIC_TMP_SWEEP_AFTER_SECONDS = 3600.0
 
 
@@ -111,15 +110,13 @@ def atomic_write_text(
 ) -> None:
     """Replace ``path`` with ``text`` (UTF-8) so a reader never sees half a file.
 
-    The one body every state writer shares (fleet-config#1441): sweep the
-    stem's stale orphans, ``mkstemp`` a sibling named by
-    :func:`atomic_tmp_prefix`, write, ``os.replace``, and unlink the temp when
-    any of that raises ``OSError`` -- then re-raise, so each caller keeps its
-    own failure policy (log and return, retry, propagate). ``newline`` goes to
-    ``open()`` unchanged (``None`` = platform line endings), so every file
-    keeps its bytes. ``temp_stem`` (a sibling of ``path``) names and sweeps the temps
-    instead of ``path`` itself, for a writer whose every target is unique.
-    Mirrored in ``skills/_lib/fleet_core/hooks_state.py``.
+    The one body every state writer shares (fleet-config#1441): sweep the stem's
+    stale orphans, ``mkstemp`` a sibling named by :func:`atomic_tmp_prefix`, write,
+    ``os.replace``, and unlink the temp when any of that raises ``OSError`` --
+    then re-raise, so each caller keeps its own failure policy. ``newline`` goes
+    to ``open()`` unchanged. ``temp_stem`` (a sibling of ``path``) names and
+    sweeps the temps instead of ``path`` itself, for a writer whose every target
+    is unique. Mirrored in ``skills/_lib/fleet_core/hooks_state.py``.
     """
     stem = temp_stem or path
     sweep_stale_atomic_temps(stem)
@@ -136,6 +133,17 @@ def atomic_write_text(
             except OSError:
                 pass
         raise
+
+
+def append_jsonl_rotating(
+    path: Path, record: dict, max_bytes: int, *, ensure_ascii: bool = True, sort_keys: bool = False) -> None:
+    """Best-effort append to ``path`` as JSONL, rotating it past ``max_bytes`` to ``<path>.1``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        if path.stat().st_size > max_bytes:
+            os.replace(path, path.with_suffix(path.suffix + ".1"))
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=ensure_ascii, sort_keys=sort_keys) + "\n")
 
 
 def launcher_session_id() -> str:

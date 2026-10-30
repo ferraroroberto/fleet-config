@@ -251,13 +251,17 @@ _run_git = git_run.run_git_or_raise
 
 
 def detect_default_branch(repo_path: Path) -> str:
-    """Bare branch name for the repo's default branch.
+    """Bare branch name for the repo's default branch, or `""` when none of
+    `origin/HEAD`, local `main`, local `master` resolve.
 
     `resolve_default_branch_ref` probes `origin/HEAD` first and falls back
     through the usual candidates, so `life-os`'s `master` is detected rather
-    than assumed away.
+    than assumed away. `final_fallback=""` (rather than `"main"`) so an
+    unresolvable repo reads as the empty string, never a silent invented
+    branch name standing in as a fact -- `gather` turns that into an explicit
+    `Unreadable`.
     """
-    ref = git_run.resolve_default_branch_ref(repo_path, final_fallback="main")
+    ref = git_run.resolve_default_branch_ref(repo_path, final_fallback="")
     return ref[len("origin/") :] if ref.startswith("origin/") else ref
 
 
@@ -276,11 +280,20 @@ def gather(repo_path: Path, default_branch: Optional[str] = None) -> RepoFacts:
 
     Raises `Unreadable` when any of them cannot be read -- unlike
     `dirty_tree_check.gather` there is no softer fact here that may
-    legitimately be absent, so a partial read is always `unknown`.
+    legitimately be absent, so a partial read is always `unknown`. An empty
+    `detect_default_branch` result (no origin/HEAD, local main, or local
+    master) is the same kind of unknown, raised only after the branch/tree
+    reads below prove the repo itself is readable -- a genuinely unreadable
+    repo still surfaces its own `git` error first.
     """
     resolved_default = default_branch or detect_default_branch(repo_path)
     current_branch = _run_git(repo_path, "branch", "--show-current")
     porcelain = _run_git(repo_path, "status", "--porcelain")
+    if not resolved_default:
+        raise Unreadable(
+            f"default branch could not be resolved for {repo_path} "
+            "(no origin/HEAD, local main, or local master)"
+        )
     worktrees = _run_git(repo_path, "worktree", "list", "--porcelain")
     extra = parse_worktree_list(worktrees)
     return RepoFacts(

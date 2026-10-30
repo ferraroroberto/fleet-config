@@ -20,7 +20,8 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import quota_snapshot as contract
 import quota_sources as sources
 from scheduled.codex_app_server import AppServerSession
-from fleet_core.hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS
+from fleet_core import hooks_state
+from fleet_core.hooks_state import ATOMIC_TMP_SWEEP_AFTER_SECONDS, atomic_tmp_prefix
 
 NOW = dt.datetime(2026, 9, 5, 12, tzinfo=dt.timezone.utc)
 RESET = int((NOW + dt.timedelta(days=1)).timestamp())
@@ -194,11 +195,14 @@ class ContractTests(unittest.TestCase):
             root = Path(directory)
             target = contract.publish(codex(), root)
             before = target.read_bytes()
-            with patch.object(contract.os, "replace", side_effect=PermissionError("synthetic")):
+            # publish() now goes through the shared `hooks_state.atomic_write_text`
+            #, so the `os.replace` it retries and ultimately
+            # raises from is that module's, not quota_snapshot's own import of it.
+            with patch.object(hooks_state.os, "replace", side_effect=PermissionError("synthetic")):
                 with self.assertRaises(PermissionError):
                     contract.publish(codex(), root)
             self.assertEqual(target.read_bytes(), before)
-            self.assertFalse(list(target.parent.glob("*.tmp.*")))
+            self.assertFalse(list(target.parent.glob(f"{atomic_tmp_prefix(target)}*.tmp")))
             self.assertFalse(before.startswith(b"\xef\xbb\xbf"))
 
     def test_publish_sweeps_only_its_own_stale_temps(self) -> None:
@@ -206,10 +210,11 @@ class ContractTests(unittest.TestCase):
             root = Path(directory)
             target = contract.publish(codex(), root)
             old = time.time() - ATOMIC_TMP_SWEEP_AFTER_SECONDS - 60
-            stale = target.parent / (target.name + ".tmp.abc_123")
-            fresh = target.parent / (target.name + ".tmp.def_456")
-            sibling = target.parent / "claude-statusline.json.tmp.abc_123"
-            sibling_longer = target.parent / (target.name + ".tmp.abc.partial")
+            prefix = atomic_tmp_prefix(target)
+            stale = target.parent / f"{prefix}abc_123.tmp"
+            fresh = target.parent / f"{prefix}def_456.tmp"
+            sibling = target.parent / ".claude-statusline.json.abc_123.tmp"
+            sibling_longer = target.parent / f"{prefix}abc.partial.tmp"
             for orphan in (stale, fresh, sibling, sibling_longer):
                 orphan.write_text("x", encoding="utf-8")
             for orphan in (stale, sibling, sibling_longer):

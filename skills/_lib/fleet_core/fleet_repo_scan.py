@@ -148,9 +148,13 @@ def is_fleet_repo(remote_url: str | None) -> bool:
     """True if the remote URL belongs to the `ferraroroberto` GitHub org.
 
     Matches both the https (`https://github.com/ferraroroberto/x.git`) and
-    ssh (`git@github.com:ferraroroberto/x.git`) remote URL forms.
+    ssh (`git@github.com:ferraroroberto/x.git`) remote URL forms, via the one
+    `owner/repo` regex shared with the five other origin-URL parsers across
+    the repo (`git_run.slug_from_url`) instead of its own
+    substring check.
     """
-    return bool(remote_url) and "ferraroroberto/" in remote_url
+    slug = git_run.slug_from_url(remote_url)
+    return bool(slug) and slug.split("/", 1)[0] == "ferraroroberto"
 
 
 def iter_fleet_repos(

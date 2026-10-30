@@ -85,7 +85,6 @@ _LINE_RE = re.compile(r"^- \[( |x|X)\] \*\*([A-Za-z0-9-]+)\*\*\s*(.*)$")
 _TAG_RE = re.compile(r"\s*_\((fixed|carried)[^)]*\)_\s*$")
 _FIXED_RE = re.compile(r"_\(fixed — passes since [^)]*\)_")
 _HEADER_RE = re.compile(r"^## (.+?)\s*$")
-_REMOTE_RE = re.compile(r"(?:github\.com[:/])([^/]+)/([^/\s]+?)(?:\.git)?/?$")
 
 
 def intro(rubric_version: object, target: object) -> str:
@@ -381,18 +380,14 @@ def log_line(doc: dict, run_id: str, today: str, routed: Dict[str, list], filed:
 
 
 def slug_from_url(url: str) -> Optional[str]:
-    m = _REMOTE_RE.search(str(url or "").strip())
-    return f"{m.group(1)}/{m.group(2)}" if m else None
+    return git_run.slug_from_url(url)
 
 
 def repo_slug(root: Optional[Path]) -> Optional[str]:
     """`owner/name` from the target checkout's `origin` remote, or None."""
     if not root:
         return None
-    proc = git_run.run_git(["-C", str(root), "remote", "get-url", "origin"])
-    if proc.returncode != 0:
-        return None
-    return slug_from_url(proc.stdout)
+    return git_run.origin_slug(root)
 
 
 # ---- the filing ----------------------------------------------------------------

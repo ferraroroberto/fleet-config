@@ -23,6 +23,7 @@ stdlib only (plus the sibling `no_window` constant).
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -234,6 +235,33 @@ def changed_files(repo_path: Path, base: str) -> Optional[List[str]]:
     if res.returncode != 0:
         return None
     return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+
+
+_GITHUB_SLUG_RE = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
+
+
+def slug_from_url(url: Optional[str]) -> Optional[str]:
+    """`owner/repo` parsed out of a GitHub remote URL (https or ssh), or `None`.
+
+    The one regex now shared by `origin_slug` below and the callers that
+    already have the URL in hand and only need the parse -- four
+    near-identical copies of this same pattern before.
+    """
+    m = _GITHUB_SLUG_RE.search(str(url or "").strip())
+    return m.group(1) if m else None
+
+
+def origin_slug(repo_path: Path, *, timeout: Optional[float] = None) -> Optional[str]:
+    """`owner/repo` from `repo_path`'s GitHub `origin` remote, or `None`.
+
+    The `git remote get-url origin` + regex pair that six call sites across
+    the repo used to hand-roll on their own, with four different regexes
+    between them: `e2e_value/sources.py`,
+    `design_review/filing.py`, `branch_residue.py`, `active_issue.py`,
+    `chief/chief_sweep.py`, and `fleet_core/fleet_repo_scan.py`.
+    """
+    res = run_git(["-C", str(repo_path), "remote", "get-url", "origin"], timeout=timeout)
+    return slug_from_url(res.stdout) if res.returncode == 0 else None
 
 
 def resolve_default_branch_ref(

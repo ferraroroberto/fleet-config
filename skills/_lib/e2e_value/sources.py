@@ -306,9 +306,7 @@ def _gather(repo_root: Path, log: Optional[Path]) -> Dict[str, object]:
 
 def repo_slug(repo_root: Path) -> Optional[str]:
     """`owner/repo` from the checkout's GitHub `origin` remote, else None."""
-    res = git_run.run_git(["-C", str(repo_root), "remote", "get-url", "origin"], timeout=GIT_TIMEOUT_S)
-    m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", res.stdout.strip()) if res.returncode == 0 else None
-    return m.group(1) if m else None
+    return git_run.origin_slug(repo_root, timeout=GIT_TIMEOUT_S)
 
 
 def _test_tree_files(repo_root: Path, test_dirs: Sequence[str]) -> List[Path]:

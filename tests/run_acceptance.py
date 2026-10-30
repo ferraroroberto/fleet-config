@@ -165,6 +165,7 @@ from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
     _no_window_unit_check,
+    _origin_slug_wrapper_unit_check,
 )
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
@@ -437,6 +438,9 @@ def _run_wiring_checks(tally: _Tally) -> None:
 
     # ---- every runtime `git` spawn routes through run_git (#667 / #677) ----
     tally.run_unit(_git_wrapper_unit_check)
+
+    # ---- no runtime file hand-rolls its own GitHub-remote-URL regex ----
+    tally.run_unit(_origin_slug_wrapper_unit_check)
 
     # ---- no hook names a foreign harness's own tool id outside edit_events.py (#1558) ----
     tally.run_unit(_tool_id_leak_unit_check)

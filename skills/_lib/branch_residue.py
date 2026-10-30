@@ -125,7 +125,6 @@ VERDICT_UNKNOWN = "unknown"
 # `fix/`, `feat/`, `docs/`, `ci/` and anything similar; a bare number segment
 # (`fix/12`) counts too.
 _BRANCH_ISSUE_RE = re.compile(r"^[A-Za-z][\w-]*/(\d+)(?:-|$)")
-_SLUG_RE = re.compile(r"github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
 
 GH_TIMEOUT_S = 60
 PUSH_TIMEOUT_S = 120
@@ -239,11 +238,7 @@ def summarize(rows: Sequence[Row]) -> Dict[str, int]:
 
 def repo_slug(repo: Path) -> Optional[str]:
     """`owner/name` from origin's URL, or None when it is not a GitHub remote."""
-    r = git_run.run_git(["-C", str(repo), "remote", "get-url", "origin"])
-    if r.returncode != 0:
-        return None
-    m = _SLUG_RE.search((r.stdout or "").strip())
-    return f"{m.group(1)}/{m.group(2)}" if m else None
+    return git_run.origin_slug(repo)
 
 
 def make_gh_lookups(slug: Optional[str]) -> Tuple[IssueStateFn, OpenPrHeadsFn]:
