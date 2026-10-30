@@ -453,6 +453,9 @@ def _print_text(text: str, stream: TextIO) -> None:
     print(text, file=stream, flush=True)
 
 
+_GROK_STOP_EVENTS = frozenset({"Stop", "SubagentStop"})
+
+
 def block(reason: str) -> "NoReturn":
     """Refuse the tool call, in whatever dialect the calling harness understands.
 
@@ -493,7 +496,11 @@ def block(reason: str) -> "NoReturn":
         # channel, without pretending this can deny or undo the completed edit.
         warn(reason)
     if _ACTIVE_AGENT == "grok":
-        print(json.dumps({"decision": "deny", "reason": reason}), flush=True)
+        # `deny` is PreToolUse vocabulary. A Stop gate keeps the turn going only
+        # on `block`, and a readable stdout reply outranks exit 2, so `deny`
+        # there silently ends the turn instead.
+        decision = "block" if _ACTIVE_EVENT in _GROK_STOP_EVENTS else "deny"
+        print(json.dumps({"decision": decision, "reason": reason}), flush=True)
     _print_text(reason, sys.stderr)
     sys.exit(2)
 
