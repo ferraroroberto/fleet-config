@@ -314,6 +314,7 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         # itself was started inside App Launcher.
         "APP_LAUNCHER_SESSION_ID": "",
         "APP_LAUNCHER_AGENT": "",
+        "JOB_ARTIFACT_DIR": "",
     }
     state_path = tmp / session_state.STATE_FILENAME
 
@@ -346,6 +347,8 @@ def _session_state_unit_checks() -> Tuple[int, int]:
               row.get("name") == "fleet-config-c4" and row.get("name_source") == "derived")
         check("session_state: launcher env -> exact launcher id + agent (#345)",
               row.get("launcher_session_id") == "launcher-abc" and row.get("agent") == "claude")
+
+        _session_state_job_run_cases(check, rows, env, payload, tmp)
 
         _session_state_name_lookup_cases(check, rows, env, tmp, sessions_dir)
 
@@ -403,6 +406,20 @@ def _write_session_registry_fixture(sessions_dir: Path, tmp: Path) -> None:
     }), encoding="utf-8")
     # A malformed fixture alongside the good ones must not break the scan.
     (sessions_dir / "bad.json").write_text("{not json", encoding="utf-8")
+
+
+def _session_state_job_run_cases(check: _Checker, rows: Callable[[], Dict[str, Any]],
+                                 env: Dict[str, str], payload: Dict[str, Any], tmp: Path) -> None:
+    """A scheduled job's session row carries job_run; any other row has no such key."""
+    check("session_state: no JOB_ARTIFACT_DIR -> row has no job_run key",
+          "job_run" not in (rows().get("sid-1") or {}))
+    code, _out, _err = run(
+        "session_state", {**payload, "session_id": "sid-job"},
+        extra_env={**env, "JOB_ARTIFACT_DIR": str(tmp / "artifacts")},
+    )
+    job_row = rows().get("sid-job") or {}
+    check("session_state: JOB_ARTIFACT_DIR set -> row carries job_run true",
+          code == 0 and job_row.get("job_run") is True)
 
 
 def _session_state_name_lookup_cases(check: _Checker, rows: Callable[[], Dict[str, Any]],

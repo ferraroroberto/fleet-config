@@ -220,8 +220,12 @@ def upsert(
     agent: str = "claude",
     launcher_session_id: Optional[str] = None,
     allow_reopen: bool = False,
+    job_run: bool = False,
 ) -> bool:
     """Write/refresh one session row and prune rows stale past 24h.
+
+    ``job_run`` marks a session a scheduled job spawned; the key is written
+    only when true, so every other row stays byte-identical.
 
     ``name``/``name_source`` (fleet-config#302) are the live Claude Code
     session title looked up from ``~/.claude/sessions/<pid>.json``, when a
@@ -258,6 +262,8 @@ def upsert(
         "launcher_session_id": launcher_session_id,
         "updated_at": _isoformat(_now()),
     }
+    if job_run:
+        rows[str(session_id)]["job_run"] = True
 
     cutoff = _now() - _PRUNE_AFTER
     kept: Dict[str, Any] = {}
@@ -315,6 +321,8 @@ def upsert_from_payload(
         agent=agent,
         launcher_session_id=launcher_session_id,
         allow_reopen=allow_reopen,
+        # The job runner sets JOB_ARTIFACT_DIR only in a scheduled job's own session.
+        job_run=bool(os.environ.get("JOB_ARTIFACT_DIR", "").strip()),
     )
 
 
