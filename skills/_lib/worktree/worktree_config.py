@@ -93,8 +93,9 @@ a slow one cannot lose its own.
 
 This module is deliberately import-free of `worktree_claim.py` (which imports
 *this* module, re-exporting the names its existing callers and tests use) --
-a `_git` wrapper and the worktree-suffix separator are duplicated here in
-miniature rather than imported back, to keep the dependency a one-way DAG.
+the worktree-suffix separator comes from the `worktree_residue` leaf module,
+and only the `_git` wrapper is duplicated here in miniature, to keep the
+dependency a one-way DAG.
 
 stdlib + the `git` CLI only.
 """

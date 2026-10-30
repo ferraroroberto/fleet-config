@@ -55,8 +55,8 @@ an opaque background task. `--out` alone (no `--detach`) still writes that
 same sentinel from a normal synchronous run, useful for direct/manual
 invocations and tests.
 
-Like `audit_issue.py`, the correctness-critical piece (`is_fleet_repo`) is
-pure and unit-tested (`tests/audit/test_fleet_audit_scan.py`) independent of the
+The correctness-critical piece (`fleet_repo_scan.is_fleet_repo`) is pure and
+unit-tested (`tests/audit/test_fleet_audit_scan.py`) independent of the
 filesystem/git/gh I/O around it. stdlib + the `git`/`gh` CLIs only.
 """
 
@@ -83,11 +83,6 @@ from gate_coverage import section as gate_section  # noqa: E402
 from structure_census import near_limit  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
-
-# Re-exported: `is_fleet_repo` now lives beside the crawl that uses it,
-# but this module is where the unit tests and
-# `design_sweep_scan` have always reached for it.
-is_fleet_repo = fleet_repo_scan.is_fleet_repo
 
 
 def _default_branch(repo_path: str) -> str | None:
