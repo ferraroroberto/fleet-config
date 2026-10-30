@@ -737,6 +737,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "parsing, the count fact and the set fact carrying separate unknowns, "
      "and the 17->19 app-launcher fresh-checkout round pinned as the anchor "
      "case -- is testable on its own against recorded output (#846)"),
+    ("grok_assistant", "chief_ops/test_grok_assistant.py",
+     "the Grok chief assistant's boundary -- the --deny rules checked with "
+     "Grok's documented prefix/glob matching (every chief_ops write verb, gh "
+     "write, interpreter and shell wrapper denied, every brief command still "
+     "allowed), the PreToolUse guard's closed list, and the owner-only "
+     "Telegram poller against a fake transport, with no grok run, network "
+     "or token"),
     ("readme_fence_refs", "acceptance/readme_fence/test_readme_fence_refs.py",
      "the fenced-block half of the docs-history check the vendored "
      "scripts/docs_ratchet.py deliberately skips -- README.md's `## Layout` "
