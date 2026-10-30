@@ -463,6 +463,25 @@ check(_codex_warn_code == 0 and _codex_warn_wire == {"hookSpecificOutput": {
       "Codex: PreToolUse advisory uses model-visible additionalContext")
 
 
+# ---- Stop-gate refusal: Grok keeps the turn going only on `block` ----
+_stop_entry = str(Path(_GUARD).parent / "chief_waiter_stop.py")
+for _grok_stop in ("stop", "subagent_stop"):
+    _code, _stdout, _stderr = _refusal(json.dumps({"hookEventName": _grok_stop, "cwd": "E:/x"}), _stop_entry)
+    check(_code == 2 and json.loads(_stdout or "{}") == {"decision": "block", "reason": "Fleet sentinel refused"},
+          f"Grok {_grok_stop} refusal prints decision block (got {_stdout.strip()[:80]!r})")
+_code, _stdout, _stderr = _refusal(
+    json.dumps({"hookEventName": "pre_tool_use", "toolName": "run_terminal_command",
+                "toolInput": {"command": "x"}, "cwd": "E:/x"}), _stop_entry)
+check(_code == 2 and json.loads(_stdout or "{}") == {"decision": "deny", "reason": "Fleet sentinel refused"},
+      "Grok pre_tool_use refusal still prints decision deny")
+_code, _stdout, _stderr = _refusal(json.dumps({"hook_event_name": "Stop", "cwd": "E:/x"}), _stop_entry)
+check(_code == 2 and not _stdout and _stderr == "Fleet sentinel refused\n",
+      "Claude Stop refusal is unchanged: exit 2, stderr only")
+_code, _stdout, _stderr = _refusal(json.dumps({"hook_event_name": "Stop", "cwd": "E:/x"}), _codex_entry)
+check(_code == 2 and not _stdout and _stderr == "Fleet sentinel refused\n",
+      "Codex Stop refusal is unchanged: exit 2, stderr only")
+
+
 # ---- Codex's Bash label does not establish the shell (#743) ----
 # Only JSON is passed to the guard; these commands are NEVER executed.
 _HOOKS = Path(__file__).resolve().parent.parent.parent / "hooks"
