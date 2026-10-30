@@ -204,7 +204,7 @@ VENDORED_NAV_CSS = """
 body:has(dialog[open]) .tabs { visibility: hidden; }
 .tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 @media (display-mode: standalone) {
-  .app { position: fixed; top: 0; height: 100lvh; overflow-y: auto; }
+  .tabs { top: calc(100lvh - 82px); bottom: auto; }
 }
 """
 

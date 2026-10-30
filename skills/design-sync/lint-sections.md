@@ -57,13 +57,16 @@ read.
     open divider).
   - **dialog** — native `<dialog>` vs hand-rolled overlay.
   - **nav contract** — the nav-contract signals (`body:has(dialog[open])`
-    hide, `100dvh`, safe-area, and the standalone fixed-inset `.app`
-    scroller — the home-automation#303 architecture that removes the iOS
-    pill-drift cause; a nav missing it caps at WARN even when every grep
-    signal passes and even when `_vendored/nav/` is present, because the
-    shell lives app-side). Folds in **nav-nesting**: `<nav class="tabs">`
+    hide, `100dvh`, safe-area, and the installed-app bar anchor: a `.tabs`
+    rule with `100lvh` and `bottom: auto` under `display-mode: standalone`.
+    A nav missing the anchor caps at WARN even when every grep signal
+    passes, and the superseded fixed-inset `.app` scroller is a WARN that
+    reports drift). Folds in **nav-nesting**: `<nav class="tabs">`
     found as a DOM descendant of `<main class="app">` instead of a `<body>`
     sibling always FAILs on its own (home-automation#232/app-launcher#369).
+  - **status-bar style** — `apple-mobile-web-app-status-bar-style` is
+    `default` on every `index.html`; `black-translucent` or a missing tag
+    WARNs.
   - **icon sizes** — icon px sizes vs the spec's `icons.size` steps
     (spec-driven — the allowed set is parsed from the spec, not hardcoded).
   - **viewport zoom lock** — `user-scalable=no` + `maximum-scale=1` +

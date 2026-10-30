@@ -52,6 +52,13 @@ GOOD_CSS = """
 body:has(dialog[open]) .tabs { visibility: hidden; }
 .tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 @media (display-mode: standalone) {
+  .tabs { top: calc(100vh - 82px); top: calc(100lvh - 82px); bottom: auto; }
+}
+"""
+
+# The superseded nav architecture: the app shell is the scroller in the installed app.
+OLD_SHELL_CSS = """
+@media (display-mode: standalone) {
   .app { position: fixed; top: 0; height: 100vh; height: 100lvh; overflow-y: auto; }
 }
 """

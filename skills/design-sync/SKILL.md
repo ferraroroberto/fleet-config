@@ -156,11 +156,10 @@ its selectors or APIs into checks.
   **adopt the vendored component from `project-scaffolding`'s `_vendored/`**
   (nav, card, disclosure, modal, empty-state, switch, icon-tile — all shipped)
   — never re-author it. **A nav-contract WARN/FAIL is always a finding, never
-  demoted by judgment** — in particular the missing standalone fixed-inset
-  scroller (fleet-config#282): the scroll-up/down pill drift persists on any
-  app without it, and the settled conclusion (decision on fleet-config#279,
-  2026-07-06) is to adopt `_vendored/nav/` verbatim **plus** the app-side
-  fixed-inset `.app` shell as one piece. Do not re-litigate this per run.
+  demoted by judgment** — in particular the superseded standalone
+  fixed-inset `.app` scroller and a missing 100lvh bar anchor: the settled
+  conclusion is to adopt `_vendored/nav/` verbatim with the `default`
+  status-bar page head, and no app-side shell. Do not re-litigate this per run.
   **The list-row nested-card anti-pattern** (fleet-config#293): a repeating
   list (history, activity, request log) built as per-entry `canvas-subtle`
   cards instead of flat `list-row` hairline rows. Cross-selector reasoning a
@@ -215,7 +214,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 - [ ] **<file>** — missing dark theme block; spec defines `design.dark.md`. Fix: add `[data-theme="dark"]` with the spec's dark values.
 - [ ] **<contract-id> FAIL** — <detail from the lint>. Fix: <align to the design.md v2 contract / adopt the vendored component>.
 - [ ] **_vendored/<component>/<file> FORKED** — the vendored copy diverges from project-scaffolding's canonical bytes. Fix: re-vendor verbatim (or upstream the change to the scaffold first).
-- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract (or lacks the standalone fixed-inset `.app` scroller, home-automation#303). Fix: adopt the vendored nav from `project-scaffolding` plus the app-side fixed-inset shell — one piece, never re-authored.
+- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract (or still carries the superseded fixed-inset `.app` scroller). Fix: adopt the vendored nav from `project-scaffolding` verbatim, with the `default` status-bar page head — one piece, never re-authored.
 
 ## Token adoption
 

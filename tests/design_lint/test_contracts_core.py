@@ -12,7 +12,7 @@ from _suite import _h, check  # noqa: E402
 import design_lint as dl  # noqa: E402
 
 from design_lint_support import (  # noqa: E402
-    GOOD_CSS, run_contracts,
+    GOOD_CSS, OLD_SHELL_CSS, run_contracts,
 )
 from throwaway_dir import throwaway_dir  # noqa: E402
 
@@ -26,37 +26,62 @@ check(good["desktop-measure"]["status"] == "PASS", "772px measure PASS")
 check(good["switch-on-accent"]["status"] == "PASS", "accent on-track PASS")
 check(good["no-native-checkbox"]["status"] == "PASS", "no checkboxes PASS")
 check(good["native-dialog"]["status"] == "PASS", "native dialog PASS")
-check(good["nav-contract"]["status"] == "PASS", "nav signals + shell PASS")
+check(good["nav-contract"]["status"] == "PASS", "nav signals + bar anchor PASS")
 check("hand-carried" in good["nav-contract"]["detail"],
-      "hand-carried nav with the full architecture passes on merit (#282)")
+      "hand-carried nav with the full architecture passes on merit")
 
-# signal-passing hand-carried nav WITHOUT the standalone shell — the exact
-# app-launcher false-PASS that motivated fleet-config#282: must cap at WARN.
-NO_SHELL_CSS = """
+# signal-passing hand-carried nav WITHOUT the installed-app bar anchor: caps at
+# WARN, never PASS.
+NO_ANCHOR_CSS = """
 body:has(dialog[open]) .tabs { visibility: hidden; }
 .tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 """
-noshell = run_contracts(NO_SHELL_CSS)
-check(noshell["nav-contract"]["status"] == "WARN",
-      "all grep signals but no standalone shell -> WARN, never PASS (#282)")
-check("standalone fixed-inset scroller" in noshell["nav-contract"]["detail"],
-      "no-shell WARN names the missing scroller + the vendored fix")
+noanchor = run_contracts(NO_ANCHOR_CSS)
+check(noanchor["nav-contract"]["status"] == "WARN",
+      "all grep signals but no 100lvh bar anchor -> WARN, never PASS")
+check("100lvh bar anchor" in noanchor["nav-contract"]["detail"],
+      "no-anchor WARN names the missing anchor")
 
-# vendored nav present but the app-side shell missing -> still WARN (the shell
-# lives in the consuming app's CSS, so vendored presence alone can't PASS).
+# vendored nav present but the standalone anchor missing -> still WARN (the
+# vendored file's presence alone can't PASS; the CSS decides).
 t = Path(throwaway_dir("dl-nav-"))
 try:
-    (t / "s.css").write_text(NO_SHELL_CSS, encoding="utf-8")
+    (t / "s.css").write_text(NO_ANCHOR_CSS, encoding="utf-8")
     vend = t / "app/webapp/static/_vendored/nav"
     vend.mkdir(parents=True)
     (vend / "nav-tabs.css").write_text("/* vendored */", encoding="utf-8")
     out = {c["id"]: c for c in dl.contracts(t, [t / "s.css"], [], [], {})}
     check(out["nav-contract"]["status"] == "WARN",
-          "vendored nav without the app-side shell -> WARN (#282)")
+          "vendored nav without the standalone bar anchor -> WARN")
 finally:
     shutil.rmtree(t, ignore_errors=True)
 
-# standalone_shell_present: the #303 markers must all sit inside a
+# The superseded fixed-inset .app scroller reports drift even when every other
+# signal passes; it is a WARN so an adopter held on the old nav does not FAIL.
+old = run_contracts(GOOD_CSS + OLD_SHELL_CSS)
+check(old["nav-contract"]["status"] == "WARN" and "superseded standalone shell" in old["nav-contract"]["detail"],
+      "old standalone-shell block -> WARN naming the superseded shell")
+old_only = run_contracts(NO_ANCHOR_CSS + OLD_SHELL_CSS)
+check(old_only["nav-contract"]["status"] == "WARN",
+      "old shell without the new anchor -> WARN, not FAIL")
+
+# standalone_bar_anchor_present: a `.tabs` rule with 100lvh and `bottom: auto`
+# inside a display-mode:standalone block, nested or not.
+NEW_ANCHOR = ("@media (pointer: coarse) and (max-width: 520px) {"
+              " @media (display-mode: standalone) {"
+              " .tabs { top: calc(100lvh - 82px); bottom: auto; } } }")
+check(dl.standalone_bar_anchor_present(NEW_ANCHOR), "bar anchor detected in nested @media")
+check(not dl.standalone_bar_anchor_present(
+    "@media (display-mode: standalone) { .tabs { top: calc(100lvh - 82px); } }"),
+    "no bottom: auto -> bar still bottom-anchored")
+check(not dl.standalone_bar_anchor_present(
+    "@media (display-mode: standalone) { .tabs { top: calc(100vh - 82px); bottom: auto; } }"),
+    "no 100lvh -> not the large-viewport anchor")
+check(not dl.standalone_bar_anchor_present(
+    ".tabs { top: calc(100lvh - 82px); bottom: auto; }"),
+    "anchor outside a standalone media block doesn't count")
+
+# standalone_shell_present: the superseded markers must all sit inside a
 # display-mode:standalone block; nesting inside another @media is fine.
 NESTED = ("@media (pointer: coarse) and (max-width: 520px) {"
           " @media (display-mode: standalone) {"
@@ -67,7 +92,7 @@ check(not dl.standalone_shell_present(
     "no overflow-y: auto -> not the scroller architecture")
 check(not dl.standalone_shell_present(
     "@media (display-mode: standalone) { .app { position: fixed; overflow-y: auto; height: 100vh; } }"),
-    "no 100lvh sizing -> not the #303 architecture")
+    "no 100lvh sizing -> not the superseded architecture")
 check(not dl.standalone_shell_present(
     ".app { position: fixed; height: 100lvh; overflow-y: auto; }"),
     "markers outside a standalone media block don't count")
@@ -361,6 +386,21 @@ check(vp3["viewport-lock"]["status"] == "WARN",
 vp4 = run_contracts(GOOD_CSS, "<dialog></dialog>", html_name="index.html")
 check(vp4["viewport-lock"]["status"] == "FAIL", "index.html without any viewport meta FAIL")
 check(good["viewport-lock"]["status"] == "NA", "no index.html -> viewport-lock NA")
+
+# ---- status-bar style: `default` so the installed app starts with its final viewport ----
+
+SB_DEFAULT = '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
+SB_TRANSLUCENT = '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+sb = run_contracts(GOOD_CSS, SB_DEFAULT, html_name="index.html")
+check(sb["status-bar-style"]["status"] == "PASS", "status-bar style default PASS")
+sb2 = run_contracts(GOOD_CSS, SB_TRANSLUCENT, html_name="index.html")
+check(sb2["status-bar-style"]["status"] == "WARN" and "black-translucent" in sb2["status-bar-style"]["detail"],
+      "black-translucent WARNs (drift, not FAIL) and names the value")
+sb3 = run_contracts(GOOD_CSS, "<dialog></dialog>", html_name="index.html")
+check(sb3["status-bar-style"]["status"] == "WARN", "missing status-bar meta WARN")
+sb4 = run_contracts(GOOD_CSS, "<!-- " + SB_TRANSLUCENT + " -->" + SB_DEFAULT, html_name="index.html")
+check(sb4["status-bar-style"]["status"] == "PASS", "a commented-out black-translucent is ignored")
+check(good["status-bar-style"]["status"] == "NA", "no index.html -> status-bar-style NA")
 
 # ---- button tiers (fleet-config#296) ----
 

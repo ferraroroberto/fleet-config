@@ -81,7 +81,12 @@ from .files import (
     rel,
     repo_files,
 )
-from .markup import find_emoji_sites, nav_nested_in_app, standalone_shell_present
+from .markup import (
+    find_emoji_sites,
+    nav_nested_in_app,
+    standalone_bar_anchor_present,
+    standalone_shell_present,
+)
 from .siblings import siblings
 from .spec import parse_spec
 from .tokens import ALIASES, OPTIONAL_ROLES, map_tokens
@@ -110,6 +115,7 @@ __all__ = [
     "rel",
     "repo_files",
     "siblings",
+    "standalone_bar_anchor_present",
     "standalone_shell_present",
     "strip_comments",
     "vendored",
