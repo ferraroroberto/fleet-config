@@ -70,3 +70,7 @@ stream-deck/*.sdPlugin/registry/
 # the physical Stream Deck's own Device.UUID/Model, not something to publish
 # in a public repo. See stream-deck/com.ferraroroberto.fleetcoding.sdPlugin/profiles/README.md.
 stream-deck/*.sdPlugin/profiles/*.streamDeckProfile
+
+# UI proof screenshots and walkthrough pages (skills/_lib/ui_proof): screenshots
+# of a running app, never published.
+.proof/
