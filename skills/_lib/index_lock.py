@@ -52,7 +52,7 @@ The five verdicts
 Note the reported/not-reported split does not hinge on the fragile part: a
 lock past the threshold is surfaced whether or not the process probe worked.
 
-Pure/impure split, the way `audit_issue.is_fleet_repo` does it: `classify()`
+Pure/impure split, the way `fleet_repo_scan.is_fleet_repo` does it: `classify()`
 takes plain values and is unit-tested with no filesystem or git anywhere near
 it (`tests/repo/test_index_lock.py`); `inspect()` is the I/O around it.
 

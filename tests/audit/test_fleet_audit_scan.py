@@ -25,6 +25,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "skills" / "_lib"))
 import fleet_audit_scan as fas  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -33,16 +34,16 @@ _h = CheckHarness()
 check = _h.check
 
 
-check(fas.is_fleet_repo("https://github.com/ferraroroberto/fleet-config.git") is True,
+check(fleet_repo_scan.is_fleet_repo("https://github.com/ferraroroberto/fleet-config.git") is True,
       "is_fleet_repo: https remote -> True")
-check(fas.is_fleet_repo("git@github.com:ferraroroberto/fleet-config.git") is True,
+check(fleet_repo_scan.is_fleet_repo("git@github.com:ferraroroberto/fleet-config.git") is True,
       "is_fleet_repo: ssh remote -> True")
-check(fas.is_fleet_repo("https://github.com/someoneelse/fleet-config.git") is False,
+check(fleet_repo_scan.is_fleet_repo("https://github.com/someoneelse/fleet-config.git") is False,
       "is_fleet_repo: a fork under a different owner -> False")
-check(fas.is_fleet_repo("https://github.com/other-org/unrelated.git") is False,
+check(fleet_repo_scan.is_fleet_repo("https://github.com/other-org/unrelated.git") is False,
       "is_fleet_repo: unrelated remote -> False")
-check(fas.is_fleet_repo(None) is False, "is_fleet_repo: no remote -> False")
-check(fas.is_fleet_repo("") is False, "is_fleet_repo: empty remote -> False")
+check(fleet_repo_scan.is_fleet_repo(None) is False, "is_fleet_repo: no remote -> False")
+check(fleet_repo_scan.is_fleet_repo("") is False, "is_fleet_repo: empty remote -> False")
 
 
 # ---- accounting: no repo may drop out of every bucket (fleet-config#567) ----
