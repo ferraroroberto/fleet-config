@@ -1,13 +1,14 @@
 """The per-repo `.proof/` store: before/after captures, one folder per PR, an index, pruning.
 
-Layout, rooted at the primary checkout so a worktree's proof outlives the worktree:
+Layout, rooted at the checkout the command runs in, so a lane never writes outside its own tree:
 
   .proof/_branch/<branch>/   captures taken before the PR number exists
   .proof/<PR>/               before-*.png, after-*.png, proof.json, index.html
   .proof/index.json          {"<PR>": {title, issue, merge_sha, utc, branch}}
 
-`.proof/` is never tracked: it holds screenshots of a running app, and every
-repo is treated as public.
+A worktree lane's proof reaches the primary checkout's `.proof/` only through
+`publish`, at merge, so it outlives the worktree. `.proof/` is never tracked:
+it holds screenshots of a running app, and every repo is treated as public.
 """
 
 from __future__ import annotations
@@ -44,6 +45,12 @@ def _git_out(repo: Path, *args: str) -> Optional[str]:
 
 
 def proof_root(repo: Path) -> Optional[Path]:
+    """`<this checkout>/.proof`: the worktree's own tree when `repo` is a worktree."""
+    top = _git_out(repo, "rev-parse", "--show-toplevel")
+    return Path(top) / DIR_NAME if top else None
+
+
+def primary_root(repo: Path) -> Optional[Path]:
     """`<primary checkout>/.proof`, found through the shared git dir so a worktree resolves to its primary."""
     common = _git_out(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
     return Path(common).parent / DIR_NAME if common else None
@@ -194,9 +201,37 @@ def update_index(root: Path, pr: int, row: dict) -> None:
     _write_json(root / INDEX_NAME, index)
 
 
-def page_exists(repo: Path, pr: int) -> bool:
-    root = proof_root(repo)
-    return root is not None and (root / str(pr) / PAGE_NAME).is_file()
+def pr_folder(repo: Path, pr: int) -> Optional[Path]:
+    """The folder holding `.proof/<PR>/index.html`: this checkout's, else the primary's (a published proof)."""
+    for root in (proof_root(repo), primary_root(repo)):
+        if root is not None and (root / str(pr) / PAGE_NAME).is_file():
+            return root / str(pr)
+    return None
+
+
+def publish(repo: Path, pr: int) -> List[str]:
+    """Copy this checkout's `.proof/<PR>/` and index row into the primary's `.proof/`; `PUBLISHED=` line.
+
+    Keyed by PR, so the copy replaces the primary's folder whole and a re-run changes nothing.
+    """
+    local, primary = proof_root(repo), primary_root(repo)
+    if local is None or primary is None:
+        return ["PUBLISHED=none reason=not a git checkout"]
+    src = local / str(pr)
+    if not (src / PAGE_NAME).is_file():
+        return [f"PUBLISHED=none reason=no .proof/{pr}/index.html in this checkout"]
+    if local.resolve() == primary.resolve():
+        return [f"PUBLISHED={src} same_checkout=yes"]
+    primary.mkdir(parents=True, exist_ok=True)
+    incoming = primary / f".{pr}.incoming"
+    shutil.rmtree(incoming, ignore_errors=True)
+    shutil.copytree(src, incoming)
+    shutil.rmtree(primary / str(pr), ignore_errors=True)
+    incoming.replace(primary / str(pr))
+    row = _load_json(local / INDEX_NAME).get(str(pr))
+    if isinstance(row, dict):
+        update_index(primary, pr, row)
+    return [f"PUBLISHED={primary / str(pr)}"]
 
 
 def parse_age(text: str) -> timedelta:

@@ -21,6 +21,7 @@ REQUIRED_LEGS = (("phone", "light"), ("phone", "dark"), ("desktop", "light"), ("
 # Proof cannot be produced until the capture helper is vendored, so the gate
 # only refuses where it is; elsewhere a missing proof is reported, loudly.
 ENFORCING_COMPONENT = "layout_lint"
+NO_RECORD = "no proof manifest recorded for this branch; "
 CAPTURE_HINT = ("capture it with project-scaffolding's tests/e2e/_layout_lint.py capture_states "
                 "(docs/playwright-ui-testing.md), then run `ui_proof record`")
 
@@ -84,15 +85,22 @@ def missing_legs(entries: List[dict], states: List[str]) -> List[str]:
     return [f"{s} {v}-{t}" for s in states for v, t in REQUIRED_LEGS if (s, v, t) not in have]
 
 
-def parse_criteria(pairs: List[str]) -> Dict[str, str]:
-    """`["state=criterion text", ...]` -> `{state: criterion}`; raises ValueError on a malformed pair."""
-    criteria: Dict[str, str] = {}
+def parse_criteria(pairs: List[str]) -> Dict[str, List[str]]:
+    """`["state=criterion text", ...]` -> `{state: [criterion, ...]}`; raises ValueError on a malformed pair."""
+    criteria: Dict[str, List[str]] = {}
     for pair in pairs:
         state, sep, text = pair.partition("=")
         if not sep or not state.strip() or not text.strip():
             raise ValueError(f"--criterion needs '<state>=<criterion text>', got {pair!r}")
-        criteria[state.strip()] = text.strip()
+        criteria.setdefault(state.strip(), []).append(text.strip())
     return criteria
+
+
+def criterion_lines(value: object) -> List[str]:
+    """A state's criterion lines; a record written with one text per state reads as a one-line list."""
+    if isinstance(value, str):
+        return [value] if value else []
+    return [str(v) for v in value] if isinstance(value, list) else []
 
 
 def layout_lint_vendored(repo: Path) -> bool:
@@ -116,7 +124,7 @@ def load_record(repo: Path) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def record(repo: Path, manifest: Path, criteria: Dict[str, str]) -> Tuple[bool, str]:
+def record(repo: Path, manifest: Path, criteria: Dict[str, List[str]]) -> Tuple[bool, str]:
     """Bind `manifest` + `criteria` to the current tree; `(ok, PROOF=... line)`."""
     if not criteria:
         return False, "PROOF=not_recorded reason=no --criterion given; map each UI criterion to its state"
@@ -140,7 +148,7 @@ def record(repo: Path, manifest: Path, criteria: Dict[str, str]) -> Tuple[bool, 
 def _judge_record(repo: Path, rec: Optional[dict]) -> Tuple[str, List[str], str]:
     """`(state, need, detail)` for a recorded proof against the current tree."""
     if rec is None:
-        return "missing", ["no proof manifest recorded for this branch; " + CAPTURE_HINT], ""
+        return "missing", [NO_RECORD + CAPTURE_HINT], ""
     manifest = Path(str(rec.get("manifest", "")))
     entries = load_manifest(manifest)
     if entries is None or file_sha256(manifest) != rec.get("manifest_sha256"):
@@ -164,18 +172,42 @@ def _judge_record(repo: Path, rec: Optional[dict]) -> Tuple[str, List[str], str]
 
 
 def evaluate(repo: Path, base: Optional[str] = None, pr: Optional[int] = None) -> Verdict:
-    """The finish gate's verdict for `repo`'s branch diff; with `pr`, `.proof/<PR>/index.html` is required."""
+    """The finish gate's verdict for `repo`'s branch diff.
+
+    With `pr`, `.proof/<PR>/index.html` is required and is itself the proof: a repo with no recorded manifest
+    is judged by the built page and the lint findings its captures carry (lint "not run" when it has none).
+    """
     verdict = _evaluate_manifest(repo, base)
     if verdict.touched == "no":
         return verdict
     verdict.hygiene = store.guard_lines(repo)
     if pr is not None:
-        verdict.page = "present" if store.page_exists(repo, pr) else "missing"
-        if verdict.page == "missing":
+        if load_record(repo) is None:
+            verdict.need = [n for n in verdict.need if not n.startswith(NO_RECORD)]
+        folder = store.pr_folder(repo, pr)
+        verdict.page = "present" if folder else "missing"
+        if folder is None:
             verdict.need.append(f"no .proof/{pr}/index.html; `ui_proof capture-before`/`capture-after`, "
                                 f"then `ui_proof build . --pr {pr}`")
+        elif load_record(repo) is None:
+            _judge_page(verdict, folder)
     verdict.need += verdict.hygiene
     return verdict
+
+
+def _judge_page(verdict: Verdict, folder: Path) -> None:
+    """Judge a built page with no recorded manifest: the lint findings its captures carry decide."""
+    after = [r for r in store.load_data(folder).get("after", []) if "findings" in r]
+    errors = failing_lines(after)
+    if errors:
+        verdict.state = "failing"
+        verdict.need.append("layout lint errors (fix, or allow with a reason): " + "; ".join(errors))
+        return
+    lint = f"clean on {len(after)} leg(s)" if after else "not run (no layout_lint manifest)"
+    notes = [*verdict.need, f"page built; layout lint {lint}"]
+    if verdict.detail:
+        notes.append(verdict.detail)
+    verdict.state, verdict.need, verdict.detail = "fresh", [], "; ".join(notes)
 
 
 def _evaluate_manifest(repo: Path, base: Optional[str]) -> Verdict:

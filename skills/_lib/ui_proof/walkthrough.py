@@ -54,7 +54,7 @@ def _legs(rows: List[dict], state: str) -> Dict[str, dict]:
     return {f"{r.get('viewport')}-{r.get('theme')}": r for r in rows if r.get("state") == state}
 
 
-def _state_section(folder: Path, data: dict, state: str, line: Optional[str]) -> str:
+def _state_section(folder: Path, data: dict, state: str, lines: List[str]) -> str:
     before, after = _legs(data.get("before", []), state), _legs(data.get("after", []), state)
     legs = [k for k in store.LEG_ORDER if k in before or k in after]
     legs += sorted((set(before) | set(after)) - set(legs))
@@ -62,8 +62,11 @@ def _state_section(folder: Path, data: dict, state: str, line: Optional[str]) ->
         f"<h3>{html.escape(leg.replace('-', ' · '))}</h3><div class=\"pair\">"
         f"{_figure(folder, before.get(leg), 'before')}{_figure(folder, after.get(leg), 'after')}</div>"
         for leg in legs)
-    heading = html.escape(line) if line else "Other captured state"
-    return (f"<section><h2>{heading}</h2><div class=\"small\">state <code>{html.escape(state)}</code></div>"
+    if len(lines) > 1:
+        heading = "<ul>" + "".join(f"<li>{html.escape(t)}</li>" for t in lines) + "</ul>"
+    else:
+        heading = f"<h2>{html.escape(lines[0]) if lines else 'Other captured state'}</h2>"
+    return (f"<section>{heading}<div class=\"small\">state <code>{html.escape(state)}</code></div>"
             f"{rows}</section>")
 
 
@@ -82,11 +85,11 @@ def _lint_block(data: dict) -> str:
 
 def render(repo_name: str, pr: int, data: dict, folder: Path) -> str:
     """The self-contained page (inline CSS, `data:` images, no scripts)."""
-    criteria: Dict[str, str] = data.get("criteria") or {}
+    criteria: Dict[str, object] = data.get("criteria") or {}
     no_visual: List[str] = data.get("no_visual") or []
     states = {str(r.get("state")) for p in store.PHASES for r in data.get(p, [])}
-    sections = [_state_section(folder, data, s, line) for s, line in criteria.items()]
-    sections += [_state_section(folder, data, s, None) for s in sorted(states - set(criteria))]
+    sections = [_state_section(folder, data, s, proof.criterion_lines(v)) for s, v in criteria.items()]
+    sections += [_state_section(folder, data, s, []) for s in sorted(states - set(criteria))]
     sections += [f"<section><h2>{html.escape(t)}</h2><p class=\"small\">No visual change.</p></section>"
                  for t in no_visual]
     sha = data.get("merge_sha") or "not merged yet"
@@ -102,7 +105,7 @@ def render(repo_name: str, pr: int, data: dict, folder: Path) -> str:
     )
 
 
-def build(repo: Path, repo_name: str, pr: int, criteria: Dict[str, str], no_visual: List[str],
+def build(repo: Path, repo_name: str, pr: int, criteria: Dict[str, List[str]], no_visual: List[str],
           title: str = "", issue: Optional[int] = None, sha: str = "") -> List[str]:
     """Write `.proof/<PR>/index.html` and its index row, stage a sendable copy; return KEY=value lines."""
     folder = store.prepare_pr_folder(repo, pr)
@@ -139,4 +142,6 @@ def build(repo: Path, repo_name: str, pr: int, criteria: Dict[str, str], no_visu
     if size > SEND_LIMIT_BYTES:
         lines.append(f"SEND_WARNING=over the {SEND_LIMIT_BYTES // (1024 * 1024)} MB outbox cap; "
                      "capture fewer legs or smaller states")
+    if sha:
+        lines += store.publish(repo, pr)
     return lines

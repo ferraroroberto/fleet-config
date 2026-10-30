@@ -102,13 +102,14 @@ try:
     git(repo, "worktree", "add", "-q", "-b", "feat/7-sheet", str(wt))
     (wt / "app" / "static" / "view.css").write_text("a{color:red}\n", encoding="utf-8")
     commit_all(wt, "view")
-    root = repo / ".proof"
+    root, primary = wt / ".proof", repo / ".proof"
 
-    # Captures from a worktree land in the primary checkout's .proof/, staged by branch.
+    # Captures from a worktree land in the worktree's own .proof/, staged by branch; the primary is untouched.
     code, out, raw = run("capture-before", str(wt), *shots(scratch, "before"))
     staging = root / "_branch" / "feat-7-sheet"
     check(code == 0 and (staging / "before-home.sheet-phone-light.png").is_file(),
-          f"capture-before stages into the primary's .proof/_branch — got {raw!r}")
+          f"capture-before stages into the worktree's .proof/_branch — got {raw!r}")
+    check(not primary.exists(), "a worktree capture does not create the primary's .proof/")
     code, _, raw = run("capture-after", str(wt), *shots(scratch, "after"))
     check(code == 0 and (staging / "after-home.sheet-phone-dark.png").is_file(), f"capture-after stages — {raw!r}")
     code, _, raw = run("capture-after", str(wt), "--image", "bad-format")
@@ -134,10 +135,22 @@ try:
     check(Path(out["SEND_PATH"]).is_file() and Path(out["SEND_PATH"]).parts[-3:-1] == ("claude", "ui-proof"),
           "a sendable copy sits under %TEMP%/claude/ui-proof")
     code, out, _ = run("check", str(wt), "--base", "main", "--pr", "7")
-    check(code == 0 and out["PROOF_PAGE"] == "present", f"the page satisfies the gate — got {out}")
+    check(code == 0 and out["PROOF_PAGE"] == "present" and out["VISUAL_PROOF"] == "fresh" and out["NEED"] == "",
+          f"a built page without a manifest reads fresh and asks for nothing — got {out}")
+    check("layout lint not run" in out["DETAIL"], f"the unrun lint is reported, not hidden — got {out['DETAIL']!r}")
+    check(not primary.exists(), "build leaves the primary's .proof/ alone until the merge")
 
-    # A rebuild after the merge stamps the sha and keeps criteria, title and issue.
+    # A rebuild after the merge stamps the sha, keeps criteria, title and issue, and copies into the primary.
+    code, out, raw = run("build", str(wt), "--pr", "7", "--sha", "abc1234")
+    check(out.get("PUBLISHED") == str(primary / "7") and (primary / "7" / "index.html").is_file(),
+          f"build --sha publishes the PR folder to the primary — got {raw!r}")
+    check(json.loads((primary / "index.json").read_text(encoding="utf-8"))["7"]["merge_sha"] == "abc1234",
+          "the primary's index row carries the merge sha")
+    stale = primary / "7" / "stale.txt"
+    stale.write_text("x", encoding="utf-8")
     run("build", str(wt), "--pr", "7", "--sha", "abc1234")
+    check(not stale.exists() and (primary / "7" / "index.html").is_file(),
+          "publishing again replaces the primary's folder whole")
     index = json.loads((root / "index.json").read_text(encoding="utf-8"))
     row = index["7"]
     check(row["merge_sha"] == "abc1234" and row["title"] == "Sheet fix" and row["issue"] == 6
@@ -153,9 +166,20 @@ try:
     page = page_path.read_text(encoding="utf-8")
     check("Layout lint errors" in page and "overflow div.sheet" in page and "SECRET PAGE TEXT" not in page,
           "a manifest's lint error is listed without page text")
+    code, out, _ = run("check", str(wt), "--base", "main", "--pr", "7")
+    check(out["VISUAL_PROOF"].startswith("failing") and "overflow div.sheet" in out["NEED"],
+          f"a page whose captures carry a lint error reads failing — got {out}")
     run("capture-after", str(wt), "--manifest", str(manifest(scratch)))
     run("build", str(wt), "--pr", "7")
     check("Layout lint: clean" in page_path.read_text(encoding="utf-8"), "a clean manifest reads clean")
+    code, out, _ = run("check", str(wt), "--base", "main", "--pr", "7")
+    check(out["VISUAL_PROOF"] == "fresh" and "layout lint clean" in out["DETAIL"], f"a clean page reads fresh — got {out}")
+
+    # Several criteria on one state share its before/after pairs instead of collapsing into one.
+    run("build", str(wt), "--pr", "7", "--criterion", "home.sheet=Title wraps", "--criterion", "home.sheet=Close stays reachable")
+    page = page_path.read_text(encoding="utf-8")
+    check("Title wraps" in page and "Close stays reachable" in page and page.count('class="pair"') == 2,
+          "two criteria on one state both appear, over one set of pairs")
 
     # Nothing in the tree: .proof/ is ignored.
     status = run_git(["-C", str(repo), "status", "--porcelain"]).stdout.strip()
@@ -165,11 +189,11 @@ try:
     (wt / ".gitignore").write_text("", encoding="utf-8")
     code, out, _ = run("check", str(wt), "--base", "main", "--pr", "7")
     check(code == 1 and "not gitignored" in out["NEED"], f"an unignored .proof/ refuses — got {out}")
-    (wt / ".proof").mkdir()
+    (wt / ".proof").mkdir(exist_ok=True)
     (wt / ".proof" / "leak.png").write_bytes(PNG)
     commit_all(wt, "leak")
     code, out, _ = run("check", str(wt), "--base", "main", "--pr", "7")
-    check(code == 1 and "is tracked (.proof/leak.png)" in out["NEED"], f"a tracked .proof/ refuses — got {out}")
+    check(code == 1 and "is tracked (" in out["NEED"] and "git rm -r --cached" in out["NEED"], f"a tracked .proof/ refuses — got {out}")
 
     # Prune removes only folders older than the threshold.
     (root / "8").mkdir()

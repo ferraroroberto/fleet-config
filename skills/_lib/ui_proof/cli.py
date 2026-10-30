@@ -1,4 +1,4 @@
-"""CLI for the visual-proof gate: `record`, `check`, `capture-before|after`, `build`, `prune` (see the package docstring)."""
+"""CLI for the visual-proof gate: `record`, `check`, `capture`, `capture-before|after`, `build`, `prune` (see the package docstring)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
-from ui_proof import proof, store, walkthrough  # noqa: E402
+from ui_proof import capture_run, proof, store, walkthrough  # noqa: E402
 
 
 def _print_verdict(v: proof.Verdict) -> None:
@@ -36,12 +36,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     chk = sub.add_parser("check", help="is the recorded proof fresh and clean for this diff?")
     chk.add_argument("repo", type=Path)
     chk.add_argument("--base", default=None)
-    chk.add_argument("--pr", type=int, default=None, help="also require .proof/<PR>/index.html")
+    chk.add_argument("--pr", type=int, default=None,
+                     help="require .proof/<PR>/index.html; a built page passes without a recorded manifest")
     for phase in store.PHASES:
         cap = sub.add_parser(f"capture-{phase}", help=f"copy the {phase} screenshots into .proof/")
         cap.add_argument("repo", type=Path)
         cap.add_argument("--manifest", type=Path, default=None, help="a layout_lint capture_states manifest")
         cap.add_argument("--image", action="append", default=[], help="'<state>:<viewport>-<theme>=<png>', repeatable")
+    shoot = sub.add_parser("capture", help="screenshot a running app's state at named viewports and themes")
+    shoot.add_argument("repo", type=Path)
+    shoot.add_argument("--phase", choices=store.PHASES, required=True)
+    shoot.add_argument("--url", required=True, help="the app instance to drive (the repo's gate instance, loopback)")
+    shoot.add_argument("--state", required=True, help="the state name a --criterion maps to")
+    shoot.add_argument("--viewport", action="append", default=[],
+                       help="phone (390x844), desktop (1280x900), <W>x<H> or <label>=<W>x<H>; repeatable, default phone+desktop")
+    shoot.add_argument("--theme", action="append", choices=capture_run.THEMES, default=[],
+                       help="repeatable, default light+dark")
+    shoot.add_argument("--click", action="append", default=[], help="a selector to click, in order, to reach the state")
+    shoot.add_argument("--wait-ms", type=int, default=None, help="settle time after load")
     bld = sub.add_parser("build", help="write .proof/<PR>/index.html and its .proof/index.json row")
     bld.add_argument("repo", type=Path)
     bld.add_argument("--pr", type=int, required=True)
@@ -50,7 +62,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     bld.add_argument("--no-visual", action="append", default=[], help="a criterion with no visual change")
     bld.add_argument("--title", default="")
     bld.add_argument("--issue", type=int, default=None)
-    bld.add_argument("--sha", default="", help="the merge sha, once merged")
+    bld.add_argument("--sha", default="", help="the merge sha, once merged; also copies the proof to the primary's .proof/")
     prn = sub.add_parser("prune", help="remove .proof/ folders older than the threshold")
     prn.add_argument("repo", type=Path)
     prn.add_argument("--older-than", default="30d")
@@ -74,7 +86,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 def _store_command(repo: Path, args: argparse.Namespace) -> int:
-    """`capture-before|after`, `prune` and `build`: the `.proof/` store."""
+    """`capture`, `capture-before|after`, `prune` and `build`: the `.proof/` store."""
+    if args.cmd == "capture":
+        try:
+            ok, line = capture_run.run(repo, args.phase, args.url, args.state,
+                                       args.viewport or list(capture_run.VIEWPORTS), args.theme or list(capture_run.THEMES),
+                                       args.click, args.wait_ms)
+        except ValueError as exc:
+            print(f"CAPTURED=none reason={exc}")
+            return 2
+        print(line)
+        return 0 if ok else 1
     if args.cmd.startswith("capture-"):
         try:
             images = store.parse_images(args.image)
