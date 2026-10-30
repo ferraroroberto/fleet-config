@@ -108,6 +108,26 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
         check("block_askuserquestion: chief-managed but non-AskUserQuestion tool -> allow (exit 0)",
               code == 0)
 
+        # Grok sends its own tool id in its own envelope; the guard only sees
+        # the Claude name after the wire translation.
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"hookEventName": "pre_tool_use", "toolName": "ask_user_question",
+             "toolInput": {}, "sessionId": "grok-transcript-uuid"},
+            extra_env=managed_env,
+        )
+        check("block_askuserquestion: Grok ask_user_question, chief-managed -> block (exit 2)",
+              code == 2)
+
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"hookEventName": "pre_tool_use", "toolName": "ask_user_question",
+             "toolInput": {}, "sessionId": "grok-transcript-uuid"},
+            extra_env={**state_env, "APP_LAUNCHER_SESSION_ID": "launcher-sid-unmanaged"},
+        )
+        check("block_askuserquestion: Grok ask_user_question, undispatched -> allow (exit 0)",
+              code == 0)
+
         _block_askuserquestion_registry_cases(check, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

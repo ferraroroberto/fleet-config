@@ -152,6 +152,9 @@ _TOOL_EXPECTATIONS = {
     "list_dir": "Glob",
     "web_search": "WebSearch",
     "spawn_subagent": "Task",
+    # Grok aliases the `AskUserQuestion` matcher onto this tool, so the hook
+    # fires; the body only refuses if it sees the Claude name.
+    "ask_user_question": "AskUserQuestion",
 }
 for _grok_tool, _claude_tool in _TOOL_EXPECTATIONS.items():
     _out = _lib.normalize_payload(
