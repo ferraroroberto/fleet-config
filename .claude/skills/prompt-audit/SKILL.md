@@ -116,7 +116,7 @@ It reads the newest two aggregates the weekly eval job wrote and prints `status`
 
 ### 3. Rule-set update issue — a guide moved
 
-File the rule-set delta for a human, then scan anyway against the current `rules.md` (decision log in Notes, 2026-10-02).
+File the rule-set delta for a human, then scan anyway against the current `rules.md` (Notes, #1132).
 
 1. Read each changed guide's fetched file in full, alongside `rules.md` and `sources.toml`.
 2. Draft the delta: the exact new, changed or retired `R-NN` blocks (same format, `Why:` quoting the new text, `Source:` with the section name), any "Recorded as rejected" entry, and the new `sources.toml` baseline values for every changed source (`baseline_sha`, `baseline_marker`, `baseline_final_url` from its `VERDICT` line, today's `baseline_date`). A `new-guide` adds a `[sources.*]` block for the new page. Say plainly when the change is cosmetic and the rules need no edit — the new baselines alone are then the delta.
@@ -248,9 +248,7 @@ The ping is a notice about the delivery, not part of it. A failed ping never cou
 ## Notes
 
 - **Where fixes go.** Violations become `prompt-drift` issues, the ninth `/cleanup-fleet` bucket (fleet-config#833): easy-tier issues ship through `/issue-yolo`, hard-tier ones stop for review, and every lane must pass `/context-purge`'s preservation harness (`check.py --base`). Considers are advisory and stay in the digest — the first fleet run put 152 of 255 of them on a single rule, far too noisy to become lanes. It runs weekly unattended (`run-weekly.bat`, an app-launcher Job slotted before `cleanup-fleet-all`, #834) so the bucket is fresh when cleanup starts.
-- **Decision log — a guide change and the scan.** The update issue is `enhancement`, never a cleanup bucket, so a human always reviews the rule-set change.
-  - 2026-09-11 (#831): a changed guide stopped the scan, because findings against a stale rule-set may be contradicted by the next one.
-  - 2026-10-02 (#1132, Roberto's "scan anyway"): superseded. Vendor pages moved faster than rule-set PRs merged, so the stop starved the scan: no file was judged from 09-13 to 10-02, and the 09-27 run stopped for #1070 with 4 pages moved again. The scan now always runs against the current `rules.md`; the update issue is still filed alongside; findings on a rule whose `Source:` cites a changed guide are marked provisional in the digest and the `prompt-drift` body. Delivered = a posted scan, plus the update issue when a guide changed.
+- **A guide change and the scan (#1132).** The update issue is `enhancement`, never a cleanup bucket, so a human always reviews the rule-set change. The scan always runs against the current `rules.md`; the update issue is filed alongside; findings on a rule whose `Source:` cites a changed guide are marked provisional in the digest and the `prompt-drift` body. Delivered = a posted scan, plus the update issue when a guide changed.
 - **Why audience, not host.** The same `rules.md` runs on any agent; which vendor's rules are primary is decided by who reads the file (`sources.toml` `[audiences.*]`), so a neutral file read by several agents gets single-vendor advice as `consider`, never `violation`.
 - **Shared text is filed once.** A finding whose line also sits in `project-scaffolding/CLAUDE.md` belongs to the master, with the repos that inherited it listed — never N copies for N divergent fixes. Same for `global-CLAUDE.md` text that also lives in the lite port's global instructions.
 - **Neighbouring lenses.** `/context-audit` measures size and single-home altitude; `/context-purge` compresses losslessly; `/sota-watch` watches adopted tooling choices. None of them reads vendor prompting guidance.

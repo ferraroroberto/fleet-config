@@ -160,6 +160,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the purge's mechanical preservation rules -- marked-block "
      "byte-identity and quoted trigger survival in SKILL.md descriptions "
      "-- are testable on their own (fleet-config#287)"),
+    ("context_purge_history", "audit/test_context_purge_history.py",
+     "the history pass deletes markdown only when the text is proven to "
+     "live on an issue: detection, comment round-trip and the "
+     "removed-history verdict"),
     ("context_audit", "audit/test_context_audit.py",
      "/context-audit's skill-description cap gate -- the apostrophe regression "
      "pinned against `chief`'s real pre-fix text (29 reported vs 58 actual), "
