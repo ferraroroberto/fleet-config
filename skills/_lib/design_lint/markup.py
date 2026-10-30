@@ -1,7 +1,8 @@
 """HTML/JS document scanning shared by the contract checks.
 
-Structural facts a regex over one blob cannot answer: whether the app shell is
-the standalone scroller, whether `nav.tabs` is nested inside `main.app`, where
+Structural facts a regex over one blob cannot answer: how the bar is anchored
+in the installed app, whether the app shell is the superseded standalone
+scroller, the status-bar meta, whether `nav.tabs` is nested inside `main.app`, where
 rendered-text emoji glyphs actually live, and which `<dialog>` elements are
 editor modals. Each returns plain data so a contract check stays a thin,
 readable rule over it.
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .css import strip_comments
 from .files import is_third_party, read_text, rel
@@ -20,13 +21,10 @@ from .rules import GLYPH_ICON_CLASS
 _STANDALONE_MEDIA_RE = re.compile(r"@media[^{]*display-mode:\s*standalone[^{]*\{")
 
 
-def standalone_shell_present(css: str) -> bool:
-    """True when a `(display-mode: standalone)` media block makes the app shell
-    the scroller: position: fixed + 100lvh sizing + overflow-y: auto — the
-    home-automation#303 architecture the design.md nav contract requires (all
-    real scrolling inside `.app`, never the window; removes the pill-drift
-    cause). Works on comment-stripped CSS; nesting inside another @media is
-    fine (the inner standalone block is matched directly)."""
+def _standalone_blocks(css: str):
+    """Yield the body of every `(display-mode: standalone)` media block in
+    comment-stripped CSS; nesting inside another @media is fine (the inner
+    standalone block is matched directly)."""
     for m in _STANDALONE_MEDIA_RE.finditer(css):
         depth, i = 1, m.end()
         start = i
@@ -36,11 +34,43 @@ def standalone_shell_present(css: str) -> bool:
             elif css[i] == "}":
                 depth -= 1
             i += 1
-        block = css[start:i]
+        yield css[start:i]
+
+
+def standalone_shell_present(css: str) -> bool:
+    """True when a `(display-mode: standalone)` media block makes the app shell
+    the scroller: position: fixed + 100lvh sizing + overflow-y: auto. That is
+    the superseded nav architecture — the design.md nav contract keeps the
+    window as the scroller — so finding it reports drift."""
+    for block in _standalone_blocks(css):
         if (re.search(r"position:\s*fixed", block) and "100lvh" in block
                 and re.search(r"overflow-y:\s*auto", block)):
             return True
     return False
+
+
+def standalone_bar_anchor_present(css: str) -> bool:
+    """True when a `(display-mode: standalone)` media block anchors the bar from
+    the top with the large viewport unit: a `.tabs` rule with `100lvh` and
+    `bottom: auto`. An installed iOS app grows its viewport after launch, so a
+    bottom anchor rides that growth; 100lvh is the final height from frame one."""
+    for block in _standalone_blocks(css):
+        for rule in re.finditer(r"([^{}]*)\{([^{}]*)\}", block):
+            if (".tabs" in rule.group(1) and "100lvh" in rule.group(2)
+                    and re.search(r"bottom:\s*auto", rule.group(2))):
+                return True
+    return False
+
+
+def status_bar_style(html: str) -> Optional[str]:
+    """The `content` of the `apple-mobile-web-app-status-bar-style` meta in
+    comment-stripped HTML, lowercased, or None when the tag is absent."""
+    for tag in re.finditer(r"<meta\b[^>]*>", html, re.I):
+        if re.search(r"name=[\"']apple-mobile-web-app-status-bar-style[\"']",
+                     tag.group(0), re.I):
+            c = re.search(r"content=[\"']([^\"']*)[\"']", tag.group(0), re.I)
+            return c.group(1).strip().lower() if c else ""
+    return None
 
 
 _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",

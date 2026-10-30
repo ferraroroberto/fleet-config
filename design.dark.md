@@ -234,8 +234,10 @@ alone. See `design.md` for the full note.
 ## Navigation & interaction (fleet contract — the part that must feel identical)
 
 Identical to the [Light theme contract](design.md): fixed floating bottom-tab pill
-on coarse pointers, viewport-anchored via `100dvh` + `env(safe-area-inset-bottom)`,
-one active tab at a time (accent-soft tint + `accent-text`, `aria-selected` tracked),
+on coarse pointers, a clear-glass bar anchored to the viewport (placed from the
+top with `100lvh` in the installed app, whose page head sets the `default`
+status-bar style), one active tab at a time (`accent-text` over the pill's
+capsule, `aria-selected` tracked),
 unselected tabs with no boundary (the 1.4.11 exemption: icon + label identify
 them, pill and rail alike), `localStorage`-persisted selection, hidden under an open modal
 (`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, at most five
@@ -244,8 +246,10 @@ tabs with Settings never a tab but the page-header gear beside the theme toggle 
 tokenized `:focus-visible` ring on every interactive element, and the same
 behavior rendered inline at the top on fine pointers, or as the left rail
 at `layout.wide` (1100px) and up. The dark theme changes the
-*colors* of these elements (the focus ring uses the brighter dark `accent`),
-never their *behavior*.
+*colors* of these elements (the focus ring uses the brighter dark `accent`; the
+bar tokens are `--tabbar-bg` `rgba(42,45,52,0.55)`, `--tabbar-border`
+`rgba(255,255,255,0.14)`, `--tabbar-pill` `rgba(255,255,255,0.14)` and
+`--tabbar-shadow` `0 10px 30px -6px rgba(0,0,0,0.6)`), never their *behavior*.
 
 ## Components
 

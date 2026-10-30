@@ -324,10 +324,11 @@ apply.
 A
 single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* from
 the page edges — so the spacing reads uniform in every direction.
-**Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
-bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-bottom))`).
-On a phone, the `.app` top padding is the safe area alone, with no gutter (a
-Navigation contract rule, below).
+**Reserve bottom padding for the whole bar** (its height, the margin above and
+below it, the gutter and the safe-area inset: 115px plus the inset) so the
+fixed bar never covers the last row.
+On a phone, the `.app` top padding is the safe area plus the 4px top fade, with
+no gutter (a Navigation contract rule, below).
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
@@ -459,20 +460,35 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 
 - **Primary nav is a fixed floating bottom-tab pill** on touch / coarse pointers
   (`@media (pointer: coarse)`): `position: fixed`, anchored to the *viewport*
-  bottom via `100dvh` + `env(safe-area-inset-bottom)` (never the content bottom —
-  that is the iOS-PWA footgun), `rounded.nav` corners, backdrop blur, an
-  equal-width grid of tabs. The bar stands **61px** tall and sits with **equal
-  21px margins on left, right, and bottom** so it reads
-  centered and breathes evenly.
-- **On a phone, the `.app` top padding is the safe area alone.** The vendored
-  nav's phone rule (`@media (pointer: coarse) and (max-width: 520px)`) sets
-  `padding-top: env(safe-area-inset-top, 0px)`, with no gutter, so the first
-  card starts directly under the status bar in every app. The sides and bottom
-  keep their padding. The vendored nav provides the rule, so a re-vendored app
-  carries no override of its own (project-scaffolding#288).
-- **One active tab at a time.** The active tab takes the accent-soft tint +
-  `accent-text` and sits at `tabindex 0`; the others are `tabindex -1`, with
-  `aria-selected` tracked so it is announced correctly.
+  bottom (never the content bottom — that is the iOS-PWA footgun), `rounded.nav`
+  corners, an equal-width grid of tabs. The bar stands **61px** tall and sits
+  with **equal 21px margins on left, right, and bottom** so it reads
+  centered and breathes evenly. In a browser tab it is a plain fixed element
+  with `bottom` set; in the installed app it is placed from the top instead
+  (see "Installed PWA", below).
+- **The bar is clear glass.** A translucent tint (`--tabbar-bg`: light
+  `rgba(255,255,255,0.62)`, dark `rgba(42,45,52,0.55)`) under a heavy backdrop
+  blur (`blur(24px) saturate(180%)`, on this small capsule only, never on a
+  full-screen layer), a hairline rim all round (`--tabbar-border`: light
+  `rgba(0,0,0,0.08)`, dark `rgba(255,255,255,0.14)`), and a soft drop shadow
+  (`--tabbar-shadow`: light `0 8px 28px -6px rgba(20,24,40,0.2), 0 1px 4px
+  rgba(20,24,40,0.06)`, dark `0 10px 30px -6px rgba(0,0,0,0.6)`). The active
+  tab sits on a capsule (`--tabbar-pill`: light `rgba(0,0,0,0.07)`, dark
+  `rgba(255,255,255,0.14)`) that springs to the tapped tab; the capsule token
+  is required, because with it undefined the active tab has no capsule. The
+  active tab's icon and label take `accent-text`.
+- **On a phone, the `.app` top padding is the safe area plus the 4px top
+  fade.** The vendored nav's phone rule (`@media (pointer: coarse) and
+  (max-width: 520px)`) sets `padding-top: calc(env(safe-area-inset-top, 0px) +
+  4px)`, with no gutter, so the first card starts directly under the status bar
+  in every app. The sides keep their padding and the bottom holds the bar's
+  reserve. The vendored nav provides the rule, so a re-vendored app carries no
+  override of its own.
+- **One active tab at a time.** The active tab takes `accent-text`, over the
+  capsule on the phone pill and the accent-soft tint on the desktop control and
+  the rail, and sits at `tabindex 0`; the others are `tabindex -1`, with
+  `aria-selected` tracked so it is announced correctly. Inactive tabs on the
+  phone pill are in full `fg`, not muted, for the iOS system bar's contrast.
 - **Unselected tabs carry no boundary (1.4.11 exemption).** An unselected
   tab has no outline, border or fill, in the floating pill and in the wide
   layout's left rail alike. Its icon and text label identify it, which is
@@ -486,38 +502,40 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   the app reopens on the tab you left.
 - **The nav hides whenever a modal/overlay is open** (`body:has(dialog[open])`) so
   it never floats above a dialog.
-- **Installed PWA: the app shell is the scroller, never the window.** Inside
-  `@media (display-mode: standalone)` the content wrapper (`.app`) becomes a
-  fixed-inset element scroller — `position: fixed; top/left/right: 0`, sized
-  with the **large viewport unit** (`height: 100vh` fallback, then `100lvh`),
-  `overflow-y: auto` — so all real scrolling happens inside `.app` and a
-  momentum bounce can never move the visual viewport and drag the bar
-  (home-automation#303 — this removes the pill-drift *cause*; #300 proved a
-  measured JS transform "correction" is actively harmful in standalone, so the
-  bar takes **no JS translate** there — CSS owns its position).
-- **The standalone geometry needs the full-screen web view.** The `100lvh`
-  shell and the bar's top anchor assume the installed app's web view spans
-  the whole screen, status bar included. iOS gives an installed app the whole
-  screen only when the page head sets both
-  `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`
-  and `viewport-fit=cover` in the viewport meta. Every installable app sets
-  the pair. Without it, the pill lands one status-bar height too low, mostly
-  off-screen (project-scaffolding#287, parking-manager#24). Desktop engines
-  don't reproduce this, so the app's e2e smoke test asserts both tags.
-- **Installed app: content fades out under the status bar and into the
-  pill.** The translucent status bar the full-screen web view needs would
-  otherwise show scrolled content through the clock and battery. In
-  `@media (display-mode: standalone)` on the phone pill, the vendored nav
-  adds one inert full-screen `body::before` layer above `.app` and below the
-  pill (`z-index: 110`, `pointer-events: none`), painted in `canvas`
-  (`--bg`): a solid band of exactly `env(safe-area-inset-top)`, then a tail
-  of up to `--gap` (capped at the inset, so no notch paints nothing); and at
-  the bottom, transparent 32px above the pill's top edge to full `canvas`
-  from the pill's midline to the screen edge.
-  `prefers-reduced-transparency: reduce` keeps the solid band and drops both
-  gradients. CSS only, no transform on the bar; desktop and the browser tab
-  carry no layer. Apps must not style `body::before`
-  (project-scaffolding#488).
+- **Installed PWA: the page head starts the app at its final viewport.** The
+  head sets `<meta name="apple-mobile-web-app-status-bar-style"
+  content="default">`, `viewport-fit=cover` in the viewport meta, and the dual
+  `theme-color` metas that paint the status bar in the page colour. With
+  `default`, iOS gives the installed app its final viewport from the first
+  frame, so the bar is in place on a cold launch. `black-translucent` is the
+  wrong value: it lets the viewport grow after launch, the bar rides that
+  growth, and the status bar needs an app-drawn scrim to hide content behind
+  it. Desktop engines don't reproduce the installed app, so the app's e2e
+  smoke test asserts the status-bar style and `viewport-fit=cover`.
+- **Installed PWA: the window is the scroller and the bar is placed from the
+  top.** There is no fixed-inset `.app` scroller, no element-scroller shell and
+  no JS pinning. The document is always 1px taller than the viewport (`html`
+  gets `min-height: calc(100dvh + 1px)` on the phone pill), because an
+  installed app shrinks its viewport whenever the document cannot scroll and
+  grows it back over a few seconds; the extra pixel keeps every tab, short ones
+  included, at the same offset. In the browser tab the bar is a plain fixed
+  element with `bottom` set. In `@media (display-mode: standalone)` it is
+  placed with `top: calc(100lvh - margin - height)` and `bottom: auto`, so it
+  never rides the viewport growth after launch. The bar takes no JS translate
+  and never moves on a flick or an overscroll. An app-side `scroll-lock.js`
+  that pins the body under a `<dialog>` is the plain pin, with no standalone
+  branch and no `scroll-lock:*` events.
+- **Scroll-edge fades.** Rows scroll under the bar and under the status bar,
+  so two inert layers (`z-index: 110`, `pointer-events: none`, above `.app`
+  and below the bar) dim them in, painted in `canvas` (`--bg`): at the bottom,
+  transparent from 16px above the bar's top edge to full `canvas` from the
+  bar's bottom edge to the screen edge; at the top, the opaque `default`
+  status bar is the solid part and the layer draws only an eased 4px tail
+  below it, inside the `.app` top padding, so the first card at scroll-top
+  starts where the fade ends and is never dimmed.
+  `prefers-reduced-transparency: reduce` drops both. CSS only, no transform
+  on the bar; the desktop control and the rail carry no layer. They are the
+  nav's own `body::before` and `body::after`, so apps must not style either.
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
   icon-only. The icon is a **Lucide** glyph (see Icons).
 - **At most five primary destinations** (`nav-bar.maxTabs`), per HIG's
