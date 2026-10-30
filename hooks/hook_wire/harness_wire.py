@@ -136,6 +136,7 @@ _GROK_TOOLS = {
     "list_dir": "Glob",
     "web_search": "WebSearch",
     "spawn_subagent": "Task",
+    "ask_user_question": "AskUserQuestion",
 }
 
 # camelCase → snake_case for the envelope fields hooks here actually read.
