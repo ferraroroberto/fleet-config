@@ -61,7 +61,7 @@ Derive:
 
 ### 5. Render the handoff prompt
 
-Print **exactly one** fenced markdown block (use four backticks to fence so embedded triple-backticks survive), with the populated template below. Do not print anything else before or after besides a single line saying `Copy the block below:`.
+Print **exactly one** fenced markdown block (use four backticks to fence so embedded triple-backticks survive), with the populated template below. Print nothing else except the single line `Copy the block below:` before the block and the one closing sentence from step 6 after it.
 
 ````
 Apply the changes from this upstream commit to the current project.
