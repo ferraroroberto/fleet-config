@@ -76,6 +76,7 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     ib.add_argument("--count", action="store_true", help="print PENDING=<n> and claim nothing")
     ib.add_argument("--stale-after", type=float, default=mailbox.CLAIM_STALE_SECONDS,
                     help="seconds before an unacked claim is re-offered")
+    ib.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     ib.set_defaults(func=commands.cmd_inbox)
 
     ak = sub.add_parser("ack", help="mailbox v2: retire handled events by id (fleet-config#1455)")
@@ -90,6 +91,10 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     ctx.add_argument("sid", nargs="?", default=None)
     ctx.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     ctx.set_defaults(func=commands.cmd_context)
+
+    cd = sub.add_parser("compact-due", help="is the chief's context at or over the Settings threshold?")
+    cd.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    cd.set_defaults(func=commands.cmd_compact_due)
 
 
 def _add_act_commands(sub: argparse._SubParsersAction) -> None:

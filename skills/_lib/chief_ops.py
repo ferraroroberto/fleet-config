@@ -92,6 +92,13 @@ Subcommands
       context`, the statusline's `NN%c`); default: the live chief. A null
       reading prints `percent=unknown` with its reason, never 0, and exits 1.
 
+  compact-due [--base-url URL]
+      `COMPACT_DUE percent=<n> threshold=<t>` at/over the Settings threshold,
+      else `COMPACT_NOT_DUE ...` or `COMPACT_OFF`; an unreadable percentage is
+      `COMPACT_DUE=unknown reason=...` (exit 1), never "not due". `inbox` prints
+      the same line, but only when due or unknown and only to the live chief;
+      `hooks/chief_waiter_stop.py` holds the chief's turn end on it.
+
   self-compact [--threshold N] [--focus TEXT] [--fresh-within S] [--base-url URL]
       The chief's *automatic* compaction of itself (fleet-config#1052). The
       threshold comes from app-launcher Settings (`/api/board/chief-settings`,

@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -80,8 +81,74 @@ def _drive(tmp: Path, payload: Dict[str, object], chief_ops: Callable[..., Optio
     return 0, calls
 
 
-def _launcher(wake: str = "WAKE=waiter doorbell=off", jobs: str = "FLEET_JOBS=0") -> Callable[..., Optional[str]]:
-    return lambda *args: jobs if args[0] == "fleet-jobs" else wake
+NOT_DUE = "COMPACT_NOT_DUE percent=12 threshold=30"
+
+
+def _launcher(wake: str = "WAKE=waiter doorbell=off", jobs: str = "FLEET_JOBS=0",
+              compact: str = NOT_DUE) -> Callable[..., Optional[str]]:
+    answers = {"fleet-jobs": jobs, "compact-due": compact}
+    return lambda *args: answers.get(args[0], wake)
+
+
+def _waiter_calls(calls: List[Tuple[str, ...]]) -> List[Tuple[str, ...]]:
+    """The launcher reads other than the context gate's own `compact-due`."""
+    return [c for c in calls if c[0] != "compact-due"]
+
+
+def _compact_gate_checks(check: _Checker, tmp: Path) -> None:
+    """The context-threshold hold: over / under / unknown / debounce / queued / non-chief."""
+    over = "COMPACT_DUE percent=61 threshold=30"
+    nudge, queued = tmp / "chief-compact-nudge", tmp / "chief-compact-queued"
+    _seed_state(tmp, lane_status=None)  # no lane working: only the context gate can hold the turn
+
+    def _asked(calls: List[Tuple[str, ...]]) -> List[Tuple[str, ...]]:
+        return [c for c in calls if c[0] == "compact-due"]
+
+    def drive(compact: str, payload: Dict[str, object] = CHIEF_PAYLOAD, env: Optional[Dict[str, str]] = None):
+        return _drive(tmp, payload, _launcher(compact=compact), env)
+
+    code, _ = drive(NOT_DUE)
+    check("chief_compact_gate: under the threshold -> turn end allowed, no marker", code == 0 and not nudge.exists())
+    code, _ = drive("COMPACT_OFF")
+    check("chief_compact_gate: auto-compact off in Settings -> allowed", code == 0 and not nudge.exists())
+    code, _ = drive("COMPACT_DUE=unknown reason=percent not reported")
+    check("chief_compact_gate: unknown percent -> allowed (fails open) and writes no marker",
+          code == 0 and not nudge.exists())
+    code, _ = drive("")
+    check("chief_compact_gate: no answer from chief_ops -> allowed", code == 0 and not nudge.exists())
+
+    code, _ = drive(over)
+    check("chief_compact_gate: over the threshold -> turn end held (exit 2), nudge marker written",
+          code == 2 and nudge.exists())
+    code, calls = drive(over)
+    check("chief_compact_gate: debounced -- a second turn end inside the window is allowed without asking",
+          code == 0 and not _asked(calls), str(calls))
+    old = time.time() - 3600
+    os.utime(nudge, (old, old))
+    code, _ = drive(over)
+    check("chief_compact_gate: a nudge older than the window holds again", code == 2)
+
+    os.utime(nudge, (old, old))
+    queued.write_text("1", encoding="utf-8")
+    code, calls = drive(over)
+    check("chief_compact_gate: a queued self-compact silences the hold without asking",
+          code == 0 and not _asked(calls), str(calls))
+    queued.unlink()
+    nudge.unlink()
+
+    code, calls = drive(over, {**CHIEF_PAYLOAD, "stop_hook_active": True})
+    check("chief_compact_gate: turn already continuing after a refusal -> never held again",
+          code == 0 and not calls and not nudge.exists())
+    code, calls = drive(over, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+    check("chief_compact_gate: headless child of the chief is never held", code == 0 and not calls)
+    code, calls = drive(over, {**CHIEF_PAYLOAD, "session_id": "worker-transcript-uuid"},
+                        {"APP_LAUNCHER_SESSION_ID": ""})
+    check("chief_compact_gate: non-chief session is untouched (exit 0, no launcher read, no marker)",
+          code == 0 and not calls and not nudge.exists(), str(calls))
+    _seed_state(tmp, lane_status=None, chief_name="telegram:general")
+    code, calls = drive(over)
+    check("chief_compact_gate: a telegram:* session is untouched", code == 0 and not calls and not nudge.exists())
+    _seed_state(tmp, lane_status="working")
 
 
 def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
@@ -97,7 +164,7 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
         _write_heartbeat(tmp, "live", end_in_s=300)
         code, calls = _drive(tmp, CHIEF_PAYLOAD, _launcher())
         check("chief_waiter_stop: live heartbeat -> allowed before any launcher read",
-              code == 0 and not calls, str(calls))
+              code == 0 and not _waiter_calls(calls), str(calls))
 
         shutil.rmtree(tmp / "chief-waiters")
         _write_heartbeat(tmp, "expired", end_in_s=-120)
@@ -130,6 +197,8 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
         code, _ = _drive(tmp, {**CHIEF_PAYLOAD, "stop_hook_active": True}, _launcher())
         check("chief_waiter_stop: turn already continuing after a refusal -> allowed", code == 0)
 
+        _compact_gate_checks(check, tmp)
+
         # Subprocess cases: these must exit before any launcher read, so no stub is possible.
         env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "APP_LAUNCHER_SESSION_ID": CHIEF_LAUNCHER_SID}
         code, _out, _err = run("chief_waiter_stop", CHIEF_PAYLOAD,
@@ -155,7 +224,7 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
         with mock.patch.dict(os.environ, {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}):
             with waiter_heartbeat.armed(60, pid=os.getpid()):
                 code, calls = _drive(tmp, CHIEF_PAYLOAD, _launcher())
-                check("waiter_heartbeat: armed() heartbeat satisfies the hook", code == 0 and not calls)
+                check("waiter_heartbeat: armed() heartbeat satisfies the hook", code == 0 and not _waiter_calls(calls))
             code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())
             check("waiter_heartbeat: heartbeat is gone once the waiter exits -> refused", code == 2)
             waiter_id = waiter_heartbeat.start(60)
