@@ -6,8 +6,7 @@ Hard: every input is a fixture or this repo's own committed files, so a
 sibling repo's commit can never turn it red. The fleet-wide coupling report
 is `build_data.py --coupling`, run by `/system-map`, not here.
 
-Lives beside `architecture_guards.py` rather than in it: that file is near
-the structure limit.
+Not in `architecture_guards.py`: that file is near the structure limit.
 """
 from __future__ import annotations
 
