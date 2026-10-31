@@ -124,7 +124,7 @@ Subcommands
       One state-table row per ref via `gh issue view`; a per-ref `gh`
       failure becomes an `error:` row rather than aborting the rest.
 
-  dispatch <repo> <number> [--mode start|yolo] [--model M]
+  dispatch <repo> <number> [--mode start|yolo] [--model M] [--effort E]
            [--brief-file PATH] [--yolo-confirmed] [--allow-during-fleet-job]
            [--base-url URL]
       Refuses (exit 1, no POST) on an occupied repo, an at/over-cap
@@ -157,6 +157,10 @@ Subcommands
       stores it in a file it owns and launches `/issue-<mode> <N> --brief
       <path>` (app-launcher#1114), printed back as `LAUNCHED=`. A later `say`
       arrives as unsigned paste and can never grant shipping.
+
+      `--effort low|medium|high|xhigh` rides the POST as `effort` and prints
+      `EFFORT=<e> applied=yes` only when the launcher's response echoes it;
+      otherwise `applied=not-confirmed` with the reason.
 
   chief-sid [--base-url URL]
       Prints `CHIEF_SID=<sid>` (or `none`) for the live standing chief —

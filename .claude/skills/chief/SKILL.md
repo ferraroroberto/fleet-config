@@ -44,8 +44,7 @@ could hit by hand.
   "what next"; the handover log stays the "why". Every lane and every
   queued build item carries its model (fleet-config#1101): `--model
   opus|sonnet` on `plan lane` and `plan add`/`set`, picked per task by
-  `docs/model-tiers.md` (Sonnet for mechanical work, Opus for hard
-  reasoning), matching what you dispatched it with.
+  `docs/model-tiers.md`, matching what you dispatched it with.
 - **Every decision you need from Roberto goes in the plan as a question
   (fleet-config#1049):** `plan ask "<question>" --ref repo#N` (or `--repo`)
   with `--detail` (the context needed to decide cold), `--recommend` (your
@@ -228,7 +227,7 @@ covers (it enforces the mechanical half of the safety rails below, not
 just the launcher call):
 
 - Start an issue: `chief_ops.py dispatch <repo> <number> [--mode
-  start|yolo] [--model sonnet|opus|fable|luna|grok] [--brief-file <path>]` —
+  start|yolo] [--model sonnet|opus|fable|luna|grok] [--effort E] [--brief-file <path>]` —
   **refuses** (prints `REFUSED=...`, no session spawned) if that repo
   already has a live session, if the worker cap is at/over, if `--mode yolo`
   is given without `--yolo-confirmed`, or if the brief file is missing or
@@ -437,9 +436,9 @@ instead:
 6. **Read-only by default.** Questions get answers, not side effects. Every
    mutation (start/dispatch/nudge/stop) happens only on an explicit
    direction in the user's message.
-7. Models: pass `"sonnet"` unless the user names a tier (`opus`, `fable`,
-   `luna` (Codex only), `grok` (Grok Build, `easy`-tier lanes only, per
-   `docs/model-tiers.md`)). Your own model is not yours to change.
+7. Models: pick each lane's `--model` and `--effort` from
+   `docs/model-tiers.md`; a tier the user names wins. Your own model is
+   not yours to change.
 8. **Destructive-scope steers always need a human echo — permanent floor,
    independent of any steer mechanism (fleet-config#509, #622).** Routine
    steers (correct the approach, narrow the scope, answer a question, unstick

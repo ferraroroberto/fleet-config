@@ -59,7 +59,7 @@ check(
 
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
                   jobs=None, allow_during_fleet_job=False, start_exc=None, model=None,
-                  catalog=()):
+                  catalog=(), effort=None, echo_effort=False):
     posted = []
     requested = []
     _run_dispatch.start_timeout = None
@@ -86,7 +86,10 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
             launched = f"/issue-{body['mode']} {body['number']}"
             if "brief" in body:
                 launched += " --brief E:/automation/app-launcher/webapp/briefs/0f.md"
-            return {"session": {"session_id": "spawned-1"}, "launched": launched}
+            result = {"session": {"session_id": "spawned-1"}, "launched": launched}
+            if echo_effort and "effort" in body:
+                result["effort"] = body["effort"]
+            return result
         raise AssertionError(f"unexpected path: {path}")
 
     prior_request, prior_mark = co.launcher._request, co.chief_managed.mark
@@ -101,7 +104,7 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         args = argparse.Namespace(
             repo=repo, number=number, mode="start", model=model,
             brief_file=brief_file, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
-            allow_during_fleet_job=allow_during_fleet_job,
+            allow_during_fleet_job=allow_during_fleet_job, effort=effort,
         )
         with contextlib.redirect_stdout(io.StringIO()) as out:
             rc = co.cmd_dispatch(args)
@@ -181,6 +184,34 @@ check(rc == 0 and posted[0].get("model") == "opus",
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
 check(rc == 0 and "model" not in posted[0],
       "cmd_dispatch: no --model sends no model key")
+
+
+# ---- cmd_dispatch --effort: posted, and applied only when the launcher echoes it
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="opus", effort="high")
+check(rc == 0 and posted[0].get("effort") == "high"
+      and "EFFORT=high applied=not-confirmed reason=launcher did not echo effort" in _run_dispatch.last_output,
+      "cmd_dispatch: --effort is posted; a launcher that ignores it is reported not-confirmed, never applied")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, model="opus", effort="medium", echo_effort=True)
+check(rc == 0 and "EFFORT=medium applied=yes" in _run_dispatch.last_output,
+      "cmd_dispatch: an effort the launcher echoes is reported applied")
+
+check(co.commands.effort_outcome("high", {"effort": "medium"})
+      == "EFFORT=high applied=not-confirmed reason=launcher reported medium",
+      "effort_outcome: a different echoed effort is a mismatch, not applied")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
+check(rc == 0 and "effort" not in posted[0] and "EFFORT=" not in _run_dispatch.last_output,
+      "cmd_dispatch: no --effort sends no effort key and prints no EFFORT line")
+
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        co.cli.build_parser(co.__doc__).parse_args(["dispatch", "x", "1", "--effort", "max"])
+    _max_refused = False
+except SystemExit:
+    _max_refused = True
+check(_max_refused, "dispatch --effort max is rejected at parse time (max stays off)")
 
 
 # ---- cmd_dispatch --brief-file: the brief rides the launch command (#944) ---
