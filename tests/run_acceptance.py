@@ -87,6 +87,7 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _unattended_worktree_mandate_check,
 )
 from acceptance.system_map_coverage import _system_map_coverage_check  # noqa: E402
+from acceptance.fleet_contracts_checks import _fleet_contracts_check  # noqa: E402
 from acceptance.checks_capture import (  # noqa: E402
     _conversation_capture_unit_checks,
     _conversation_index_unit_checks,
@@ -379,6 +380,7 @@ def _run_repo_guards(tally: _Tally) -> None:
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     tally.run_unit(_mermaid_check)
+    tally.run_unit(_fleet_contracts_check)
     tally.run_unit(_unattended_worktree_mandate_check)
 
     # ---- no skill deletes an index.lock or merge-commits a PR (#1243) ----

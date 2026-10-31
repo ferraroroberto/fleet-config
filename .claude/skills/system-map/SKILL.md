@@ -46,7 +46,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/bu
 E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap.
+A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap. `build_data.py --coupling` lists each cross-repo reference a card's `depends_on` does not declare; report its count too.
 
 The `system_map:` checks fail if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree. Fix any failure before rendering.
 
@@ -66,7 +66,7 @@ Then render the **text-native** companion — a second, independent consumer of 
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py
 ```
 
-Regenerates `architecture/system-map.mmd` (a Mermaid flowchart — icons + names only, edges from each card's `tag` field) — the fleet-map doc agents open on demand; `global-CLAUDE.md` only points at it and never embeds the diagram (kept out of always-on context, fleet-config#897). The write is idempotent — an unchanged week touches nothing — and `--check` exits 1 when the committed file is stale.
+Regenerates `architecture/system-map.mmd` (icons + names; `tag` edges solid, `depends_on` edges dotted), the fleet-map doc agents open on demand, and `architecture/CONTRACTS.md` (every declared interface, ownership and dependency). Idempotent; `--check` exits 1 when either is stale.
 
 ### 4. Compute the week-over-week change line
 
