@@ -5,8 +5,13 @@ network, no `gh`, no live launcher: every part drives synthetic board payloads.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# `inbox` asks the launcher about the chief only when it runs inside a launcher session; a suite
+# started from one must not reach the live launcher.
+os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))

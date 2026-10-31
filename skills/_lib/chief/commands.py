@@ -168,7 +168,38 @@ def cmd_inbox(args: argparse.Namespace) -> int:
         return 0
     events, reoffered, dropped = mailbox.claim_mailbox(inbox, stale_after=args.stale_after)
     print(mailbox.format_mailbox_batch(events, reoffered, dropped, stale_after=args.stale_after))
+    # The context check rides the path the chief runs every wake; it is silent
+    # unless due or unknown, and only for the live chief itself.
+    caller = rails.caller_session_id()
+    if caller:
+        chief, line = _chief_compact_status(args.base_url)
+        if chief == caller and not line.startswith(("COMPACT_NOT_DUE", "COMPACT_OFF")):
+            print(line)
     return 0
+
+
+def _chief_compact_status(base_url: str) -> Tuple[Optional[str], str]:
+    """`(live chief sid, compact status line)`; any launcher failure is `COMPACT_DUE=unknown`."""
+    try:
+        chief = rails.find_chief_session((launcher._request(base_url, "/api/board").get("columns") or {}))
+        if not chief:
+            return None, "COMPACT_DUE=unknown reason=no live chief session"
+        settings, unread = launcher.fetch_chief_settings(base_url)
+        threshold, _ = compact.resolve_compact_threshold(settings, None, unread)
+        if threshold is None:
+            return chief, compact.compact_status_line(None, None)
+        info = launcher.fetch_context(base_url, chief)
+    except (OSError, ValueError) as exc:
+        return None, f"COMPACT_DUE=unknown reason={type(exc).__name__}"
+    _, percent = compact.format_context_line(chief, info)
+    return chief, compact.compact_status_line(percent, threshold, str(info.get("reason") or "percent not reported"))
+
+
+def cmd_compact_due(args: argparse.Namespace) -> int:
+    """Whether the live chief's context is at or over the Settings threshold. Exit 1 when unknown."""
+    _, line = _chief_compact_status(args.base_url)
+    print(line)
+    return 1 if line.startswith("COMPACT_DUE=unknown") else 0
 
 
 def cmd_ack(args: argparse.Namespace) -> int:
@@ -255,6 +286,10 @@ def cmd_self_compact(args: argparse.Namespace) -> int:
         print(f"NOT_QUEUED reason={delivery['reason'] or delivery['error']}")
         return 2
     verdict = delivery["reason"] or "submitted"
+    try:
+        (state / compact.COMPACT_QUEUED_MARKER).write_text(str(int(time.time())), encoding="utf-8")
+    except OSError as exc:
+        print(f"ℹ️ could not write {compact.COMPACT_QUEUED_MARKER} ({exc}); the Stop hook may nudge once more")
     print(f"COMPACT_QUEUED sid={self_sid[:8]} verdict={verdict} -- end this turn; it runs when the turn ends")
     return 0
 

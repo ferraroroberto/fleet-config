@@ -21,8 +21,19 @@ Cheapest check first, so every other session pays almost nothing:
    `claude -p` has no waiter to arm and must never be held open;
 2. a session that is not the chief (`sessions-state.json` row named `chief`) is
    allowed with one small file read;
-3. only the chief reaches the heartbeat read, the lane read and, when it is
-   about to be refused, the launcher reads (`wake`, `fleet-jobs`).
+3. only the chief reaches the context gate (hold the turn end once per window
+   when its context is at or over the compact threshold), the heartbeat read,
+   the lane read and, when it is about to be refused, the launcher reads
+   (`wake`, `fleet-jobs`).
+
+The context gate replaces a skill step the chief kept skipping: it asks
+`chief_ops.py compact-due` (the line `chief_ops.py inbox` prints too) and holds
+the turn end only on `COMPACT_DUE percent=.. threshold=..`; "not due", "off" and
+"unknown" allow, and unknown is logged, never reported as fine. Two markers in
+the hooks state dir debounce it to one hold per window so it can never loop:
+`chief-compact-nudge` (written here) and `chief-compact-queued` (written by
+`chief_ops.py self-compact`; the compaction runs when the turn ends, while the
+percentage is still over the threshold).
 
 It fails open everywhere it cannot establish a fact -- an unreadable session
 state, an unreachable launcher -- and says so in the log; the launcher's
@@ -35,8 +46,10 @@ import ctypes
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
@@ -57,6 +70,11 @@ WORKING = "working"
 LANE_WORKING_MAX_AGE = timedelta(hours=12)
 REFUSAL = ("No waiter armed while lanes are live: launch the poll (run_in_background) "
            "before ending the turn.")
+COMPACT_NUDGE_MARKER = "chief-compact-nudge"
+COMPACT_QUEUED_MARKER = "chief-compact-queued"
+# Equals skills/_lib/chief/compact.py COMPACT_NUDGE_SECONDS (hooks do not import skills).
+COMPACT_DEBOUNCE_S = 600
+_COMPACT_DUE = re.compile(r"^COMPACT_DUE percent=(\d+) threshold=(\d+)\s*$")
 _PROBE_TIMEOUT_S = 25.0
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259
@@ -176,6 +194,38 @@ def doorbell_on() -> bool:
     return any(l.startswith("WAKE=doorbell") for l in out.splitlines())
 
 
+def _marker_recent(path: Path, now: float) -> bool:
+    try:
+        return now - path.stat().st_mtime < COMPACT_DEBOUNCE_S
+    except OSError:
+        return False
+
+
+def compact_refusal(now: Optional[float] = None) -> Optional[str]:
+    """The message that holds the chief's turn end at the compact threshold, or None."""
+    clock = time.time() if now is None else now
+    state = _lib.state_dir()
+    if _marker_recent(state / COMPACT_NUDGE_MARKER, clock) or _marker_recent(state / COMPACT_QUEUED_MARKER, clock):
+        return None
+    line = next((l for l in (_chief_ops("compact-due") or "").splitlines() if l.startswith("COMPACT_")), "")
+    match = _COMPACT_DUE.match(line)
+    if match is None:
+        if not line.startswith(("COMPACT_NOT_DUE", "COMPACT_OFF")):
+            logger.warning("chief_waiter_stop: context use unknown (%s) -- allowing the turn end", line or "no answer")
+        return None
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+        (state / COMPACT_NUDGE_MARKER).write_text(str(int(clock)), encoding="utf-8")
+    except OSError as exc:
+        # Without the marker every turn end would hold again: skip the hold rather than risk a loop.
+        logger.warning("chief_waiter_stop: cannot write %s (%s) -- allowing the turn end", COMPACT_NUDGE_MARKER, exc)
+        return None
+    percent, threshold = match.groups()
+    return (f"Context is at {percent}% (compact threshold {threshold}%). At this quiet point refresh the "
+            "handover log and the plan, then run `chief_ops.py wake` and `chief_ops.py self-compact`, and end "
+            "the turn on COMPACT_QUEUED. If a steer or decision is mid-flight, finish it first.")
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if (os.environ.get(_lib.ENTRYPOINT_ENV_VAR, "").strip().lower().startswith("sdk")
@@ -188,6 +238,10 @@ def main() -> None:
                        session_state.state_file())
     if not chief:
         _lib.allow()
+
+    compact_message = compact_refusal()
+    if compact_message:
+        _lib.block(compact_message)
 
     now = datetime.now(timezone.utc)
     if live_waiter(now):

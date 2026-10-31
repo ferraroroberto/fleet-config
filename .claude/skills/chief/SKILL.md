@@ -161,33 +161,17 @@ has already deleted them; there is nothing to ack). On
 script to whatever the situation needs (a job's run status, `wc -c` of its
 log); the shape stays the same: wait, one digest, exit.
 
-## Managing your own context — self-compact at a quiet tick (fleet-config#1052)
+## Managing your own context — self-compact at a quiet tick (fleet-config#1052, #1747)
 
-One chief session is meant to run indefinitely. Don't wait for the harness's
-own auto-compact near the limit, where attention is most diluted and nothing
-guarantees the handover was refreshed. Compact yourself earlier, on your own
-terms:
+One chief session runs indefinitely; compact yourself early, on your own terms. The check is a mechanism, not a step to remember: `chief_ops.py inbox` prints `COMPACT_DUE percent=<n> threshold=<t>` at or over the Settings threshold (`COMPACT_DUE=unknown` is never "fine"), and the Stop hook holds your turn end once per 10 minutes while it holds.
 
-1. On each wake, `chief_ops.py context` prints your context use
-   (`percent=unknown` is never a trigger).
-2. At or over the threshold, and **only at a quiet tick**: no steer awaiting
-   verification, no half-made decision, no merge mid-flight.
-   - Refresh the handover log and the plan (`plan …`).
-   - Run `chief_ops.py wake`. On `WAKE=waiter`, make sure the `wait-event`
-     waiter is armed: a background task armed before a compaction still
-     wakes you afterwards (probed live, #1052). On `WAKE=doorbell`, arm
-     nothing: the next idle tick after the compaction rings if events wait.
-   - Run `chief_ops.py self-compact`.
-3. `COMPACT_QUEUED` → end the turn at once. The `/compact` runs when the turn
-   ends; SessionStart re-injects the handover, and the doorbell (or the
-   waiter's exit) gives you your next turn.
+On either, and **only at a quiet tick** (no steer awaiting verification, no half-made decision, no merge mid-flight):
 
-`self-compact` reads the threshold from app-launcher Settings (0 = off; if it
-can't be read, 30, with the reason printed). It refuses, each with its own
-`REFUSED=` line, below the threshold, on an unknown percentage, on a handover
-log or plan older than 10 minutes, and whenever the caller isn't you, the live
-chief. Treat a refusal as information: fix the stale refresh, or wait for the
-next tick. Never retry past it.
+1. Refresh the handover log and the plan (`plan …`).
+2. `chief_ops.py wake`. On `WAKE=waiter`, arm the `wait-event` waiter (one armed before a compaction still wakes you after it, #1052); on `WAKE=doorbell`, arm nothing.
+3. `chief_ops.py self-compact`. On `COMPACT_QUEUED` end the turn at once: the `/compact` runs then, SessionStart re-injects the handover, and the doorbell (or the waiter's exit) gives you your next turn.
+
+`self-compact` reads the threshold from app-launcher Settings (0 = off; unreadable, 30, reason printed) and refuses, each with its own `REFUSED=` line, below it, on an unknown percentage, on a handover log or plan older than 10 minutes, and when the caller isn't the live chief. Treat a refusal as information: fix the stale refresh or wait for the next tick; never retry past it.
 
 **Those refusals gate only this automatic trigger.** A `/compact` Roberto types in your terminal or sends from the Board chat goes straight through at any percentage; never refuse, delay or second-guess it.
 

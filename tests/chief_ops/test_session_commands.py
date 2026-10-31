@@ -338,6 +338,64 @@ try:
     with contextlib.redirect_stdout(out):
         code = co.main(["context"])
     check(code == 1 and "percent=unknown" in out.getvalue(), "context CLI: a null percentage prints unknown and exits 1")
+
+    # ---- compact-due + the inbox line (fleet-config#1747) ----
+    check((_compact_tmp / "chief-compact-queued").is_file(),
+          "self-compact: a queued /compact leaves the marker the Stop hook reads")
+    status = co.compact.compact_status_line
+    check(status(61, 30) == "COMPACT_DUE percent=61 threshold=30", "compact_status_line: over -> COMPACT_DUE")
+    check(status(30, 30).startswith("COMPACT_DUE "), "compact_status_line: at the threshold is due")
+    check(status(12, 30) == "COMPACT_NOT_DUE percent=12 threshold=30", "compact_status_line: under -> not due")
+    check(status(None, 30, "no statusline") == "COMPACT_DUE=unknown reason=no statusline",
+          "compact_status_line: unknown is its own state, never not-due")
+    check(status(61, None) == "COMPACT_OFF", "compact_status_line: threshold off -> COMPACT_OFF")
+
+    def run(*argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = co.main(list(argv))
+        return code, out.getvalue()
+
+    world["settings"] = {"auto_compact_threshold": 30}
+    world["caller"] = CHIEF
+    world["percent"] = 61
+    code, out = run("compact-due")
+    check(code == 0 and out.strip() == "COMPACT_DUE percent=61 threshold=30", "compact-due: over the threshold")
+    world["percent"] = 12
+    code, out = run("compact-due")
+    check(code == 0 and out.strip() == "COMPACT_NOT_DUE percent=12 threshold=30", "compact-due: under the threshold")
+    world["percent"] = None
+    code, out = run("compact-due")
+    check(code == 1 and out.strip().startswith("COMPACT_DUE=unknown"), "compact-due: unknown percent exits 1, not 'not due'")
+    world["percent"] = 61
+    world["settings"] = {"auto_compact_threshold": 0}
+    code, out = run("compact-due")
+    check(code == 0 and out.strip() == "COMPACT_OFF", "compact-due: 0 in Settings is off")
+    world["settings"] = {"auto_compact_threshold": 30}
+
+    _inbox_dir = _compact_tmp / "inbox"
+    _saved_inbox = co.mailbox.chief_inbox_dir
+    co.mailbox.chief_inbox_dir = lambda: _inbox_dir
+    try:
+        code, out = run("inbox")
+        check(code == 0 and "COMPACT_DUE percent=61 threshold=30" in out.splitlines(), "inbox: prints COMPACT_DUE when over")
+        world["percent"] = 12
+        code, out = run("inbox")
+        check(code == 0 and "COMPACT" not in out, "inbox: silent under the threshold")
+        world["percent"] = None
+        code, out = run("inbox")
+        check(code == 0 and "COMPACT_DUE=unknown" in out, "inbox: prints COMPACT_DUE=unknown, never folds it into fine")
+        world["percent"] = 61
+        world["caller"] = "worker0000000000000000000000002"
+        code, out = run("inbox")
+        check(code == 0 and "COMPACT" not in out, "inbox: a caller that is not the live chief never sees the line")
+        world["caller"] = None
+        code, out = run("inbox")
+        check(code == 0 and "COMPACT" not in out, "inbox: outside a launcher session makes no launcher call")
+        code, out = run("inbox", "--count")
+        check(code == 0 and "COMPACT" not in out, "inbox --count: stays a pure count")
+    finally:
+        co.mailbox.chief_inbox_dir = _saved_inbox
 finally:
     co.launcher._request, co.rails.caller_session_id = _saved[0], _saved[1]
     if _saved[2] is None:
