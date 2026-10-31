@@ -95,6 +95,20 @@ def resolve_dispatch_model(model: str, catalog: Optional[List[dict]], catalog_er
     raise ValueError(f"--model {model} matches no available Codex model in the launcher catalog (offered: {names})")
 
 
+def effort_outcome(requested: Optional[str], result: dict) -> Optional[str]:
+    """The `EFFORT=` line for a dispatch that asked for one, else None.
+    Applied only when the launcher's response echoes the same effort: a
+    launcher that ignores the field still spawns the lane at its persisted
+    per-model effort, so silence is reported as not confirmed, never as applied."""
+    if not requested:
+        return None
+    echoed = result.get("effort")
+    if echoed == requested:
+        return f"EFFORT={requested} applied=yes"
+    reason = "launcher did not echo effort" if echoed is None else f"launcher reported {echoed}"
+    return f"EFFORT={requested} applied=not-confirmed reason={reason}"
+
+
 def load_dispatch_brief(path: str) -> str:
     """A `--brief-file`'s text, or ValueError naming why it can't be one.
     Checked before any board read, so a bad brief never spawns a lane that
@@ -396,6 +410,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         body["model"] = model
     if brief is not None:
         body["brief"] = brief
+    if args.effort:
+        body["effort"] = args.effort
     try:
         result = launcher._request(args.base_url, "/api/board/issues/start", method="POST", body=body,
                                    timeout=DISPATCH_TIMEOUT)
@@ -424,6 +440,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     print(f"DISPATCH_ID={dispatch_id}")
     if result.get("launched"):
         print(f"LAUNCHED={result['launched']}")
+    effort_line = effort_outcome(args.effort, result)
+    if effort_line:
+        print(effort_line)
     return 0
 
 

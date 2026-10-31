@@ -85,7 +85,7 @@ try:
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
         brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
-        allow_during_fleet_job=False,
+        allow_during_fleet_job=False, effort=None,
     )
     rc = co.cmd_dispatch(args)
     check(rc == 0, "cmd_dispatch (fake transport) exits 0 on a clear dispatch")

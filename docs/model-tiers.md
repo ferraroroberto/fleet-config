@@ -32,24 +32,13 @@ Before using a row, inspect the current session’s accepted model/effort metada
 
 | Tier | Model | Effort | Execution shape |
 |---|---|---|---|
-| `easy` | Sonnet | high (see caveat below) | full autonomy |
-| `hard` | Opus | high (see caveat below) | build-and-stop for human review |
+| `easy` | Sonnet | medium | full autonomy |
+| `hard` | Opus | medium by default, high where verification matters | build-and-stop for human review |
 | `extreme` | Opus | xhigh | rare escalation; human-reviewed by construction |
 
-**Effort caveat.** "High effort" is fleet intent, not always an enforced control.
-The `Agent` tool (used by `audit-fleet`/`cleanup-fleet` for background sub-agent
-spawns) exposes a `model` parameter but no per-call `effort` override — only the
-top-level `claude -p --effort <level>` session flag, and the `Workflow` tool's
-`agent()` `opts.effort`, can actually set reasoning effort today. So a
-background-spawned sub-agent inherits whatever effort its parent session runs at;
-"high" is honored at the top-level orchestrator invocation (see `run-weekly.bat`)
-and awaits either a `Workflow`-based dispatch or a future `Agent`-tool `effort`
-parameter to be enforceable per sub-agent.
+**Picking a chief lane's model and effort.** Opus at medium is the default for a dispatched lane. Raise it to high for a bug fix in existing code, cross-repo work, security, data handling, or device-sensitive UI such as the iOS nav. Use xhigh only for a lane expected to run over 30 minutes; max stays off. Sonnet at medium takes the mechanical work: re-vendoring, propagation waves, docs and easy bugs. `chief_ops.py dispatch` carries both: `--model opus|sonnet` and `--effort low|medium|high|xhigh`.
 
-**`easy` and `hard` resolve to different models on Claude Code** — `easy` is
-Sonnet (cheap, full-autonomy work); `hard` is Opus (see "Why the Claude Code
-mapping is what it is" below). The tier split also independently drives
-execution shape (full autonomy vs. review-gated) regardless of model.
+**Effort reaches a worker only through a control that carries it**: `claude -p --effort` (the `run-weekly.bat` launchers), the `Workflow` tool's `agent()` `opts.effort`, the `Agent` tool's `effort` parameter, and the dispatch `--effort` flag once the launcher honours it. A worker spawned without one inherits its parent's effort, or the launcher's persisted per-model effort for a dispatched lane.
 
 ### Codex / GPT
 
@@ -124,13 +113,11 @@ it's a second, independent reason for that number, not a restatement of it.
 
 ## Why the Claude Code mapping is what it is
 
-- **`hard` is Opus at high effort.** The user's subscription carries higher
-  Opus limits, which removes any cost/throughput reason to default down to a
-  cheaper model for genuinely investigation/audit-grade sub-tasks, the whole
-  point of the `hard` tier. Sonnet 5 is judged as capable as Opus 4.8 for
-  nearly all fleet-skill work, which is why `easy` stays on Sonnet, but `hard`
-  work gets the stronger model. Every `hard`-tier spawn therefore binds the
-  ≤3-concurrent Opus burst-limiter cap (see "Concurrency cap" above).
-- **`easy` is Sonnet.** That tier is full-autonomy, mechanical work.
-- **`extreme` is Opus at `xhigh`.** It is the higher-effort, rarer escalation
-  above `hard`.
+- **Medium is Anthropic's own starting point.** Claude Code ships Opus 5.5 as the default model, and Opus 5.5, Sonnet 5.5 and Haiku 5.5 all default to medium effort. The same page says Opus 5.5 at medium matches or exceeds Opus 5 at high on coding and knowledge-work evals. Its level guide: medium is "day-to-day engineering with a clear scope", high is "work where verification matters or edge cases are likely", and max "may show diminishing returns and is prone to overthinking".
+- **High is where verification matters.** That wording is why bug fixes, cross-repo, security, data and device UI run at high: fleet lanes merge without a human reviewing each step, so those are where a missed edge case costs most.
+- **xhigh is for long lanes.** The API effort guide reserves it for long-running agentic and coding tasks over 30 minutes.
+- **Sonnet at medium fits mechanical work.** Anthropic advises Sonnet 5.5 start at medium for well-specified agentic coding. Sonnet is also exempt from the Opus burst cap, so propagation waves fan out freely.
+- **Effort is recalibrated per model.** A level name does not buy the same thinking on a new model, and the API guide says to run an effort sweep on your own evals rather than carry settings over. Re-check this table when a model ships, against gate pass rate and tokens on past fleet issues.
+- **Community evidence is thin and agrees.** One published run of Opus 5.5 on three small tasks found medium, high and xhigh all passed the hidden edge cases, at roughly $1.69, $2.30 and $4.99; no substantial dissent turned up.
+
+Sources: [Claude Code model config](https://code.claude.com/docs/en/model-config), [API effort guide](https://platform.claude.com/docs/en/build-with-claude/effort), [Opus 5.5 prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompting-claude-opus-5-5), [effort-level comparison run](https://www.dsebastien.net/claude-code-effort-levels/).
