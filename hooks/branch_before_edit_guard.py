@@ -108,8 +108,20 @@ def _is_ignored(target: Path) -> bool:
     "is outside repository at 'E:/automation/fleet-config'" — the fail-closed
     path, which would have left fleet-config#489's second live repro blocked.
     """
-    res = _lib.run_git(["-C", str(target.parent), "check-ignore", "-q", str(target)])
+    res = _lib.run_git(["-C", str(_existing_ancestor(target.parent)), "check-ignore", "-q", str(target)])
     return res.returncode == 0
+
+
+def _existing_ancestor(directory: Path) -> Path:
+    """`directory`, or its nearest ancestor that exists.
+
+    A `Write` creating `<repo>/newpkg/mod.py` names a directory git cannot `-C`
+    into (exit 128), which would read as "outside any repo". The nearest
+    existing ancestor lives in the same repo and answers for it.
+    """
+    while not directory.is_dir() and directory.parent != directory:
+        directory = directory.parent
+    return directory
 
 
 def main() -> None:
@@ -147,7 +159,7 @@ def main() -> None:
                 target = raw_target.resolve()
             except OSError:
                 target = raw_target
-            target_dir = target.parent
+            target_dir = _existing_ancestor(target.parent)
             branch = _current_branch(target_dir)
             if branch is None:
                 continue

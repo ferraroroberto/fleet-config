@@ -245,7 +245,7 @@ def forced_push_hits_protected(cmd: str, cwd_path: Path) -> bool:
         return False
     refspecs, git_dir = parsed
     # A refspec-less push runs in the repo `-C` names, relative to the payload cwd.
-    repo = cwd_path / git_dir if git_dir else cwd_path
+    repo = cwd_path / _lib.msys_to_drive(git_dir) if git_dir else cwd_path
     targets = [destination_branch(r) for r in refspecs] or [_current_branch(repo)]
     return any(t.lower() in PROTECTED_BRANCHES for t in targets if t)
 

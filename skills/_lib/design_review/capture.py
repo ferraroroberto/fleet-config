@@ -501,6 +501,7 @@ E2E_LOG = "e2e.log"
 E2E_CAPTURE_ENV = "DESIGN_SURFACE_CAPTURE"
 E2E_SCRIPT_TIMEOUT_S = 120.0
 E2E_DRAIN_S = 10.0       # a killed suite gets this long to release its output pipe
+SUITE_OUTPUT_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})  # what a screenshot-writing suite leaves in the tree
 PYTEST_NO_TESTS = 5      # pytest's exit code when collection selected nothing: no test calls surface(
 
 
@@ -659,9 +660,11 @@ def _tree_state(root: Path) -> "tuple[Optional[Path], Dict[str, tuple], str]":
 def restore_tree(toplevel: Path, before: Dict[str, tuple]) -> Dict[str, object]:
     """Put the target tree back as `before` found it: `{state, restored, unrestored, detail}`.
 
-    The suite rewrites tracked files (its gallery screenshots) and leaves new ones. A path clean before the run is
-    restored from HEAD (tracked) or removed (untracked); a path already dirty before the run that the run changed
-    cannot be told from the user's own edit and is never touched. `state` is `clean` (the run changed nothing),
+    The suite rewrites tracked files (its gallery screenshots) and leaves new ones. A screenshot path clean before
+    the run is restored from HEAD (tracked) or removed (untracked); a path already dirty before the run that the run
+    changed cannot be told from the user's own edit and is never touched. Any other new difference is not the
+    suite's to undo (the target's primary checkout is live for the whole run, so it may be someone else's edit): it
+    is left alone and named in `unrestored`. `state` is `clean` (the run changed nothing),
     `restored`, or `restore_failed` (the tree still differs from `before`: `unrestored` names the paths).
     """
     _, after, error = _tree_state(toplevel)
@@ -669,6 +672,8 @@ def restore_tree(toplevel: Path, before: Dict[str, tuple]) -> Dict[str, object]:
         return {"state": "restore_failed", "restored": [], "unrestored": [], "detail": f"the tree was not re-read: {error}"}
     restored: List[str] = []
     for path in sorted(set(after) - set(before)):
+        if Path(path).suffix.lower() not in SUITE_OUTPUT_SUFFIXES:
+            continue  # not something the suite writes: the re-read below names it unrestored
         if after[path][0] == "??":
             try:
                 (toplevel / path).unlink()

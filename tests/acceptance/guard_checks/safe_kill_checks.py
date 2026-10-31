@@ -126,6 +126,11 @@ def _safe_kill_refspecless_push_cases(check: _Checker, skg: Any, push: str) -> N
             subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/main"], capture_output=True)
             check("force-push: relative -C resolves against the payload cwd (#1275)",
                   skg.forced_push_hits_protected(f"git -C {tmp.name} " + "push --force", tmp.parent))
+            posix = tmp.as_posix()
+            if len(posix) > 2 and posix[1] == ":":
+                msys = f"/{posix[0].lower()}{posix[2:]}"
+                check("force-push: refspec-less Git Bash -C /<drive>/... path resolves to the repo -> blocked",
+                      skg.forced_push_hits_protected(f"git -C {msys} " + "push --force", other))
         finally:
             shutil.rmtree(other, ignore_errors=True)
         check("_current_branch: unresolvable cwd reports '' (fails open, never guesses)",
