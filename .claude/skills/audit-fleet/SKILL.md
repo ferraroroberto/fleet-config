@@ -5,7 +5,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 # audit-fleet
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip unchanged ones, audit changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), collect results into **one diff-based digest**: GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout, with a Telegram ping via `notify_complete.py --kind audit`.
 

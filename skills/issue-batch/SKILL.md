@@ -5,7 +5,7 @@ description: Fan out GitHub issues to parallel background sub-agents — one per
 
 # issue-batch
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** Take a list of selected GitHub issues, set up isolated workspaces (worktrees when needed), and spawn a parallel **background** sub-agent per issue to build + verify the change. Each sub-agent stops before pushing — you review and `/issue-finish` each branch yourself, one at a time.
 

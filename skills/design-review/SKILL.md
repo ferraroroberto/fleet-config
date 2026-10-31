@@ -81,7 +81,7 @@ page text to an issue, PR or comment.
 More than one target → say only one is accepted and stop.
 
 **Capability preflight (step 4 only):** read
-[workflow-capabilities](../../docs/workflow-capabilities.md) and bind
+[workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind
 *spawn* (a fresh, independent context — never a fork or a full-history
 worker) and *collect* (the worker's terminal reply, within this turn) to
 this session's actual tools before step 4. Claude Code: a fresh `Agent`

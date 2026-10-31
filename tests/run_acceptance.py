@@ -82,6 +82,7 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _chief_wait_event_check,
     _gate_evidence_wiring_check,
     _manual_compact_never_gated_check,
+    _skill_doc_links_check,
     _skill_git_rules_check,
     _unattended_worktree_mandate_check,
 )
@@ -411,6 +412,9 @@ def _run_repo_guards(tally: _Tally) -> None:
 
     # ---- relative docs/ markdown links resolve (fleet-config#1515) ----
     tally.run_unit(_docs_links_check)
+
+    # ---- skill links into docs/ are absolute and resolve ----
+    tally.run_unit(_skill_doc_links_check)
 
 
 def _run_wiring_checks(tally: _Tally) -> None:

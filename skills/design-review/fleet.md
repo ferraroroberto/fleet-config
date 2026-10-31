@@ -9,7 +9,7 @@ One command replaces steps 1–5 and 6b for every declared web app:
 ```
 
 It walks every `hooks/projects.toml` table with a `webapp_port` in file
-order, except dormant repos ([fleet scope](../../docs/fleet-scope.md); a
+order, except dormant repos ([fleet scope](E:/automation/fleet-config/docs/fleet-scope.md); a
 named `/design-review <repo>` still runs one), **one app at a time** — probe, measure, evaluate, ledger + diff,
 render — so never more than one browser is open. An app whose port is
 `NOT_LISTENING` or `TIMEOUT` gets an `unmeasured` run and ledger entry and is
