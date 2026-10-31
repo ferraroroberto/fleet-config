@@ -25,6 +25,8 @@ SHAPES = (
     "skills-governance",
     "node",
     "static-site",
+    "agent-workspace",
+    "service",
 )
 
 

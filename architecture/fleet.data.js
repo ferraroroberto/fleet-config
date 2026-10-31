@@ -29,7 +29,7 @@ window.FLEET = {
   "compute": {"gpu": "GPU · &lt;model&gt; · &lt;NN&gt; GB", "cpu": "CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t", "ram": "RAM · &lt;NN&gt; GB"},
   "enabling": [
     {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — phone-first hub: Coding · Apps · Jobs · Life OS · Board."},
-    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190", "typesafe jev (egress)"]},
+    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190", "typesafe jev (egress)"], "deps": [{"repo": "voice-transcriber"}, {"repo": "automation"}, {"repo": "project-scaffolding"}], "ifs": [{"name": "messages", "kind": "http", "doc": "docs/api-usage.md"}, {"name": "audio", "kind": "http", "doc": "docs/api-usage.md"}, {"name": "models", "kind": "http", "doc": "docs/models-and-roles.md"}], "owns": ["LLM routing", "model backends and ports", "audio proxy", "hub telemetry"], "not_owns": ["whisper engine", "job scheduling", "agent config"]},
     {"ic": "🎙️", "nm": "voice-transcriber", "port": ":8443", "ds": "Always-on voice→text (F8). Owns whisper :8090.", "chips": ["whisper :8090"]},
     {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."},
     {"ic": "🚀", "nm": "App Launcher Lite", "repo": "app-launcher-lite", "port": ":8465", "ds": "Copilot + GitLab lite fork of app-launcher: the phone-first launcher hub."},
@@ -44,7 +44,7 @@ window.FLEET = {
     {"ic": "🧮", "nm": "mathgamesforkids", "ds": "Educational games & HTML experiments."},
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
-    {"ic": "🌱", "nm": "life-os", "ds": "Personal productivity skills plus a shared document-archive engine and Outlook email tooling", "tag": ["via", "launcher"]},
+    {"ic": "🌱", "nm": "life-os", "ds": "Personal productivity skills plus a shared document-archive engine and Outlook email tooling", "tag": ["via", "launcher"], "deps": [{"repo": "app-launcher"}, {"repo": "local-llm-hub"}, {"repo": "email-archiver"}, {"repo": "fleet-config"}], "owns": ["personal productivity skills", "document archive engine", "Outlook email tooling"], "not_owns": ["task list", "session hosting", "LLM routing", "hooks"]},
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
     {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
     {"ic": "🅿️", "nm": "parking-manager", "port": ":8450", "ds": "Household parking: which days to book, time off and the Thursday release; books them itself."},
