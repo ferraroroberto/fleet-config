@@ -46,6 +46,30 @@ extra_roots  = ["custom_components"]  # top-level dirs the shape does not list b
 
 `build_data.py` validates both: an unknown `shape` or an `extra_roots` that is not a list of directory names is an error naming the repo and the value. Dormancy is not a `.fleet.toml` field; the per-repo active/dormant status lives in `hooks/projects.toml`.
 
+### Optional contract keys: `interfaces`, `owns`, `not_owns`, `depends_on`
+
+A card says what a repo is. These four keys say what it exposes, what it is and is not responsible for, and which fleet repos it relies on, so the coupling between repos is data instead of something found by reading code:
+
+```toml
+interfaces = [
+  { name = "messages", kind = "http", doc = "docs/api.md" },
+  { name = "hub-cli",  kind = "cli",  doc = "README.md" },
+]
+owns       = ["LLM routing", "model ports"]
+not_owns   = ["model weights", "job scheduling"]
+depends_on = ["voice-transcriber", { repo = "app-launcher", interface = "jobs" }]
+```
+
+| Key | Maps to | Rule |
+|---|---|---|
+| `interfaces` | `ifs` | list of `{name, kind, doc}`; `kind` is `http`, `cli`, `file` or `lib`; `doc` is a path in this repo that must exist on its committed default branch; names unique |
+| `owns` / `not_owns` | `owns` / `not_owns` | short lists of non-empty strings |
+| `depends_on` | `deps` | each entry is a fleet repo name or `{repo, interface}`; the repo must be in the fleet (`hooks/projects.toml` minus `architecture_ignore`) and not the repo itself |
+
+`skills/_lib/fleet_core/fleet_contracts.py` is the one validator. A malformed key is an error naming the repo. A `depends_on` outside the fleet or an interface `doc` missing from the repo is refused by repo name the same way an over-cap description is: the repo keeps its residual fallback card and `build_data.py` exits 1. The keys render in two places: `system-map.mmd` draws each `depends_on` as a dotted edge (labelled with the interface when one is named), and the generated [`CONTRACTS.md`](CONTRACTS.md) lists every declared interface with a link to its doc, plus each repo's ownership and dependencies. `render_mermaid.py` writes both.
+
+**Undeclared coupling.** `build_data.py --coupling` reads each non-governance repo's committed tree and reports every reference to another fleet repo that its `depends_on` does not cover: a sibling path (`automation/<repo>`, `../<repo>`) or a loopback URL on a port another card declares (`port`, or a `:NNNN` in `chips`; a port two repos share counts as declared when either is). Markdown, `.fleet.toml` and test files are not scanned, because a repo named in prose or used as fixture data is not a runtime dependency. Governance repos are skipped because configuring every repo is their role. The report is advisory and exits 0: most repos have not declared their keys yet, and its inputs are sibling checkouts that no commit here controls. A repo that could not be scanned is reported as `NOT SCANNED`, never as clean.
+
 **Description cap (fleet-config#1250).** A description must fit two lines of its card, so the cap depends on the card's width and font, i.e. on the layer:
 
 | `layer` | Cap (characters, as written) | Measured two-line fit |

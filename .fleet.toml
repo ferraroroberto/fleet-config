@@ -11,6 +11,16 @@ shape       = "skills-governance"
 # describes each): per-agent config (agy, codex, pi, copilot-hooks), the shell
 # profile snippet, the tray helper, the Stream Deck plugin and the slash commands.
 extra_roots = ["agy", "codex", "commands", "copilot-hooks", "pi", "shell", "stream-deck", "tray"]
+# Contracts with the rest of the fleet (schema: architecture/README.md).
+interfaces = [
+  { name = "hooks", kind = "lib", doc = "docs/hooks.md" },
+  { name = "skills", kind = "cli", doc = "docs/skills.md" },
+  { name = "scheduled-runner", kind = "cli", doc = "docs/scheduled-runners.md" },
+  { name = "fleet-map", kind = "file", doc = "architecture/README.md" },
+]
+owns       = ["user-scope agent config", "hooks", "fleet skills", "issue workflow", "fleet map"]
+not_owns   = ["app code", "scaffold templates", "LLM routing", "job scheduling"]
+depends_on = ["project-scaffolding", "local-llm-hub", "app-launcher"]
 
 # [vendored] -- components copied byte-for-byte from project-scaffolding, with the
 # scaffold commit each came from. Re-vendor through /propagate-vendored, never by hand.

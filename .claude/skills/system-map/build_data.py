@@ -40,6 +40,14 @@ stderr); the regenerated file then carries that repo's residual fallback card.
     tag          = ["→", "Notion"]  # [relation, target]
     shape        = "webapp-tray"    # validated, not shown on the card; ids in fleet_toml.SHAPES
     extra_roots  = ["custom_components"]  # deliberate top-level dirs the shape does not list
+    interfaces   = [{name = "messages", kind = "http", doc = "docs/api.md"}]  # kind: http|cli|file|lib
+    owns         = ["LLM routing"]
+    not_owns     = ["model weights"]
+    depends_on   = ["app-launcher", {repo = "local-llm-hub", interface = "messages"}]
+
+``--coupling`` prints every reference a repo's committed tree makes to another
+fleet repo (sibling path or loopback port) that its ``depends_on`` does not
+declare. It is a report and exits 0.
 """
 
 from __future__ import annotations
@@ -52,6 +60,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core import fleet_contracts  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
@@ -60,6 +69,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"
 RESIDUAL = REPO_ROOT / "architecture" / "fleet.residual.json"
 PROJECTS_TOML = REPO_ROOT / "hooks" / "projects.toml"
+# This repo builds the map, so its own card comes from the tree being built
+# (a branch that edits it carries a matching fleet.data.js), not from origin.
+OWN_REPO = "fleet-config"
 
 # .fleet.toml `layer` → the fleet.data.js section it lands in.
 LAYER_SECTION = {
@@ -103,8 +115,11 @@ class DescriptionTooLong(ValueError):
     """A `.fleet.toml` description longer than its layer's card holds."""
 
 
+# A declaration refused by repo name: the repo keeps its residual fallback card.
+REFUSALS = (DescriptionTooLong, fleet_contracts.UnknownDependency, fleet_contracts.MissingInterfaceDoc)
+
 # Canonical key order inside a repo card, matching the committed style.
-_CARD_KEY_ORDER = ["ic", "nm", "repo", "port", "ds", "chips", "tag"]
+_CARD_KEY_ORDER = ["ic", "nm", "repo", "port", "ds", "chips", "tag", "deps", "ifs", "owns", "not_owns"]
 
 
 def load_residual(path: Path = RESIDUAL) -> dict:
@@ -137,7 +152,11 @@ def read_fleet_toml(repo_dir: Path) -> str | None:
     Reads ``git show <default-ref>:.fleet.toml`` (not the working tree) so a repo
     parked on a feature branch that predates the file still reports its real card.
     Returns ``None`` when the repo has no default ref or no committed ``.fleet.toml``.
+    This repo's own declaration is read from its working tree (see ``OWN_REPO``).
     """
+    if repo_dir.resolve() == REPO_ROOT:
+        own = REPO_ROOT / ".fleet.toml"
+        return own.read_text(encoding="utf-8") if own.is_file() else None
     ref = _default_ref(repo_dir)
     if ref is None:
         return None
@@ -145,12 +164,14 @@ def read_fleet_toml(repo_dir: Path) -> str | None:
     return shown.stdout.decode("utf-8") if shown.returncode == 0 else None
 
 
-def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
+def card_from_toml(repo_name: str, meta: dict, known_repos: set[str] | None = None) -> tuple[str, dict]:
     """Build ``(section, card)`` from a parsed ``.fleet.toml``.
 
     Raises ``ValueError`` on a missing/invalid ``layer`` or missing required field
     so a malformed declaration fails loud rather than silently dropping a repo,
     and ``DescriptionTooLong`` when ``description`` exceeds ``DESCRIPTION_CAP``.
+    With ``known_repos``, a ``depends_on`` repo outside it raises
+    ``fleet_contracts.UnknownDependency``.
     """
     layer = meta.get("layer")
     if layer not in LAYER_SECTION:
@@ -161,6 +182,7 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
         if not meta.get(required):
             raise ValueError(f"{repo_name}: .fleet.toml is missing required `{required}`")
     fleet_toml.validate_layout(repo_name, meta)
+    contracts = fleet_contracts.validate(repo_name, meta, known_repos)
     cap = DESCRIPTION_CAP[layer]
     if len(meta["description"]) > cap:
         raise DescriptionTooLong(
@@ -169,7 +191,7 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
             "put extra detail in `chips`/`tag`."
         )
 
-    nm =meta.get("display_name") or repo_name
+    nm = meta.get("display_name") or repo_name
     card: dict = {"ic": meta["icon"], "nm": nm}
     if nm != repo_name:  # keep the repo handle when the display label differs
         card["repo"] = repo_name
@@ -180,6 +202,7 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
         card["chips"] = list(meta["chips"])
     if "tag" in meta:
         card["tag"] = list(meta["tag"])
+    card.update(fleet_contracts.card_fields(contracts))
     return LAYER_SECTION[layer], {k: card[k] for k in _CARD_KEY_ORDER if k in card}
 
 
@@ -195,22 +218,30 @@ def build(residual: dict, repos: dict[str, Path], refused: list[str] | None = No
     a repo new to the map appends to its section. ``_adopted`` is dropped — it is
     residual metadata, not map data.
 
-    An over-cap description is refused: the repo keeps its residual fallback
-    card and the reason is appended to ``refused``. With no fallback card the
-    refusal raises, since the repo would otherwise vanish from the map.
+    A declaration in ``REFUSALS`` (an over-cap description, a ``depends_on``
+    outside the fleet, an interface doc missing from the repo) is refused: the
+    repo keeps its residual fallback card and the reason is appended to
+    ``refused``. With no fallback card the refusal raises, since the repo would
+    otherwise vanish from the map.
     """
     data = copy.deepcopy(residual)
     data.pop("_adopted", None)
     fallback = {_card_repo(e) for s in LAYER_SECTION.values() for e in data.get(s, [])}
+    known = set(repos)
     for repo_name, repo_dir in sorted(repos.items()):
+        if repo_name == OWN_REPO:
+            repo_dir = REPO_ROOT
         text = read_fleet_toml(repo_dir)
         if text is None:
             continue  # fallback: keep whatever the residual already has
         try:
-            section, card = card_from_toml(repo_name, tomllib.loads(text))
-        except DescriptionTooLong as exc:
+            section, card = card_from_toml(repo_name, tomllib.loads(text), known)
+            if card.get("ifs"):
+                own = repo_dir.resolve() == REPO_ROOT
+                fleet_contracts.check_docs(repo_name, repo_dir, None if own else _default_ref(repo_dir), card["ifs"])
+        except REFUSALS as exc:
             if repo_name not in fallback:
-                raise DescriptionTooLong(f"{exc} No residual fallback card to show instead.") from exc
+                raise type(exc)(f"{exc} No residual fallback card to show instead.") from exc
             if refused is not None:
                 refused.append(str(exc))
             continue
@@ -251,11 +282,46 @@ def regenerate(refused: list[str] | None = None, projects_toml: Path = PROJECTS_
     return serialize(build(load_residual(), fleet_repos(projects_toml), refused))
 
 
+def coupling(data: dict, repos: dict[str, Path]) -> dict[str, dict[str, str] | None]:
+    """``{repo: {target: "path:line"}}`` of undeclared references to other fleet
+    repos, per non-governance repo; ``None`` for a repo that could not be scanned.
+
+    Governance repos are skipped: configuring every repo is their role, so a
+    reference from them is not a dependency.
+    """
+    cards = {_card_repo(e): e for s in ("enabling", "web", "pipe") for e in data.get(s, [])}
+    ports = fleet_contracts.port_owners(cards.values())
+    out: dict[str, dict[str, str] | None] = {}
+    for name in sorted(set(cards) & set(repos)):
+        repo_dir = REPO_ROOT if name == OWN_REPO else repos[name]
+        ref = _default_ref(repo_dir)
+        found = None if ref is None else fleet_contracts.scan_repo(name, repo_dir, ref, repos, ports)
+        out[name] = None if found is None else fleet_contracts.undeclared(found, cards[name].get("deps", []))
+    return out
+
+
+def _print_coupling(projects_toml: Path = PROJECTS_TOML) -> int:
+    repos = fleet_repos(projects_toml)
+    report = coupling(build(load_residual(), repos), repos)
+    for name, refs in report.items():
+        if refs is None:
+            print(f"COUPLING {name}: NOT SCANNED (no default ref or git grep failed)")
+        for target, where in sorted((refs or {}).items()):
+            print(f"COUPLING {name} -> {target} ({where}) undeclared")
+    pairs = sum(len(r or {}) for r in report.values())
+    print(f"build_data: {pairs} undeclared reference(s) across {len(report)} repo(s).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Aggregate per-repo .fleet.toml into fleet.data.js.")
     ap.add_argument("--check", action="store_true",
                     help="exit 1 if fleet.data.js is stale (do not write)")
+    ap.add_argument("--coupling", action="store_true",
+                    help="report references to other fleet repos that depends_on does not declare")
     args = ap.parse_args(argv)
+    if args.coupling:
+        return _print_coupling()
 
     refused: list[str] = []
     try:

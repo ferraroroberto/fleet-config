@@ -13,7 +13,7 @@
 window.FLEET = {
   "governance": [
     {"ic": "📐", "nm": "project-scaffolding", "ds": "Canonical master — the scaffold &amp; CLAUDE.md every project derives from."},
-    {"ic": "⚙️", "nm": "fleet-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."},
+    {"ic": "⚙️", "nm": "fleet-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow.", "deps": [{"repo": "project-scaffolding"}, {"repo": "local-llm-hub"}, {"repo": "app-launcher"}], "ifs": [{"name": "hooks", "kind": "lib", "doc": "docs/hooks.md"}, {"name": "skills", "kind": "cli", "doc": "docs/skills.md"}, {"name": "scheduled-runner", "kind": "cli", "doc": "docs/scheduled-runners.md"}, {"name": "fleet-map", "kind": "file", "doc": "architecture/README.md"}], "owns": ["user-scope agent config", "hooks", "fleet skills", "issue workflow", "fleet map"], "not_owns": ["app code", "scaffold templates", "LLM routing", "job scheduling"]},
     {"ic": "⚙️", "nm": "fleet-config-lite", "ds": "Copilot-CLI + GitLab lite fork — session-state hook, issue skills &amp; installer."}
   ],
   "access": [
@@ -37,9 +37,9 @@ window.FLEET = {
   ],
   "web": [
     {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice audit, HA voice commands + product search.", "tag": ["uses", "hub + whisper"]},
-    {"ic": "💬", "nm": "whatsapp-radar", "ds": "Cut attention load from busy chats.", "tag": ["uses", "hub"]},
+    {"ic": "💬", "nm": "whatsapp-radar", "port": ":8455", "ds": "Cut attention load from busy chats.", "tag": ["uses", "hub"]},
     {"ic": "🎲", "nm": "facilitation-shuffle", "ds": "1-2-4-all breakout shuffler for Zoom."},
-    {"ic": "🎤", "nm": "facilitation-suite", "port": ":8449", "ds": "<b>facilitation-suite</b> — local app to run a live online workshop: stage, cockpit, Zoom chat.", "chips": ["public: cloudflared quiz.robertoferraro.net → :8451 /play"]},
+    {"ic": "🎤", "nm": "facilitation-suite", "port": ":8449", "ds": "<b>facilitation-suite</b> — local app to run a live online workshop: stage, cockpit, Zoom chat.", "chips": ["public: cloudflared quiz.robertoferraro.net → :8451 /play", "this PC: http://127.0.0.1:8456 (loopback)"]},
     {"ic": "💶", "nm": "family-accounting", "ds": "Shared household-expense tracker."},
     {"ic": "🧮", "nm": "mathgamesforkids", "ds": "Educational games & HTML experiments."},
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
