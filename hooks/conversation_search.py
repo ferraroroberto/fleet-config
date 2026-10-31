@@ -421,7 +421,7 @@ def _quote_terms(query: str) -> str:
 
 def _ranked(conn: sqlite3.Connection, match: str, where: "list[str]", params: list,
             limit: int) -> list:
-    """Run the ranked query for one FTS5 expression; ``params[0]`` is replaced by it.
+    """Run the ranked query for one FTS5 expression; ``params[0]`` is ignored, ``match`` binds instead.
 
     Inner select: the per-column scores plus whether the owner title alone satisfies the
     whole expression (a column filter over the same expression). Middle: the level.
@@ -497,9 +497,8 @@ def search(
             if retry == expr or not retry.strip():
                 logger.error("unparseable query %r: %s", query, exc)
                 return []
-            params[0] = retry
             try:
-                rows = _ranked(conn, expr, where, params, limit)
+                rows = _ranked(conn, retry, where, params, limit)
             except sqlite3.OperationalError as exc:
                 logger.error("unparseable query %r: %s", query, exc)
                 return []

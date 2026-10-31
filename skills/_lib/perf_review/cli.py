@@ -33,7 +33,7 @@ from fleet_core import hooks_state  # noqa: E402
 from worktree import service_probe  # noqa: E402
 from design_review.capture import probe_listening, resolve_interpreter, target_commit  # noqa: E402
 from design_review.filing import repo_slug  # noqa: E402
-from design_review.plan import PlanError, resolve_target  # noqa: E402
+from design_review.plan import BadFleetToml, PlanError, resolve_target  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import http_probe, report, stamping  # noqa: E402
@@ -157,13 +157,13 @@ def schedule(load: dict, block: dict, min_spacing: float) -> Dict[str, float]:
 def cmd_measure(a: argparse.Namespace) -> int:
     try:
         target = resolve_target(a.repo, url_override=a.url)
+    except BadFleetToml as exc:
+        print(f"PERF=unmeasured reason=BAD_FLEET_TOML detail={exc}")
+        return EXIT["unmeasured"]
     except PlanError as exc:
         print(f"PERF=unmeasured reason=BAD_TARGET detail={exc}")
         return EXIT["unmeasured"]
     block = report.load_review_block(target.root)
-    if "error" in block:
-        print(f"PERF=unmeasured reason=BAD_FLEET_TOML detail={block['error']}")
-        return EXIT["unmeasured"]
     budgets = report.load_budgets(block.get("budgets"))
     listening = probe_listening(target.base_url)
     if listening["status"] != "listening":

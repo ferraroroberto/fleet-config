@@ -1,3 +1,4 @@
+import shutil
 import sys
 from pathlib import Path
 
@@ -245,6 +246,15 @@ check(live_entries[0]["sha256"] == original_sha256_file(
 ), "live copy: the manifest hashes the stable snapshot bytes, not an earlier source state")
 check(live_entries[0]["size"] == (live_day / "g" / "session.jsonl").stat().st_size,
       "live copy: the manifest size describes the stable snapshot bytes")
+
+# ---- an enabled repo that selects nothing stays a present-and-empty group
+empty_repo = fleet / "empty-repo"
+empty_repo.mkdir()
+_git(empty_repo, "init", "-q")
+empty_groups, _ = bp.collect_repos(cfg, "empty-repo", tmp / "no-such-projects.toml")
+check("empty-repo" in empty_groups and not empty_groups["empty-repo"].files,
+      f"collect_repos: an enabled repo with zero files stays in groups, got {list(empty_groups)}")
+shutil.rmtree(empty_repo)
 
 # ---- iter_repos skips linked worktrees --------------------------------
 _write(fleet / "not-a-repo" / "file.txt")

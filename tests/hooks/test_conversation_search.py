@@ -274,6 +274,10 @@ try:
           "search: a bare * is rescued, never a crash")
     check(isinstance(cs.search(cfg, "--"), list),
           "search: punctuation-only query -> no crash")
+    # The retry must bind the quoted form: `notion:` is refused raw, and only the
+    # quoted re-run can find the row that contains the word.
+    check(len(cs.search(cfg, "notion:")) >= 1,
+          "search: a raw query FTS5 refuses is retried quoted and finds its row")
     check(cs.search(cfg, "   ") == [],
           "search: whitespace-only query -> empty, never a SQL error")
 

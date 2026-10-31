@@ -672,6 +672,14 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
         )
         check("branch_guard: Write tool covered same as Edit -> block", code == 2, err)
 
+        # A Write creating a file in a directory that does not exist yet must be
+        # judged by the repo it will land in, not read as "outside any repo".
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "newpkg" / "deeper", tool="Write"),
+            extra_env=launcher_env,
+        )
+        check("branch_guard: Write into a not-yet-created dir on main -> block", code == 2, err)
+
         code, _out, err = run(
             "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub", tool="MultiEdit"), extra_env=launcher_env
         )

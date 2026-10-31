@@ -122,6 +122,10 @@ class PlanError(Exception):
     """A target that cannot be resolved — reported, never guessed around."""
 
 
+class BadFleetToml(PlanError):
+    """The target's `.fleet.toml` does not parse, so its `no_go` and other declarations are unknown."""
+
+
 # The base URL a synthetic target starts with: replaced by the URL its launcher prints.
 SYNTHETIC_URL = "synthetic:pending"
 SYNTHETIC_STARTUP_S = 120.0
@@ -270,7 +274,8 @@ def resolve_target(
     `.fleet.toml` declares, the scheme probed on that loopback port (fleet-config#1180:
     facilitation-suite declared only the latter and `measure <name>` stopped with
     BAD_TARGET). Raises `PlanError` when neither declares a port and no override was
-    given — the walk must never fall back to a guessed port.
+    given — the walk must never fall back to a guessed port. Raises `BadFleetToml` when the
+    target's `.fleet.toml` does not parse: its `no_go` guard would read as empty.
     """
     tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
     name: Optional[str] = None
@@ -292,6 +297,8 @@ def resolve_target(
         raise PlanError(f"unknown target {repo!r}: not a hooks/projects.toml repo nor a directory")
 
     review = load_review_block(root)
+    if "error" in review:
+        raise BadFleetToml(str(review["error"]))
     wide, wide_error = wide_views.load_wide_views(root)
     no_chat, no_chat_error = load_no_chat_surface(root)
     if url_override:

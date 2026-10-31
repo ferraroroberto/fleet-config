@@ -71,6 +71,12 @@ check(plan.declared_port(fs_dir) is None and plan.declared_port(None) is None an
       "an unparseable, absent or rootless .fleet.toml declares no port")
 try:
     plan.resolve_target("fs-app", fs_projects, scheme_probe=lambda port: "https")
+    check(False, "an unparseable .fleet.toml refuses the target: its no_go guard would read as empty")
+except plan.BadFleetToml as exc:
+    check("unparseable .fleet.toml" in str(exc), f"an unparseable .fleet.toml is BadFleetToml, not an empty review block -- {exc}")
+(fs_dir / ".fleet.toml").write_text('layer = "working-web"\n', encoding="utf-8")
+try:
+    plan.resolve_target("fs-app", fs_projects, scheme_probe=lambda port: "https")
     check(False, "PlanError when neither projects.toml nor .fleet.toml declares a port")
 except plan.PlanError as exc:
     check("no `port` in its .fleet.toml" in str(exc), f"the refusal names both places it looked -- {exc}")
@@ -460,6 +466,15 @@ check(_d_rec["tree"]["state"] == "restore_failed" and _d_rec["tree"]["unrestored
       and "docs/shot.png" in _d_rec["tree"]["detail"] and not (_d_target.root / "docs" / "new.png").exists()
       and (_d_target.root / "docs" / "shot.png").read_bytes() == b"rewritten" and _d_rec["screens"] == 2 and _porcelain(_d_target.root) == _d_before,
       f"a path the user had already edited that the run rewrote is reported restore_failed, never silently overwritten or swallowed -- {_d_rec['tree']}")
+# A new file that is no screenshot is not the suite's to delete: it is left in place and named, never removed.
+_E2E_STRAY = ("import pathlib\npathlib.Path('docs/new.png').write_bytes(b'new')\n"
+              "pathlib.Path('docs/notes.txt').write_text('someone else')\n" + _E2E_WRITES)
+_s_target, _s_run, _s_doc = _e2e_git_target(["-c", _E2E_STRAY, "0"], name="e2e-stray-target")
+_s_rec = capture.measure_e2e(_s_doc, _s_target, _s_run, str(STATE / "no-scaffold"))
+check(_s_rec["tree"]["state"] == "restore_failed" and _s_rec["tree"]["unrestored"] == ["docs/notes.txt"]
+      and _s_rec["tree"]["restored"] == ["docs/new.png"] and (_s_target.root / "docs" / "notes.txt").exists()
+      and not (_s_target.root / "docs" / "new.png").exists(),
+      f"a new non-screenshot file is reported unrestored and left in place, not deleted -- {_s_rec['tree']}")
 check((_e_ok["tree"] or {}).get("state") == "unchecked" and "not read" in _e_ok["tree"]["detail"],
       f"a target that is no git checkout is unchecked (nothing confirmed), not clean -- {_e_ok['tree']}")
 

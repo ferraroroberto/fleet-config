@@ -254,9 +254,10 @@ def collect_repos(cfg: BackupConfig, only: Optional[str],
             skipped.append(repo_dir.name)
             continue
         logger.info("   ⏳ selecting %s", repo_dir.name)
-        selection = select_repo(repo_dir, cfg, overrides)
-        if selection.files or selection.errors or selection.bulk_excluded:
-            groups[repo_dir.name] = selection
+        # An enabled repo stays in `groups` even when it selected nothing: only
+        # a present-and-empty group lets `check_zero_file_regressions` see a repo
+        # that silently lost every backed-up file.
+        groups[repo_dir.name] = select_repo(repo_dir, cfg, overrides)
     return groups, skipped
 
 
