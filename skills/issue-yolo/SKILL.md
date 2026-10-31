@@ -5,7 +5,7 @@ description: One-shot the GitHub-issue workflow end-to-end — file the issue, c
 
 # issue-yolo
 
-**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** idea → merged-and-closed in one unbroken run — `/issue-add` →
 `/issue-start now` → build → **validate hard** → `/issue-finish`. No approval
@@ -178,7 +178,7 @@ in place, let the user inspect. Do **not** continue to 3h or Phase 4; do
 reached once 3a–3g are all green. Self-review (3a–3g) is the same context that
 wrote the code and cannot be the last checkpoint before a merge with no human
 in the loop. Per the fleet's
-[independent-review-gate convention](../../docs/independent-review-gate.md)
+[independent-review-gate convention](E:/automation/fleet-config/docs/independent-review-gate.md)
 (fleet-config#408), with **stop-and-report** failure handling (not
 `cleanup-fleet-all.js`'s retry-then-escalate — a human is present to decide on
 a retry).
@@ -269,7 +269,7 @@ pass the one already on hand from `gh pr create`/`gh pr view` (keeps the
 lookup CWD-independent for subagents). Silent no-op if no chat is configured;
 always exits 0 — never blocks or delays the finish.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).
+**`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](E:/automation/fleet-config/docs/notify-ping.md).
 
 ## Notes on safety
 

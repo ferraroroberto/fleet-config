@@ -5,7 +5,7 @@ description: Weekly phone-speed check of every fleet web app, one at a time — 
 
 # perf-sweep
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind waits and results to this session's actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind waits and results to this session's actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation.
 
 **Goal:** the fleet-wide, unattended half of `/perf-review` (`fleet-config#1686`). One deterministic command measures every web app declared in `hooks/projects.toml`, files each app's managed `perf-review` issue and prints one digest. This skill starts it, waits for it and relays the digest. It assigns no status and ranks no fix: the numbers, the budgets and the `DIFF` against the last run all come from `skills/_lib/perf_review/`.
 

@@ -4,6 +4,10 @@ The skill inventory across both tiers, why the tiers are split the way they are,
 
 Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) and `/handoff-commit`, this repo also ships the skills below.
 
+## Linking shared docs from a skill
+
+A skill runs from any repo and is loaded through a junction in each agent's skills dir, so a `../../docs/...` link resolves against the junction and a bare `docs/...` link against the working repo — neither reaches this repo's `docs/`. Skill markdown links shared docs by the absolute `E:/automation/fleet-config/docs/...` path, the same convention its `.venv` commands use; the acceptance run's `skill doc links` check fails a relative or dead link into `docs/`.
+
 ## Tiers and scheduling
 
 - [Skill tiers and scheduled runs](skills/tiers-and-scheduling.md) — the three tiers, the scheduled-run adapter, stall watchdog, false-success guards, by-name invocation

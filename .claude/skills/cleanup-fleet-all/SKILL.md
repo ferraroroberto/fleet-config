@@ -5,7 +5,7 @@ description: Unattended, all-bucket sibling of /cleanup-fleet — builds, valida
 
 # cleanup-fleet-all
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** the genuinely unattended sibling of `/cleanup-fleet` (one bucket, stops for human approval in its default `hard` mode). This walks **all nine queued** audit buckets, serially, and ships every issue with **no human review gate** — replaced by an independent validator agent, so no single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
 
@@ -277,7 +277,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all nine buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
 
-**`notify_complete.py` is the ONLY sanctioned way to send these pings — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../../docs/notify-ping.md).
+**`notify_complete.py` is the ONLY sanctioned way to send these pings — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](E:/automation/fleet-config/docs/notify-ping.md).
 
 ### 10. Final summary
 

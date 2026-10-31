@@ -307,3 +307,85 @@ def _manual_compact_never_gated_check() -> Tuple[int, int]:
         import shutil as _shutil
         _shutil.rmtree(state, ignore_errors=True)
     return check.failures, check.total
+
+
+_SKILL_DOC_ROOT = "E:/automation/fleet-config/docs/"  # no-drive-path-exempt: the absolute home skills link shared docs by
+
+
+def _skill_doc_link_problems(rel: str, text: str, exists) -> list[str]:
+    """Markdown links in skill text that reach `docs/` the way a skill cannot follow.
+
+    A skill is loaded through a junction in each agent's skills dir and runs from
+    any repo, so `../../docs/x.md` resolves against the junction and a bare
+    `docs/x.md` against the working repo -- both land outside fleet-config. A
+    link into `docs/` must therefore be `_SKILL_DOC_ROOT` plus a path that
+    `exists` (given relative to the repo's `docs/`). Fenced code is skipped.
+    """
+    from acceptance.architecture_guards import _FENCE_RE, _MD_LINK_RE
+
+    problems: list[str] = []
+    in_fence = False
+    for line in text.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for target in _MD_LINK_RE.findall(line):
+            path = target.split("#", 1)[0]
+            if path.startswith(_SKILL_DOC_ROOT):
+                if not exists(path[len(_SKILL_DOC_ROOT):]):
+                    problems.append(f"{rel}: {target} (no such doc)")
+            elif re.match(r"^(\.\./)*docs/", path):
+                problems.append(f"{rel}: {target} (relative)")
+    return problems
+
+
+def _skill_doc_links_check() -> Tuple[int, int]:
+    """Every skill link into `docs/` is absolute and resolves (fleet-config#1743).
+
+    Relative `../../docs/...` links in SKILL.md resolved against the skills-dir
+    junction, so every lane in another repo failed its capability-preflight
+    read. Scans all markdown under `skills/` and `.claude/skills/`; the scanner
+    is pinned against fixed samples so it cannot go green by matching nothing.
+    Returns (failures, total).
+    """
+    check = _Checker()
+    root = _SKILL_DOC_ROOT
+    docs = {"a.md", "skills/b.md"}.__contains__
+
+    sample = "\n".join([
+        f"[ok]({root}a.md#x) [ok2]({root}skills/b.md)",
+        f"[gone]({root}gone.md) [up](../../docs/a.md) [deep](../../../docs/a.md) [bare](docs/a.md)",
+        "[sibling](../issue-start/SKILL.md) [web](https://x.test/docs/a.md)",
+        "```",
+        "[fenced](../../docs/a.md)",
+        "```",
+    ])
+    found = _skill_doc_link_problems("skills/x/SKILL.md", sample, docs)
+    check(
+        "skill doc links: relative and dead links are reported, absolute, sibling, external and fenced ones are not",
+        found == [
+            f"skills/x/SKILL.md: {root}gone.md (no such doc)",
+            "skills/x/SKILL.md: ../../docs/a.md (relative)",
+            "skills/x/SKILL.md: ../../../docs/a.md (relative)",
+            "skills/x/SKILL.md: docs/a.md (relative)",
+        ],
+        str(found),
+    )
+
+    files = sorted(p for top in ("skills", ".claude/skills") for p in (REPO / top).rglob("*.md"))
+    docs_dir = REPO / "docs"
+    problems: list[str] = []
+    for path in files:
+        problems += _skill_doc_link_problems(
+            path.relative_to(REPO).as_posix(),
+            path.read_text(encoding="utf-8"),
+            lambda sub: (docs_dir / sub).is_file(),
+        )
+    check(
+        f"skill doc links: every skill link into docs/ is absolute and exists ({len(files)} files)",
+        not problems,
+        "\n".join(problems),
+    )
+    return check.failures, check.total

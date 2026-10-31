@@ -5,7 +5,7 @@ description: Ask every active fleet repo "how could this app be 10x better, even
 
 # fleet-10x
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** one report that someone opening it cold in three months can act on: *this is the fleet, this is what would make each app 10x better, ranked by impact for the cost, and this is the order we'd build it in.* Each run is dated, so runs can be compared (fleet-config#1253).
 
