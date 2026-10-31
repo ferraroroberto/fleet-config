@@ -82,6 +82,10 @@ Per-topic references that the intro used to carry, one file each:
 - **[`docs/structure-census.md`](docs/structure-census.md)** — the read-only
   fleet code-structure census and its before-and-after comparison, with what
   each number means.
+- **[`docs/agent-hosting-options.md`](docs/agent-hosting-options.md)** — where
+  coding agents can run (server, own computer, hybrid, vendor cloud), how work
+  and wake-ups reach them, and how a VPS + tmux setup compares with the tower +
+  launcher model.
 
 The rest of `docs/` is one file per durable topic — see the directory.
 
