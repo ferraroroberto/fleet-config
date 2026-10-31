@@ -75,3 +75,10 @@ flowchart LR
   fleet_config -.-> project_scaffolding
   fleet_config -.-> local_llm_hub
   fleet_config -.-> app_launcher
+  local_llm_hub -.-> voice_transcriber
+  local_llm_hub -.-> automation
+  local_llm_hub -.-> project_scaffolding
+  life_os -.-> app_launcher
+  life_os -.-> local_llm_hub
+  life_os -.-> email_archiver
+  life_os -.-> fleet_config

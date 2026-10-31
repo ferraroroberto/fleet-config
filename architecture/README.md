@@ -41,7 +41,7 @@ extra_roots  = ["custom_components"]  # top-level dirs the shape does not list b
 | `port` | | `port` | enabling cards render it; `:NNNN` form |
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
-| `shape` | | — | one of `webapp-tray`, `streamlit`, `pipeline-cli`, `skills-governance`, `node`, `static-site` (the ids of project-scaffolding's repo-layout doc); the one enum is SHAPES in skills/_lib/fleet_core/fleet_toml.py; read by the scaffold's layout check, not rendered |
+| `shape` | | — | one of `webapp-tray`, `streamlit`, `pipeline-cli`, `skills-governance`, `node`, `static-site`, `agent-workspace`, `service` (the ids of project-scaffolding's repo-layout doc); the one enum is SHAPES in skills/_lib/fleet_core/fleet_toml.py; read by the scaffold's layout check, not rendered |
 | `extra_roots` | | — | list of top-level directory names the shape does not list but the repo deliberately has (for example `custom_components`); a justified exception declared once, in data |
 
 `build_data.py` validates both: an unknown `shape` or an `extra_roots` that is not a list of directory names is an error naming the repo and the value. Dormancy is not a `.fleet.toml` field; the per-repo active/dormant status lives in `hooks/projects.toml`.
