@@ -16,7 +16,7 @@
     },
     {
       "cls": "Design system",
-      "sub": "design.md + design.dark.md",
+      "sub": "design.md + design.dark.md + design.web.md",
       "src": "design.md",
       "annot": { "codex": "via ~/.claude", "pi": "via ~/.claude", "copilot": "via ~/.claude", "agy": "—" }
     },
@@ -69,7 +69,7 @@
   ],
   "conventions": [
     { "ic": "📜", "nm": "global-CLAUDE.md", "reach": "all 4 agents", "ds": "Working method, conventions, git/PR pipeline, fleet doctrine &amp; gotchas — one file symlinked into every agent home." },
-    { "ic": "🎨", "nm": "design.md + design.dark.md", "reach": "Claude (others via ~/.claude)", "ds": "Canonical visual identity + the floating bottom-tab nav contract for every web app." },
+    { "ic": "🎨", "nm": "design.md + design.dark.md + design.web.md", "reach": "Claude (others via ~/.claude)", "ds": "Canonical visual identity + the floating bottom-tab nav contract for every web app; design.web.md is the contract for web pages." },
     { "ic": "🏔️", "nm": "single-home by altitude", "reach": "rule", "ds": "Universal → global-CLAUDE.md · shape-specific → project-scaffolding · instance → the repo's own CLAUDE.md. Enforced weekly by /context-audit." },
     { "ic": "📐", "nm": "project-scaffolding", "reach": "governance master", "ds": "The canonical scaffold every sister repo derives its CLAUDE.md from — conventions flow up, never diverge." }
   ],

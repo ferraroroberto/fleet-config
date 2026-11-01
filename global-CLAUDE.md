@@ -65,6 +65,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 
 - **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any path exists.
 - **Web-app UI work consults the fleet design system:** `~/.claude/design.md` (light) + `~/.claude/design.dark.md` (dark) — colors, typography, spacing, and the navigation contract (floating bottom-tab pill). `/design-sync` reports drift. Streamlit POC spikes exempt.
+- **Web-page UI work** (a public static site, not a web app) **consults `~/.claude/design.web.md`** — the contract fixes token names, layout, components, accessibility, search facts and budgets; each site sets its own brand values.
 - **Config & secrets:** project config in `config.json` or similar; secrets always in `.env`, never committed (`.env` is the env file; `.venv` is the venv directory).
 - **Virtual environment:** use the existing `.venv`. Never create `venv`. Never activate — invoke via `& .\.venv\Scripts\python.exe ...` on Windows, `./.venv/bin/python ...` on POSIX.
 - **Logging:** the language's logging facility (Python: `logging`, not `print()`). Emojis welcome: ℹ️ ⚠️ ❌ ✅

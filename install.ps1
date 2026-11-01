@@ -256,6 +256,7 @@ $Items = @(
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' },
     @{ kind = 'symlink';  source = 'design.md';              target = 'design.md' },
     @{ kind = 'symlink';  source = 'design.dark.md';         target = 'design.dark.md' },
+    @{ kind = 'symlink';  source = 'design.web.md';          target = 'design.web.md' },
     # Codex (~/.codex): mirror the same source files into Codex's own home so editing once is
     # live in both agents. Skills reach Codex AND Pi via the ~/.agents/skills junction above --
     # that is the documented user-skills path both scan (Codex per developers.openai.com/codex/skills;
