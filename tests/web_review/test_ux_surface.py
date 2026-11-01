@@ -267,4 +267,44 @@ check("TOUCHED=yes" in _run_check(["app/static/pages.mjs"]),
       "cmd_check: view JS off the declared paths still reports TOUCHED=yes")
 
 
+# ---- spec kind: web app vs web page ----
+
+_wp = ux.parse_ux_surface_block("## UX surface\n- design spec applies: web-page  # a public site\n")
+check(_wp["spec_applies"] is True and _wp["kind"] == ux.WEB_PAGE,
+      f"`web-page` answer: the gate applies and the kind is web-page -- {_wp!r}")
+check(ux.parse_ux_surface_block(BLOCK)["kind"] == ux.WEB_APP, "`yes` answer: kind is web-app")
+check(ux.parse_ux_surface_block("## UX surface\n- design spec applies: no\n")["kind"] is None,
+      "`no` answer: no kind of its own")
+check(ux.spec_kind(_wp, None) == ux.WEB_PAGE, "spec_kind: the block's web-page answer wins")
+check(ux.spec_kind(None, "static-site") == ux.WEB_PAGE,
+      "spec_kind: shape = static-site marks a web page with no block")
+check(ux.spec_kind({"kind": None}, "static-site") == ux.WEB_PAGE,
+      "spec_kind: a static site whose gate is off is still a web page, never linted as a PWA")
+check(ux.spec_kind(None, "webapp-tray") == ux.WEB_APP and ux.spec_kind(None, None) == ux.WEB_APP,
+      "spec_kind: every other repo stays web-app, as before")
+
+
+def _applies_out(claude_md: str, fleet: str) -> list:
+    repo = Path(tempfile.mkdtemp(prefix="test_ux_kind_"))
+    try:
+        (repo / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
+        if fleet:
+            (repo / ".fleet.toml").write_text(fleet, encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ux.cmd_applies(repo)
+        return buf.getvalue().splitlines()
+    finally:
+        import shutil
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+_site = _applies_out("## UX surface\n- design spec applies: no\n", 'shape = "static-site"\n')
+check("SPEC_APPLIES=no" in _site and "SPEC_KIND=web-page" in _site,
+      f"applies: a static site with its gate off prints SPEC_APPLIES=no and SPEC_KIND=web-page -- {_site!r}")
+_app = _applies_out(BLOCK, 'shape = "webapp-tray"\n')
+check("SPEC_APPLIES=yes" in _app and "SPEC_KIND=web-app" in _app,
+      f"applies: a web app prints SPEC_APPLIES=yes and SPEC_KIND=web-app -- {_app!r}")
+
+
 _h.report_and_exit("ux_surface")

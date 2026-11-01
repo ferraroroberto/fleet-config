@@ -4,6 +4,8 @@
 
 ## Visual proof (merge gate)
 
+Both subcommands also print `SPEC_KIND`: `web-page` for a public static site (a block answer of `design spec applies: web-page`, or `.fleet.toml` `shape = "static-site"` even with the gate off), held to `design.web.md`; `web-app` otherwise, held to `design.md` + `design.dark.md`. A `web-page` answer makes `SPEC_APPLIES=yes`, so every consumer of the gate keeps reading one yes/no; `/design-sync` and `design_sweep_scan.py` read the kind to pick the spec and the lint lenses (`design_lint --surface web-page`).
+
 `ux_surface.py check` counts more than the block's declared `paths`: once the spec applies, view JS under `static/`, templates and Streamlit pages count too (`DEFAULT_UI_PATTERNS`, test fixtures and `docs/` excluded), because what renders changes when they do, not only when the CSS does. The mobile surface counts the same way (`MOBILE_UI_PATTERNS`): the installed-PWA shell (`*.webmanifest`, a `static/` `manifest.json`, `icon*`/`apple-touch-icon*` PNGs under `static/`) and native views (`*.xib`, `*.storyboard`, Swift under `ios/`, Kotlin/Java and `res/` under `android/`). Native code counts only under an `ios/` or `android/` app tree, so a headless Swift worker elsewhere is not UI. The fleet's mobile UI today is the PWA shell of its web apps; no repo ships a native app. Where a mobile capture cannot be driven automatically, the proof page is built from simulator or device screenshots with `capture-before`/`capture-after --image`.
 
 A UI-touching diff ships with proof the agent looked at its own work. `skills/_lib/ui_proof` binds that proof to the tree and answers the finish gate:

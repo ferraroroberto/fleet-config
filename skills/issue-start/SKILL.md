@@ -232,7 +232,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 If it prints `SPEC_APPLIES=yes` **and** the issue plausibly touches the web UI
 (CSS, templates, view JS, the nav), read `~/.claude/design.md` +
-`design.dark.md` into context **now** — two file reads, no browser. This
+`design.dark.md` into context **now** — two file reads, no browser
+(`SPEC_KIND=web-page`: read `~/.claude/design.web.md` instead). This
 stops end-of-flow rework; the conformance gate runs later in `/issue-finish`. `SPEC_APPLIES=no` (non-web repo or a Streamlit spike) → skip.
 The `ux`/`design` arg forces the load; `no-ux` suppresses it.
 

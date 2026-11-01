@@ -77,10 +77,22 @@ following [cert-conformance.md](cert-conformance.md): the truth table, the
 `.fleet.toml` `[cert]` opt-out, and the canonical four-step `audit_issue.py`
 upsert procedure step 5 reuses, with its fresh-body template and stable title.
 
-### 2. Detect a web app — else skip
+### 2. Detect the surface — else skip
 
-This skill only applies to **FastAPI + static-PWA** apps that style themselves
-with CSS custom properties. Decide:
+First ask which spec the repo is held to:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py applies <repo-root>
+```
+
+`SPEC_KIND=web-page` means a public static site (`.fleet.toml` `shape =
+"static-site"`, or a `## UX surface` answer of `web-page`): it is linted
+against `design.web.md`, never the PWA spec. If `git ls-files "*.css"` finds
+any stylesheet, go to step 3 with `--surface web-page`; otherwise stop with
+`<repo> is a web page with no stylesheet — nothing to sync.`
+
+`SPEC_KIND=web-app` → this skill applies to **FastAPI + static-PWA** apps
+that style themselves with CSS custom properties. Decide:
 
 - `git ls-files "*.css"` → the candidate stylesheets.
 - Keep only stylesheets that define **CSS custom properties** in a `:root` (or
@@ -106,6 +118,12 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 (Reads the spec from `~/.claude/design.md` + `design.dark.md` — the junctioned
 canonical copies; `--scaffold` overrides the project-scaffolding root for the
 vendored compare, default `E:/automation/project-scaffolding`.)
+
+A web page runs the same command with `--surface web-page`, which reads
+`~/.claude/design.web.md` (`--spec <path>` names another copy) and swaps in the
+web-page `tokens` and `contracts` lenses. A spec file that is not there prints
+`spec_status: not_found` and exits 3: report the run as **not confirmed**,
+naming the missing path, and file nothing. It is never a clean result.
 
 The lint returns five sections: `tokens`, `adoption`, `contracts`, `vendored` and `siblings`. **Read [lint-sections.md](lint-sections.md) before interpreting the JSON.** It defines every section, each contract's PASS/WARN/FAIL/NA/ACCEPTED rule, the `FORKED`/`IDENTICAL`/`NOT_ADOPTED` vendored verdicts and the third-party `vendor/` vs `_vendored/` scoping rule (#940). What follows from it: every `tokens` drift (`value-drift`, `missing-theme-value`) and `missing` role is a candidate finding and `unmapped` goes to step 4a; contract WARN/FAIL rows are candidates that step 4b's materiality bar judges (an `ACCEPTED` row is excluded from the findings); a `FORKED` vendored file is a finding; `siblings` detection is mechanical and which variant is canonical is step 4c.
 

@@ -83,19 +83,16 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
 )
 
 
-def contracts(
+def build_ctx(
     root: Path,
     css_files: List[Path],
     html_files: List[Path],
     js_files: List[Path],
     spec_light: Dict[str, str],
     spec_dark: Optional[Dict[str, str]] = None,
-) -> List[dict]:
-    """Greppable design.md v2 component-contract checks (focus ring, reduced
-    motion, desktop measure, switch on-color, native checkboxes, disclosure
-    box, native <dialog>, nav rules, icon-size strays, ...). Thin orchestrator
-    over `_CONTRACT_CHECKS`: builds the shared `_ContractsCtx` once, then runs
-    each check in numbered order and concatenates its `checks` entries."""
+) -> _ContractsCtx:
+    """The shared `_ContractsCtx` every contract set reads, the web-app one
+    here and the web-page one in `design_lint.web_page`."""
     def _css_blob(paths: List[Path]) -> str:
         return "\n".join(f"/*FILE {rel(root, p)}*/\n" + strip_comments(read_text(p), "css")
                          for p in paths)
@@ -120,7 +117,7 @@ def contracts(
     # layers-control checkbox is not home-automation's checkbox.
     markup_own = _markup_blob([p for p in markup_files if not is_third_party(p)])
     index_files = [p for p in html_files if p.name == "index.html"]
-    ctx = _ContractsCtx(
+    return _ContractsCtx(
         root=root,
         css_all=css_all,
         css_own=css_own,
@@ -134,6 +131,22 @@ def contracts(
         vendored_root=find_vendored_root(root),
         modals=_editor_modals(root, html_files),
     )
+
+
+def contracts(
+    root: Path,
+    css_files: List[Path],
+    html_files: List[Path],
+    js_files: List[Path],
+    spec_light: Dict[str, str],
+    spec_dark: Optional[Dict[str, str]] = None,
+) -> List[dict]:
+    """Greppable design.md v2 component-contract checks (focus ring, reduced
+    motion, desktop measure, switch on-color, native checkboxes, disclosure
+    box, native <dialog>, nav rules, icon-size strays, ...). Thin orchestrator
+    over `_CONTRACT_CHECKS`: builds the shared `_ContractsCtx` once, then runs
+    each check in numbered order and concatenates its `checks` entries."""
+    ctx = build_ctx(root, css_files, html_files, js_files, spec_light, spec_dark)
     checks: List[dict] = []
     for check_fn in _CONTRACT_CHECKS:
         checks.extend(check_fn(ctx))

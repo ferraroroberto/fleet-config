@@ -10,7 +10,7 @@ A repo declares its surface in a `## UX surface` block in its own `CLAUDE.md`
 (convention: project-scaffolding#83):
 
     ## UX surface
-    - design spec applies: yes      # `no` for Streamlit spikes / non-web repos
+    - design spec applies: yes      # `web-page` for a public static site; `no` for spikes / non-web repos
     - paths:
       - app/webapp/static/**/*.css
       - app/webapp/templates/**
@@ -22,8 +22,8 @@ A repo declares its surface in a `## UX surface` block in its own `CLAUDE.md`
 Subcommands:
 
   applies <repo-root>
-      Parse the block only (no git). Prints `SPEC_APPLIES=yes|no` and
-      `KEY_VIEWS=...`. Used at `/issue-start`, where no diff exists yet — the
+      Parse the block only (no git). Prints `SPEC_APPLIES=yes|no`,
+      `SPEC_KIND=web-app|web-page` and `KEY_VIEWS=...`. Used at `/issue-start`, where no diff exists yet — the
       agent still judges whether the *issue* is UX-likely; this just answers
       "does this repo even have a design-gated UX surface?".
 
@@ -40,6 +40,12 @@ Subcommands:
 A repo with no `## UX surface` block (or `design spec applies: no`) yields
 `SPEC_APPLIES=no` / `TOUCHED=no`, so the gate is a permanent no-op there.
 
+`SPEC_KIND` names which spec a design check reads: `web-page` (`design.web.md`,
+a public static site) when the block answers `web-page` or `.fleet.toml`
+declares `shape = "static-site"`, else `web-app` (`design.md` +
+`design.dark.md`). It is printed whether or not the gate applies, because the
+periodic `/design-sync` lint picks its spec from it without consulting the gate.
+
 stdlib + the `git` CLI only (matches the _lib module contract).
 """
 
@@ -53,6 +59,7 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -101,6 +108,10 @@ def fenced_mask(lines: List[str]) -> List[bool]:
     return mask
 
 
+WEB_APP = "web-app"
+WEB_PAGE = "web-page"
+
+
 def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
     """Parse the `## UX surface` block out of a CLAUDE.md body.
 
@@ -108,7 +119,8 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
     design-conformance gate`), so the canonical scaffold can keep its rich heading
     on a *live* block; `## UX surfaces` and unrelated words do not match.
 
-    Returns `{"spec_applies": bool, "paths": [...], "key_views": [...]}`, or
+    Returns `{"spec_applies": bool, "kind": "web-app"|"web-page"|None,
+    "paths": [...], "key_views": [...]}`, or
     `None` when the file has no such block. Structure is read by indentation:
     top-level `- key:` items at column 0, their list entries indented beneath.
     A trailing `# comment` on any line is ignored. Stops at the next `## `
@@ -129,6 +141,7 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
         return None
 
     spec_applies = False
+    kind: Optional[str] = None
     paths: List[str] = []
     key_views: List[str] = []
     current: Optional[str] = None
@@ -150,7 +163,11 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
                 # The leading word is the answer; a note after it (`yes (the app, not the stage)`)
                 # is the author's, not a `no`.
                 val = body.split(":", 1)[1].split("#")[0].strip().lower()
-                spec_applies = re.match(r"(yes|true)\b", val) is not None
+                if re.match(r"web-page\b", val):
+                    spec_applies, kind = True, WEB_PAGE
+                else:
+                    spec_applies = re.match(r"(yes|true)\b", val) is not None
+                    kind = WEB_APP if spec_applies else None
                 current = None
             elif low.startswith("paths:"):
                 current = "paths"
@@ -169,7 +186,25 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
                 if tok:
                     key_views.append(tok)
 
-    return {"spec_applies": spec_applies, "paths": paths, "key_views": key_views}
+    return {"spec_applies": spec_applies, "kind": kind, "paths": paths, "key_views": key_views}
+
+
+def spec_kind(block: Optional[Dict[str, object]], shape: Optional[str]) -> str:
+    """Which design spec a repo is held to: `web-page` or `web-app`.
+
+    The block's own `web-page` answer wins; otherwise a `.fleet.toml`
+    `shape = "static-site"` still marks a public static site, so a site whose
+    gate is off is never linted against the PWA spec.
+    """
+    if block and block.get("kind") == WEB_PAGE:
+        return WEB_PAGE
+    return WEB_PAGE if shape == "static-site" else WEB_APP
+
+
+def repo_spec_kind(repo: Path) -> str:
+    """`spec_kind` for a checkout: its CLAUDE.md block plus its `.fleet.toml` shape."""
+    shape = (fleet_toml.load(repo) or {}).get("shape")
+    return spec_kind(_load_block(repo), shape if isinstance(shape, str) else None)
 
 
 def expand_braces(pattern: str) -> List[str]:
@@ -289,6 +324,7 @@ def cmd_applies(repo: Path) -> int:
     applies = bool(block and block["spec_applies"])
     views = ",".join(block["key_views"]) if block else ""  # type: ignore[index]
     print(f"SPEC_APPLIES={'yes' if applies else 'no'}")
+    print(f"SPEC_KIND={repo_spec_kind(repo)}")
     print(f"KEY_VIEWS={views}")
     return 0
 
@@ -297,6 +333,7 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     block = _load_block(repo)
     applies = bool(block and block["spec_applies"])
     print(f"SPEC_APPLIES={'yes' if applies else 'no'}")
+    print(f"SPEC_KIND={repo_spec_kind(repo)}")
     if not applies:
         print("TOUCHED=no")
         print("MATCHED=")
