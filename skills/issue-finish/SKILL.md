@@ -362,18 +362,11 @@ Decision below is driven by the project's `## CI expectations` block
     A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
-- **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)),
-  after the close:
-  ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|no --try "<what Roberto does>" [--proof <URL> …]
-  ```
-  `--verified yes` only when the original repro or acceptance re-ran and passed
-  in this session; `no` when step 1 left a criterion `UNVERIFIABLE`. `--try` is
-  the concrete thing to do (where to go, what to press, what should happen);
-  `--proof` adds each private artifact or proof page this finish produced (the
-  PR goes in by itself). Exit 2 (`APPLIED=no`) → re-run with `--try`. Carry the
-  `OWNER_CHECK=` line into step 7 verbatim: `none`, `required APPLIED=yes|already`,
-  or `unknown`, which is its own state and never reported as none.
+- **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)), after the close:
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|no --try "<what Roberto does>" [--proof <URL> …]`.
+  `yes` only when the original repro or acceptance re-ran and passed in the lane's own run; `no` when step 1
+  left a criterion `UNVERIFIABLE`. Exit 2 → re-run with `--try`. Step 7 carries its `OWNER_CHECK=` line
+  verbatim; `unknown` is its own state, never reported as none.
 - Clear the issue's Fleet Board marker now that the merge is authoritative:
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>

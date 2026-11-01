@@ -413,6 +413,14 @@ def cmd_owner_checks(args: argparse.Namespace) -> int:
     return 1 if result["unknown"] else 0
 
 
+def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
+    """Refuse a `needs-owner` issue; an unreadable one only prints its warning."""
+    refusal, warning = rails.owner_check_refusal(repo, number, launcher.fetch_issue_state(repo, number))
+    if warning is not None:
+        print(f"WARNING={warning}")
+    return refusal
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     brief = None
     if args.brief_file is not None:
@@ -432,12 +440,6 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             print(f"REFUSED={exc}")
             return 1
 
-    refusal, warning = rails.owner_check_refusal(
-        args.repo, args.number, launcher.fetch_issue_state(args.repo, args.number))
-    if refusal is not None:
-        print(f"REFUSED={refusal}")
-        return 1
-
     board = launcher._request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
     settings = launcher._request(args.base_url, "/api/board/chief/settings")
@@ -452,7 +454,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         rails.alive_worker_count(columns, exclude_sid=self_sid),
         worker_cap,
         args.yolo_confirmed,
-    )
+    ) or _owner_check_refusal(args.repo, args.number)
     if reason is not None:
         print(f"REFUSED={reason}")
         return 1
@@ -463,8 +465,6 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if reason is not None:
         print(f"REFUSED={reason}")
         return 1
-    if warning is not None:
-        print(f"WARNING={warning}")
     if running is None:
         print(f"WARNING=fleet-jobs-unknown reason={jobs_error}")
     for job_id in running or []:

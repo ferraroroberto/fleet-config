@@ -133,8 +133,8 @@ check(rc == 0 and len(posted) == 1,
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID,
                            issue_state={"labels": [{"name": "enhancement"}, {"name": "needs-owner"}]})
 check(rc == 1 and posted == [] and "REFUSED=needs-owner: fleet-config#838" in _run_dispatch.last_output
-      and _run_dispatch.last_requested == [],
-      "cmd_dispatch: a needs-owner issue is refused before any launcher call, no POST")
+      and "/api/board/issues/start" not in _run_dispatch.last_requested,
+      "cmd_dispatch: a needs-owner issue is refused, no POST")
 
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, issue_state={"error": "gh down"})
 check(rc == 0 and len(posted) == 1 and "WARNING=owner-check-unknown reason=gh down" in _run_dispatch.last_output,
