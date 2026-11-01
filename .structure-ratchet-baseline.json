@@ -1,5 +1,6 @@
 {
   "version": 1,
   "band": {"files": 6, "functions": 30},
+  "root_extras": ["agy", "codex", "commands", "copilot-hooks", "pi", "shell", "stream-deck", "tray"],
   "entries": []
 }
