@@ -20,6 +20,7 @@ from acceptance.hook_cases import Case
 from acceptance.hook_cases.commit_guards import PRE_COMMIT_CASES, SECRET_SCAN_CASES
 from acceptance.hook_cases.fakes import FAKE_AKIA, FAKE_GHP, FAKE_SK, FAKE_XOXB
 from acceptance.hook_cases.grok_shape import grok_cases
+from acceptance.hook_cases.host_power import HOST_POWER_CASES
 from acceptance.hook_cases.lifecycle_hooks import (
     NOTIFY_ON_IDLE_CASES,
     SESSION_START_CASES,
@@ -47,6 +48,7 @@ def matrix_cases() -> Tuple[List[Case], Path]:
         *PRE_COMMIT_CASES,
         *SECRET_SCAN_CASES,
         *SAFE_KILL_CASES,
+        *HOST_POWER_CASES,
         *VENV_CASES,
         *WINDOWS_PATH_CASES,
         *DOCS_GUARD_CASES,
