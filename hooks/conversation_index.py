@@ -53,7 +53,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-import hub_client  # noqa: E402
+from conversation import hub_client  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
     capture_config_from_project,

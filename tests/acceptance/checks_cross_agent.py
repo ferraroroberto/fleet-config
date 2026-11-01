@@ -58,6 +58,8 @@ _CODEX_POLICY_COVERAGE = (
      "unsupported"),
     ("Telegram file replies", "telegram_file_reply_guard", None, None,
      "not applicable"),
+    ("UX merge needs its proof page", "ui_proof_merge_guard", None, None,
+     "unsupported"),
 )
 
 # Every function below inserts its own sys.path entry (HOOKS or skills/_lib)

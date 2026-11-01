@@ -4,7 +4,7 @@
 
 ## Visual proof (merge gate)
 
-`ux_surface.py check` counts more than the block's declared `paths`: once the spec applies, view JS under `static/`, templates and Streamlit pages count too (`DEFAULT_UI_PATTERNS`, test fixtures and `docs/` excluded), because what renders changes when they do, not only when the CSS does.
+`ux_surface.py check` counts more than the block's declared `paths`: once the spec applies, view JS under `static/`, templates and Streamlit pages count too (`DEFAULT_UI_PATTERNS`, test fixtures and `docs/` excluded), because what renders changes when they do, not only when the CSS does. The mobile surface counts the same way (`MOBILE_UI_PATTERNS`): the installed-PWA shell (`*.webmanifest`, a `static/` `manifest.json`, `icon*`/`apple-touch-icon*` PNGs under `static/`) and native views (`*.xib`, `*.storyboard`, Swift under `ios/`, Kotlin/Java and `res/` under `android/`). Native code counts only under an `ios/` or `android/` app tree, so a headless Swift worker elsewhere is not UI. The fleet's mobile UI today is the PWA shell of its web apps; no repo ships a native app. Where a mobile capture cannot be driven automatically, the proof page is built from simulator or device screenshots with `capture-before`/`capture-after --image`.
 
 A UI-touching diff ships with proof the agent looked at its own work. `skills/_lib/ui_proof` binds that proof to the tree and answers the finish gate:
 
@@ -26,4 +26,16 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 - **Folder gate.** `check . --pr <PR>` adds `PROOF_PAGE=present|missing` and refuses (exit 1) on a UI diff without the page, and on a `.proof/` that is tracked or not gitignored, whether or not `layout_lint` is vendored: neither needs the capture helper. The built page is itself the proof: with no recorded manifest it reads `VISUAL_PROOF=fresh`, the lint result is whatever its captures carry ("not run" without a manifest), and `NEED=` never asks for a manifest. A page whose captures carry an unallowed lint error reads `failing`. Every repo that can produce a UI diff carries a `.proof/` line in `.gitignore`.
 - **Prune.** `prune . --older-than 30d` removes PR and staging folders (and their index rows) whose newest of folder time and index stamp is older than the threshold; nothing else under `.proof/` is touched, and the owner may delete `.proof/` at any time.
 
-Tested by `tests/web_review/test_ui_proof.py`, `tests/web_review/test_ui_proof_store.py` and `tests/web_review/test_ui_proof_capture.py` against a temp repo.
+Tested by `tests/web_review/test_ui_proof.py`, `tests/web_review/test_ui_proof_store.py`, `tests/web_review/test_ui_proof_capture.py` and `tests/web_review/test_ui_proof_gate.py` against a temp repo.
+
+### Merge hook
+
+The folder gate is enforced on the merge itself, not only as a finish step: `hooks/ui_proof_merge_guard.py` (`PreToolUse` on `Bash` and `PowerShell`) refuses `gh pr merge` on a UX diff with no `.proof/<PR>/index.html`. It runs `ui_proof gate <cwd> [--pr <number|url|branch>] [--repo-slug owner/name]`, which answers `GATE=pass` (exit 0), `GATE=refuse` (exit 1) or `GATE=unknown` (exit 3).
+
+- **Which tree.** `check` judges the checkout it is given, so a merge run from `main` or with `-R` from another repo would diff nothing. The gate resolves the repo (the cwd's checkout when its origin matches, else the sibling fleet checkout named by `-R`), then the worktree on the PR's head branch, and judges that tree exactly as `check --pr` does. When no worktree has the branch, `gh pr diff --name-only` supplies the PR's file list, the tree-bound manifest record is skipped, and the page must be in this checkout's or the primary's `.proof/` (published by `build --sha`).
+- **Cost.** A command with no `gh pr merge` costs a regex. A repo with no `## UX surface` block answers `n/a` from one `CLAUDE.md` read, before any `gh` call. A UX repo adds one or two `gh` calls (about 2 s).
+- **Unknown refuses.** No local checkout, `gh` failing, a crash, a timeout (50 s, under the harness's 60 s hook limit) or an answer without `GATE=pass` refuses with a "proof state unknown" message distinct from the missing-proof one.
+- **Escape.** `FLEET_UI_PROOF_BYPASS=<reason>`, set in the terminal the session is started from, lets the merge through with a nudge and appends the reason, session and command to `<hooks state>/ui-proof-bypass.jsonl`. A prefix typed into the command itself never reaches the hook process, so an agent cannot set it.
+- **Wiring.** `settings.template.json` adds it to both shell `hook_dispatch.py` chains; the live `~/.claude/settings.json` takes it on the owner's next template merge. Codex is not wired (`docs/cross-agent-parity.md`). A merge through the GitHub web UI or `gh api` is outside its reach.
+
+Tested by `tests/hooks/test_ui_proof_merge_guard.py` (command parsing, the answer mapping, sample payloads through the hook and `hook_dispatch.py`, the logged bypass).

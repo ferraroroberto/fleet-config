@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import _lib
-import hub_client
+from conversation import hub_client
 import notify_on_idle
 import notify_send
 

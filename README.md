@@ -124,6 +124,7 @@ fleet-config/
 │   ├── bash_cmdexe_syntax_guard.py # PreToolUse on Bash: nudge cmd.exe-only syntax (%VAR%, dir /s, caret continuation) — Bash tool runs Git Bash, not cmd.exe
 │   ├── bash_windows_path_guard.py  # PreToolUse on Bash: block unquoted Windows drive-letter backslash paths — Git Bash strips the backslashes
 │   ├── safe_kill_guard.py
+│   ├── ui_proof_merge_guard.py     # PreToolUse on Bash/PowerShell: refuse `gh pr merge` on a UX diff without .proof/<PR>/index.html
 │   ├── venv_discipline.py
 │   ├── py_syntax_check.py
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
@@ -159,7 +160,7 @@ fleet-config/
 │   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program) → hooks/backup/'s `main`
 │   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
-│   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
+│   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)

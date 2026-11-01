@@ -52,5 +52,12 @@ and answers the finish gate's question.
   prune <repo> [--older-than 30d]
       Remove `.proof/` PR and staging folders older than the threshold.
 
+  gate <cwd> [--pr <number|url|branch>] [--repo-slug owner/name]
+      The `ui_proof_merge_guard` hook's check before `gh pr merge`: finds the
+      tree holding the PR (the worktree on its head branch, else the PR's file
+      list from `gh`) and judges it as `check --pr` does. `GATE=pass` exit 0,
+      `GATE=refuse` exit 1, `GATE=unknown` exit 3. No UX surface answers
+      `n/a` before any `gh` call (see `merge_gate.py`).
+
 Directory execution: `python <...>/skills/_lib/ui_proof check .`.
 """
