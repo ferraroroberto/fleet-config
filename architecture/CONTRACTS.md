@@ -11,6 +11,9 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | fleet-config | skills | cli | [docs/skills.md](https://github.com/ferraroroberto/fleet-config/blob/main/docs/skills.md) |
 | fleet-config | scheduled-runner | cli | [docs/scheduled-runners.md](https://github.com/ferraroroberto/fleet-config/blob/main/docs/scheduled-runners.md) |
 | fleet-config | fleet-map | file | [architecture/README.md](https://github.com/ferraroroberto/fleet-config/blob/main/architecture/README.md) |
+| app-launcher | jobs | http | [docs/jobs-tab.md](https://github.com/ferraroroberto/app-launcher/blob/main/docs/jobs-tab.md) |
+| app-launcher | board | http | [docs/board.md](https://github.com/ferraroroberto/app-launcher/blob/main/docs/board.md) |
+| app-launcher | sessions | http | [docs/session-view.md](https://github.com/ferraroroberto/app-launcher/blob/main/docs/session-view.md) |
 | local-llm-hub | messages | http | [docs/api-usage.md](https://github.com/ferraroroberto/local-llm-hub/blob/main/docs/api-usage.md) |
 | local-llm-hub | audio | http | [docs/api-usage.md](https://github.com/ferraroroberto/local-llm-hub/blob/main/docs/api-usage.md) |
 | local-llm-hub | models | http | [docs/models-and-roles.md](https://github.com/ferraroroberto/local-llm-hub/blob/main/docs/models-and-roles.md) |
@@ -20,6 +23,7 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | Repo | Owns | Does not own |
 |---|---|---|
 | fleet-config | user-scope agent config, hooks, fleet skills, issue workflow, fleet map | app code, scaffold templates, LLM routing, job scheduling |
+| app-launcher | launcher webapp, agent sessions, job scheduling, Board | LLM routing, agent config and skills, app code it launches |
 | local-llm-hub | LLM routing, model backends and ports, audio proxy, hub telemetry | whisper engine, job scheduling, agent config |
 | life-os | personal productivity skills, document archive engine, Outlook email tooling | task list, session hosting, LLM routing, hooks |
 
@@ -28,5 +32,6 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | Repo | Depends on |
 |---|---|
 | fleet-config | project-scaffolding, local-llm-hub, app-launcher |
+| app-launcher | local-llm-hub, voice-transcriber, photo-ocr, task-os, life-os, fleet-config |
 | local-llm-hub | voice-transcriber, automation, project-scaffolding |
 | life-os | app-launcher, local-llm-hub, email-archiver, fleet-config |

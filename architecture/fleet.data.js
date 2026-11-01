@@ -28,7 +28,7 @@ window.FLEET = {
   ],
   "compute": {"gpu": "GPU · &lt;model&gt; · &lt;NN&gt; GB", "cpu": "CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t", "ram": "RAM · &lt;NN&gt; GB"},
   "enabling": [
-    {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — phone-first hub: Coding · Apps · Jobs · Life OS · Board."},
+    {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — phone-first hub: Coding · Apps · Jobs · Life OS · Board.", "deps": [{"repo": "local-llm-hub"}, {"repo": "voice-transcriber"}, {"repo": "photo-ocr"}, {"repo": "task-os"}, {"repo": "life-os"}, {"repo": "fleet-config"}], "ifs": [{"name": "jobs", "kind": "http", "doc": "docs/jobs-tab.md"}, {"name": "board", "kind": "http", "doc": "docs/board.md"}, {"name": "sessions", "kind": "http", "doc": "docs/session-view.md"}], "owns": ["launcher webapp", "agent sessions", "job scheduling", "Board"], "not_owns": ["LLM routing", "agent config and skills", "app code it launches"]},
     {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190", "typesafe jev (egress)"], "deps": [{"repo": "voice-transcriber"}, {"repo": "automation"}, {"repo": "project-scaffolding"}], "ifs": [{"name": "messages", "kind": "http", "doc": "docs/api-usage.md"}, {"name": "audio", "kind": "http", "doc": "docs/api-usage.md"}, {"name": "models", "kind": "http", "doc": "docs/models-and-roles.md"}], "owns": ["LLM routing", "model backends and ports", "audio proxy", "hub telemetry"], "not_owns": ["whisper engine", "job scheduling", "agent config"]},
     {"ic": "🎙️", "nm": "voice-transcriber", "port": ":8443", "ds": "Always-on voice→text (F8). Owns whisper :8090.", "chips": ["whisper :8090"]},
     {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."},
@@ -48,6 +48,7 @@ window.FLEET = {
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
     {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
     {"ic": "🅿️", "nm": "parking-manager", "port": ":8450", "ds": "Household parking: which days to book, time off and the Thursday release; books them itself."},
+    {"ic": "🪞", "nm": "robertoferraro", "ds": "Static replica of robertoferraro.net for leaving Squarespace: same URLs, content and look."},
     {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking.", "tag": ["→", "GitHub"]},
     {"ic": "📈", "nm": "website-analytics", "ds": "Local-first GA4, Search Console, crawl, and weekly website-insight dashboard."}
   ],

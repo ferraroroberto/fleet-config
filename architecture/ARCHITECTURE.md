@@ -118,6 +118,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 💶 **family-accounting** | Local shared household-expense tracker (import bank exports → classify). | Streamlit | — |
 | 🧮 **mathgamesforkids** | Educational games + math tools + HTML experiments. | static | — |
 | 🌐 **website** | Multi-workshop landing site (one template, per-workshop config). | static | — |
+| 🪞 **robertoferraro** | Static replica of robertoferraro.net for leaving Squarespace: same URLs, content and look. | static | — |
 | 🎓 **vibe-coding-workshop** | Hands-on Python workshop — slideshow + structured exercises. | static/notebooks | — |
 | 📶 **github-copilot-usage** | Local read-only dashboard over the usage data Copilot writes to this machine — premium requests, tokens, and prompt composition per session/model/project. | `:8377` FastAPI | — (local Copilot logs) |
 | ✅ **task-os** | One master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (`taskos://` opener), GitHub/GitLab issues as tasks, folder-index + federated search, Inbox capture (flagged mails from email-archiver, WhatsApp pushes from whatsapp-radar), batch Outlook-Inbox archiving via email-archiver's headless CLI, a read-only calendar lane beside Today (today's events from a private ICS address), voice quick-add via the hub, and a markdown mirror (edit tasks as `.md`) + nightly backup. | `:8448` FastAPI+PWA | **GitHub**, email-archiver, hub |

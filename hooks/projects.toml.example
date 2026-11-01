@@ -237,6 +237,9 @@ cwd_prefix = "E:/automation/project-scaffolding"
 [pvgis]
 cwd_prefix = "E:/automation/pvgis"
 
+[robertoferraro]
+cwd_prefix = "E:/automation/robertoferraro"
+
 [social-media-analytics]
 cwd_prefix = "E:/automation/social-media-analytics"
 
