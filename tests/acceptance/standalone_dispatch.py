@@ -322,6 +322,18 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "-- error classification, oversize captures, every walk_context arm "
      "and its golden browser trace -- are testable on their own (fleet- "
      "config#1085, #1244)"),
+    ("design_review_web", "design_review/test_web_page.py",
+     "design_review's web-page leg -- the section 3 pass rules on known-bad "
+     "facts, the search facts against a stubbed preview, preview resolution, "
+     "and a whole metrics document scored by design.web.rubric.toml with "
+     "Lighthouse and a failed cold load unmeasured, never passed -- is "
+     "testable on its own"),
+    ("design_review_web_browser", "design_review_web_browser/test_design_review_web_browser.py",
+     "the web-page review end to end against a fixture static site through a "
+     "sibling venv's Playwright: its own preview started and stopped, and the "
+     "152px tablet column, the invisible phone menu and the partial carousel "
+     "card each failing their rule while the good page passes; skipped "
+     "honestly when no sibling has Playwright"),
     ("design_review_browser", "design_review_browser/test_design_review_browser.py",
      "/design-review's browser leg -- the measure and walk CLIs against the "
      "static fixture pages through a sibling venv's Playwright, skipped honestly "
