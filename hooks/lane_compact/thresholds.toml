@@ -1,0 +1,21 @@
+# Context-use thresholds for chief-dispatched lanes: at a turn end past its
+# threshold a lane writes a handoff and compacts, instead of waiting for
+# Claude Code's own auto-compact near the window limit (docs/lane-compact.md).
+#
+# Lookup order: [models] (exact id, then the longest id prefix), then
+# [windows] (the context-window size in tokens the statusline reports), then
+# `default`. Values are percentages of the window, 1-99.
+
+# false turns the whole lane hold off without touching code.
+enabled = true
+
+default = 70
+
+[windows]
+# Accuracy falls well before a 1M window fills, so these lanes hand off earlier.
+1000000 = 60
+200000 = 75
+
+[models]
+# Per-model overrides win over the window size, e.g.
+# "claude-haiku-5-5" = 80

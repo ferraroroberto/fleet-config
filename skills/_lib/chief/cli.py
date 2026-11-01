@@ -100,7 +100,7 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_act_commands(sub: argparse._SubParsersAction) -> None:
-    """self-compact, chief-sid, say, stop, escalate, verify, sweep and plan."""
+    """self-compact, lane-compact, chief-sid, say, stop, escalate, verify, sweep and plan."""
     sc = sub.add_parser("self-compact", help="the chief compacts itself behind its refusals (fleet-config#1052)")
     sc.add_argument("--threshold", type=int, default=None,
                     help="override the Settings threshold (tests); default: app-launcher Settings, else 30")
@@ -109,6 +109,13 @@ def _add_act_commands(sub: argparse._SubParsersAction) -> None:
                     help="max age in seconds of the handover log and the plan")
     sc.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     sc.set_defaults(func=commands.cmd_self_compact)
+
+    lc = sub.add_parser("lane-compact", help="a dispatched lane compacts itself after writing its handoff")
+    lc.add_argument("--focus", default=None, help="compaction focus; default names the handoff file")
+    lc.add_argument("--fresh-within", type=float, default=compact.COMPACT_FRESH_SECONDS,
+                    help="max age in seconds of the handoff")
+    lc.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    lc.set_defaults(func=commands.cmd_lane_compact)
 
     cs = sub.add_parser("chief-sid", help="find the standing chief's live session id")
     cs.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)

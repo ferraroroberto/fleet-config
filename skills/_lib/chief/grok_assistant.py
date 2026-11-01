@@ -58,6 +58,7 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 # Read verbs of chief_ops.py; every other verb writes or types into a session.
 READ_VERBS = ("board", "sessions", "exchange", "issues")
 WRITE_VERBS = ("dispatch", "say", "stop", "escalate", "plan", "sweep", "self-compact",
+               "lane-compact",
                "inbox", "ack", "verify", "wake", "wait-event")
 GH_READS = ("issue view", "issue list", "pr view", "pr list", "pr checks", "run view", "run list")
 GH_WRITES = ("issue create", "issue close", "issue comment", "issue edit", "issue reopen",

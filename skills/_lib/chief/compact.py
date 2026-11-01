@@ -97,3 +97,31 @@ def self_compact_refusal(
         if age > fresh_seconds:
             return f"{name} is stale (written {int(age // 60)}m ago, limit {int(fresh_seconds // 60)}m); refresh it first"
     return None
+
+
+# ---- chief-dispatched lanes (hooks/lane_compact holds the turn end) ---------
+
+# Both folders are read by hooks/lane_compact under its own spelling (tree boundary).
+LANE_HANDOFF_DIRNAME = "lane-handoffs"
+LANE_QUEUED_DIRNAME = "lane-compact-queued"
+
+
+def lane_compact_focus(handoff: str) -> str:
+    return (f"Keep the issue, branch and worktree, and the next step. The lane handoff at {handoff} "
+            "holds the rest and is handed back after this compaction.")
+
+
+def lane_compact_refusal(
+    handoff_age: Optional[float], gate_running: Optional[bool], fresh_seconds: float = COMPACT_FRESH_SECONDS,
+) -> Optional[str]:
+    """Why a lane must not compact now, or `None` to proceed. An unknown gate state is a running gate."""
+    if gate_running is None:
+        return "gate state unknown; not compacting on a guess"
+    if gate_running:
+        return "a gate is running in this tree; finish it before compacting"
+    if handoff_age is None:
+        return "handoff missing; write it before compacting"
+    if handoff_age > fresh_seconds:
+        return (f"handoff is stale (written {int(handoff_age // 60)}m ago, limit "
+                f"{int(fresh_seconds // 60)}m); refresh it first")
+    return None
