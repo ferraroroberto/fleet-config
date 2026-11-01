@@ -112,6 +112,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _tier23_hooks_unit_checks,
     _warn_channel_unit_checks,
 )
+from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
 from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _safe_kill_git_bypass_unit_checks,
@@ -309,6 +310,7 @@ def _run_guard_checks(tally: _Tally) -> None:
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     tally.run_unit(_safe_kill_force_push_unit_checks)
     tally.run_unit(_safe_kill_git_bypass_unit_checks)  # #1303
+    tally.run_unit(_host_power_codex_unit_checks)
     tally.run_unit(_venv_junction_guard_unit_checks)
 
     # ---- venv_discipline rule 5 + destructive-action audit trail ----

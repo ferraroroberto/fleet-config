@@ -255,4 +255,29 @@ command = f"cat <<-EOF > f\n\t{_BODY}\n\tEOF\nls {_BODY}"
 got = [m.group(0) for m in _bwp.find_unsafe_drive_paths(command)]
 check(got == [_BODY], f"bash_windows_path_guard ends a <<- body at a tab-indented delimiter (got {got!r})")
 
+# `_lib.command_invocations`: every command in command position, unquoted,
+# command word first. `safe_kill_guard`'s host-power rule reads only these, so
+# a word that is an argument, a quoted string or heredoc text never leads.
+INVOCATIONS = [
+    ("git status && ls -la", [["git", "status"], ["ls", "-la"]]),
+    ('grep -rn "a; b" .', [["grep", "-rn", "a; b", "."]]),
+    ("FOO=1 sudo -E make", [["make"]]),
+    ("Get-Process | ForEach-Object { Stop-Job $_ }",
+     [["Get-Process"], ["ForEach-Object"], ["Stop-Job", "$_"]]),
+    ("cat <<'EOF' > f\nrm -rf x\nEOF\necho done", [["cat", "<<EOF", ">", "f"], ["echo", "done"]]),
+    ("git commit -m @'\nmake it\n'@", [["git", "commit", "-m", ""]]),
+    ("make \\\n  build", [["make", "build"]]),
+    ('bash -c "make build"', [["bash", "-c", "make build"], ["make", "build"]]),
+    ("cmd //c make build", [["cmd", "//c", "make", "build"], ["make", "build"]]),
+    ("iex 'make x'", [["iex", "make x"], ["make", "x"]]),
+    ('cmd //c "make" build', [["cmd", "//c", "make", "build"], ["make"], ["make", "build"]]),
+    ("ls # a comment", [["ls", "#", "a", "comment"]]),
+]
+for command, expected in INVOCATIONS:
+    got = _lib.command_invocations(command)
+    check(got == expected, f"command_invocations({command!r}): {expected!r} (got {got!r})")
+for word, stem in (("C:/Windows/System32/Shutdown.EXE", "shutdown"), ("Stop-Computer", "stop-computer"),
+                   ("E:\\tools\\psshutdown64.exe", "psshutdown64"), ("rundll32", "rundll32")):
+    check(_lib.command_stem(word) == stem, f"command_stem({word!r}) == {stem!r} (got {_lib.command_stem(word)!r})")
+
 _h.report_and_exit("test_shell_parse")
