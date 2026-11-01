@@ -225,6 +225,17 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "criteria per state, index.json keyed by PR, the finish gate reading "
      "a built page as fresh, its refusal without the page or on a "
      "tracked/unignored .proof/, and prune by age (fleet-config#1718, #1722)"),
+    ("ui_proof_gate", "web_review/test_ui_proof_gate.py",
+     "`ui_proof gate`, the merge hook's check -- n/a before any gh call "
+     "without a UX surface, the checked-out PR branch judged in place, the "
+     "PR's own file list when it is not (a mobile PWA-shell file included), "
+     "and every fact it cannot establish reported as GATE=unknown "
+     "(fleet-config#1768)"),
+    ("ui_proof_merge_guard", "hooks/test_ui_proof_merge_guard.py",
+     "the `gh pr merge` proof hook -- merge parsing incl. -R and cd, only an "
+     "explicit GATE=pass passes, unknown/crash/timeout refuse with their own "
+     "message, sample payloads through the hook and hook_dispatch, and the "
+     "owner's logged bypass (fleet-config#1768)"),
     ("ui_proof_capture", "web_review/test_ui_proof_capture.py",
      "`ui_proof capture` -- viewport/theme arguments, the distinct "
      "no-interpreter / no-Playwright / app-unreachable / failed-leg "

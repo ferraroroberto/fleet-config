@@ -171,25 +171,29 @@ def _judge_record(repo: Path, rec: Optional[dict]) -> Tuple[str, List[str], str]
     return "fresh", [], f"states={','.join(criteria)} legs={len(entries)} errors=0 recorded={rec.get('utc')}"
 
 
-def evaluate(repo: Path, base: Optional[str] = None, pr: Optional[int] = None) -> Verdict:
+def evaluate(repo: Path, base: Optional[str] = None, pr: Optional[int] = None,
+             changed: Optional[List[str]] = None) -> Verdict:
     """The finish gate's verdict for `repo`'s branch diff.
 
     With `pr`, `.proof/<PR>/index.html` is required and is itself the proof: a repo with no recorded manifest
     is judged by the built page and the lint findings its captures carry (lint "not run" when it has none).
+    `changed` replaces the local diff with a PR's own file list when `repo` is not on the PR's branch; the
+    tree-bound manifest record cannot speak for that diff, so only the page judges it.
     """
-    verdict = _evaluate_manifest(repo, base)
+    rec = load_record(repo) if changed is None else None
+    verdict = _evaluate_manifest(repo, base, rec, changed)
     if verdict.touched == "no":
         return verdict
     verdict.hygiene = store.guard_lines(repo)
     if pr is not None:
-        if load_record(repo) is None:
+        if rec is None:
             verdict.need = [n for n in verdict.need if not n.startswith(NO_RECORD)]
         folder = store.pr_folder(repo, pr)
         verdict.page = "present" if folder else "missing"
         if folder is None:
             verdict.need.append(f"no .proof/{pr}/index.html; `ui_proof capture-before`/`capture-after`, "
                                 f"then `ui_proof build . --pr {pr}`")
-        elif load_record(repo) is None:
+        elif rec is None:
             _judge_page(verdict, folder)
     verdict.need += verdict.hygiene
     return verdict
@@ -210,13 +214,15 @@ def _judge_page(verdict: Verdict, folder: Path) -> None:
     verdict.state, verdict.need, verdict.detail = "fresh", [], "; ".join(notes)
 
 
-def _evaluate_manifest(repo: Path, base: Optional[str]) -> Verdict:
-    """The layout-lint manifest's verdict for the branch diff."""
+def _evaluate_manifest(repo: Path, base: Optional[str], rec: Optional[dict],
+                       changed: Optional[List[str]] = None) -> Verdict:
+    """The layout-lint manifest's verdict for the branch diff, or for `changed` when given."""
     block = ux_surface._load_block(repo)
     if not (block and block["spec_applies"]):
         return Verdict("n/a", False, "no", detail="no design-gated UX surface (SPEC_APPLIES=no)")
     enforced = layout_lint_vendored(repo)
-    changed = git_run.changed_files(repo, base or ux_surface._default_base(repo))
+    if changed is None:
+        changed = git_run.changed_files(repo, base or ux_surface._default_base(repo))
     if changed is None:
         touched, matched = "unknown", []
     else:
@@ -224,7 +230,7 @@ def _evaluate_manifest(repo: Path, base: Optional[str]) -> Verdict:
         touched = "yes" if matched else "no"
     if touched == "no":
         return Verdict("n/a", enforced, "no", detail="no UX surface touched")
-    state, need, detail = _judge_record(repo, load_record(repo))
+    state, need, detail = _judge_record(repo, rec)
     if touched == "unknown":
         views = ",".join(block["key_views"]) or "(none declared)"  # type: ignore[arg-type]
         note = f"diff could not be taken (TOUCHED=unknown), so proof is required for every key view: {views}"

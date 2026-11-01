@@ -10,7 +10,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
-from ui_proof import capture_run, proof, store, walkthrough  # noqa: E402
+from ui_proof import capture_run, merge_gate, proof, store, walkthrough  # noqa: E402
 
 
 def _print_verdict(v: proof.Verdict) -> None:
@@ -38,6 +38,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     chk.add_argument("--base", default=None)
     chk.add_argument("--pr", type=int, default=None,
                      help="require .proof/<PR>/index.html; a built page passes without a recorded manifest")
+    gate = sub.add_parser("gate", help="may `gh pr merge` go ahead? the merge hook's check (exit 0 pass, 1 refuse, 3 unknown)")
+    gate.add_argument("repo", type=Path, help="the merge command's working directory")
+    gate.add_argument("--pr", default=None, help="the PR as gh names it: number, URL or branch (default: current branch)")
+    gate.add_argument("--repo-slug", default=None, help="owner/name from the merge's -R/--repo")
     for phase in store.PHASES:
         cap = sub.add_parser(f"capture-{phase}", help=f"copy the {phase} screenshots into .proof/")
         cap.add_argument("repo", type=Path)
@@ -82,6 +86,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         verdict = proof.evaluate(repo, args.base, args.pr)
         _print_verdict(verdict)
         return 1 if verdict.blocks else 0
+    if args.cmd == "gate":
+        code, lines = merge_gate.run(args.repo, args.pr, args.repo_slug)
+        print("\n".join(lines))
+        return code
     return _store_command(repo, args)
 
 

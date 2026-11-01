@@ -215,6 +215,20 @@ check(ux.ui_paths(["tests/e2e/_fixtures/page.html"], ["tests/e2e/_fixtures/**"])
       == ["tests/e2e/_fixtures/page.html"],
       "a declared glob always counts, even under tests/")
 
+# ---- ui_paths: the mobile surface (installed-PWA shell, native iOS/Android views) ----
+
+_PWA_SHELL = ["app/webapp/static/manifest.webmanifest", "app/webapp/static/icon-180.png",
+              "app/webapp/static/apple-touch-icon.png", "app_web/static/manifest.json"]
+check(ux.ui_paths(_PWA_SHELL, CSS_ONLY) == _PWA_SHELL,
+      "the PWA shell (manifest and home-screen icons) counts as UI")
+_NATIVE = ["ios/App/Views/HomeView.swift", "ios/App/Base.lproj/Main.storyboard",
+           "android/app/src/main/res/layout/home.xml", "android/app/src/main/java/app/Home.kt"]
+check(ux.ui_paths(_NATIVE, CSS_ONLY) == _NATIVE,
+      "native iOS and Android views count as UI")
+check(ux.ui_paths(["mac/worker/Sources/Worker/main.swift", "app/webapp/static/logo.png",
+                   "custom_components/x/manifest.json", "tests/fixtures/manifest.webmanifest"], CSS_ONLY) == [],
+      "a headless Swift worker, a non-icon image, a non-static manifest.json and a test fixture are not UI")
+
 
 # ---- cmd_check: a diff that FAILED is `unknown`, never `no` (fleet-config#681) ----
 # ux_surface used to carry a private `_changed_files` that swallowed git's

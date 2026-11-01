@@ -240,19 +240,33 @@ DEFAULT_UI_PATTERNS = [
     "**/pages/**/*.py",
     "**/streamlit_app.py",
 ]
+# What a phone shows: the installed-PWA shell (its manifest and home-screen
+# icons, which no CSS or view change touches) and native iOS/Android views.
+# Native code counts only under an `ios/` or `android/` app tree, so a
+# headless Swift or Kotlin worker elsewhere in a repo is not mistaken for UI.
+MOBILE_UI_PATTERNS = [
+    "**/*.webmanifest",
+    "**/static/**/manifest.json",
+    "**/static/**/{icon,apple-touch-icon}*.png",
+    "**/*.{xib,storyboard}",
+    "**/ios/**/*.swift",
+    "**/android/**/res/**",
+    "**/android/**/*.{kt,java}",
+]
 # Test fixtures and docs carry HTML and page modules that never ship to a user.
 _DEFAULT_EXCLUDES = ["tests/**", "**/tests/**", "docs/**", "**/node_modules/**"]
 
 
 def ui_paths(changed_files: List[str], declared: List[str]) -> List[str]:
-    """`changed_files` on the UX surface: the declared globs plus `DEFAULT_UI_PATTERNS`.
+    """`changed_files` on the UX surface: the declared globs plus the web and mobile defaults.
 
     A declared glob always counts; a default one skips test fixtures and docs.
     """
+    defaults = DEFAULT_UI_PATTERNS + MOBILE_UI_PATTERNS
     return [
         f for f in changed_files
         if matches_any(f, declared)
-        or (matches_any(f, DEFAULT_UI_PATTERNS) and not matches_any(f, _DEFAULT_EXCLUDES))
+        or (matches_any(f, defaults) and not matches_any(f, _DEFAULT_EXCLUDES))
     ]
 
 
