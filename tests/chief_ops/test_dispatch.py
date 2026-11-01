@@ -59,7 +59,7 @@ check(
 
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
                   jobs=None, allow_during_fleet_job=False, start_exc=None, model=None,
-                  catalog=(), effort=None, echo_effort=False):
+                  catalog=(), effort=None, echo_effort=False, issue_state=None):
     posted = []
     requested = []
     _run_dispatch.start_timeout = None
@@ -93,8 +93,11 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         raise AssertionError(f"unexpected path: {path}")
 
     prior_request, prior_mark = co.launcher._request, co.chief_managed.mark
+    prior_fetch = co.launcher.fetch_issue_state
     prior_env = os.environ.get(co.LAUNCHER_SESSION_ID_ENV_VAR)
     co.launcher._request = _fake_request
+    co.launcher.fetch_issue_state = lambda repo, number, owner=None: (
+        issue_state if issue_state is not None else {"labels": [{"name": "enhancement"}]})
     co.chief_managed.mark = lambda *a, **k: {}
     if env_sid is None:
         os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
@@ -112,6 +115,7 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         _run_dispatch.last_requested = requested
     finally:
         co.launcher._request, co.chief_managed.mark = prior_request, prior_mark
+        co.launcher.fetch_issue_state = prior_fetch
         if prior_env is None:
             os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
         else:
@@ -125,6 +129,16 @@ _worker_card = _session_card(project="fleet-config", label="", session_id=_WORKE
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
 check(rc == 0 and len(posted) == 1,
       "cmd_dispatch: chief dispatches fleet-config while its own session is live (#838)")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID,
+                           issue_state={"labels": [{"name": "enhancement"}, {"name": "needs-owner"}]})
+check(rc == 1 and posted == [] and "REFUSED=needs-owner: fleet-config#838" in _run_dispatch.last_output
+      and "/api/board/issues/start" not in _run_dispatch.last_requested,
+      "cmd_dispatch: a needs-owner issue is refused, no POST")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, issue_state={"error": "gh down"})
+check(rc == 0 and len(posted) == 1 and "WARNING=owner-check-unknown reason=gh down" in _run_dispatch.last_output,
+      "cmd_dispatch: an unreadable issue warns and dispatches; /issue-start's gate is the hard stop")
 
 rc, posted = _run_dispatch([_chief_card, _worker_card], _CHIEF_SID)
 check(rc == 1 and posted == [],

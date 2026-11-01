@@ -66,6 +66,8 @@ _prior_state_dir = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
 _prior_launcher_sid = os.environ.get("APP_LAUNCHER_SESSION_ID")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_state_tmp)
 _prior_request = co.launcher._request
+_prior_fetch = co.launcher.fetch_issue_state
+co.launcher.fetch_issue_state = lambda repo, number, owner=None: {"labels": []}
 try:
     _calls = []
 
@@ -103,6 +105,7 @@ try:
     )
 finally:
     co.launcher._request = _prior_request
+    co.launcher.fetch_issue_state = _prior_fetch
     if _prior_state_dir is None:
         os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
     else:
@@ -132,10 +135,12 @@ try:
         repo="app-launcher", number=528, mode="start", model=None,
         brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
     )
+    co.launcher.fetch_issue_state = lambda repo, number, owner=None: {"labels": []}
     rc = co.cmd_dispatch(args)
     check(rc == 1, "cmd_dispatch: worker_cap=0 -> refused, not silently defaulted to 3")
 finally:
     co.launcher._request = _prior_request
+    co.launcher.fetch_issue_state = _prior_fetch
 
 
 # ---- verify: an unreadable repo is UNKNOWN, never DIRTY (fleet-config#570) ----

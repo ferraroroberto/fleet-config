@@ -655,6 +655,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "as the primary working-set source -- per-repo aggregation and the "
      "degrade-don't-block path when one repo's fetch fails -- is testable "
      "on its own, with gh monkeypatched out (fleet-config#623)"),
+    ("owner_check", "owner_check/test_owner_check.py",
+     "the owner-check rule (title-only words, diff paths, in-session "
+     "verification, an explicit none never suppressing a hit), the comment "
+     "block round-trip, the back-fill list parser and every CLI leg -- "
+     "finish/gate/clear/mark/list with unknown as its own exit code -- are "
+     "testable on their own, with gh replaced by a fake"),
     ("workflow_capabilities", "audit/test_workflow_capabilities.py",
      "interactive cleanup request/result gates and portable skill contracts (#749)"),
     ("quota_snapshots", "claude_progress/test_quota_snapshots.py",

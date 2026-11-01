@@ -27,6 +27,7 @@ import chief_plan
 from chief import chief_sweep
 import dirty_tree_check
 import gate_evidence
+import owner_check
 from fleet_core import hooks_state
 from no_window import NO_WINDOW
 import worktree_claim
@@ -401,6 +402,25 @@ def cmd_issues(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_owner_checks(args: argparse.Namespace) -> int:
+    """Every open owner item, read from the issues' labels: the chief's only list of them."""
+    result = owner_check.list_items(args.repo or None)
+    for it in result["items"]:
+        print(f"{it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}")
+    for miss in result["unknown"]:
+        print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
+    print(f"OWNER_ITEMS={len(result['items'])} UNKNOWN={len(result['unknown'])}")
+    return 1 if result["unknown"] else 0
+
+
+def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
+    """Refuse a `needs-owner` issue; an unreadable one only prints its warning."""
+    refusal, warning = rails.owner_check_refusal(repo, number, launcher.fetch_issue_state(repo, number))
+    if warning is not None:
+        print(f"WARNING={warning}")
+    return refusal
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     brief = None
     if args.brief_file is not None:
@@ -434,7 +454,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         rails.alive_worker_count(columns, exclude_sid=self_sid),
         worker_cap,
         args.yolo_confirmed,
-    )
+    ) or _owner_check_refusal(args.repo, args.number)
     if reason is not None:
         print(f"REFUSED={reason}")
         return 1

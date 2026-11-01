@@ -48,6 +48,10 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     i.add_argument("--owner", default=launcher.DEFAULT_OWNER)
     i.set_defaults(func=commands.cmd_issues)
 
+    oc = sub.add_parser("owner-checks", help="open owner-check items fleet-wide, from the issue labels")
+    oc.add_argument("--repo", action="append", default=[])
+    oc.set_defaults(func=commands.cmd_owner_checks)
+
     d = sub.add_parser("dispatch", help="guard-railed issue-start")
     d.add_argument("repo")
     d.add_argument("number", type=int)

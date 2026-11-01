@@ -120,6 +120,15 @@ Run in parallel:
   auto-pick. **Exclude any issue labelled `audit-meta`** (the `/codebase-audit`
   ledger — not actionable work); filter it out model-side rather than adding a
   `gh` query qualifier.
+- **Owner gate** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)),
+  once the issue is chosen:
+  ```
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py gate <repo>#<N>
+  ```
+  `OWNER_GATE=clear` → proceed. `blocked` → stop and print its `reason=` and
+  `TRY=` lines: the issue waits on a step of Roberto's, and only his Board answer
+  clears it. `unknown` → stop and say the gate could not be confirmed. In both
+  cases release a `MODE=primary` claim (see Steps).
 
 ### 3. Read the issue and project conventions
 

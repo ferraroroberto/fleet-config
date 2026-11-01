@@ -362,6 +362,11 @@ Decision below is driven by the project's `## CI expectations` block
     A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
+- **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)), after the close:
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|no --try "<what Roberto does>" [--proof <URL> …]`.
+  `yes` only when the original repro or acceptance re-ran and passed in the lane's own run; `no` when step 1
+  left a criterion `UNVERIFIABLE`. Exit 2 → re-run with `--try`. Step 7 carries its `OWNER_CHECK=` line
+  verbatim; `unknown` is its own state, never reported as none.
 - Clear the issue's Fleet Board marker now that the merge is authoritative:
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>
@@ -457,8 +462,8 @@ with its evidence state at merge time (`gate: FRESH` / re-run /
 listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed, the `VISUAL_PROOF=` line and the proof page `SENT=` line — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not
-touched / confirmed live / merged but not yet live / unknown — step 6b), and
-the live build line. **Worktree mode also carries step 5's `PRIMARY=` line
+touched / confirmed live / merged but not yet live / unknown — step 6b),
+the live build line, and the step-5 `OWNER_CHECK=` line. **Worktree mode also carries step 5's `PRIMARY=` line
 verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right
 next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
 (both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting
