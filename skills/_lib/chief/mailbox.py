@@ -307,8 +307,9 @@ def _event_line(event: Dict[str, Any], moment: datetime) -> str:
             if event.get("event") == "SessionEnd" else str(kind or event.get("event"))
     age = _event_age_seconds(event, moment)
     issue = f"{event.get('repo')}#{event.get('number')}"
+    busy = " (busy)" if event.get("busy") else ""
     return (
-        f"- {issue}: {what} ({event.get('agent') or '?'}) "
+        f"- {issue}: {what}{busy} ({event.get('agent') or '?'}) "
         f"sid={str(event.get('launcher_sid') or '')[:8]} "
         f"{'age=' + digest._fmt_age(age) if age is not None else 'age=?'}"
     )

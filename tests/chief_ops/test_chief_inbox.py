@@ -278,4 +278,94 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+# --- busy tag + 45 s debounce (fleet-config#1745), via the in-process API ---
+import os  # noqa: E402
+import time  # noqa: E402
+
+import chief_inbox  # noqa: E402
+
+# pid -> (ppid, name): hook 10 under shim 5 under agent 2; the agent also has children.
+ME = 10
+base = {1: (0, "explorer"), 2: (1, "claude"), 5: (2, "powershell"), ME: (5, "python")}
+idle = dict(base)
+busy_shell = {**base, 20: (2, "bash")}
+busy_deep = {**base, 20: (2, "conhost"), 21: (20, "pytest")}
+check(chief_inbox.worker_is_busy(idle, ME) is False, "busy: only the hook's own chain under the agent is idle")
+check(chief_inbox.worker_is_busy(busy_shell, ME) is True, "busy: a child shell under the agent is busy")
+check(chief_inbox.worker_is_busy(busy_deep, ME) is True, "busy: a grandchild test runner is busy")
+check(chief_inbox.worker_is_busy({1: (0, "explorer"), ME: (1, "python"), 20: (1, "bash")}, ME) is False,
+      "busy: no agent ancestor falls back to not busy")
+check(chief_inbox.worker_is_busy({}, ME) is False, "busy: an empty/unreadable table falls back to not busy")
+check(chief_inbox.worker_is_busy(None, ME) in (True, False), "busy: the real process table read never raises")
+_orig_table = chief_inbox._process_table
+
+
+def _boom():
+    raise OSError("snapshot denied")
+
+
+chief_inbox._process_table = _boom
+try:
+    check(chief_inbox.worker_is_busy() is False, "busy: a failing process read falls back to not busy")
+finally:
+    chief_inbox._process_table = _orig_table
+
+
+def record_with(state: Path, busy: bool, stamp_age: float = None) -> list:
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(state)
+    os.environ["CLAUDE_SESSIONS_DIR"] = str(state / "no-sessions")
+    os.environ["APP_LAUNCHER_SESSION_ID"] = WORKER_SID
+    os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+    chief_inbox.worker_is_busy = lambda *a, **k: busy
+    try:
+        if stamp_age is not None:
+            stamp = chief_inbox.inbox_dir() / f".turn-end-{WORKER_SID}"
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.write_text("", encoding="utf-8")
+            os.utime(stamp, (time.time() - stamp_age,) * 2)
+        chief_inbox.record(claude("Stop"), "Stop")
+        return events(state)
+    finally:
+        chief_inbox.worker_is_busy = _real_busy
+
+
+_real_busy = chief_inbox.worker_is_busy
+for busy in (True, False):
+    state = fresh_state(MANAGED)
+    try:
+        rows = record_with(state, busy)
+        check(len(rows) == 1 and bool(rows[0].get("busy")) is busy,
+              f"turn-end with busy={busy}: one event, busy tag matches ({rows})")
+        if busy:
+            sys.path.insert(0, str(REPO / "skills" / "_lib"))
+            from chief.mailbox import format_inbox_digest  # noqa: E402
+            check("(busy)" in format_inbox_digest(rows), "inbox digest shows (busy)")
+        rows = record_with(state, busy)
+        check(len(rows) == 1, f"second turn-end within 45 s is debounced ({len(rows)} events)")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+state = fresh_state(MANAGED)
+try:
+    rows = record_with(state, False, stamp_age=chief_inbox.TURN_END_DEBOUNCE_SECONDS + 5)
+    check(len(rows) == 1, "turn-end after the debounce window is written")
+finally:
+    shutil.rmtree(state, ignore_errors=True)
+
+# session-end is never debounced or tagged.
+state = fresh_state(MANAGED)
+try:
+    os.environ.update({"CLAUDE_HOOKS_STATE_DIR": str(state), "CLAUDE_SESSIONS_DIR": str(state / "none"),
+                       "APP_LAUNCHER_SESSION_ID": WORKER_SID})
+    chief_inbox.worker_is_busy = lambda *a, **k: True
+    chief_inbox.record(claude("Stop"), "Stop")
+    chief_inbox.record(claude("SessionEnd"), "SessionEnd")
+    chief_inbox.record(claude("SessionEnd"), "SessionEnd")
+    rows = events(state)
+    ends = [r for r in rows if r["kind"] == "session-end"]
+    check(len(ends) == 2 and not any(r.get("busy") for r in ends),
+          f"session-end: never debounced, never tagged busy ({len(ends)} events)")
+finally:
+    chief_inbox.worker_is_busy = _real_busy
+    shutil.rmtree(state, ignore_errors=True)
+
 _h.report_and_exit("test_chief_inbox")

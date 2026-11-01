@@ -44,6 +44,7 @@ import json
 import logging
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +81,18 @@ MAX_SUBAGENT_READS = 8
 # parent it is never the call the gate is on.
 _DELEGATION_TOOLS = ("Agent", "Task")
 _CALL_DETAIL_KEYS = ("command", "file_path", "path", "notebook_path", "url", "pattern", "query")
+
+
+# A second turn-end from one session inside this window is the same pause.
+TURN_END_DEBOUNCE_SECONDS = 45
+# Image names (lower-case, no extension) that mean "the worker has work running".
+BUSY_CHILD_NAMES = frozenset({
+    "cmd", "powershell", "pwsh", "bash", "sh", "zsh", "python", "pythonw", "python3",
+    "node", "npm", "npx", "pytest", "git", "curl", "uv", "pip",
+})
+# Names that identify the agent process itself when walking up from the hook.
+AGENT_NAMES = frozenset({"claude", "codex", "grok", "pi"})
+PROCESS_SNAPSHOT_MAX = 20000
 
 
 def inbox_dir() -> Path:
@@ -266,6 +279,102 @@ def excerpt_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"excerpt": None, "excerpt_source": None, "excerpt_unavailable": reason}
 
 
+def _process_table() -> Dict[int, Tuple[int, str]]:
+    """``pid -> (ppid, lower-case name without extension)``; one read, no subprocess."""
+    table: Dict[int, Tuple[int, str]] = {}
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class ENTRY(ctypes.Structure):
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                        ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                        ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                        ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+        k32 = ctypes.windll.kernel32
+        k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+        k32.Process32FirstW.argtypes = k32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        k32.CloseHandle.argtypes = [ctypes.c_void_p]
+        snap = k32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+        if not snap or snap == ctypes.c_void_p(-1).value:
+            raise OSError("process snapshot failed")
+        try:
+            entry = ENTRY()
+            entry.dwSize = ctypes.sizeof(ENTRY)
+            ok = k32.Process32FirstW(snap, ctypes.byref(entry))
+            while ok and len(table) < PROCESS_SNAPSHOT_MAX:
+                table[entry.th32ProcessID] = (entry.th32ParentProcessID,
+                                              os.path.splitext(entry.szExeFile)[0].lower())
+                ok = k32.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            k32.CloseHandle(snap)
+        return table
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        raw = stat.read_text(encoding="utf-8", errors="replace")
+        name, rest = raw[raw.index("(") + 1:raw.rindex(")")], raw[raw.rindex(")") + 2:].split()
+        table[int(stat.parent.name)] = (int(rest[1]), name.lower())
+    return table
+
+
+def worker_is_busy(table: Optional[Dict[int, Tuple[int, str]]] = None, start_pid: Optional[int] = None) -> bool:
+    """True when the agent above this hook still has a shell/test/node child running.
+
+    Never raises: any failure, or no recognisable agent ancestor, returns False
+    (today's behaviour: the event is written untagged).
+    """
+    try:
+        table = _process_table() if table is None else table
+        pid = os.getpid() if start_pid is None else start_pid
+        chain = {pid}
+        agent = None
+        for _ in range(32):
+            parent = table.get(pid, (0, ""))[0]
+            if not parent or parent in chain or parent not in table:
+                break
+            chain.add(parent)
+            if table[parent][1] in AGENT_NAMES:
+                agent = parent
+                break
+            pid = parent
+        if agent is None:
+            return False
+        children: Dict[int, list] = {}
+        for child, (ppid, _name) in table.items():
+            children.setdefault(ppid, []).append(child)
+        stack = [c for c in children.get(agent, []) if c not in chain]
+        seen = set()
+        while stack:
+            cur = stack.pop()
+            if cur in seen or cur in chain:
+                continue
+            seen.add(cur)
+            if table[cur][1] in BUSY_CHILD_NAMES:
+                return True
+            stack.extend(children.get(cur, []))
+        return False
+    except Exception as exc:  # noqa: BLE001 -- advisory; fall back to untagged
+        logger.info("ℹ️ chief_inbox: busy check failed (%s) -- event written untagged", exc)
+        return False
+
+
+def _debounced(directory: Path, sid: str, now: float) -> bool:
+    """True when this session wrote a turn-end inside the debounce window; else stamps now."""
+    stamp = directory / f".turn-end-{sid}"
+    try:
+        if now - stamp.stat().st_mtime < TURN_END_DEBOUNCE_SECONDS:
+            return True
+    except OSError:
+        pass
+    try:
+        stamp.write_text("", encoding="utf-8")
+        os.utime(stamp, (now, now))
+    except OSError as exc:
+        logger.info("ℹ️ chief_inbox: debounce stamp not written (%s)", exc)
+    return False
+
+
 def record(payload: Dict[str, Any], event: str, default_agent: str = "claude", *,
            kind: Optional[str] = None, prompt: Optional[str] = None) -> Optional[Path]:
     """Write one inbox event for this session's ``event``; the file, or ``None``.
@@ -305,6 +414,13 @@ def record(payload: Dict[str, Any], event: str, default_agent: str = "claude", *
     }
     directory = inbox_dir()
     directory.mkdir(parents=True, exist_ok=True)
+    if event == TURN_END and kind is None:
+        if _debounced(directory, sid, time.time()):
+            logger.info("ℹ️ chief_inbox: turn-end for %s within %ss of the last -- skipped",
+                        sid, TURN_END_DEBOUNCE_SECONDS)
+            return None
+        if worker_is_busy():
+            entry["busy"] = True
     # `<published_ms>-<id>.json`: the millisecond prefix keeps the unchanged v1
     # reader's name-sorted claim oldest first; the id is the suffix.
     target = directory / f"{int(now.timestamp() * 1000)}-{event_id}.json"
