@@ -29,6 +29,7 @@ flowchart LR
     home_automation["🌡️ home-automation"]
     github_copilot_usage["📶 github-copilot-usage"]
     parking_manager["🅿️ parking-manager"]
+    robertoferraro["🪞 robertoferraro"]
     task_os["✅ task-os"]
     website_analytics["📈 website-analytics"]
   end
@@ -75,6 +76,12 @@ flowchart LR
   fleet_config -.-> project_scaffolding
   fleet_config -.-> local_llm_hub
   fleet_config -.-> app_launcher
+  app_launcher -.-> local_llm_hub
+  app_launcher -.-> voice_transcriber
+  app_launcher -.-> photo_ocr
+  app_launcher -.-> task_os
+  app_launcher -.-> life_os
+  app_launcher -.-> fleet_config
   local_llm_hub -.-> voice_transcriber
   local_llm_hub -.-> automation
   local_llm_hub -.-> project_scaffolding
