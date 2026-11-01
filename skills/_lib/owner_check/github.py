@@ -33,6 +33,21 @@ class GhError(RuntimeError):
     """A `gh` call that did not establish its answer."""
 
 
+# gh's wording when a repo has GitHub Issues switched off: it holds no issues, so
+# no owner items either, which is a fact, not an unreadable repo.
+_ISSUES_DISABLED = "has disabled issues"
+
+
+def _issue_rows(args: Sequence[str]) -> List[Dict[str, Any]]:
+    """An `issue list` call's rows; a repo with Issues switched off has none."""
+    try:
+        return json.loads(_gh(args))
+    except GhError as exc:
+        if _ISSUES_DISABLED in str(exc):
+            return []
+        raise
+
+
 def _gh(args: Sequence[str]) -> str:
     proc = git_run.run_gh(list(args), timeout=GH_TIMEOUT_SECONDS)
     if proc.returncode != 0:
@@ -130,11 +145,10 @@ def clear(repo: str, number: int, present_labels: Sequence[str], body: str) -> L
 
 def closed_issues(repo: str) -> List[Dict[str, Any]]:
     """Recently closed issues with what the rule reads, for the back-fill dry run."""
-    out = _gh([
+    rows = _issue_rows([
         "issue", "list", "--repo", _slug(repo), "--state", "closed", "--limit", "400",
         "--json", "number,title,body,labels,closedAt,stateReason",
     ])
-    rows = json.loads(out)
     for row in rows:
         row["labels"] = [str(lab.get("name")) for lab in row.get("labels") or []]
     return rows
@@ -147,11 +161,10 @@ def is_pull_request(repo: str, number: int) -> bool:
 
 
 def _labelled(repo: str, label: str) -> List[Dict[str, Any]]:
-    out = _gh([
+    return _issue_rows([
         "issue", "list", "--repo", _slug(repo), "--state", "all", "--label", label,
         "--limit", "200", "--json", "number,title,state,url,labels,comments",
     ])
-    return json.loads(out)
 
 
 def _item(repo: str, row: Dict[str, Any], kind: str) -> Dict[str, Any]:

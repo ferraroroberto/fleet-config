@@ -272,4 +272,20 @@ finally:
     github._gh = original
 check(result["items"] == [] and result["unknown"][0]["repo"] == "demo", "an unreadable repo is unknown, never empty")
 
+class DisabledIssues(FakeGh):
+    def __call__(self, args):
+        if list(args[:2]) == ["issue", "list"]:
+            raise github.GhError("the 'ferraroroberto/demo' repository has disabled issues")
+        return super().__call__(args)
+
+
+github._gh = DisabledIssues()
+try:
+    result = github.list_items(["demo"])
+    closed_rows = github.closed_issues("demo")
+finally:
+    github._gh = original
+check(result == {"items": [], "unknown": []} and closed_rows == [],
+      f"a repo with Issues switched off holds no items and is not unknown, got {result}")
+
 _h.report_and_exit("test_owner_check")
