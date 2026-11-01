@@ -15,8 +15,10 @@ repo under a root (literally the same crawl `/audit-fleet`'s
 which skips linked worktrees whose `.git` is a file), classify each with the
 *same* web-app detection `/design-sync`'s step 2
 describes (token-bearing CSS in a `:root`, minus Streamlit spikes), and print
-one JSON object bucketing every repo into `web_apps` / `skipped_non_web` /
-`skipped_streamlit` / `errors`. The orchestrator just reads the output — no
+one JSON object bucketing every repo into `web_apps` / `web_pages` /
+`skipped_non_web` / `skipped_streamlit` / `errors`. A web page (a public static
+site, `ux_surface.repo_spec_kind`) is its own bucket because it is linted
+against `design.web.md`, never the PWA spec. The orchestrator just reads the output — no
 per-repo `git`/`gh` tool calls needed for the gating step.
 
 The correctness-critical piece (`classify_web_app`) is pure over a filesystem
@@ -39,6 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import design_lint  # noqa: E402
+import ux_surface  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
 
 
@@ -86,9 +89,16 @@ def classify_web_app(root: Path) -> tuple[str, str]:
 
     Returns ``(category, reason)`` where category is one of:
       - ``"web"``         — a token-styled FastAPI/static-PWA web app (sweep it)
+      - ``"web_page"``    — a public static site with a stylesheet (sweep it
+                            against ``design.web.md``)
       - ``"non_web"``     — no token-bearing, non-spike stylesheet
       - ``"streamlit"``   — a Streamlit-only POC spike (out of scope)
     """
+    if ux_surface.repo_spec_kind(root) == ux_surface.WEB_PAGE:
+        css = design_lint.repo_files(root, (".css",))
+        if css:
+            return "web_page", f"static site, {len(css)} stylesheet(s)"
+        return "non_web", "static site with no stylesheet"
     token_files = _token_css_files(root)
     if not token_files:
         return "non_web", "no token-styled CSS (:root custom properties)"
@@ -99,7 +109,7 @@ def classify_web_app(root: Path) -> tuple[str, str]:
 
 def scan(root: str, only: str | None = None) -> dict:
     results: dict = {
-        "web_apps": [], "skipped_non_web": [], "skipped_streamlit": [], "errors": [],
+        "web_apps": [], "web_pages": [], "skipped_non_web": [], "skipped_streamlit": [], "errors": [],
     }
 
     for d in fleet_repo_scan.iter_fleet_repos(root, only):
@@ -112,6 +122,8 @@ def scan(root: str, only: str | None = None) -> dict:
 
         if category == "web":
             results["web_apps"].append({"repo": name, "path": str(d)})
+        elif category == "web_page":
+            results["web_pages"].append({"repo": name, "path": str(d)})
         elif category == "streamlit":
             results["skipped_streamlit"].append({"repo": name, "reason": reason})
         else:

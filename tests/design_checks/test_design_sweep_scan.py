@@ -100,4 +100,30 @@ check(dss._is_streamlit_only(streamlit_tree),
       "_is_streamlit_only: streamlit_app.py, no FastAPI -> True")
 
 
+# A public static site (shape = static-site) with a token stylesheet -> web_page,
+# checked against design.web.md, never filed under web apps.
+site_tree = make_tree({
+    "content/static/css/site.css": _ROOT_CSS,
+    ".fleet.toml": 'shape = "static-site"\n',
+})
+# The same site declaring the gate's web-page answer with no shape -> web_page.
+site_block_tree = make_tree({
+    "css/site.css": "body { margin: 0; }\n",
+    "CLAUDE.md": "## UX surface\n- design spec applies: web-page\n",
+})
+# A static site with no stylesheet at all -> non_web.
+bare_site_tree = make_tree({".fleet.toml": 'shape = "static-site"\n', "index.html": "<p>hi</p>\n"})
+# A token-styled web app that declares its shape -> still web (regression).
+shaped_app_tree = make_tree({
+    "app/webapp/static/styles.css": _ROOT_CSS,
+    "app/webapp/server.py": "from fastapi import FastAPI\n",
+    ".fleet.toml": 'shape = "webapp-tray"\n',
+})
+check(dss.classify_web_app(site_tree)[0] == "web_page", "shape = static-site -> web_page")
+check(dss.classify_web_app(site_block_tree)[0] == "web_page",
+      "UX surface block `web-page` -> web_page, even without :root tokens")
+check(dss.classify_web_app(bare_site_tree)[0] == "non_web", "a static site with no CSS -> non_web")
+check(dss.classify_web_app(shaped_app_tree)[0] == "web", "a webapp-tray shape stays web, as before")
+
+
 _h.report_and_exit("design_sweep_scan")

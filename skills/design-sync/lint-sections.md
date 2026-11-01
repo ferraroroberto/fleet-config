@@ -225,3 +225,13 @@ read.
 - **`siblings`** — top-level JS definitions with the same name in ≥2 files
   (the 7×-duplicated `schedule(ms)` of home-automation#369). Detection is
   mechanical; *which variant is canonical* is step 4c.
+
+## Web-page surface (`--surface web-page`)
+
+A public static site is linted against `design.web.md`. The JSON gains `surface` and `spec` keys, and three sections change:
+
+- **`tokens`** — `required` (the token names in `design.web.md` section 2), `present` (name, value, line), `missing`, and `floors` (`--control` against `targets.control`). Values are the site's brand and are never graded; every `missing` name is a candidate finding.
+- **`contracts`** — the web-page set, ids prefixed `web-`: `web-focus-visible`, `web-reduced-motion`, `web-header` (no `backdrop-filter`, `filter` or `transform` on the header), `web-header-current`, `web-phone-menu`, `web-sections-container`, `web-no-shadow`, `web-no-gradient`, `web-card`, `web-carousel`, `web-footer`, `web-image-roles` (no `minmax(0, <px>) 1fr` track) and `web-image-dimensions`. A component the site does not use is `NA`. No PWA contract runs.
+- **`vendored`** lists only the components the site vendors, and **`siblings`** drops a duplicate whose sites are byte-identical files (a committed build copy of the source).
+
+`adoption` is unchanged.

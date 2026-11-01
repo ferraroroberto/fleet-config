@@ -41,12 +41,13 @@ tool call whose JSON the orchestrator reads, never a per-repo LLM loop:
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/design_sweep_scan.py --root E:\automation [--only <repo-name>]
 ```
 
-The script (`skills/_lib/design_sweep_scan.py`) reuses `/audit-fleet`'s filesystem crawl (every `ferraroroberto` repo under the root, linked worktrees skipped) and the *same* web-app detection `/design-sync`'s step 2 uses (`design_lint.repo_files` + `parse_custom_props`) — a repo counts as a web app iff it has a tracked, non-spike stylesheet defining `--custom-props` in a `:root`/dark block; Streamlit-only POCs (a `streamlit_app.py` with no FastAPI signal) are skipped.
+The script (`skills/_lib/design_sweep_scan.py`) reuses `/audit-fleet`'s filesystem crawl (every `ferraroroberto` repo under the root, linked worktrees skipped) and the *same* web-app detection `/design-sync`'s step 2 uses (`design_lint.repo_files` + `parse_custom_props`) — a repo counts as a web app iff it has a tracked, non-spike stylesheet defining `--custom-props` in a `:root`/dark block; Streamlit-only POCs (a `streamlit_app.py` with no FastAPI signal) are skipped. A public static site (`.fleet.toml` `shape = "static-site"`, or a `## UX surface` answer of `web-page`) with any stylesheet goes to `web_pages` instead: `/design-sync` lints it against `design.web.md`.
 
 It prints one JSON object:
 
 ```
 {"web_apps": [{"repo": "...", "path": "..."}, ...],
+ "web_pages": [{"repo": "...", "path": "..."}, ...],
  "skipped_non_web": [{"repo": "...", "reason": "..."}, ...],
  "skipped_streamlit": [{"repo": "...", "reason": "..."}, ...],
  "errors": [{"repo": "...", "reason": "..."}, ...]}
@@ -59,11 +60,11 @@ Design sweep plan — 8 web apps, 26 non-web skipped, 1 Streamlit skipped
   sweep: app-launcher, grocery-shopping-automation, home-automation, local-llm-hub, photo-ocr, voice-transcriber, whatsapp-radar, github-copilot-usage
 ```
 
-If `web_apps` is empty, jump to step 5 with an empty result set (the digest still goes out so the weekly run always produces a record).
+If `web_apps` and `web_pages` are both empty, jump to step 5 with an empty result set (the digest still goes out so the weekly run always produces a record).
 
 ### 3. Sweep each web app — a bounded window of easy-tier sub-agents
 
-Process `web_apps` through the capability contract, easy tier, up to the smaller of four workers and available host slots. Collect every terminal result within this turn, refill on completion, and keep timeouts pending. No-spawn fallback runs the same report-only `/design-sync` work serially. No worktrees are needed for these read-only checks.
+Process `web_apps` and `web_pages` as one list through the capability contract, easy tier, up to the smaller of four workers and available host slots. Collect every terminal result within this turn, refill on completion, and keep timeouts pending. No-spawn fallback runs the same report-only `/design-sync` work serially. No worktrees are needed for these read-only checks.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -93,11 +94,11 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-Print a one-line progress marker per repo as it completes (e.g. `[3/8] home-automation — DRIFT (4)`) so a scheduled run's console shows forward motion. The whole loop runs inside one turn: block on `TaskOutput` for the in-flight window, refill on each return, repeat until `web_apps` is drained — the turn never ends with a sub-agent still dispatched (`fleet-config#506`).
+Print a one-line progress marker per repo as it completes (e.g. `[3/8] home-automation — DRIFT (4)`) so a scheduled run's console shows forward motion. The whole loop runs inside one turn: block on `TaskOutput` for the in-flight window, refill on each return, repeat until that list is drained — the turn never ends with a sub-agent still dispatched (`fleet-config#506`).
 
 ### 4. Collect results
 
-Hold each sub-agent's structured report as it returns. When the `web_apps` list is drained with no agent still in flight, proceed to the digest. A sub-agent that errors out is recorded as `ERROR` for its repo (a genuine single-repo failure); it does not block the others and the window refills as normal.
+Hold each sub-agent's structured report as it returns. When that list is drained with no agent still in flight, proceed to the digest. A sub-agent that errors out is recorded as `ERROR` for its repo (a genuine single-repo failure); it does not block the others and the window refills as normal.
 
 ### 5. Build and deliver the digest
 
