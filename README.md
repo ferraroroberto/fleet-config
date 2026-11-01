@@ -98,6 +98,8 @@ fleet-config/
 ├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.pi/agent/AGENTS.md, ~/.copilot/copilot-instructions.md (symlinks) — agent-neutral global instructions
 ├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
+├── design.web.md                   # exposed as ~/.claude/design.web.md (symlink) — fleet web-page design contract (public static sites): token names and roles, layout, components, accessibility, search facts and budgets; each site sets its own brand values
+├── design.web.rubric.toml          # the page rubric for web pages: design.rubric.toml's schema, rules for hierarchy, readability, touch, accessibility, trust, search and performance
 ├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own; runs are diffed by rule id from a local ledger under hooks/state/design-review/ and filed as one managed design-review issue per repo on request
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml

@@ -1,0 +1,829 @@
+# design.web.rubric.toml — the page rubric for web pages.
+#
+# Beside design.web.md, as design.rubric.toml sits beside design.md, and in the
+# same schema, so skills/_lib/design_review/rubric.py loads and validates it
+# unchanged: [meta], [weights], [grades], [penalties], [params.*], a flat
+# [[rules]] array and a [[judgment]] checklist. Every rule is data: a stable id,
+# the metric it reads, the comparison that makes it fail ("the rule FAILS when
+# metric <fail_when> threshold"; `true` and `nonzero` ignore the threshold), a
+# severity, the standard it cites, a fix template, an owner (spec | scaffold |
+# app) and a mock-up id ("none" until the mock-up library has web-page
+# templates).
+#
+# Metrics are named for the web-page measurement: `page.*` and `text.*` read
+# the rendered page, `seo.*` the built HTML and the site files, `perf.*` a cold
+# load on a throttled mobile profile. A rule whose metric is not measured yet
+# reports `unmeasured`, never a pass. Thresholds resolve from design.web.md's
+# front matter where `threshold_token` names one, else from the literal.
+#
+# `devices` names the verification matrix of design.web.md: `phone` (390px),
+# `tablet` (800px), `desktop` (1440px). A rule with no `devices` applies at all
+# three. Per-site checks (sitemap, robots.txt, redirects) are measured once per
+# site and reported on every page's run.
+#
+# The brand is never graded: a rule reads a token's role and floor, not its
+# value. Bump [meta].version on any rule or question change.
+
+[meta]
+version = "1.0.0"
+seeded_from = "robertoferraro.net static rebuild, 2026-11-01"
+
+[weights]
+hierarchy = 1.0
+readability = 1.0
+touch = 1.0
+a11y = 1.0
+layout = 1.0
+components = 0.5
+trust = 0.5
+seo = 1.0
+performance = 1.0
+
+[grades]
+A = 90
+B = 80
+C = 70
+D = 60
+F = 0
+
+[penalties]
+P0 = 25
+P1 = 12
+P2 = 6
+P3 = 2
+
+[params.hit_min]
+token = "targets.hit-min"
+default = 44
+
+[params.control]
+token = "targets.control"
+default = 48
+
+[params.body_min]
+token = "type.body-min"
+default = 16
+
+# ---------------------------------------------------------------------------
+# Hierarchy
+
+[[rules]]
+id = "WEB-HIER-01"
+category = "hierarchy"
+title = "A page has no h1 or more than one"
+metric = "page.h1_count"
+fail_when = "ne"
+threshold = 1
+threshold_token = "seo.h1-count"
+severity = "P1"
+owner = "app"
+standard = "design.web.md Search facts: exactly one h1; NNg visual hierarchy"
+fix_template = "{page} has {value} h1 elements; make the page title the one h1 and demote the rest."
+mockup = "none"
+
+[[rules]]
+id = "WEB-HIER-02"
+category = "hierarchy"
+title = "The heading outline skips a level going down"
+metric = "page.heading_skip_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "WCAG 2.2 SC 1.3.1 Info and Relationships; design.web.md Accessibility floor: an ordered outline"
+fix_template = "{count} headings on {page} skip a level ({sample}); step down one level at a time."
+mockup = "none"
+
+[[rules]]
+id = "WEB-HIER-03"
+category = "hierarchy"
+title = "A section shows more than one primary button"
+metric = "page.primary_buttons_per_section_max"
+fail_when = "gt"
+threshold = 1
+severity = "P2"
+owner = "app"
+standard = "design.web.md Hierarchy, trust and conversion: one primary action per section; NNg visual hierarchy"
+fix_template = "A section on {page} draws {value} primary buttons; keep the main action primary and make the others secondary."
+mockup = "none"
+
+[[rules]]
+id = "WEB-HIER-04"
+category = "hierarchy"
+title = "A heading renders smaller than the body text it introduces"
+metric = "text.heading_smaller_than_body_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.web.md Type: headings are never smaller than the body text they introduce"
+fix_template = "{count} headings on {page} render smaller than the body under them ({sample})."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Readability
+
+[[rules]]
+id = "WEB-READ-01"
+category = "readability"
+title = "Body, card or field text renders under the body floor"
+metric = "text.body_under_floor_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "design.web.md Type: body, card text, captions and fields at least 16px; WCAG 2.2 SC 1.4.4 Resize Text; GOV.UK type scale"
+fix_template = "{count} running-text runs on {page} render under 16px ({sample}); set them in the body or card role."
+mockup = "none"
+
+[[rules]]
+id = "WEB-READ-02"
+category = "readability"
+title = "Any text run under the label floor"
+metric = "text.min_px"
+fail_when = "lt"
+threshold = 12
+threshold_token = "type.label-min"
+severity = "P1"
+owner = "app"
+standard = "design.web.md Type: the label role is the smallest, at least 12px"
+fix_template = "Text at {value}px on {page} ({sample}); the floor is 12px."
+mockup = "none"
+
+[[rules]]
+id = "WEB-READ-03"
+category = "readability"
+title = "Running text is wider than the measure"
+metric = "text.measure_over_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.web.md Layout: running text stops at --measure, 45 to 75 characters; Baymard line length; WCAG 2.2 SC 1.4.8 Visual Presentation"
+fix_template = "{count} paragraphs on {page} run past 75 characters a line ({sample}); cap them at --measure."
+mockup = "none"
+devices = ["desktop"]
+
+[[rules]]
+id = "WEB-READ-04"
+category = "readability"
+title = "Running text has a line height under the floor"
+metric = "text.leading_under_floor_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.web.md Type: running text at line height 1.5 or more; WCAG 2.2 SC 1.4.12 Text Spacing"
+fix_template = "{count} paragraphs on {page} set their line height under 1.5 ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-READ-05"
+category = "readability"
+title = "Body or meta text under 4.5:1 against its background"
+metric = "text.low_contrast_count"
+fail_when = "gt"
+threshold = 0
+severity = "P0"
+owner = "app"
+standard = "WCAG 2.2 SC 1.4.3 Contrast (Minimum)"
+fix_template = "{count} text runs on {page} fall under their contrast floor ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-READ-06"
+category = "readability"
+title = "Text on the footer band under its floor (7:1 body, 4.5:1 label)"
+metric = "page.footer_contrast_fail_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "design.web.md Tokens: --footer-band carries white text at 7:1 and labels at 4.5:1"
+fix_template = "{count} footer text runs on {page} fall under the band floor ({sample}); darken the band or lift the text."
+mockup = "none"
+
+[[rules]]
+id = "WEB-READ-07"
+category = "readability"
+title = "A text block is centred or right-aligned"
+metric = "text.not_start_aligned_count"
+fail_when = "gt"
+threshold = 0
+severity = "P3"
+owner = "app"
+standard = "design.web.md Principles: one left edge; GOV.UK paragraphs"
+fix_template = "{count} text blocks on {page} are centred or right-aligned ({sample}); align them to the start."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Touch
+
+[[rules]]
+id = "WEB-TOUCH-01"
+category = "touch"
+title = "A link or control has an effective tap target under 44px with no 24px clearance"
+metric = "targets.small_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "WCAG 2.2 SC 2.5.8 Target Size (Minimum); design.web.md targets.hit-min"
+fix_template = "{count} targets on {page} are under 44px and crowd a neighbour ({sample})."
+mockup = "none"
+devices = ["phone", "tablet"]
+
+[[rules]]
+id = "WEB-TOUCH-02"
+category = "touch"
+title = "A button or field is shorter than the control height"
+metric = "targets.control_under_height_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.web.md Tokens: --control at least 48px"
+fix_template = "{count} buttons or fields on {page} are under 48px tall ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-TOUCH-03"
+category = "touch"
+title = "A phone menu link is not the element at its own centre"
+metric = "page.menu_hit_miss_count"
+fail_when = "gt"
+threshold = 0
+severity = "P0"
+owner = "scaffold"
+adopt = "vendor the scaffold's site header and phone menu"
+standard = "design.web.md Header: no backdrop-filter, filter or transform on the header; the phone menu is tested by hit test"
+fix_template = "{count} phone menu links on {page} lose the hit test at their centre; something covers them or the panel collapsed to the header."
+mockup = "none"
+devices = ["phone"]
+
+# ---------------------------------------------------------------------------
+# Accessibility
+
+[[rules]]
+id = "WEB-A11Y-01"
+category = "a11y"
+title = "A focusable element shows no visible focus ring"
+metric = "a11y.focus_ring_missing_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "WCAG 2.2 SC 2.4.7 Focus Visible; GOV.UK focus states; design.web.md focus"
+fix_template = "{count} focusable elements on {page} draw no :focus-visible ring ({sample})."
+mockup = "none"
+devices = ["desktop"]
+
+[[rules]]
+id = "WEB-A11Y-02"
+category = "a11y"
+title = "A focused element is hidden behind the sticky header"
+metric = "a11y.focus_obscured_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "scaffold"
+standard = "WCAG 2.2 SC 2.4.11 Focus Not Obscured (Minimum): scroll-padding-top at least --header"
+fix_template = "{count} elements on {page} sit under the sticky header when focused; set scroll-padding-top to the header height."
+mockup = "none"
+
+[[rules]]
+id = "WEB-A11Y-03"
+category = "a11y"
+title = "A content image has no alt attribute"
+metric = "page.img_missing_alt_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "WCAG 2.2 SC 1.1.1 Non-text Content; Google image SEO"
+fix_template = "{count} images on {page} carry no alt attribute ({sample}); describe content images, give decorative ones alt=\"\"."
+mockup = "none"
+
+[[rules]]
+id = "WEB-A11Y-04"
+category = "a11y"
+title = "The page has no lang, no main landmark or no skip link"
+metric = "page.landmarks_missing"
+fail_when = "true"
+severity = "P1"
+owner = "scaffold"
+standard = "WCAG 2.2 SC 3.1.1 Language of Page and SC 2.4.1 Bypass Blocks; MDN lang"
+fix_template = "{page} is missing {sample}; set <html lang>, wrap the content in <main> and add a skip link to it."
+mockup = "none"
+
+[[rules]]
+id = "WEB-A11Y-05"
+category = "a11y"
+title = "Something moves without the reader asking, or ignores reduced motion"
+metric = "page.motion_violation_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "WCAG 2.2 SC 2.2.2 Pause, Stop, Hide and SC 2.3.3 Animation from Interactions; NNg auto-forwarding"
+fix_template = "{count} elements on {page} autoplay, animate on scroll or ignore prefers-reduced-motion ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-A11Y-06"
+category = "a11y"
+title = "A field is labelled only by its placeholder"
+metric = "page.field_unlabelled_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "WCAG 2.2 SC 3.3.2 Labels or Instructions; design.web.md Fields"
+fix_template = "{count} fields on {page} have no visible label ({sample})."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Layout
+
+[[rules]]
+id = "WEB-LAYOUT-01"
+category = "layout"
+title = "The page scrolls sideways"
+metric = "layout.overflow_x"
+fail_when = "true"
+severity = "P0"
+owner = "app"
+standard = "WCAG 2.2 SC 1.4.10 Reflow"
+fix_template = "{page} is wider than the {device} viewport by {value}px ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-LAYOUT-02"
+category = "layout"
+title = "On a phone a picture is read before the text that introduces it"
+metric = "page.phone_order_violation_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.web.md Layout: on a phone each section reads title, text, picture, then the action"
+fix_template = "{count} sections on {page} show a picture before their text on a phone ({sample}); set the block order variable."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-LAYOUT-03"
+category = "layout"
+title = "Beside a picture, a text column is squeezed under a third of the row"
+metric = "page.text_column_squeezed_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "scaffold"
+standard = "design.web.md Layout: image roles as min(520px, half the row), never a fixed max track"
+fix_template = "{count} text columns on {page} get under a third of their row at {device} ({sample}); define the media role with min()."
+mockup = "none"
+devices = ["tablet"]
+
+[[rules]]
+id = "WEB-LAYOUT-04"
+category = "layout"
+title = "Images that share a role differ in width"
+metric = "page.image_role_width_spread_px"
+fail_when = "gt"
+threshold = 2
+severity = "P3"
+owner = "app"
+standard = "design.web.md Images: images of one role render at equal width (±2px)"
+fix_template = "Images of the {sample} role on {page} differ by {value}px; let the role set the width."
+mockup = "none"
+
+[[rules]]
+id = "WEB-LAYOUT-05"
+category = "layout"
+title = "A sticky picture leaves a blank stretch over 200px beside the text"
+metric = "page.sticky_blank_max_px"
+fail_when = "gt"
+threshold = 200
+severity = "P2"
+owner = "scaffold"
+standard = "design.web.md Product page: the sticky picture is centred under the header, never more than 160px below it"
+fix_template = "Beside the description on {page}, a {value}px blank stretch opens; centre the sticky picture under the header."
+mockup = "none"
+devices = ["desktop"]
+
+# ---------------------------------------------------------------------------
+# Components
+
+[[rules]]
+id = "WEB-COMP-01"
+category = "components"
+title = "A carousel shows a partial card on desktop, or not exactly three whole cards"
+metric = "page.carousel_partial_card_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "scaffold"
+adopt = "vendor the scaffold's site carousel"
+standard = "design.web.md Carousel: whole cards only, three from 1024px; NNg carousels"
+fix_template = "{count} carousels on {page} show a partial card at {device}; size cards with grid-auto-columns, not fixed widths."
+mockup = "none"
+devices = ["desktop"]
+
+[[rules]]
+id = "WEB-COMP-02"
+category = "components"
+title = "A carousel's arrows are off centre, or one click does not move one card"
+metric = "page.carousel_step_error_px"
+fail_when = "gt"
+threshold = 2
+severity = "P3"
+owner = "scaffold"
+standard = "design.web.md Carousel: arrows centred under the row (±2px); one click moves one card plus the gap"
+fix_template = "A carousel on {page} is off by {value}px (arrow centring or step)."
+mockup = "none"
+devices = ["desktop"]
+
+[[rules]]
+id = "WEB-COMP-03"
+category = "components"
+title = "A third-party player or iframe loads before the reader asks for it"
+metric = "page.eager_embed_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "design.web.md Video: the player loads only on tap; Lighthouse third-party facades"
+fix_template = "{count} embeds on {page} load on first paint ({sample}); show a thumbnail and load the player on tap."
+mockup = "none"
+
+[[rules]]
+id = "WEB-COMP-04"
+category = "components"
+title = "The header is a containing block for fixed children"
+metric = "page.header_contains_fixed"
+fail_when = "true"
+severity = "P1"
+owner = "scaffold"
+adopt = "vendor the scaffold's site header and phone menu"
+standard = "design.web.md Header: never backdrop-filter, filter or transform on the header"
+fix_template = "The header on {page} sets {sample}, which traps the fixed phone menu panel inside it."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Trust and conversion
+
+[[rules]]
+id = "WEB-TRUST-01"
+category = "trust"
+title = "The page offers no contact route in its header or footer"
+metric = "page.contact_route_missing"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "WCAG 2.2 SC 3.2.6 Consistent Help; NNg trustworthy design"
+fix_template = "{page} has no contact link in its header or footer; add one in the same place on every page."
+mockup = "none"
+
+[[rules]]
+id = "WEB-TRUST-02"
+category = "trust"
+title = "A link's text does not say where it goes"
+metric = "page.vague_link_text_count"
+fail_when = "gt"
+threshold = 0
+severity = "P3"
+owner = "app"
+standard = "Google crawlable links: descriptive anchor text; WCAG 2.2 SC 2.4.4 Link Purpose (In Context)"
+fix_template = "{count} links on {page} read as generic text ({sample}); name the destination."
+mockup = "none"
+params = { generic = "click here|here|read more|more|learn more|link" }
+
+# ---------------------------------------------------------------------------
+# Search
+
+[[rules]]
+id = "WEB-SEO-01"
+category = "seo"
+title = "The title is missing, shared with another URL, or outside 30 to 60 characters"
+metric = "seo.title_fail"
+fail_when = "true"
+severity = "P1"
+owner = "app"
+standard = "Google Search Central: title links; design.web.md seo.title-min / title-max"
+fix_template = "{page}: {sample}. Write a unique title of 30 to 60 characters, the page first and the site after."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-02"
+category = "seo"
+title = "The meta description is missing, shared, or outside 70 to 160 characters"
+metric = "seo.description_fail"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "Google Search Central: snippets; design.web.md seo.description-min / description-max"
+fix_template = "{page}: {sample}. Write a unique description of 70 to 160 characters."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-03"
+category = "seo"
+title = "The canonical is missing, relative or points elsewhere"
+metric = "seo.canonical_fail"
+fail_when = "true"
+severity = "P1"
+owner = "app"
+standard = "Google Search Central: consolidate duplicate URLs"
+fix_template = "{page}: {sample}. Set an absolute, self-referencing rel=canonical."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-04"
+category = "seo"
+title = "Open Graph or Twitter card tags are missing, or the image is not 1200x630"
+metric = "seo.social_card_fail"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "The Open Graph protocol; X cards (summary_large_image); design.web.md images.social-card"
+fix_template = "{page}: {sample}. Add og:title, og:description, og:url, og:type, an absolute 1200x630 og:image and twitter:card."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-05"
+category = "seo"
+title = "Structured data is missing where it applies, or does not validate"
+metric = "seo.structured_data_fail"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "Google Search Central: structured data (Organization, Product, Article, VideoObject); Rich Results Test"
+fix_template = "{page}: {sample}. Add or fix the JSON-LD for this page type."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-06"
+category = "seo"
+title = "An indexable page carries noindex"
+metric = "seo.noindex_on_indexable"
+fail_when = "true"
+severity = "P0"
+owner = "app"
+standard = "Google Search Central: block indexing with noindex"
+fix_template = "{page} is listed in the sitemap but sends noindex ({sample}); remove it or drop the URL from the sitemap."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-07"
+category = "seo"
+title = "An internal link is broken"
+metric = "seo.broken_internal_link_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "design.web.md Search facts: no broken internal links"
+fix_template = "{count} internal links on {page} do not resolve ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-08"
+category = "seo"
+title = "The sitemap misses an indexable URL or lists one that is not"
+metric = "seo.sitemap_mismatch_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "Google Search Central: sitemaps"
+fix_template = "sitemap.xml disagrees with the site on {count} URLs ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-09"
+category = "seo"
+title = "robots.txt is missing, blocks the site, or does not name the sitemap"
+metric = "seo.robots_fail"
+fail_when = "true"
+severity = "P1"
+owner = "app"
+standard = "Google Search Central: robots.txt"
+fix_template = "robots.txt: {sample}."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-10"
+category = "seo"
+title = "A moved URL is not a one-hop 301"
+metric = "seo.redirect_fail_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "Google Search Central: redirects; Cloudflare Pages _redirects"
+fix_template = "{count} moved URLs are missing, chained or not 301 ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-SEO-11"
+category = "seo"
+title = "A missing URL is not served with a 404 status"
+metric = "seo.soft_404"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "Google Search Central: HTTP status codes; design.web.md Search facts"
+fix_template = "A missing URL answers {sample}; serve the 404 page with a 404 status."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Performance (cold first load, throttled mobile profile)
+
+[[rules]]
+id = "WEB-PERF-01"
+category = "performance"
+title = "Largest Contentful Paint over 2.5 s"
+metric = "perf.lcp_ms"
+fail_when = "gt"
+threshold = 2500
+severity = "P1"
+owner = "app"
+standard = "web.dev Largest Contentful Paint: good at 2.5 s or less"
+fix_template = "LCP on {page} is {value} ms; serve the hero image sized, eager and fetchpriority=high, and preload its font."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-02"
+category = "performance"
+title = "Cumulative Layout Shift over 0.1"
+metric = "perf.cls"
+fail_when = "gt"
+threshold = 0.1
+severity = "P1"
+owner = "app"
+standard = "web.dev Cumulative Layout Shift: good at 0.1 or less"
+fix_template = "CLS on {page} is {value}; give images width and height and reserve space for late content."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-03"
+category = "performance"
+title = "Total blocking time over 200 ms (the lab stand-in for INP)"
+metric = "perf.tbt_ms"
+fail_when = "gt"
+threshold = 200
+severity = "P2"
+owner = "app"
+standard = "web.dev Interaction to Next Paint: good at 200 ms or less; Lighthouse performance scoring"
+fix_template = "TBT on {page} is {value} ms; cut or defer the long tasks ({sample})."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-04"
+category = "performance"
+title = "A Lighthouse category scores under 95 on mobile"
+metric = "perf.lighthouse_min"
+fail_when = "lt"
+threshold = 95
+threshold_token = "performance.lighthouse-min"
+severity = "P1"
+owner = "app"
+standard = "Lighthouse: performance, accessibility, best practices and SEO, each 95 or more"
+fix_template = "{page} scores {value} in {sample} on mobile; the floor is 95."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-05"
+category = "performance"
+title = "The page is over its page-type byte or request budget"
+metric = "perf.budget_over"
+fail_when = "true"
+severity = "P2"
+owner = "app"
+standard = "web.dev performance budgets; design.web.md budgets"
+fix_template = "{page} ({sample}) is over its budget; cut image weight, fonts or third parties."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-06"
+category = "performance"
+title = "A content image ships without responsive variants or explicit dimensions"
+metric = "perf.image_unoptimised_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "web.dev responsive images; web.dev optimize CLS"
+fix_template = "{count} images on {page} lack srcset/sizes, a modern format or width and height ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "WEB-PERF-07"
+category = "performance"
+title = "An image below the fold loads eagerly"
+metric = "perf.eager_below_fold_count"
+fail_when = "gt"
+threshold = 0
+severity = "P3"
+owner = "app"
+standard = "web.dev browser-level lazy loading"
+fix_template = "{count} images below the fold on {page} load eagerly ({sample}); add loading=lazy."
+mockup = "none"
+devices = ["phone"]
+
+[[rules]]
+id = "WEB-PERF-08"
+category = "performance"
+title = "A resource blocks rendering from a third-party host"
+metric = "perf.render_blocking_third_party_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "Lighthouse render-blocking resources; web.dev third-party JavaScript"
+fix_template = "{count} render-blocking requests on {page} come from other hosts ({sample}); self-host or defer them."
+mockup = "none"
+
+[[rules]]
+id = "WEB-PERF-09"
+category = "performance"
+title = "Fonts over budget, unsubset, or without font-display"
+metric = "perf.font_fail"
+fail_when = "true"
+severity = "P3"
+owner = "app"
+standard = "web.dev font best practices; design.web.md performance.font-files-max / font-bytes-max"
+fix_template = "{page}: {sample}. Ship at most 4 subset WOFF2 files, under 150 KB, with font-display: swap."
+mockup = "none"
+
+[[rules]]
+id = "WEB-PERF-10"
+category = "performance"
+title = "Text is served uncompressed or hashed assets lack long-lived caching"
+metric = "perf.delivery_fail_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "Lighthouse text compression; web.dev HTTP cache; Cloudflare Pages _headers"
+fix_template = "{count} responses on {page} are uncompressed or uncached ({sample}); set _headers."
+mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Judgment: what a fresh-context judge answers yes / no / na from the run's
+# screenshots and metrics. A `no` lands on a rule in maps_to, or is raised as
+# an uncatalogued finding when maps_to is empty.
+
+[[judgment]]
+id = "J-01"
+question = "On the phone screenshot, does the first screen say who this is and what they offer (a title and a lead line), and show either the page's primary action or the start of its content? Answer no if the first screen is only an image, a slogan with no subject, or empty space."
+maps_to = []
+screens = "all"
+
+[[judgment]]
+id = "J-02"
+question = "Does each page make one primary action evident (contact, book, buy, subscribe), drawn as the most prominent control in its section? Answer no if two actions compete at the same weight or the main action is a plain link. Answer na for a page with no action, such as a legal page."
+maps_to = ["WEB-HIER-03"]
+screens = "all"
+
+[[judgment]]
+id = "J-03"
+question = "Is a contact route reachable in one tap from every page, in the same place each time? Answer no if any page lacks it or it moves between pages."
+maps_to = ["WEB-TRUST-01"]
+screens = "all"
+
+[[judgment]]
+id = "J-04"
+question = "Where the site asks for trust (a service, a product, a booking), does it show social proof with real names (testimonials, clients, press) and clear prices where something is sold? Answer na if the page asks for nothing."
+maps_to = []
+screens = "all"
+
+[[judgment]]
+id = "J-05"
+question = "Is the visual hierarchy clear at a glance on each viewport: the title is the largest text, section headings are next, and body text is visibly subordinate? Answer no if a decorative element, an image caption or a label competes with the title."
+maps_to = ["WEB-HIER-01", "WEB-HIER-04"]
+screens = "all"
+
+[[judgment]]
+id = "J-06"
+question = "On the phone screenshot, does every section read title, text, picture, then action? Answer no if a picture comes before the text that introduces it, unless the desktop also shows it first."
+maps_to = ["WEB-LAYOUT-02"]
+screens = "all"
+
+[[judgment]]
+id = "J-07"
+question = "Does every content image show whole at its own proportions, framed by the one hairline and radius, with portraits square and rounded by CSS? Answer no if a drawing is cropped, a portrait is a baked circle in a square, or two frames differ."
+maps_to = ["WEB-LAYOUT-04"]
+screens = "all"
+
+[[judgment]]
+id = "J-08"
+question = "Do the cards of one row end level, with copy of one length and no box around the whole card? Answer na if the page has no cards."
+maps_to = []
+screens = "all"

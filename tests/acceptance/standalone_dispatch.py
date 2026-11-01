@@ -372,7 +372,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "screenshot path in any line; and with no inventory the digest, "
      "bodies and scores unchanged -- is testable on its own, with no real "
      "issue touched (fleet-config#1500)"),
-    ("perf_sweep", "web_review/test_perf_sweep.py",
+    ("design_web_spec", "design_checks/test_design_web_spec.py",
+     "the web-page design standard -- design.web.md keeps every colour "
+     "value out of its contract half and front matter, names every "
+     "contract token, budgets each page type, and the page rubric loads "
+     "through design_review.rubric with every threshold and param token "
+     "resolving from the spec; install.ps1 and global-CLAUDE.md reach the "
+     "file -- is testable on its own from file reads"),
+    ("perf_sweep","web_review/test_perf_sweep.py",
      "/perf-sweep's population (web apps with a port, dormant ones named not "
      "walked, a named repo still runs), the per-app box lock (a busy box "
      "leaves the app unmeasured), a dead port or a raising measure leg "
