@@ -127,7 +127,7 @@ def _conversation_index_unit_checks() -> Tuple[int, int]:
     sys.path.insert(0, str(HOOKS))
     import conversation_capture as cc  # noqa: E402
     import conversation_index as ci  # noqa: E402
-    import hub_client  # noqa: E402
+    from conversation import hub_client  # noqa: E402
 
     check = _Checker()
 

@@ -159,7 +159,7 @@ fleet-config/
 │   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program) → hooks/backup/'s `main`
 │   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
-│   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
+│   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
