@@ -26,6 +26,7 @@ import chief_managed
 import chief_plan
 from chief import chief_sweep
 import dirty_tree_check
+import gate_evidence
 from fleet_core import hooks_state
 from no_window import NO_WINDOW
 import worktree_claim
@@ -305,6 +306,50 @@ def cmd_self_compact(args: argparse.Namespace) -> int:
     except OSError as exc:
         print(f"ℹ️ could not write {compact.COMPACT_QUEUED_MARKER} ({exc}); the Stop hook may nudge once more")
     print(f"COMPACT_QUEUED sid={self_sid[:8]} verdict={verdict} -- end this turn; it runs when the turn ends")
+    return 0
+
+
+def cmd_lane_compact(args: argparse.Namespace) -> int:
+    """A chief-dispatched lane compacts its own session after writing its handoff.
+
+    The lane counterpart of `self-compact`, run when the Stop hook
+    (`hooks/lane_compact`) held the lane's turn end at its context threshold.
+    Refuses outside a launcher session, for the chief itself, without a fresh
+    handoff, and while a gate runs in this tree; then posts `/compact <focus>`
+    to the caller's own input, which runs when its turn ends.
+    """
+    self_sid = rails.caller_session_id()
+    if not self_sid:
+        print("REFUSED=not a launcher session; lane-compact only compacts its own lane session")
+        return 1
+    try:
+        chief = rails.find_chief_session((launcher._request(args.base_url, "/api/board").get("columns") or {}))
+    except (OSError, ValueError) as exc:
+        print(f"NOT_QUEUED reason=launcher unreachable ({type(exc).__name__})")
+        return 2
+    if chief == self_sid:
+        print("REFUSED=the chief compacts itself with self-compact")
+        return 1
+    state = hooks_state.state_dir()
+    handoff = state / compact.LANE_HANDOFF_DIRNAME / f"{self_sid}.md"
+    reason = compact.lane_compact_refusal(
+        compact.file_age_seconds(handoff), gate_evidence.gate_in_flight(Path.cwd()), args.fresh_within)
+    if reason is not None:
+        print(f"REFUSED={reason}")
+        return 1
+    focus = args.focus or compact.lane_compact_focus(handoff.as_posix())
+    delivery = launcher.post_session_input(args.base_url, self_sid, f"/compact {focus}".strip())
+    if not delivery["ok"]:
+        print(f"NOT_QUEUED reason={delivery['reason'] or delivery['error']}")
+        return 2
+    try:
+        marker = state / compact.LANE_QUEUED_DIRNAME / self_sid
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(str(int(time.time())), encoding="utf-8")
+    except OSError as exc:
+        print(f"ℹ️ could not write the queued marker ({exc}); the Stop hook may hold once more")
+    print(f"COMPACT_QUEUED sid={self_sid[:8]} verdict={delivery['reason'] or 'submitted'} "
+          "-- end this turn; it runs when the turn ends")
     return 0
 
 

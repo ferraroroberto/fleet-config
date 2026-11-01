@@ -99,6 +99,14 @@ Subcommands
       the same line, but only when due or unknown and only to the live chief;
       `hooks/chief_waiter_stop.py` holds the chief's turn end on it.
 
+  lane-compact [--focus TEXT] [--fresh-within S] [--base-url URL]
+      A chief-dispatched lane compacts its own session, run when
+      `hooks/lane_compact` held its turn end at its context threshold. Refuses
+      for the chief, outside a launcher session, without a handoff written to
+      `hooks/state/lane-handoffs/<sid>.md` within `--fresh-within` (600s), and
+      while a `gate_evidence.py run` is live in the caller's tree (an unknown
+      gate state refuses too). Then posts `/compact <focus>` to its own input.
+
   self-compact [--threshold N] [--focus TEXT] [--fresh-within S] [--base-url URL]
       The chief's *automatic* compaction of itself (fleet-config#1052). The
       threshold comes from app-launcher Settings (`/api/board/chief-settings`,

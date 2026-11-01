@@ -195,6 +195,39 @@ try {
     # Advisory-only — never let a cache-write failure surface to the user.
 }
 
+# --- per-session context snapshot ---
+# One small file per session (session-context/<session_id>.json) with the
+# context percentage, window size and model id from this payload, so the Stop
+# hook (hooks/lane_compact) can apply a per-model threshold without a network
+# read. Each session writes only its own file, so a plain tmp+move is enough.
+# Advisory like the cache above: a failure here never reaches the statusline.
+try {
+    $sessionId = [string]$data.session_id
+    if ($sessionId -match '^[A-Za-z0-9_-]{1,128}$') {
+        $ctxStateDir = $env:CLAUDE_HOOKS_STATE_DIR
+        if (-not $ctxStateDir) { $ctxStateDir = Join-Path $HOME '.claude\hooks\state' }
+        $ctxDir = Join-Path $ctxStateDir 'session-context'
+        if (-not (Test-Path $ctxDir)) { New-Item -ItemType Directory -Force -Path $ctxDir | Out-Null }
+        $snapshot = [ordered]@{
+            session_id          = $sessionId
+            used_percentage     = $data.context_window.used_percentage
+            context_window_size = $data.context_window.context_window_size
+            model_id            = $data.model.id
+            captured_at         = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        }
+        $ctxTmp = Join-Path $ctxDir ("$sessionId.json.tmp.$([guid]::NewGuid().ToString('N'))")
+        [System.IO.File]::WriteAllText($ctxTmp, ($snapshot | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $ctxTmp -Destination (Join-Path $ctxDir "$sessionId.json") -Force
+        # Sessions end without telling the statusline; expire their snapshots by age.
+        $ctxCutoffUtc = (Get-Date).ToUniversalTime().AddDays(-3)
+        Get-ChildItem -LiteralPath $ctxDir -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTimeUtc -lt $ctxCutoffUtc } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+} catch {
+    if ($ctxTmp) { Remove-Item -LiteralPath $ctxTmp -Force -ErrorAction SilentlyContinue }
+}
+
 # Publish the same native render to the provider-aware contract. Keep the
 # legacy cache above byte/shape-compatible for consumers during migration.
 # Pass only quota fields, never the full statusline payload or a transcript.

@@ -20,7 +20,9 @@ Cheapest check first, so every other session pays almost nothing:
    (`stop_hook_active`), is allowed before any file is read -- a headless
    `claude -p` has no waiter to arm and must never be held open;
 2. a session that is not the chief (`sessions-state.json` row named `chief`) is
-   allowed with one small file read;
+   allowed with one small file read -- unless it is a chief-dispatched lane over
+   its context threshold, which `lane_compact.stop_refusal` holds once for a
+   handoff and a compaction (a few small local reads, no network);
 3. only the chief reaches the context gate (hold the turn end once per window
    when its context is at or over the compact threshold), the heartbeat read,
    the lane read and, when it is about to be refused, the launcher reads
@@ -42,7 +44,6 @@ doorbell mode (`wake` -> `WAKE=doorbell`) needs no waiter, so it is allowed too.
 
 from __future__ import annotations
 
-import ctypes
 import json
 import logging
 import os
@@ -57,6 +58,7 @@ from typing import Any, Dict, Optional, Set
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import chief_handover_sessionstart  # noqa: E402
+import lane_compact  # noqa: E402
 import notify_on_idle  # noqa: E402
 import session_state  # noqa: E402
 
@@ -76,8 +78,6 @@ COMPACT_QUEUED_MARKER = "chief-compact-queued"
 COMPACT_DEBOUNCE_S = 600
 _COMPACT_DUE = re.compile(r"^COMPACT_DUE percent=(\d+) threshold=(\d+)\s*$")
 _PROBE_TIMEOUT_S = 25.0
-_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-_STILL_ACTIVE = 259
 
 
 def _parse_stamp(value: object) -> Optional[datetime]:
@@ -87,27 +87,6 @@ def _parse_stamp(value: object) -> Optional[datetime]:
         return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
-
-
-def pid_alive(pid: int) -> bool:
-    """Is process `pid` running? Never `os.kill(pid, 0)`: on Windows that terminates it."""
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except OSError:
-            return True
-        return True
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return False
-    try:
-        code = ctypes.c_ulong()
-        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == _STILL_ACTIVE
-    finally:
-        kernel32.CloseHandle(handle)
 
 
 def live_waiter(now: datetime, waiters_dir: Optional[Path] = None) -> bool:
@@ -126,7 +105,7 @@ def live_waiter(now: datetime, waiters_dir: Optional[Path] = None) -> bool:
         if end is None or end < now:
             continue
         pid = row.get("pid")
-        if isinstance(pid, int) and not isinstance(pid, bool) and not pid_alive(pid):
+        if isinstance(pid, int) and not isinstance(pid, bool) and not lane_compact.pid_alive(pid):
             continue
         return True
     return False
@@ -226,6 +205,21 @@ def compact_refusal(now: Optional[float] = None) -> Optional[str]:
             "the turn on COMPACT_QUEUED. If a steer or decision is mid-flight, finish it first.")
 
 
+def lane_hold(payload: Dict[str, Any]) -> None:
+    """Hold a chief-dispatched lane's turn end for its handoff-then-compact (`lane_compact`).
+
+    Any failure in that path allows the turn end: this hook runs at every
+    session's turn end fleet-wide.
+    """
+    try:
+        message = lane_compact.stop_refusal(payload)
+    except Exception as exc:  # noqa: BLE001 -- fail open, never break a turn end
+        logger.warning("chief_waiter_stop: lane compact check failed (%s) -- allowing the turn end", exc)
+        return
+    if message:
+        _lib.block(message)
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if (os.environ.get(_lib.ENTRYPOINT_ENV_VAR, "").strip().lower().startswith("sdk")
@@ -237,6 +231,7 @@ def main() -> None:
         logger.warning("chief_waiter_stop: %s unreadable -- chief-ness unknown, allowing the turn end",
                        session_state.state_file())
     if not chief:
+        lane_hold(payload)
         _lib.allow()
 
     compact_message = compact_refusal()

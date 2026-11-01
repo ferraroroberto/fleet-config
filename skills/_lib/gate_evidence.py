@@ -46,6 +46,7 @@ stdlib only. Pure-ish logic is exercised end to end against temp repos in
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -55,15 +56,20 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from active_issue import pid_state  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 EVIDENCE_NAME = "gate-evidence.json"
+# A marker per running gate under the hooks-state dir, so a lane never compacts
+# mid-gate. `hooks/lane_compact` reads the same folder (tree boundary: its own
+# spelling, held together by the acceptance suite).
+GATE_INFLIGHT_DIRNAME = "gate-inflight"
 
 # `git add -A` over a huge untracked tree must not hang a finish: past this it
 # reports UNKNOWN, which consumers treat like STALE (re-run / watch CI).
@@ -158,6 +164,64 @@ def _handle(stream) -> Optional[int]:
         return None
 
 
+def _inflight_dir() -> Path:
+    return hooks_state.state_dir() / GATE_INFLIGHT_DIRNAME
+
+
+@contextlib.contextmanager
+def inflight_marker(repo: Path, label: str) -> Iterator[None]:
+    """Keep ``gate-inflight/<pid>.json`` for the gate's lifetime; never fails the gate."""
+    path: Optional[Path] = _inflight_dir() / f"{os.getpid()}.json"
+    body = {"pid": os.getpid(), "repo": str(repo), "label": label,
+            "started": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # A hard-killed gate never reaches its `finally`; reap markers whose pid
+        # is confirmed gone so a reused pid cannot revive one.
+        for stale in path.parent.glob("*.json"):
+            if stale.stem.isdigit() and pid_state(int(stale.stem)) is False:
+                with contextlib.suppress(OSError):
+                    stale.unlink()
+        hooks_state.atomic_write_text(path, json.dumps(body))
+    except OSError:
+        path = None
+    try:
+        yield
+    finally:
+        if path is not None:
+            with contextlib.suppress(OSError):
+                path.unlink()
+
+
+def _norm(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path)).rstrip("\\/")
+
+
+def gate_in_flight(cwd: Path) -> Optional[bool]:
+    """Is a gate running for the tree holding ``cwd``? ``None`` when that can't be told."""
+    try:
+        entries = list(_inflight_dir().glob("*.json"))
+    except OSError:
+        return None
+    here = _norm(str(cwd))
+    for entry in entries:
+        try:
+            row = json.loads(entry.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue  # the gate finished between the listing and the read
+        except (OSError, ValueError):
+            return None
+        if not isinstance(row, dict):
+            return None
+        repo, pid = _norm(str(row.get("repo") or "")), row.get("pid")
+        if not row.get("repo") or not (here == repo or here.startswith(repo + os.sep)):
+            continue
+        if isinstance(pid, int) and not isinstance(pid, bool) and pid_state(pid) is False:
+            continue  # a gate that died without removing its marker
+        return True
+    return False
+
+
 def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
     """Run ``argv`` in ``repo``; ``(exit_code, EVIDENCE=... line)``."""
     before, reason = tree_hash(repo)
@@ -167,8 +231,9 @@ def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
         # Explicit handles: with CREATE_NO_WINDOW and none passed, a console
         # child loses the inherited stdout/stderr and the gate's own FAIL
         # lines vanish while its exit code still arrives.
-        proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
-                              stdout=_handle(sys.stdout), stderr=_handle(sys.stderr))
+        with inflight_marker(repo, label):
+            proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
+                                  stdout=_handle(sys.stdout), stderr=_handle(sys.stderr))
         code = proc.returncode
     except OSError as exc:
         print(f"gate_evidence: could not start {argv[0]!r}: {exc}", file=sys.stderr)

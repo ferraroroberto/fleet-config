@@ -41,6 +41,10 @@ naming the file's content hash. The skill (~37K chars) is over the
 unreadable state file is its own case: the pointer goes out conditionally
 ("if you are the standing chief"), never folded into "not the chief".
 
+Lane handoffs: a chief-dispatched lane that compacted itself at its context
+threshold (``hooks/lane_compact``) gets its own handoff file back on the
+``compact`` start, in any repo -- that part runs before the project gate.
+
 Wired by the ``SessionStart`` hook in ``settings.template.json``.
 """
 
@@ -54,6 +58,7 @@ from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import lane_compact  # noqa: E402
 import session_state  # noqa: E402
 
 CHIEF_NAME = "chief"
@@ -136,20 +141,32 @@ def skill_refresh(payload: Dict[str, Any]) -> Optional[str]:
             f"anything you remember of it.")
 
 
+def lane_handoff(payload: Dict[str, Any]) -> Optional[str]:
+    """A compacted lane's own handoff (`lane_compact`); any failure there is no handoff."""
+    try:
+        return lane_compact.resume_context(payload)
+    except Exception as exc:  # noqa: BLE001 -- fail open, never break a session start
+        _lib.logger.warning("chief_handover_sessionstart: lane handoff read failed (%s)", exc)
+        return None
+
+
 def main() -> int:
     payload = _lib.read_stdin_json()
+    # A lane's handoff applies in whatever repo the lane works, so it comes
+    # before the chief-only project gate.
+    parts = [handoff] if (handoff := lane_handoff(payload)) else []
     project = _lib.detect_project(_lib.cwd(payload))
-    if project is None or not project.extra.get("chief_handover"):
-        return 0  # project does not host the chief (`chief_handover` in projects.toml)
-    path = handover_path()
-    try:
-        content = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        content = ""  # no log yet (first-ever run, or nothing written)
-    parts = [build_context(content, path)] if content else []
-    refresh = skill_refresh(payload)
-    if refresh:
-        parts.append(refresh)
+    if project is not None and project.extra.get("chief_handover"):
+        path = handover_path()
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            content = ""  # no log yet (first-ever run, or nothing written)
+        if content:
+            parts.append(build_context(content, path))
+        refresh = skill_refresh(payload)
+        if refresh:
+            parts.append(refresh)
     if not parts:
         return 0
     # `_lib.warn()` owns the per-harness SessionStart dialect:

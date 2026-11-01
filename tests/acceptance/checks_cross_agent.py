@@ -54,6 +54,8 @@ _CODEX_POLICY_COVERAGE = (
      "not applicable"),
     ("Chief turn end needs an armed waiter", "chief_waiter_stop", None, None,
      "not applicable"),
+    ("Lane handoff then compact at a per-model threshold", "lane_compact", None, None,
+     "unsupported"),
     ("Telegram file replies", "telegram_file_reply_guard", None, None,
      "not applicable"),
 )
