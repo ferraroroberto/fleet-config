@@ -107,12 +107,13 @@ extra_files = ["global-CLAUDE.md"]
 enabled  = true
 baseline = ".doc-refs-ratchet-baseline.json"
 # Intentional pointers: files other repos or tools own (Pi's installed docs, a Codex
-# method name, the hub and scaffold docs, the adopter repos' e2e and gate files) and a
-# sample path quoted from a transcript.
+# method name, the hub and scaffold docs, the adopter repos' e2e, gate and site preview
+# files) and a sample path quoted from a transcript.
 allow_refs = [
   "docs/custom-provider.md", "docs/extensions.md", "docs/providers.md", "skills/list",
   "docs/model-comparison.md", "docs/windows-tray.md", "docs/e2e-routing.md",
   "scripts/classify_e2e.py", "scripts/verify-before-ship.ps1", "scripts/verify.js",
+  "scripts/site_serve.py", "scripts/serve.py",
   "docs/screenshots/manifest.json", "tests/e2e", "tests/e2e/*",
   ".claude/skills/journal-daily/SKILL.md",
 ]

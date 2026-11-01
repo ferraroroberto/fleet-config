@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import struct
-from pathlib import Path
 
 from _suite import REPO, _h, check  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
