@@ -291,10 +291,90 @@ def _scan_port_kills(cmd: str) -> list[int]:
     return ports
 
 
+# ----- commands in command position -----
+# A line continuation, Bash `\` or PowerShell backtick before the newline: the
+# next line's words still belong to the same command.
+_LINE_CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
+_EVAL_SHELLS = {"eval", "iex", "invoke-expression"}
+# After one of these, a nested shell's remaining words are the command it runs.
+_NESTED_COMMAND_FLAGS = {"-c", "/c", "//c", "/k", "//k", "-command", "-commandwithargs"}
+# Two levels covers `powershell -Command "cmd /c '…'"`, and stops a crafted
+# command from recursing without end.
+_NESTED_DEPTH = 2
+
+
+def command_stem(word: str) -> str:
+    """The lowercased program name a command word runs: `C:/Windows/System32/shutdown.exe` → `shutdown`."""
+    name = re.split(r"[\\/]", word)[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _unquote_word(token: str) -> str:
+    token = token.strip("`")
+    return _lib._QUOTED_RUN_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), token)
+
+
+def command_invocations(cmd: str, _depth: int = 0) -> list[list[str]]:
+    """Every command `cmd` runs, each as its unquoted words, command word first.
+
+    The same reading as `_lib.runs_git_commit`, on its tokenizer: heredoc and here-string bodies are
+    data, a quoted string is one word, and leading `VAR=value` assignments and
+    `_lib.COMMAND_PREFIX_WORDS` (with their options) are skipped so the command after
+    them leads. Braces split commands too, so a PowerShell script block's first
+    word is in command position. A nested shell's command line (`bash -c "…"`,
+    `cmd //c …`, `iex '…'`) is read as well.
+    """
+    text = _LINE_CONTINUATION_RE.sub(" ", _lib._PS_HERE_STRING_RE.sub("''", _lib.strip_heredoc_bodies(cmd)))
+    found: list[list[str]] = []
+    raw: list[str] = []
+    after_prefix = False
+    for token in [*_lib._COMMIT_TOKEN_RE.findall(text), "\n"]:
+        if token in _lib._COMMIT_SEPARATORS:
+            if raw:
+                words = [_unquote_word(t) for t in raw]
+                found.append(words)
+                if _depth < _NESTED_DEPTH:
+                    for line in _nested_command_lines(raw, words):
+                        found.extend(command_invocations(line, _depth + 1))
+            raw, after_prefix = [], False
+            continue
+        if not raw:
+            if _lib._COMMIT_ENV_ASSIGN_RE.match(token):
+                continue
+            if token in _lib.COMMAND_PREFIX_WORDS:
+                after_prefix = True
+                continue
+            if after_prefix and token.startswith("-"):
+                continue
+        raw.append(token)
+    return found
+
+
+def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
+    """The command lines a nested shell invocation runs: its quoted arguments,
+    and everything after its command flag (`cmd //c shutdown …` is unquoted)."""
+    stem = command_stem(words[0])
+    if stem not in _lib.NESTED_SHELLS:
+        return []
+    lines = [word for token, word in zip(raw[1:], words[1:]) if token[:1] in "\"'"]
+    rest: list[str] = []
+    if stem in _EVAL_SHELLS:
+        rest = raw[1:]
+    else:
+        for i, word in enumerate(words[1:], start=1):
+            if word.lower() in _NESTED_COMMAND_FLAGS:
+                rest = raw[i + 1:]
+                break
+    # One quoted word is already in `lines`; joined, it would read as one word.
+    if rest and not (len(rest) == 1 and rest[0][:1] in "\"'"):
+        lines.append(" ".join(rest))
+    return lines
+
+
 # ----- host power: off, restart, sleep, hibernate -----
 # Unattended agent lanes run on this host; one that takes it down stops every
 # other lane until someone is back at the machine. Each command is read in
-# command position (`_lib.command_invocations`), so a search, a commit message
+# command position (`command_invocations`), so a search, a commit message
 # or `Get-Help Stop-Computer` that only names one of these is not refused.
 SHUTDOWN_ACTION_FLAGS = {"s", "r", "h", "p", "g", "sg"}
 POWER_CMDLETS = {"stop-computer", "restart-computer"}
@@ -371,7 +451,7 @@ def _powercfg_changes_sleep(args: list[str]) -> bool:
 
 def _power_hit(words: list[str]) -> Optional[str]:
     """The power command `words` runs against this host, or None."""
-    stem = _lib.command_stem(words[0])
+    stem = command_stem(words[0])
     args = words[1:]
     low = [a.lower() for a in args]
     flags = [_flag(a) for a in low]
@@ -403,7 +483,7 @@ def _launched_power_hit(words: list[str]) -> Optional[str]:
     `-ArgumentList '/s','/t','0'` arrives as one word, so it is split here."""
     pieces = [p for w in words[1:] for p in re.split(r"[\s,]+", w) if p and p.lower() not in LAUNCHER_PARAMS]
     for i, piece in enumerate(pieces):
-        if _lib.command_stem(piece) in POWER_PROGRAMS:
+        if command_stem(piece) in POWER_PROGRAMS:
             return _power_hit(pieces[i:])
     return None
 
@@ -411,8 +491,8 @@ def _launched_power_hit(words: list[str]) -> Optional[str]:
 def host_power_command(cmd: str) -> Optional[str]:
     """The command in `cmd` that would power off, restart, sleep or hibernate
     this host, or None."""
-    for words in _lib.command_invocations(cmd):
-        if _lib.command_stem(words[0]) in LAUNCHERS:
+    for words in command_invocations(cmd):
+        if command_stem(words[0]) in LAUNCHERS:
             hit = _launched_power_hit(words)
         else:
             hit = _power_hit(words)
