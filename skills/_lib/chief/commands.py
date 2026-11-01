@@ -27,6 +27,7 @@ import chief_plan
 from chief import chief_sweep
 import dirty_tree_check
 import gate_evidence
+import owner_check
 from fleet_core import hooks_state
 from no_window import NO_WINDOW
 import worktree_claim
@@ -401,6 +402,17 @@ def cmd_issues(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_owner_checks(args: argparse.Namespace) -> int:
+    """Every open owner item, read from the issues' labels: the chief's only list of them."""
+    result = owner_check.list_items(args.repo or None)
+    for it in result["items"]:
+        print(f"{it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}")
+    for miss in result["unknown"]:
+        print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
+    print(f"OWNER_ITEMS={len(result['items'])} UNKNOWN={len(result['unknown'])}")
+    return 1 if result["unknown"] else 0
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     brief = None
     if args.brief_file is not None:
@@ -419,6 +431,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except ValueError as exc:
             print(f"REFUSED={exc}")
             return 1
+
+    refusal, warning = rails.owner_check_refusal(
+        args.repo, args.number, launcher.fetch_issue_state(args.repo, args.number))
+    if refusal is not None:
+        print(f"REFUSED={refusal}")
+        return 1
 
     board = launcher._request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
@@ -445,6 +463,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if reason is not None:
         print(f"REFUSED={reason}")
         return 1
+    if warning is not None:
+        print(f"WARNING={warning}")
     if running is None:
         print(f"WARNING=fleet-jobs-unknown reason={jobs_error}")
     for job_id in running or []:

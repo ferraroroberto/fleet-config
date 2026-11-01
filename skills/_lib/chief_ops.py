@@ -132,12 +132,20 @@ Subcommands
       One state-table row per ref via `gh issue view`; a per-ref `gh`
       failure becomes an `error:` row rather than aborting the rest.
 
+  owner-checks [--repo R ...]
+      Every open owner-check item fleet-wide, read from the
+      `needs-validation` / `needs-owner` labels (`skills/_lib/owner_check/`):
+      one `<kind> <repo>#<N> since=… reason=…` line each, `UNKNOWN=<repo>`
+      for a repo that could not be read (exit 1), then `OWNER_ITEMS=`.
+
   dispatch <repo> <number> [--mode start|yolo] [--model M] [--effort E]
            [--brief-file PATH] [--yolo-confirmed] [--allow-during-fleet-job]
            [--base-url URL]
       Refuses (exit 1, no POST) on an occupied repo, an at/over-cap
-      worker count, `yolo` without `--yolo-confirmed`, or a `--brief-file`
-      that is missing, unreadable or empty. It also reads `/api/jobs` and
+      worker count, `yolo` without `--yolo-confirmed`, a `--brief-file`
+      that is missing, unreadable or empty, or an issue labelled
+      `needs-owner` (`docs/owner-check.md`; an unreadable issue only prints
+      `WARNING=owner-check-unknown`). It also reads `/api/jobs` and
       prints `WARNING=fleet-job-running job=<id>` for each running
       fleet-wide job (`FLEET_JOB_PATTERNS`), or `WARNING=fleet-jobs-unknown`
       when that can't be read. A fleet-wide brief (`/propagate-vendored`,

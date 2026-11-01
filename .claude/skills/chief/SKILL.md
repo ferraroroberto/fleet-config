@@ -327,6 +327,15 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   leave an explicit comment saying so and why — this is what stops the same
   parked issue from being re-litigated on a later sweep. Don't rely on
   remembering it was already discussed.
+- **Owner-blocked work is the `needs-owner` label, never `plan set --status parked`**
+  ([owner-check](E:/automation/fleet-config/docs/owner-check.md)). Work that waits on a step of
+  Roberto's (a device probe, a signup, a decision) gets
+  `owner_check/cli.py mark <repo>#<N> --kind before-start --reason "…" --try "…"`;
+  `chief_ops.py dispatch` then refuses it by code. Shipped work he still has to
+  try carries `needs-validation`, set by `/issue-finish`. `chief_ops.py
+  owner-checks` is your only list of both, read from the labels. Keep no parallel
+  one in the plan or the handover. When his Board answer covers an owner item, run
+  `owner_check/cli.py clear <repo>#<N> --answer "…"`.
 - **Sweep finished lane worktrees without asking (fleet-config#910, #1496; the
   one exception to rail 4 and "Acting").** Roberto doesn't use worktrees, and on
   2026-10-18 authorized you to remove finished ones on your own judgment (his

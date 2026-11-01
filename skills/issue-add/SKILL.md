@@ -97,6 +97,14 @@ no padding.
   - **Enforcement** — required when the issue changes agent behaviour: the
     mechanism that makes it hold (hook refusal, lint, test, code path) before
     any prose; added instruction text states why no mechanism can do it.
+  - **Owner validation** — every issue, one line:
+    `**Owner validation:** required|none — <why>; try: <what Roberto does>`.
+    The verdict is the helper's, never yours: write the draft to a temp file and run
+    `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py classify --body-file <draft> --title "<title>" --label <type>`;
+    copy its `OWNER_CHECK=` verdict and `REASON=` lines into the why, and write
+    only the "try" text yourself (where to go, what to do, what should happen).
+    `none` still lets `/issue-finish` mark it when the lane cannot verify the work
+    in-session ([owner-check](E:/automation/fleet-config/docs/owner-check.md)).
   - **Acceptance criteria** — a short checklist of "done". Each criterion must
     be decidable pass/fail by a reader with the repo in hand; "works
     correctly" / "is robust" is not a criterion. A UI criterion names its

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from fleet_core import fleet_repo_scan
+from owner_check import block as owner_block
 
 
 # Worker cap used when the launcher's /api/board/chief/settings carries no
@@ -291,6 +292,22 @@ def fleet_job_refusal(
     blocker = (f"fleet job {', '.join(running)} is running" if running
                else f"fleet-job state unknown ({error})")
     return f"fleet-wide brief while {blocker}; wait for it to finish, or pass --allow-during-fleet-job"
+
+
+def owner_check_refusal(repo: str, number: int, issue: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """`(refusal, warning)` from an issue-state row (`launcher.fetch_issue_state`).
+
+    A `needs-owner` issue waits on a step of Roberto's, so it is refused. A row
+    that could not be read is only warned: `/issue-start`'s owner gate is the
+    hard stop and refuses an unknown state there.
+    """
+    if "error" in issue:
+        return None, f"owner-check-unknown reason={issue['error']}"
+    labels = {str(lab.get("name")) for lab in issue.get("labels") or []}
+    if owner_block.LABELS[owner_block.BEFORE_START] in labels:
+        return (f"needs-owner: {repo}#{number} waits on a step of Roberto's; "
+                f"owner_check gate {repo}#{number} prints the reason"), None
+    return None, None
 
 
 def resolve_repo_path(repo: str, repos: Optional[Dict[str, Any]] = None) -> Path:
