@@ -44,10 +44,12 @@ stderr); the regenerated file then carries that repo's residual fallback card.
     owns         = ["LLM routing"]
     not_owns     = ["model weights"]
     depends_on   = ["app-launcher", {repo = "local-llm-hub", interface = "messages"}]
+    [contracts]
+    ignore_refs  = [{path = "config/jobs.sample.json", repo = "app-launcher", why = "sample job data"}]
 
 ``--coupling`` prints every reference a repo's committed tree makes to another
 fleet repo (sibling path or loopback port) that its ``depends_on`` does not
-declare. It is a report and exits 0.
+declare, skipping the paths its ``ignore_refs`` lists. It is a report and exits 0.
 """
 
 from __future__ import annotations
@@ -282,6 +284,19 @@ def regenerate(refused: list[str] | None = None, projects_toml: Path = PROJECTS_
     return serialize(build(load_residual(), fleet_repos(projects_toml), refused))
 
 
+def _ignore_refs(repo_name: str, repo_dir: Path, known: set[str]) -> list[dict[str, str]]:
+    """The repo's reviewed ``[contracts] ignore_refs`` entries. ``build`` already
+    refused a malformed declaration (that repo shows its fallback card), so one
+    that does not validate here ignores nothing: the scan stays strict."""
+    text = read_fleet_toml(repo_dir)
+    if text is None:
+        return []
+    try:
+        return fleet_contracts.validate(repo_name, tomllib.loads(text), known).get("ignore_refs", [])
+    except ValueError:
+        return []
+
+
 def coupling(data: dict, repos: dict[str, Path]) -> dict[str, dict[str, str] | None]:
     """``{repo: {target: "path:line"}}`` of undeclared references to other fleet
     repos, per non-governance repo; ``None`` for a repo that could not be scanned.
@@ -295,7 +310,8 @@ def coupling(data: dict, repos: dict[str, Path]) -> dict[str, dict[str, str] | N
     for name in sorted(set(cards) & set(repos)):
         repo_dir = REPO_ROOT if name == OWN_REPO else repos[name]
         ref = _default_ref(repo_dir)
-        found = None if ref is None else fleet_contracts.scan_repo(name, repo_dir, ref, repos, ports)
+        found = None if ref is None else fleet_contracts.scan_repo(
+            name, repo_dir, ref, repos, ports, _ignore_refs(name, repo_dir, set(repos)))
         out[name] = None if found is None else fleet_contracts.undeclared(found, cards[name].get("deps", []))
     return out
 
