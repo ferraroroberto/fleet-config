@@ -131,6 +131,87 @@ try:
 finally:
     remove_dir(empty)
 
+# ---- vendored: a site is compared against the scaffold's site set ----
+
+scaf = make_tree({
+    "app/site/static/_vendored/site-card/site-card.css": ".card{}",
+    "app/site/static/_vendored/site-card/README.md": "card",
+    "app/site/static/_vendored/site-button/site-button.css": ".btn{}",
+    "app/webapp/static/_vendored/switch/switch.css": ".toggle{}",
+})
+same = make_tree({"content/static/_vendored/site-card/site-card.css": ".card{}",
+                  "content/static/_vendored/site-card/README.md": "card",
+                  "content/static/_vendored/site-button/site-button.css": ".btn{}"})
+drift = make_tree({"content/static/_vendored/site-card/site-card.css": ".card{color:red}",
+                   "content/static/_vendored/site-card/README.md": "card",
+                   "content/static/_vendored/site-button/site-button.css": ".btn{}"})
+foreign = make_tree({"app/webapp/static/_vendored/switch/switch.css": ".toggle{}"})
+bare = make_tree({"index.html": GOOD_HTML})
+try:
+    for tree, what in ((same, "byte-identical"), (drift, "drifted")):
+        code, out = run(["vendored", str(tree), "--surface", "web-page", "--scaffold", str(scaf)])
+        check(code == 0, f"{what} site: the lens runs")
+        comps = out["components"]
+        check(sorted(comps) == ["site-button", "site-card"],
+              f"{what} site: compared against the site set, not the PWA set -- {sorted(comps)}")
+    code, out = run(["vendored", str(same), "--surface", "web-page", "--scaffold", str(scaf)])
+    check(all(c["status"] == "IDENTICAL" for c in out["components"].values()),
+          f"a byte-identical site tree reports IDENTICAL -- {out}")
+    code, out = run(["vendored", str(drift), "--surface", "web-page", "--scaffold", str(scaf)])
+    check(out["components"]["site-card"]["status"] == "FORKED"
+          and out["components"]["site-card"]["files"]["site-card.css"] == "FORKED",
+          f"one drifted byte fails and names the file -- {out['components']['site-card']}")
+    check(out["components"]["site-button"]["status"] == "IDENTICAL", "the untouched component stays IDENTICAL")
+
+    code, out = run(["vendored", str(foreign), "--surface", "web-page", "--scaffold", str(scaf)])
+    check("error" in out and "components" not in out,
+          f"a _vendored folder sharing no site component is not confirmed, never a pass -- {out}")
+    code, out = run(["vendored", str(bare), "--surface", "web-page", "--scaffold", str(scaf)])
+    check(out["app_has_vendored_dir"] is False and out["components"] == {},
+          f"a site with no _vendored folder keeps today's empty result -- {out}")
+    code, out = run(["vendored", str(same), "--surface", "web-page", "--scaffold", str(bare)])
+    check("error" in out, f"a scaffold without the site set is an error, not a pass -- {out}")
+
+    # web apps are unchanged: still the PWA set, and a site tree is NOT_ADOPTED there
+    code, out = run(["vendored", str(foreign), "--scaffold", str(scaf)])
+    check(out["components"] == {"switch": {"status": "IDENTICAL",
+                                           "files": {"switch.css": "IDENTICAL"}}},
+          f"web-app surface still compares the PWA set -- {out}")
+    code, out = run(["vendored", str(same), "--scaffold", str(scaf)])
+    check(out["components"]["switch"]["status"] == "NOT_ADOPTED", "web-app surface ignores site components")
+
+    # an LF site copy of a CRLF scaffold checkout is the same git blob
+    crlf = make_tree({"app/site/static/_vendored/site-card/site-card.css": ""})
+    lfsite = make_tree({"content/static/_vendored/site-card/site-card.css": ""})
+    try:
+        (crlf / "app/site/static/_vendored/site-card/site-card.css").write_bytes(b".a{}\r\n.b{}\r\n")
+        (lfsite / "content/static/_vendored/site-card/site-card.css").write_bytes(b".a{}\n.b{}\n")
+        code, out = run(["vendored", str(lfsite), "--surface", "web-page", "--scaffold", str(crlf)])
+        check(out["components"]["site-card"]["status"] == "IDENTICAL",
+              f"web-page: CRLF vs LF checkouts of one blob are IDENTICAL -- {out}")
+    finally:
+        remove_dir(crlf)
+        remove_dir(lfsite)
+
+    # a file that cannot be read is its own state
+    import sys
+    vmod = sys.modules["design_lint.vendored"]  # the package re-exports the function under this name
+    real = vmod._digest
+
+    def _boom(p, lf=False):
+        raise OSError("locked")
+    vmod._digest = _boom
+    try:
+        report = dl.vendored(same, scaf, "web-page")
+    finally:
+        vmod._digest = real
+    check(report["components"]["site-card"]["status"] == "NOT_CONFIRMED"
+          and report["components"]["site-card"]["files"]["site-card.css"] == "UNREADABLE",
+          f"an unreadable file is NOT_CONFIRMED, not IDENTICAL -- {report['components']['site-card']}")
+finally:
+    for t in (scaf, same, drift, foreign, bare):
+        remove_dir(t)
+
 # ---- the scope helpers on their own ----
 
 report = {"components": {"nav": {"status": "NOT_ADOPTED", "files": {}},

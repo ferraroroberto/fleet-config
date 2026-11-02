@@ -103,7 +103,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                  else contracts(root, css_files, html_files, js_files, specs[0], specs[1]))
         out["contracts"] = apply_accepted(root, found)
     if args.command in ("vendored", "all"):
-        report = vendored(root, Path(args.scaffold))
+        report = vendored(root, Path(args.scaffold), args.surface)
         out["vendored"] = adopted_only(report) if web_page else report
     if args.command in ("siblings", "all"):
         dupes = siblings(root, js_files)

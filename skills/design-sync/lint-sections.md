@@ -232,6 +232,6 @@ A public static site is linted against `design.web.md`. The JSON gains `surface`
 
 - **`tokens`** — `required` (the token names in `design.web.md` section 2), `present` (name, value, line), `missing`, and `floors` (`--control` against `targets.control`). Values are the site's brand and are never graded; every `missing` name is a candidate finding.
 - **`contracts`** — the web-page set, ids prefixed `web-`: `web-focus-visible`, `web-reduced-motion`, `web-header` (no `backdrop-filter`, `filter` or `transform` on the header), `web-header-current`, `web-phone-menu`, `web-sections-container`, `web-no-shadow`, `web-no-gradient`, `web-card`, `web-carousel`, `web-footer`, `web-image-roles` (no `minmax(0, <px>) 1fr` track) and `web-image-dimensions`. A component the site does not use is `NA`. No PWA contract runs.
-- **`vendored`** lists only the components the site vendors, and **`siblings`** drops a duplicate whose sites are byte-identical files (a committed build copy of the source).
+- **`vendored`** compares the site's `static/_vendored/<component>/` copies against project-scaffolding's site set (`app/site/static/_vendored`, not the PWA set) and lists only the components the site vendors. A component whose file cannot be read reports `NOT_CONFIRMED`, and a `_vendored` folder sharing no component with the site set returns an `error` — neither is a pass. **`siblings`** drops a duplicate whose sites are byte-identical files (a committed build copy of the source).
 
 `adoption` is unchanged.
