@@ -56,6 +56,9 @@ def _coupling_fixture(check: _Checker, fc) -> None:
             'HUB = "http://127.0.0.1:8000/v1"\nDB = "E:/automation/app-b/data.db"\n'
             'NOT = "E:/automation/app-b-lite/x"\n', encoding="utf-8")
         (repo / "README.md").write_text("see E:/automation/app-c/README.md\n", encoding="utf-8")
+        # Sorts before src.py, so unexcluded it would claim app-b's one report slot.
+        (repo / "jobs.sample.json").write_text(
+            '{"script": "E:/automation/app-b/run.bat", "alt": "../app-c/run.bat"}\n', encoding="utf-8")
         (repo / "tests" / "test_x.py").write_text('P = "../app-c/x"\n', encoding="utf-8")
         _git(repo, "init", "-q", "-b", "main")
         _git(repo, "add", "-A")
@@ -68,15 +71,61 @@ def _coupling_fixture(check: _Checker, fc) -> None:
         ports = fc.port_owners([{"nm": "hub", "port": ":8000"}, {"nm": "app-a", "chips": ["svc :9999"]}])
         check("fleet_contracts: port_owners reads `port` and chip ports",
               ports == {"8000": {"hub"}, "9999": {"app-a"}}, str(ports))
-        found = fc.scan_repo("app-a", repo, "main", repos, ports)
-        check("fleet_contracts: scan finds sibling-path and loopback-port references, not prose or tests",
+        ignore = [{"path": "jobs.sample.json", "repo": "app-b", "why": "sample job data"}]
+        raw = fc.scan_repo("app-a", repo, "main", repos, ports)
+        check("fleet_contracts: without ignore_refs a sample file claims the target's report slot",
+              raw is not None and raw.get("app-b") == "jobs.sample.json:1" and "app-c" in raw, str(raw))
+        found = fc.scan_repo("app-a", repo, "main", repos, ports, ignore)
+        check("fleet_contracts: scan finds sibling-path and loopback-port references, not prose, tests or ignore_refs",
               found is not None and set(found) == {"app-b", "app-b-lite", "hub"}
-              and found["hub"] == "src.py:1", str(found))
+              and found["hub"] == "src.py:1" and found["app-b"] == "src.py:2", str(found))
         left = fc.undeclared(found or {}, [{"repo": "hub"}, {"repo": "app-b-lite"}])
         check("fleet_contracts: a declared dependency clears its references",
               set(left) == {"app-b"}, str(left))
         check("fleet_contracts: an unscannable repo is None, never clean",
               fc.scan_repo("app-a", repo, "no-such-ref", repos, ports) is None)
+
+
+def _ignore_refs_checks(check: _Checker, bd, fc, base: dict, known: set, plain: dict) -> None:
+    """`[contracts] ignore_refs`: validation, refusals by repo name, off the map card."""
+    ig = {"path": "config/jobs.sample.json", "repo": "app-b", "why": "sample job data"}
+    ok = fc.validate("ghost-repo", {"contracts": {"ignore_refs": [ig]}}, known)
+    _, with_ig = bd.card_from_toml("ghost-repo", {**base, "contracts": {"ignore_refs": [ig]}}, known)
+    check("fleet_contracts: ignore_refs validates and stays off the map card",
+          ok == {"ignore_refs": [ig]} and with_ig == plain, str(with_ig))
+    check("fleet_contracts: a card without the key validates as before",
+          fc.validate("ghost-repo", {**base}, known) == {})
+    for label, bad in (
+        ("missing why", {"contracts": {"ignore_refs": [{"path": "a.json", "repo": "app-b"}]}}),
+        ("empty why", {"contracts": {"ignore_refs": [{**ig, "why": " "}]}}),
+        ("absolute path", {"contracts": {"ignore_refs": [{**ig, "path": "/etc/x"}]}}),
+        ("parent path", {"contracts": {"ignore_refs": [{**ig, "path": "../x"}]}}),
+        ("pathspec magic", {"contracts": {"ignore_refs": [{**ig, "path": ":(top)x"}]}}),
+        ("duplicate path", {"contracts": {"ignore_refs": [ig, ig]}}),
+        ("self", {"contracts": {"ignore_refs": [{**ig, "repo": "ghost-repo"}]}}),
+        ("unknown key", {"contracts": {"allow_refs": []}}),
+        ("shape", {"contracts": {"ignore_refs": "a.json"}}),
+    ):
+        _, msg = _refusal(lambda bad=bad: bd.card_from_toml("ghost-repo", {**base, **bad}, known))
+        check(f"fleet_contracts: a bad ignore_refs ({label}) is refused naming the repo",
+              "ghost-repo" in msg, msg or "accepted")
+    kind, msg = _refusal(lambda: bd.card_from_toml(
+        "ghost-repo", {**base, "contracts": {"ignore_refs": [{**ig, "repo": "nope"}]}}, known))
+    check("fleet_contracts: an ignore_refs repo outside the fleet is refused by repo and target name",
+          kind == "UnknownDependency" and "ghost-repo" in msg and "'nope'" in msg, msg or "accepted")
+    toml = 'layer = "enabling"\nicon = "x"\ndescription = "A hub."\ndepends_on = ["nope"]\n'
+    real_read = bd.read_fleet_toml
+    try:
+        bd.read_fleet_toml = lambda _repo_dir: (
+            'layer = "enabling"\nicon = "x"\ndescription = "A hub."\n[contracts]\n'
+            'ignore_refs = [{ path = "a.json", repo = "app-b", why = "sample" }]\n')
+        check("fleet_contracts: the coupling scan reads ignore_refs from the committed card",
+              bd._ignore_refs("ghost-repo", REPO, known) == [{"path": "a.json", "repo": "app-b", "why": "sample"}])
+        bd.read_fleet_toml = lambda _repo_dir: toml  # a malformed declaration ignores nothing
+        check("fleet_contracts: a malformed card ignores nothing in the coupling scan",
+              bd._ignore_refs("ghost-repo", REPO, known) == [])
+    finally:
+        bd.read_fleet_toml = real_read
 
 
 def _fleet_contracts_check() -> Tuple[int, int]:
@@ -115,6 +164,8 @@ def _fleet_contracts_check() -> Tuple[int, int]:
     ):
         _, msg = _refusal(lambda bad=bad: bd.card_from_toml("ghost-repo", {**base, **bad}, known))
         check(f"fleet_contracts: a bad {label} is refused naming the repo", "ghost-repo" in msg, msg or "accepted")
+
+    _ignore_refs_checks(check, bd, fc, base, known, plain)
 
     toml = 'layer = "enabling"\nicon = "🧠"\ndescription = "A hub."\ndepends_on = ["nope"]\n'
     residual = {"enabling": [{"ic": "🧠", "nm": "ghost-repo", "ds": "fallback"}]}

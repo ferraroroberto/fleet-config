@@ -84,10 +84,43 @@ def _depends_on(repo_name: str, raw: Any, known_repos: Optional[Set[str]]) -> Li
     return out
 
 
+def _ignore_refs(repo_name: str, raw: Any, known_repos: Optional[Set[str]]) -> List[Dict[str, str]]:
+    """`[contracts] ignore_refs`: reviewed references the coupling scan skips."""
+    if not isinstance(raw, list):
+        raise ValueError(f"{repo_name}: .fleet.toml `[contracts] ignore_refs` must be a list of tables, got {raw!r}")
+    out, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"path", "repo", "why"} or not all(
+            isinstance(v, str) and v.strip() for v in entry.values()
+        ):
+            raise ValueError(
+                f"{repo_name}: .fleet.toml `ignore_refs` entry must be {{path, repo, why}} non-empty strings "
+                f"(`why` is required), got {entry!r}"
+            )
+        path = entry["path"]
+        # A leading `:` would be read as pathspec magic, `..` or an absolute path
+        # would leave the repo: the path must be a plain repo-relative one.
+        if path.startswith((":", "/", "\\")) or ".." in re.split(r"[/\\]", path) or re.match(r"^[A-Za-z]:", path):
+            raise ValueError(f"{repo_name}: .fleet.toml `ignore_refs` path {path!r} must be repo-relative")
+        if path in seen:
+            raise ValueError(f"{repo_name}: .fleet.toml `ignore_refs` path {path!r} is listed twice")
+        seen.add(path)
+        if entry["repo"] == repo_name:
+            raise ValueError(f"{repo_name}: .fleet.toml `ignore_refs` names the repo itself")
+        if known_repos is not None and entry["repo"] not in known_repos:
+            raise UnknownDependency(
+                f"{repo_name}: .fleet.toml `ignore_refs` names {entry['repo']!r}, which is not a fleet repo "
+                "(hooks/projects.toml minus architecture_ignore)."
+            )
+        out.append({k: entry[k] for k in ("path", "repo", "why")})
+    return out
+
+
 def validate(repo_name: str, meta: Mapping[str, Any], known_repos: Optional[Set[str]] = None) -> Dict[str, Any]:
     """The contract keys of a parsed `.fleet.toml`, normalized, or `ValueError`
-    naming the repo and the bad value. All four keys are optional; absent ones
-    are left out. With `known_repos`, a `depends_on` repo outside it raises
+    naming the repo and the bad value. All keys are optional; absent ones are
+    left out. `ignore_refs` is the `[contracts]` table's one key. With
+    `known_repos`, a `depends_on` or `ignore_refs` repo outside it raises
     `UnknownDependency`."""
     out: Dict[str, Any] = {}
     if "interfaces" in meta:
@@ -97,13 +130,22 @@ def validate(repo_name: str, meta: Mapping[str, Any], known_repos: Optional[Set[
             out[key] = _str_list(repo_name, key, meta[key])
     if "depends_on" in meta:
         out["depends_on"] = _depends_on(repo_name, meta["depends_on"], known_repos)
+    if "contracts" in meta:
+        table = meta["contracts"]
+        if not isinstance(table, dict) or set(table) - {"ignore_refs"}:
+            raise ValueError(
+                f"{repo_name}: .fleet.toml `[contracts]` only holds `ignore_refs`, got {table!r}"
+            )
+        if "ignore_refs" in table:
+            out["ignore_refs"] = _ignore_refs(repo_name, table["ignore_refs"], known_repos)
     return out
 
 
 def card_fields(contracts: Mapping[str, Any]) -> Dict[str, Any]:
-    """The map-card keys for validated contracts (`deps`, `ifs`, `owns`, `not_owns`)."""
+    """The map-card keys for validated contracts (`deps`, `ifs`, `owns`,
+    `not_owns`). `ignore_refs` steers the scan only and stays off the card."""
     names = {"depends_on": "deps", "interfaces": "ifs", "owns": "owns", "not_owns": "not_owns"}
-    return {names[k]: v for k, v in contracts.items() if v}
+    return {names[k]: v for k, v in contracts.items() if v and k in names}
 
 
 class MissingInterfaceDoc(ValueError):
@@ -161,14 +203,18 @@ def _patterns(repos: Iterable[str], ports: Mapping[str, Set[str]]) -> tuple:
 
 def scan_repo(
     repo_name: str, repo_dir: Path, ref: str, repos: Iterable[str], ports: Mapping[str, Set[str]],
+    ignore_refs: Iterable[Mapping[str, str]] = (),
 ) -> Optional[Dict[str, str]]:
     """`{target-label: "path:line"}` for every other fleet repo `repo_name`'s
     committed `ref` refers to by sibling path or loopback port, outside
-    `_NOT_COUPLING`. `None` when git grep could not run, so an unscanned repo
-    is never reported as clean."""
+    `_NOT_COUPLING` and the `ignore_refs` paths. The paths are excluded from the
+    `git grep` itself, so an ignored file can never hide the next real hit of a
+    target (the report keeps one hit per target). `None` when git grep could not
+    run, so an unscanned repo is never reported as clean."""
     prefilter, res = _patterns(repos, ports)
+    ignored = [f":(exclude,literal){e['path']}" for e in ignore_refs]
     proc = git_run.run_git([
-        "-C", str(repo_dir), "grep", "-I", "-n", "-E", prefilter, ref, "--", ".", *_NOT_COUPLING,
+        "-C", str(repo_dir), "grep", "-I", "-n", "-E", prefilter, ref, "--", ".", *_NOT_COUPLING, *ignored,
     ])
     if proc.returncode not in (0, 1):  # 1 = no match
         return None

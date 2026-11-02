@@ -68,7 +68,16 @@ depends_on = ["voice-transcriber", { repo = "app-launcher", interface = "jobs" }
 
 `skills/_lib/fleet_core/fleet_contracts.py` is the one validator. A malformed key is an error naming the repo. A `depends_on` outside the fleet or an interface `doc` missing from the repo is refused by repo name the same way an over-cap description is: the repo keeps its residual fallback card and `build_data.py` exits 1. The keys render in two places: `system-map.mmd` draws each `depends_on` as a dotted edge (labelled with the interface when one is named), and the generated [`CONTRACTS.md`](CONTRACTS.md) lists every declared interface with a link to its doc, plus each repo's ownership and dependencies. `render_mermaid.py` writes both.
 
-**Undeclared coupling.** `build_data.py --coupling` reads each non-governance repo's committed tree and reports every reference to another fleet repo that its `depends_on` does not cover: a sibling path (`automation/<repo>`, `../<repo>`) or a loopback URL on a port another card declares (`port`, or a `:NNNN` in `chips`; a port two repos share counts as declared when either is). Markdown, `.fleet.toml` and test files are not scanned, because a repo named in prose or used as fixture data is not a runtime dependency. Governance repos are skipped because configuring every repo is their role. The report is advisory and exits 0: most repos have not declared their keys yet, and its inputs are sibling checkouts that no commit here controls. A repo that could not be scanned is reported as `NOT SCANNED`, never as clean.
+**Undeclared coupling.** `build_data.py --coupling` reads each non-governance repo's committed tree and reports every reference to another fleet repo that its `depends_on` does not cover: a sibling path (`automation/<repo>`, `../<repo>`) or a loopback URL on a port another card declares (`port`, or a `:NNNN` in `chips`; a port two repos share counts as declared when either is). Markdown, `.fleet.toml` and test files are not scanned, because a repo named in prose or used as fixture data is not a runtime dependency. Governance repos are skipped because configuring every repo is their role. A reviewed false positive (sample job data, a path in a docstring, an input placeholder) is exempted in the repo's own card, never in a central list:
+
+```toml
+[contracts]
+ignore_refs = [
+  { path = "config/jobs.sample.json", repo = "app-launcher", why = "sample job data naming a sibling script" },
+]
+```
+
+`path` is a repo-relative file or directory, matched literally (no globs, no leading `/`, `..` or `:`); it is excluded from the `git grep` itself, so an ignored file never uses up the one hit the report keeps per target. The whole path is skipped, not only its references to `repo`, so name the single file. `repo` is the fleet repo the reference points at (it must be in the fleet and not the repo itself) and `why` is required and non-empty: the entry is a reviewed claim, and a build-time read of a sibling or a `.env.example` URL is a real dependency to declare, not to ignore. `[contracts]` holds only `ignore_refs`; the key steers the scan and is not shown on the map card. A card without it behaves as before. The report is advisory and exits 0: most repos have not declared their keys yet, and its inputs are sibling checkouts that no commit here controls. A repo that could not be scanned is reported as `NOT SCANNED`, never as clean.
 
 **Description cap (fleet-config#1250).** A description must fit two lines of its card, so the cap depends on the card's width and font, i.e. on the layer:
 
