@@ -185,7 +185,8 @@ a retry).
 
 Spawn a genuinely fresh independent context through the capability contract. Claude: fresh `Agent`/`Task` type, never fork; Codex native collaboration: `fork_turns: "none"`. If no fresh spawn exists, stop at review-ready and request an independent human or separately launched reviewer; serial self-review does not satisfy this gate. Brief it with only the issue number, branch name and repo path, plus these review duties; collect and validate its terminal verdict before shipping:
 
-1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N>` —
+1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N> --json number,title,body,labels,comments` (comments
+   included; a newer comment beats the body) —
    never trust this run's own restatement of them.
 2. **Read the diff** against the base branch — `git diff <main>...<branch>`.
 3. **Independently re-run the project's verification gate** — never trust

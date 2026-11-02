@@ -309,6 +309,26 @@ def _manual_compact_never_gated_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _issue_comments_read_check() -> Tuple[int, int]:
+    """Every skill step that reads an issue also asks for its comments.
+
+    Scope additions and owner decisions are posted as comments, so a step
+    reading only the body builds from a stale spec. Returns (failures, total)."""
+    check = _Checker()
+    anchor = "gh issue view <N> --json number,title,body,labels"
+    for rel in (
+        "skills/issue-start/SKILL.md",
+        "skills/issue-batch/SKILL.md",
+        "skills/issue-yolo/SKILL.md",
+    ):
+        body = (REPO / rel).read_text(encoding="utf-8")
+        lines = [ln for ln in body.splitlines() if anchor in ln]
+        check(f"issue comments: {rel} reads the issue with --json ...", bool(lines))
+        check(f"issue comments: {rel} requests comments on every json read",
+              bool(lines) and all("comments" in ln for ln in lines))
+    return check.failures, check.total
+
+
 _SKILL_DOC_ROOT = "E:/automation/fleet-config/docs/"  # no-drive-path-exempt: the absolute home skills link shared docs by
 
 
