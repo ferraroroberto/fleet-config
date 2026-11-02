@@ -137,7 +137,7 @@ checkout main, do NOT pull (the primary worktree owns main).
 Workflow (mirrors /issue-start steps 3 + 6, plus verification):
 
 1. cd to <wt-path>.
-2. Read the issue: `gh issue view <N> --json number,title,body,labels`.
+2. Read the issue and its comments (newest last; they are part of the spec, a newer comment beats the body; long thread → last ~10 in full, older summarised): `gh issue view <N> --json number,title,body,labels,comments`.
 3. Read <repo>'s CLAUDE.md and README.md for conventions and the
    verification gate command.
 4. Investigate the codebase as needed.

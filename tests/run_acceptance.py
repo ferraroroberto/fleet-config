@@ -81,6 +81,7 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _acceptance_audit_wiring_check,
     _chief_wait_event_check,
     _gate_evidence_wiring_check,
+    _issue_comments_read_check,
     _manual_compact_never_gated_check,
     _skill_doc_links_check,
     _skill_git_rules_check,
@@ -403,6 +404,9 @@ def _run_repo_guards(tally: _Tally) -> None:
 
     # ---- an operator-typed /compact is never gated (#1052) ----
     tally.run_unit(_manual_compact_never_gated_check)
+
+    # ---- issue-reading skill steps also read comments ----
+    tally.run_unit(_issue_comments_read_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     tally.run_unit(_system_map_whatchanged_check)

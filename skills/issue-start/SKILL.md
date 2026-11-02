@@ -133,7 +133,7 @@ Run in parallel:
 ### 3. Read the issue and project conventions
 
 In parallel:
-- `gh issue view <N> --json number,title,body,labels` — read the whole issue.
+- `gh issue view <N> --json number,title,body,labels,comments` — read the whole issue **and its comments, newest last**; comments are part of the spec (scope additions, owner decisions, decision-log entries). A comment that contradicts the body resolves toward the newer one; note the conflict in the plan or report. Long thread → read the last ~10 comments in full and summarise older ones.
 - Read the project's `CLAUDE.md` (and `README.md` if present) — conventions,
   layout, verification gate. If `docs/layout.md` exists, read it too and
   place new files where it says.
