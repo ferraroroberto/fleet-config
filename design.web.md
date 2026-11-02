@@ -1,6 +1,6 @@
 ---
 name: Fleet web pages
-version: 1.0.0
+version: 1.1.0
 description: >
   The fleet's design contract for web pages: public, static, content-first
   sites that a stranger reads once, mostly on a phone, served as a static
@@ -182,7 +182,7 @@ Each contract is the shape and behaviour every site shares. The project-scaffold
 ## 7. Images
 
 - **Roles.** Feature: column width on a phone, `min(--feature-max, half the row)` from 768 px, used for the first section's image, a lone image and a video beside text. Tile: column width on a phone, half the content from 768 px, a third from 1024 px. Thumb: 96 px, 160 px from 1024 px. Images that share a role render at equal width (±2 px).
-- **Whole, at their own proportions.** A content image is never cropped except a photo filling a square card. Portraits are square sources rounded by CSS; a circle baked into a square file is not used.
+- **Whole, at their own proportions.** A content image is never cropped except a photo filling a square card. Portraits are square sources rounded by CSS; a circle baked into a square file is not used. Portraits in one list share one size and radius, each with its top level with the name beside it (±4 px).
 - **Frame.** Every content image takes `--frame`, `--radius` and a `--paper` background; a cut-out with transparent corners keeps its own shape, unframed.
 - **Responsive variants.** Every content image ships WebP (or AVIF) variants at several widths with `srcset` and a `sizes` value per role, and explicit `width` and `height` attributes so nothing shifts as it loads.
 - **Loading.** The largest above-the-fold image (the LCP candidate) is eager, with `fetchpriority="high"`; everything below the fold takes `loading="lazy"` and `decoding="async"`.
@@ -300,7 +300,7 @@ Its signature is **the pen**: a yellow marker behind one or two words of each pa
 ## 14. How a page is checked
 
 - **The rubric** `design.web.rubric.toml` lists each contract rule as data: a stable id, the metric it reads, the pass rule, a severity (P0 to P3), the standard it cites, a fix template and an owner (`spec`, `scaffold` or `app`). It shares the schema of `design.rubric.toml`, so the rendered review scores it the same way; a rule whose metric is not measured yet reports `unmeasured`, never a pass.
-- **The matrix** is the front matter's `viewports`: 390 px phone, 800 px tablet and 1440 px desktop, full page, scrolled through once so lazy images load.
+- **The matrix** is the front matter's `viewports`: 390 px phone, 800 px tablet and 1440 px desktop, full page, scrolled through once so lazy images load. The review starts the site's own static preview on a free loopback port, measures against it and stops it (`design_review measure-web`).
 - **Performance and search facts** are read per URL from a cold phone-profile load and from the built HTML; Core Web Vitals come from a throttled mobile profile, never the LAN.
 - **The brand** is never graded: a rule reads a token's role and floor, not its value.
 

@@ -86,6 +86,7 @@ from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 from . import capture, evaluate, filing, fleet, inventory, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
+from .web import measure_web  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -171,6 +172,73 @@ def cmd_measure(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_measure_web(args: argparse.Namespace) -> int:
+    rubric_path = Path(args.rubric) if args.rubric else measure_web.WEB_RUBRIC
+    spec_path = Path(args.spec) if args.spec else measure_web.WEB_SPEC
+    try:
+        rb = rubric_mod.load_rubric(rubric_path)
+        tokens = measure_web.load_tokens(spec_path)
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    except OSError as exc:
+        print(f"ERROR=spec: {exc}")
+        return 2
+    bad = rubric_mod.check_metric_names(rb, list(measure_web.METRICS))
+    if bad:
+        print(f"ERROR=rubric names unknown web-page metrics on rules {bad}")
+        return 2
+    try:
+        # A web page has no port: the preview's URL replaces this placeholder once it answers.
+        target = plan.resolve_target(args.repo, Path(args.projects_toml) if args.projects_toml else None, "static-preview:pending")
+        devices = measure_web.device_list([d for d in (args.devices or "").split(",") if d])
+    except plan.PlanError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    run_dir = Path(args.run_dir) if args.run_dir else capture.run_dir_for(target.name)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    pages_arg = (args.pages or "").strip()
+    doc = measure_web.measure_web(target, rb, tokens, devices, run_dir,
+                                  pages=[p for p in pages_arg.split(",") if p] if pages_arg not in ("", "all") else None,
+                                  all_pages=pages_arg == "all", python_override=args.python, walk_timeout=args.walk_timeout,
+                                  perf=not args.no_perf, spec_path=spec_path, rubric_path=rubric_path)
+    screens = doc.get("screens") or []
+    preview_info = doc.get("preview") if isinstance(doc.get("preview"), dict) else {}
+    print(f"TARGET={doc['target']}")
+    print(f"SURFACE={doc['surface']}")
+    print(f"MODE={doc['mode']}")
+    print(f"PREVIEW={preview_info.get('source') or 'none'} PID={preview_info.get('pid') or 'none'} (stopped)")
+    print(f"BASE_URL={doc.get('base_url') or 'none'}")
+    print(f"COMMIT={doc.get('commit') or 'none'}")
+    print(f"INTERPRETER={doc.get('interpreter') or 'none'}")
+    print(f"RUN_DIR={doc['run_dir']}")
+    print(f"METRICS={run_dir / 'metrics.json'}")
+    print(f"PAGES={','.join(doc.get('pages') or []) or 'none'}")
+    print(f"SCREENS={sum(1 for s in screens if s.get('status') == 'ok')}/{len(screens)}")
+    print(f"SPEC={doc['spec_path']}")
+    print(f"SPEC_USER_SCOPE={doc['spec_user_scope']}")  # not_confirmed: ~/.claude/design.web.md is not linked
+    unm = doc.get("unmeasured")
+    print(f"UNMEASURED={unm['reason'] if unm else 'none'}")
+    if unm and unm.get("detail"):
+        print(f"UNMEASURED_DETAIL={unm['detail']}")
+    return 0
+
+
+def _add_web_parser(sub: argparse._SubParsersAction) -> None:
+    w = sub.add_parser("measure-web", help="a web page (static site): start its own preview, measure 390/800/1440 px, stop it")
+    w.add_argument("repo", help="hooks/projects.toml repo name, or a repo path")
+    w.add_argument("--pages", help="comma-separated paths, or `all` (every sitemap URL); default: the UX surface key views")
+    w.add_argument("--devices", default=",".join(measure_web.DEVICES), help="subset of phone,tablet,desktop")
+    w.add_argument("--python", help="interpreter for the preview and the walk (default: the target repo's .venv)")
+    w.add_argument("--rubric", help="rubric file (default: this repo's design.web.rubric.toml)")
+    w.add_argument("--spec", help="spec file (default: this repo's design.web.md)")
+    w.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    w.add_argument("--run-dir", help="override the run directory; default is under the hooks state dir")
+    w.add_argument("--walk-timeout", type=float, default=measure_web.WALK_TIMEOUT_S)
+    w.add_argument("--no-perf", action="store_true", help="skip the throttled cold loads (Web Vitals and weight go unmeasured)")
+    w.set_defaults(fn=cmd_measure_web)
+
+
 def _load_json(path: Path) -> Dict[str, object]:
     """A JSON object from disk; raises ValueError with a one-line reason."""
     if not path.is_file():
@@ -184,11 +252,25 @@ def _load_json(path: Path) -> Dict[str, object]:
     return doc
 
 
+def _surface_paths(args: argparse.Namespace, doc: Dict[str, object]) -> tuple:
+    """`(rubric, spec, spec_dark)` paths: the flags when given, else what a web-page metrics doc was measured against.
+
+    A web-app document (no `surface`) keeps the defaults (`design.rubric.toml`, `~/.claude/design*.md`).
+    """
+    web = doc.get("surface") == measure_web.SURFACE
+    rubric = Path(args.rubric) if getattr(args, "rubric", None) else (
+        Path(str(doc.get("rubric_path") or measure_web.WEB_RUBRIC)) if web else None)
+    spec = Path(args.spec) if getattr(args, "spec", None) else (
+        Path(str(doc.get("spec_path") or measure_web.WEB_SPEC)) if web else None)
+    spec_dark = Path(args.spec_dark) if getattr(args, "spec_dark", None) else (spec if web else None)
+    return rubric, spec, spec_dark
+
+
 def _evaluate_file(metrics_path: Path, args: argparse.Namespace) -> Dict[str, object]:
-    rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
     doc = _load_json(metrics_path)
-    specs = rubric_mod.load_specs(Path(args.spec) if args.spec else None,
-                                  Path(args.spec_dark) if args.spec_dark else None)
+    rubric_path, spec, spec_dark = _surface_paths(args, doc)
+    rb = rubric_mod.load_rubric(rubric_path)
+    specs = rubric_mod.load_specs(spec, spec_dark)
     out = evaluate.evaluate(doc, rb, specs)
     out["source"] = str(metrics_path)
     return out
@@ -236,8 +318,8 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 def cmd_judge_prompt(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     try:
-        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
         doc = _load_json(run_dir / "metrics.json")
+        rb = rubric_mod.load_rubric(_surface_paths(args, doc)[0])
     except rubric_mod.RubricError as exc:
         print(f"ERROR=rubric: {exc}")
         return 2
@@ -265,8 +347,8 @@ def cmd_judge_merge(args: argparse.Namespace) -> int:
     metrics_path = run_dir / "metrics.json"
     evaluate_path = run_dir / "evaluate.json"
     try:
-        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
         metrics = _load_json(metrics_path)
+        rb = rubric_mod.load_rubric(_surface_paths(args, metrics)[0])
         if evaluate_path.is_file():
             ev_doc = _load_json(evaluate_path)
         else:
@@ -517,6 +599,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "surface as a screen ([design.review.e2e], default `-m pytest tests/e2e`). Without --url it implies "
                         "--synthetic (the walk never touches the live app), and the target's working tree is restored afterwards")
     m.set_defaults(fn=cmd_measure)
+    _add_web_parser(sub)
 
     e = sub.add_parser("evaluate", help="rule results + category grades from a metrics.json, as JSON")
     e.add_argument("metrics", help="path to a metrics.json written by `measure`")

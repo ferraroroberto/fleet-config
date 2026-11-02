@@ -25,7 +25,7 @@
 # value. Bump [meta].version on any rule or question change.
 
 [meta]
-version = "1.0.0"
+version = "1.1.0"
 seeded_from = "robertoferraro.net static rebuild, 2026-11-01"
 
 [weights]
@@ -412,23 +412,36 @@ fix_template = "Beside the description on {page}, a {value}px blank stretch open
 mockup = "none"
 devices = ["desktop"]
 
+[[rules]]
+id = "WEB-LAYOUT-06"
+category = "layout"
+title = "Portraits in a list differ in size or radius, or sit off their name's top"
+metric = "page.portrait_misaligned_count"
+fail_when = "gt"
+threshold = 0
+severity = "P3"
+owner = "app"
+standard = "design.web.md Images: portraits are square sources rounded by CSS, one size and radius in a list, top level with the name (±4px)"
+fix_template = "{count} portraits on {page} break the row ({sample}); give them one size and radius and align their tops with the name."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Components
 
 [[rules]]
 id = "WEB-COMP-01"
 category = "components"
-title = "A carousel shows a partial card on desktop, or not exactly three whole cards"
+title = "A carousel shows a partial card, or not three whole cards on desktop and one plus the next card's edge on a phone"
 metric = "page.carousel_partial_card_count"
 fail_when = "gt"
 threshold = 0
 severity = "P2"
 owner = "scaffold"
 adopt = "vendor the scaffold's site carousel"
-standard = "design.web.md Carousel: whole cards only, three from 1024px; NNg carousels"
-fix_template = "{count} carousels on {page} show a partial card at {device}; size cards with grid-auto-columns, not fixed widths."
+standard = "design.web.md Carousel: whole cards only, three from 1024px, on a phone one card with the next card's edge; NNg carousels"
+fix_template = "{count} carousels on {page} break the whole-card rule at {device} ({sample}); size cards with grid-auto-columns, not fixed widths."
 mockup = "none"
-devices = ["desktop"]
+devices = ["phone", "desktop"]
 
 [[rules]]
 id = "WEB-COMP-02"

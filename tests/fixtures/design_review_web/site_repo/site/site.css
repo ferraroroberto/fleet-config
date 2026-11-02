@@ -1,0 +1,41 @@
+:root { --gap: 24px; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 18px/1.6 sans-serif; color: #111111; background: #ffffff; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 8px; top: 8px; }
+.site-header { position: sticky; top: 0; height: 64px; background: #ffffff; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 16px; z-index: 10; }
+.logo { display: inline-block; min-height: 48px; padding: 12px 0; color: #111111; }
+.menu-toggle { width: 48px; height: 48px; }
+.site-nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; }
+.site-nav a { display: block; min-height: 48px; min-width: 48px; padding: 12px; color: #111111; }
+@media (max-width: 767px) {
+  .site-nav { display: none; position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: #ffffff; overflow: auto; }
+  .menu-open .site-nav { display: block; }
+  .site-nav ul { display: block; }
+  .site-nav a { min-height: 56px; }
+}
+@media (min-width: 768px) { .menu-toggle { display: none; } }
+/* The known-bad header: backdrop-filter makes it the containing block of the fixed menu panel. */
+.site-header.frosted { backdrop-filter: blur(8px); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; container-type: inline-size; }
+section { padding: 32px 0; }
+p { max-width: 34em; }
+.row { display: grid; gap: var(--gap); }
+@media (min-width: 768px) { .row { grid-template-columns: min(520px, calc((100cqi - var(--gap)) / 2)) 1fr; } }
+/* The known-bad row: a fixed max track grows to 520px before 1fr gets anything (152px of text at 800px). */
+.wrap.wide-gutter { padding: 0 52px; }
+@media (min-width: 768px) { .row.fixed-track { grid-template-columns: minmax(0, 520px) 1fr; } }
+img { display: block; max-width: 100%; height: auto; }
+.carousel { display: grid; grid-auto-flow: column; grid-auto-columns: 82%; gap: var(--gap); overflow-x: auto;
+  scroll-snap-type: x mandatory; }
+@media (min-width: 640px) { .carousel { grid-auto-columns: calc((100% - var(--gap)) / 2); } }
+@media (min-width: 1024px) { .carousel { grid-auto-columns: calc((100% - 2 * var(--gap)) / 3); } }
+/* The known-bad carousel: fixed card widths leave a partial card at 1440px. */
+.carousel.fixed-cards { grid-auto-columns: 400px; }
+.card { scroll-snap-align: start; }
+.card h3 { margin: 12px 0 0; }
+.swipe-nav { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.swipe-nav button { width: 48px; height: 48px; }
+.site-footer { background: #333333; color: #ffffff; padding: 24px 16px; }
+.site-footer a { color: #ffffff; display: inline-block; min-height: 48px; padding: 12px 0; }

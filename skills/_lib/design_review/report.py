@@ -226,6 +226,10 @@ def finding_values(rule: dict, doc: Optional[dict] = None) -> Dict[str, object]:
     value = _compact(worst.get("value"))
     out.update({"screen": worst.get("screen"), "value": value, "share": value, "items": items,
                 "screens_failing": len(rule.get("evidence") or [])})
+    # `{page}` and `{device}`: the worst screen's view and viewport (the web-page templates name the URL).
+    shown = next((s for s in doc.get("screens") or [] if isinstance(s, dict) and s.get("id") == worst.get("screen")), None)
+    if shown:
+        out.update({k: shown[src] for k, src in (("page", "view"), ("device", "device")) if shown.get(src)})
     out["count"] = _compact(facts["count"]) if "count" in facts else value
     if "total" in facts:
         out["total"] = _compact(facts["total"])

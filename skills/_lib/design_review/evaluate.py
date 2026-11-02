@@ -634,6 +634,16 @@ def _section_reason(m: dict, section: str) -> str:
     return f"section {section}: {err}" if err else f"section {section}: metric missing"
 
 
+def _metric_error(m: dict, path: str) -> Optional[str]:
+    """The reason a measurement left on the metric itself (`{"error": ...}` at its leaf), else None."""
+    node: object = m
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return str(node["error"]) if isinstance(node, dict) and "error" in node else None
+
+
 def read_metric(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     """`(value, sample items, unmeasured reason, facts)` for one rule on one screen."""
     if rule.metric in DERIVED:
@@ -642,6 +652,9 @@ def read_metric(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     value = measure.metric_value(m, rule.metric)
     section = rule.metric.split(".", 1)[0]
     if value is None:
+        stated = _metric_error(m, rule.metric)
+        if stated:
+            return None, [], f"{rule.metric}: {stated}", {}
         if section in measure.section_errors(m):
             return None, [], _section_reason(m, section), {}
         # A null aggregate over an empty population (`targets.primary_min_height`
@@ -658,6 +671,9 @@ def read_metric(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
         items = _SAMPLE_SOURCES[rule.metric](m)
     elif isinstance(value, list):
         items, value = list(value), float(len(value))
+    else:
+        # A numeric metric may name what set it in a sibling `<metric>_items` list (the web-page spread metrics).
+        items = list(measure.metric_value(m, rule.metric + "_items") or [])
     if isinstance(value, bool):
         value = 1.0 if value else 0.0
     if not isinstance(value, (int, float)):
@@ -917,6 +933,8 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "metrics_rubric_version": doc.get("rubric_version"),
         "base_url": doc.get("base_url"),
         "mode": doc.get("mode") or "live",
+        # A web-page run says so, and whether the user-scope spec copy was there to confirm.
+        **{k: doc[k] for k in ("surface", "spec_user_scope") if doc.get(k)},
         # `measure --e2e`: the suite's outcome rides through to the report and the ledger; a plain run has none.
         **({"e2e": doc["e2e"]} if doc.get("e2e") is not None else {}),
         "synthetic_declared": isinstance((doc.get("review") or {}).get("synthetic"), dict),

@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: Review a running fleet web app's rendered design — real-browser measurement (phone/desktop, light/dark), rubric score, fresh-context judge, ledger diff, HTML now-vs-proposed mock-up report. `file` upserts the managed issue, `fleet` sweeps all apps, `full-app` runs the whole-app redesign. Never starts/restarts/kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
+description: Review a running fleet web app's rendered design — real-browser measurement (phone/desktop, light/dark), rubric score, fresh-context judge, ledger diff, HTML now-vs-proposed mock-up report. `file` upserts the managed issue, `fleet` sweeps all apps, `full-app` runs the whole-app redesign; a static web page is measured against its own preview at 390/800/1440 px. Never starts/restarts/kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
 ---
 
 # design-review
@@ -100,6 +100,10 @@ is this repo's venv Python on the package directory:
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/design_review <cmd> ...
 ```
+
+**A web page (static site)?** Run `ux_surface.py applies <repo root>` first.
+`SPEC_KIND=web-page` → **read [web-page.md](web-page.md)**: `measure-web`
+replaces steps 1 and 2, then steps 3–7 run unchanged on its run directory.
 
 ### 1. Pre-flight — is the app listening?
 
@@ -390,6 +394,8 @@ write-back) live there.
 
 - **Never start, restart or kill anything.** A dead port ends the run at
   step 1 with the target `CLAUDE.md`'s restart pointer; the user runs it.
+  The one exception is web-page mode's own static preview: `measure-web`
+  starts it on a free port and stops only the PID it started.
 - **Read-only walk, loopback only.** No form submits, no destructive
   clicks beyond the target's own opt-in `extra_steps` and the one built-in
   click, the header **Settings gear** (#1217: the `home-head` button named
