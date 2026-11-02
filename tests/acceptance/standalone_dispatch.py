@@ -776,6 +776,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "library code, drive-path literal or raw git spawn fails naming the "
      "file and the rule and reverting passes, an unparseable tracked file "
      "is exit 3"),
+    ("runtime_write_ratchet_gate", "acceptance/runtime_write/test_runtime_write_ratchet_gate.py",
+     "the runtime write ratchet stage's exit-code mapping for the static "
+     "check, the snapshot and the probe -- 3 (could not establish) fails as "
+     "NOT CONFIRMED instead of landing in SKIP the way `shared.SKIP_EXIT` "
+     "would read it -- and the acceptance criteria on a throwaway git tree: "
+     "a new write resolving under a code folder fails naming the file and "
+     "reverting passes, a file the run left under a code folder fails the "
+     "probe, a probe without its snapshot is exit 3"),
     ("skip_delta", "chief_ops/test_skip_delta.py",
      "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
      "parsing, the count fact and the set fact carrying separate unknowns, "

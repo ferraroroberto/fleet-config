@@ -211,17 +211,19 @@ class _Checker:
 
 def run_ratchet_script(
     script: Path, timeout_s: int, classify: Callable[[int], Tuple[bool, str]],
+    args: Tuple[str, ...] = (),
 ) -> Tuple[int, int]:
     """Run one vendored ratchet script and report it as one check.
 
-    `classify` maps the exit code to `(ok, label)`. A run that times out or
+    `args` are passed through (a mode flag such as `--probe FILE`); `classify`
+    maps the exit code to `(ok, label)`. A run that times out or
     cannot start is exit 3 (NOT CONFIRMED), the state the ratchets use for "the
     facts could not be established", so it fails and is never a skip.
     """
     check = _Checker()
     try:
         proc = subprocess.run(
-            [sys.executable, str(script)],
+            [sys.executable, str(script), *args],
             cwd=REPO, capture_output=True, text=True, encoding="utf-8",
             errors="replace", stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
             timeout=timeout_s, check=False,

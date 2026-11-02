@@ -24,7 +24,8 @@ issue-reference-in-comment ratchet (`comment_ratchet_gate`), the instruction-fil
 lint ratchet (`instruction_ratchet_gate`), the stale-doc-reference ratchet
 (`doc_refs_ratchet_gate`), the unreferenced-definition ratchet
 (`dead_code_ratchet_gate`), the fleet-convention rule ratchet
-(`conventions_ratchet_gate`), the
+(`conventions_ratchet_gate`), the runtime-write ratchet and the snapshot/probe
+bracket around the whole run (`runtime_write/runtime_write_ratchet_gate`), the
 fleet-scope enumeration guard (`fleet_scope_guard`), the foreign-tool-id-leak
 scanner (`tool_id_leak_scanner`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
@@ -165,6 +166,11 @@ from acceptance.doc_refs_ratchet_gate import _doc_refs_ratchet_check  # noqa: E4
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
 from acceptance.instruction_ratchet_gate import _instruction_delta_check, _instruction_ratchet_check  # noqa: E402
+from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
+    _runtime_write_probe_check,
+    _runtime_write_ratchet_check,
+    _runtime_write_snapshot_check,
+)
 from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
 from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
@@ -181,7 +187,7 @@ from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 _RATCHET_CHECKS = (
     _static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check, _comment_ratchet_check,
     _instruction_ratchet_check, _instruction_delta_check, _doc_refs_ratchet_check, _dead_code_ratchet_check,
-    _conventions_ratchet_check,
+    _conventions_ratchet_check, _runtime_write_ratchet_check,
 )
 # One named home per shared behaviour, no private copies: the single-home scan and
 # the git global-option walk it points at. The dead-function scan keeps the home
@@ -489,11 +495,15 @@ def main() -> int:
 def _run_all() -> int:
     seed_fleet_list_env()
     tally = _Tally()
+    # The runtime write bracket spans every check, so a log or state file any of
+    # them leaves under a code folder fails the probe by name.
+    tally.run_unit(_runtime_write_snapshot_check)
     _run_hook_checks(tally)
     _run_guard_checks(tally)
     _run_suite_checks(tally)
     _run_repo_guards(tally)
     _run_wiring_checks(tally)
+    tally.run_unit(_runtime_write_probe_check)
 
     print()
     print(f"Total: {tally.total} | Failed: {tally.failures} | Skipped: {tally.skipped}")
