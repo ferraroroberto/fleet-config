@@ -203,6 +203,21 @@ read.
     is noted in the detail for a fix upstream in project-scaffolding, and
     never changes the status. NA when nothing is declared; an unreadable
     `.fleet.toml` FAILs.
+  - **page-foot** — every web app mounts the one vendored build footer from
+    project-scaffolding's `_vendored/page-foot`, and carries no private build
+    line. WARN `no _vendored/page-foot` while an app has not adopted it (the
+    detail adds the `file:line` of a hand-rolled `Build: …` line when one
+    exists), and WARN when the component is vendored but never mounted
+    (`<footer class="page-foot">`) or never filled by `buildReadoutText()`.
+    FAIL when a hand-rolled build line, a private `fmtBuildTime`, or a second
+    `page-foot` element sits beside the vendored footer: adopting the
+    component means deleting the private copy. A `'Build: unknown'` fallback
+    written into the vendored element is not a second line. App-authored
+    HTML/JS only: comments, the `_vendored/page-foot/` copy and third-party
+    `vendor/` bundles are not hits. NA without an `index.html`. WARN, not FAIL,
+    for a missing footer follows the other adoption contracts (text-size,
+    range-tab): the weekly sweep reports it per app without a FAIL flood while
+    each app adopts in its own issue.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original

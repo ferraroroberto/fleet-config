@@ -299,6 +299,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "design_lint's vendored byte-compare, sibling duplicate detection, "
      "shipped-spec smoke, accepted exceptions and the retired range-tab "
      "are testable on their own (fleet-config#836, #1407)"),
+    ("design_lint_page_foot", "design_lint/test_page_foot_contract.py",
+     "design_lint's page-foot contract -- a conforming app, a missing "
+     "vendored footer, a hand-rolled second build line and an unmounted "
+     "or unfilled footer -- is testable on its own"),
     ("design_lint_web_page", "design_lint/test_web_page.py",
      "design_lint's web-page surface -- design.web.md token names, the "
      "web-page contract set, no PWA rows, and a missing spec reported as "
