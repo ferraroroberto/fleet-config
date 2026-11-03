@@ -620,6 +620,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "refused with REFUSED=wave-running while one holds the claim, the "
      "holder may re-acquire and release, a claim past its TTL is reclaimable, "
      "and an unreadable claim reports unknown instead of free"),
+    ("vendored_primaries", "repo/test_vendored_primaries.py",
+     "landing a fleet primary after a wave and restarting what serves it -- "
+     "a repo with a declared restart recipe is landed then restarted, one "
+     "without (or the hub and session-host ports) is reported stale and never "
+     "restarted, a down or unknown service and a failed restart are their own "
+     "states, and the wave report carries one STALE_PRIMARIES= line"),
     ("vendored_ignore", "repo/test_vendored_ignore.py",
      "the generated .ignore block that hides vendored copies from agent "
      "search -- built from the [vendored] dest paths, hand-written lines kept, "

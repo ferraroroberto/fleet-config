@@ -260,7 +260,7 @@ off scaffold commit <scaffold-sha> (short: <shortsha>), as ONE change and ONE PR
 <one line per plan component: name, action, scaffold-src, dest-path, old sha -> new sha>
 Working tree: <path>. Branch: <branch>.
 You are the only agent touching this checkout. Steps 2a-4 run once per component
-above; steps 5-8 run once for the whole repo.
+above; steps 5-7 run once for the whole repo.
 
 1. cd to <path>. Confirm you are on the branch (cut it if MODE was primary
    and it doesn't exist yet: `git checkout -b <branch>` off fresh origin/main).
@@ -319,22 +319,22 @@ above; steps 5-8 run once for the whole repo.
    past a red gate/CI.
    **In `MODE=worktree`, drop `--delete-branch`** — from a worktree its local
    half fails (`'main' is already used by worktree at <primary>`). Once merged:
-   `remove-worktree <worktree-path>`, then land the primary so the re-vendor is
-   actually live there —
-   `worktree_claim.py land-primary E:\automation\<repo> <worktree_key>`
-   — and report its `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line.
+   `remove-worktree <worktree-path>`, then land the primary and restart what serves it, one command —
+   `primaries.py land <repo> --issue <worktree_key>`
+   (`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/primaries.py`)
+   — and report its `<repo>: PRIMARY=...` line verbatim. It lands through the untrack guard, then runs the repo's declared
+   `restart_cmd` only when the service was up and the tree moved. The hub (:8000) and the session host (:8446)
+   print `PRIMARY=stale reason=owner-restart`, a service with no `restart_cmd` prints `no-restart-recipe`: report
+   those as stale, never restart them by hand.
    Then delete the refs explicitly: `git push origin --delete <branch>`, and the
    local ref with `-D` **only after** confirming the tip landed in
    `origin/<default>` (`git diff --quiet origin/<default> <branch>`). `-d` fails
    here by design — a squash merge rewrites the SHA (fleet-config#647).
 
-8. If this repo has a tray (hooks/projects.toml tray_cmd/restart_cmd), restart
-   it per that repo's CLAUDE.md recipe — only if the merge landed.
-
 Report back, in this exact shape:
   - Repo: <repo>
   - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several)
-  - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
+  - Primary: PRIMARY=live behind=0 [restarted=yes build=<sha>] | PRIMARY=stale reason=<why> | n/a (primary mode)
   - Branch: <branch>
   - Gate: PASS | FAIL (<reason>) | NOT CONFIRMED (<reason>)   (+ the `LEDGER=recorded` line)
   - Result: MERGED (<merge-sha>) | PR-OPEN (<url>, gate/CI pending) | BLOCKED (<reason>)
@@ -375,6 +375,7 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
             catalog: <c> components known | NOT KNOWN — carrier detection did not run (<reason>)
             contract: <j> adopter(s) held for removed selectors: <repo/component, or "none">
             .ignore: <n> repo(s) not current after the wave: <repo: state, or "none">
+            primaries: <the one STALE_PRIMARIES= line from `primaries.py stale`, run after the last agent returned>
 
   no per-repo issues filed (by design — see the scaffold record).
 ```
