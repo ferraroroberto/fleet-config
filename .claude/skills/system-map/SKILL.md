@@ -46,7 +46,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/bu
 E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap. `build_data.py --coupling` lists each cross-repo reference a card's `depends_on` does not declare; report its count too.
+A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap. Then run `build_data.py --coupling`: it lists each cross-repo reference a card's `depends_on` does not declare, each repo it could not scan and each refused card, and **exits 1 on any of them, which is a failure of this run** — name them in the step-7 report with the counts. The fix is in the owning repo's `.fleet.toml` (`depends_on`, or a reviewed `ignore_refs` entry), never a skipped check.
 
 The `system_map:` checks fail if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree. Fix any failure before rendering.
 

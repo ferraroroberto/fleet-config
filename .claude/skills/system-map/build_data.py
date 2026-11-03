@@ -49,7 +49,9 @@ stderr); the regenerated file then carries that repo's residual fallback card.
 
 ``--coupling`` prints every reference a repo's committed tree makes to another
 fleet repo (sibling path or loopback port) that its ``depends_on`` does not
-declare, skipping the paths its ``ignore_refs`` lists. It is a report and exits 0.
+declare, skipping the paths its ``ignore_refs`` lists. It exits 1 on an undeclared
+reference, a repo it could not scan, or a card refused by ``build`` (its
+``depends_on`` is unread).
 """
 
 from __future__ import annotations
@@ -317,16 +319,25 @@ def coupling(data: dict, repos: dict[str, Path]) -> dict[str, dict[str, str] | N
 
 
 def _print_coupling(projects_toml: Path = PROJECTS_TOML) -> int:
+    """Print the coupling report; 1 on any undeclared reference, unscanned repo
+    or refused card (a refused card's ``depends_on`` is never read, so its repo
+    is unchecked, not clean)."""
     repos = fleet_repos(projects_toml)
-    report = coupling(build(load_residual(), repos), repos)
+    refused: list[str] = []
+    report = coupling(build(load_residual(), repos, refused), repos)
+    for reason in refused:
+        print(f"COUPLING CARD REFUSED: {reason} Its depends_on was not read.")
     for name, refs in report.items():
         if refs is None:
             print(f"COUPLING {name}: NOT SCANNED (no default ref or git grep failed)")
         for target, where in sorted((refs or {}).items()):
             print(f"COUPLING {name} -> {target} ({where}) undeclared")
     pairs = sum(len(r or {}) for r in report.values())
-    print(f"build_data: {pairs} undeclared reference(s) across {len(report)} repo(s).")
-    return 0
+    offenders = sum(1 for r in report.values() if r)
+    unscanned = sum(1 for r in report.values() if r is None)
+    print(f"build_data: {pairs} undeclared reference(s) in {offenders} of {len(report)} repo(s); "
+          f"{unscanned} not scanned; {len(refused)} card(s) refused.")
+    return 1 if pairs or unscanned or refused else 0
 
 
 def main(argv: list[str] | None = None) -> int:

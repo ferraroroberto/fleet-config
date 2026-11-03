@@ -4,13 +4,15 @@ dotted map edges, the generated contracts page, and the coupling scan.
 
 Hard: every input is a fixture or this repo's own committed files, so a
 sibling repo's commit can never turn it red. The fleet-wide coupling report
-is `build_data.py --coupling`, run by `/system-map`, not here.
+is `build_data.py --coupling`, run by `/system-map`, not here; only its exit-code logic is checked here.
 
 Not in `architecture_guards.py`: that file is near the structure limit.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 import subprocess
 import sys
@@ -128,6 +130,30 @@ def _ignore_refs_checks(check: _Checker, bd, fc, base: dict, known: set, plain: 
         bd.read_fleet_toml = real_read
 
 
+def _coupling_exit_checks(check: _Checker, bd) -> None:
+    """`--coupling` exits 1 on an undeclared reference, an unscanned repo or a
+    refused card, and 0 only when every repo was scanned clean."""
+    saved = (bd.fleet_repos, bd.build, bd.coupling)
+    try:
+        bd.fleet_repos = lambda _toml=None: {}
+        for label, report, refused, want in (
+            ("a clean fleet", {"a": {}, "b": {}}, [], 0),
+            ("an undeclared reference", {"a": {"b": "x.py:1"}, "b": {}}, [], 1),
+            ("a repo that could not be scanned", {"a": {}, "b": None}, [], 1),
+            ("a refused card", {"a": {}, "b": {}}, ["b: description too long."], 1),
+        ):
+            bd.build = lambda _res, _repos, out, refused=refused: out.extend(refused) or {}
+            bd.coupling = lambda _data, _repos, report=report: report
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = bd._print_coupling()
+            check(f"fleet_contracts: --coupling exits {want} on {label}", code == want, out.getvalue())
+        text = out.getvalue()
+        check("fleet_contracts: the --coupling summary names what it counts",
+              "undeclared reference(s) in 0 of 2 repo(s); 0 not scanned; 1 card(s) refused" in text, text)
+    finally:
+        bd.fleet_repos, bd.build, bd.coupling = saved
+
+
 def _fleet_contracts_check() -> Tuple[int, int]:
     """Contract keys validate, refuse a bad dependency by name, and render."""
     check = _Checker()
@@ -201,4 +227,5 @@ def _fleet_contracts_check() -> Tuple[int, int]:
           "regenerate: E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py")
 
     _coupling_fixture(check, fc)
+    _coupling_exit_checks(check, bd)
     return check.failures, check.total
