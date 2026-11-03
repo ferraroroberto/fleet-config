@@ -253,6 +253,11 @@ Subcommands
       `worktree_claim.remove_worktree` and `orphan-empty` via `rmdir`, and a
       folder that will not go stays and is reported (exit 1). Never kills a
       process. The logic lives in `skills/_lib/chief/chief_sweep.py`.
+      Without `--root` it also lists every fleet primary behind
+      `origin/<default>` (one `BEHIND`/`UNKNOWN` line each, fetched fresh) and a
+      `STALE_PRIMARIES=` summary, so a primary left behind by a wave stays
+      visible until it is live (fleet-config#1798). Read-only; landing is
+      `skills/_lib/vendored_wave/primaries.py land`.
 
   plan <show|lane|drop-lane|add|set|move|remove|wait|ask|unwait|clear> ...
       The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the

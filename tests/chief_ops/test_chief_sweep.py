@@ -234,6 +234,19 @@ try:
     check(code == 0 and "in-use       work-wt-7" in text and "SUMMARY" in text and "read-only" in text,
           "CLI: read-only sweep prints one line per worktree plus a SUMMARY")
     check((TMP / "work-wt-20").exists(), "CLI: read-only touches nothing")
+    check("STALE_PRIMARIES" not in text, "CLI: a --root scan never reads the fleet's primaries")
+
+    saved_root, saved_stale = cs.default_root, co.commands.primaries.stale_lines
+    cs.default_root = lambda: TMP
+    co.commands.primaries.stale_lines = lambda: ["BEHIND x  2 commit(s) behind origin", "STALE_PRIMARIES=1: x"]
+    try:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = co.main(["sweep"])
+    finally:
+        cs.default_root, co.commands.primaries.stale_lines = saved_root, saved_stale
+    check(code == 0 and out.getvalue().rstrip().endswith("STALE_PRIMARIES=1: x") and "SUMMARY" in out.getvalue(),
+          "CLI: the real sweep ends with the behind-primaries listing and its STALE_PRIMARIES= line")
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):

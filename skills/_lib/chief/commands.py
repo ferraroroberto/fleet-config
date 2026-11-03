@@ -30,6 +30,7 @@ import gate_evidence
 import owner_check
 from fleet_core import hooks_state
 from no_window import NO_WINDOW
+from vendored_wave import primaries
 import worktree_claim
 # `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
@@ -769,4 +770,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         cards or [], managed, launcher.fetch_issue_state,
     )
     print("\n".join(chief_sweep.format_report(findings, sessions, applied=args.apply)))
+    if not args.root:
+        # A `--root` run is a synthetic scan; the fleet's primaries are only read for the real one.
+        print("\n".join(primaries.stale_lines()))
     return 1 if stuck else 0

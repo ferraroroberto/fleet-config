@@ -626,10 +626,23 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
     machine are confirmation-gated and operator-owned; this stops *creating*
     the skew and says what unblocks it.
     """
-    repo = _resolve_repo(args.repo_root)
+    code, lines = land_primary(_resolve_repo(args.repo_root), args.issue)
+    for line in lines:
+        print(line)
+    return code
+
+
+def land_primary(repo: Path, issue: str,
+                 service: Optional[Tuple[bool, str]] = None) -> Tuple[int, List[str]]:
+    """The body of `land-primary`: `(exit_code, stdout_lines)`, nothing printed.
+
+    `service` replaces the live-service guard's verdict for a caller that owns
+    the restart itself (`vendored_wave/primaries.py`): landing then restarts
+    straight away, so the mixed-commit window the guard exists to refuse is
+    one command long. `None` probes the machine, exactly as the CLI does.
+    """
     if not _is_primary_checkout_safe(repo):
-        print(f"PRIMARY=stale reason=not a primary checkout: {repo}")
-        return 2
+        return 2, [f"PRIMARY=stale reason=not a primary checkout: {repo}"]
     lock = lock_dir_for(repo)
     holder = read_meta(lock) if lock.exists() else None
     dirty = bool(_git(repo, "status", "--porcelain").stdout.strip())
@@ -637,27 +650,22 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
     ref = main_ref(repo)                                   # e.g. 'origin/main'
     main_branch = ref.split("/", 1)[1] if "/" in ref else ref
     behind = count_behind(repo, ref)
-    ok, reason = land_primary_check(holder, args.issue, dirty, current, main_branch,
-                                    behind, service_state(repo))
+    ok, reason = land_primary_check(holder, issue, dirty, current, main_branch,
+                                    behind, service if service is not None else service_state(repo))
     if not ok:
-        print(format_primary_state(False, reason))
-        return 1
+        return 1, [format_primary_state(False, reason)]
     if behind == 0:
         # Nothing to fast-forward -- the tree is already what the merge
         # produced, so there is no pull to run and no service to skew.
-        print(format_primary_state(True, reason, 0))
-        return 0
+        return 0, [format_primary_state(True, reason, 0)]
     # A plain `pull --ff-only` deletes every live file the merge untracks,
     # ignored or not -- the guard keeps and reports them.
     ff = guarded_fast_forward(repo, ref)
     if not ff.ok:
-        print(format_primary_state(False, f"fast-forward failed: {ff.detail}"))
-        return 1
+        return 1, [format_primary_state(False, f"fast-forward failed: {ff.detail}")]
     behind = count_behind(repo, ref, fetch=False)           # count_behind fetched above
-    print(format_primary_state(True, reason, behind))
-    for line in untrack_report_lines(ff):
-        print(line)
-    return 0 if behind == 0 else 1
+    lines = [format_primary_state(True, reason, behind), *untrack_report_lines(ff)]
+    return (0 if behind == 0 else 1), lines
 
 
 def cmd_mode(args: argparse.Namespace) -> int:
