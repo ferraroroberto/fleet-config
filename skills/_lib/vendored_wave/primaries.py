@@ -13,7 +13,7 @@ Per repo, one line:
   PRIMARY=live behind=0 restarted=yes build=<h>  landed, restarted, live build equals HEAD
   PRIMARY=stale reason=owner-restart             the hub (:8000) and the session host (:8446)
                                                  are never restarted here; the owner does it
-  PRIMARY=stale reason=no-restart-recipe         a service is declared but no `restart_cmd`
+  PRIMARY=stale reason=no-restart-recipe         a service is declared but neither `restart_cmd` nor `api_version_path`
   PRIMARY=stale reason=<guard or restart detail> dirty tree, off main, claim held, restart
                                                  failed or its build identity not confirmed
 
@@ -77,7 +77,9 @@ def recipe_kind(tbl: Mapping[str, object], never_kill: frozenset) -> str:
         return OWNER
     if not tbl.get("tray_cmd"):
         return NO_SERVICE
-    return RESTART if tbl.get("restart_cmd") else NO_RECIPE
+    # restart_and_verify_webapp.py relaunches `tray_cmd` when there is no `restart_cmd`, and
+    # confirms the build through `api_version_path`; both together are a recipe it can run.
+    return RESTART if tbl.get("restart_cmd") or tbl.get("api_version_path") else NO_RECIPE
 
 
 def service_verdict(kind: str, probe: str, detail: str) -> Tuple[bool, str]:
