@@ -1010,7 +1010,16 @@ hand-picked per app.
   (the mic is open): "Record" in sentence case, then a danger "Stop" with
   the timer and level meter, then the one disabled recipe while finishing.
   The pulse animates only while live, and the meter is a `neutral-soft`
-  track with an `accent` fill, never a green-to-red gradient. Red at rest
+  track with an `accent` fill, never a green-to-red gradient. The level
+  meter is the vendored **`rec-wave`** component from project-scaffolding
+  (`attachRecWave(host, stream, opts)`), never a per-app meter: it mounts on
+  the recorder's existing stream (no second mic prompt), replaces the record
+  glyph inside the button while live and returns the glyph on stop. It has
+  four states: **live** (bars follow the input level, with the elapsed
+  `m:ss`), **silent** (about 1.5 s of near-silence: bars flat and dimmed),
+  **reduced-motion** (`prefers-reduced-motion` shows one level meter instead
+  of moving bars) and **unmeasured** (no `AudioContext`, or one that is not
+  running: the timer alone, never reported as silent). Red at rest
   is status colour as decoration ("modes are not alarms", the status chip).
   Its mode toggles (Append, Incognito) are labelled pills beside or under
   it, never glyph-only (voice-transcriber#262, owner decision 1 on #260).
