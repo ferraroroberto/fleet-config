@@ -150,6 +150,8 @@ Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatc
 - Per-project *instances* (real script names, paths) stay in the project's own CLAUDE.md; the reusable *concept* goes to scaffolding.
 - Check for an existing `project-scaffolding` issue first; otherwise file one (master's template + label + `--assignee @me`).
 - If asked, draft the master change on a proper branch via its draft-PR pipeline, one issue per branch.
+- Standing architecture decisions live in `project-scaffolding`'s `docs/architecture-decisions.md`: read it before a design choice, and file a new fleet-wide decision as an `adr` issue there and add it to the register.
+- A convention that can be checked mechanically is enforced by a ratchet from the scaffold family, never a one-off check (the rule and the shared contract are in that register).
 
 ### Every repo carries a `.fleet.toml`
 
