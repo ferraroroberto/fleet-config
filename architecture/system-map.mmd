@@ -14,6 +14,7 @@ flowchart LR
     voice_transcriber["🎙️ voice-transcriber"]
     photo_ocr["📷 photo-ocr"]
     app_launcher_lite["🚀 App Launcher Lite"]
+    fleet_config_lite["🧰 Fleet Config Lite"]
     local_llm_hub_lite["🧠 Local LLM Hub Lite"]
   end
   subgraph web["Web"]
@@ -27,7 +28,8 @@ flowchart LR
     vibe_coding_workshop["🎓 vibe-coding-workshop"]
     life_os["🌱 life-os"]
     home_automation["🌡️ home-automation"]
-    github_copilot_usage["📶 github-copilot-usage"]
+    github_copilot_usage["📊 github-copilot-usage"]
+    folder_explorer["🗂️ folder-explorer"]
     parking_manager["🅿️ parking-manager"]
     robertoferraro["🪞 robertoferraro"]
     task_os["✅ task-os"]
@@ -82,10 +84,37 @@ flowchart LR
   app_launcher -.-> task_os
   app_launcher -.-> life_os
   app_launcher -.-> fleet_config
+  app_launcher -.-> automation
+  app_launcher -.-> content_management
   local_llm_hub -.-> voice_transcriber
   local_llm_hub -.-> automation
   local_llm_hub -.-> project_scaffolding
+  voice_transcriber -.-> local_llm_hub
+  photo_ocr -.-> local_llm_hub
+  photo_ocr -.-> project_scaffolding
+  app_launcher_lite -.-> app_launcher
+  grocery_shopping_automation -.-> local_llm_hub
+  grocery_shopping_automation -.-> voice_transcriber
+  whatsapp_radar -.-> home_automation
+  whatsapp_radar -.-> local_llm_hub
+  whatsapp_radar -.-> project_scaffolding
+  whatsapp_radar -.-> task_os
+  facilitation_suite -.-> local_llm_hub
   life_os -.-> app_launcher
   life_os -.-> local_llm_hub
   life_os -.-> email_archiver
   life_os -.-> fleet_config
+  home_automation -.-> local_llm_hub
+  home_automation -.-> project_scaffolding
+  home_automation -.-> voice_transcriber
+  folder_explorer -.-> project_scaffolding
+  parking_manager -.-> fleet_config
+  task_os -.-> email_archiver
+  task_os -.-> local_llm_hub
+  task_os -.-> voice_transcriber
+  accounting_quarterly -.-> local_llm_hub
+  content_management -.-> local_llm_hub
+  copilot_studio_transcripts -.-> local_llm_hub
+  automation -.-> fleet_config
+  minecraft_bedrock_bot -.-> local_llm_hub
+  oracle_to_gcp -.-> local_llm_hub

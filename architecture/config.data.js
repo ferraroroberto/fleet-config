@@ -50,7 +50,7 @@ window.CONFIG = {
     },
     {
       "cls": "Design system",
-      "sub": "design.md + design.dark.md",
+      "sub": "design.md + design.dark.md + design.web.md",
       "cells": {
         "claude": "~/.claude/design.md",
         "codex": "via ~/.claude",
@@ -436,6 +436,13 @@ window.CONFIG = {
       "ds": "Enforce the project's `.venv` discipline."
     },
     {
+      "nm": "ui_proof_merge_guard",
+      "ev": "PreToolUse · Bash·PowerShell",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Refuse `gh pr merge` on a UX diff that has no `.proof/&lt;PR&gt;/index.html` (fleet-config#1768)."
+    },
+    {
       "nm": "context_filter_hook",
       "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
@@ -580,10 +587,6 @@ window.CONFIG = {
       "ds": "Run several hook modules in one process and answer once (fleet-config#1274)."
     },
     {
-      "nm": "hub_client",
-      "ds": "Shared, fail-open client for the local LLM hub (127.0.0.1:8000)."
-    },
-    {
       "nm": "notify_complete",
       "ds": "Deterministic skill-completion Telegram ping — one canonical format per skill."
     },
@@ -613,9 +616,9 @@ window.CONFIG = {
     },
     {
       "ic": "🎨",
-      "nm": "design.md + design.dark.md",
+      "nm": "design.md + design.dark.md + design.web.md",
       "reach": "Claude (others via ~/.claude)",
-      "ds": "Canonical visual identity + the floating bottom-tab nav contract for every web app."
+      "ds": "Canonical visual identity + the floating bottom-tab nav contract for every web app; design.web.md is the contract for web pages."
     },
     {
       "ic": "🏔️",
@@ -631,9 +634,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 30,
-    "claude_md": "29/30",
-    "fleet_toml": "30/30"
+    "total": 31,
+    "claude_md": "30/31",
+    "fleet_toml": "31/31"
   },
   "principles": [
     [
