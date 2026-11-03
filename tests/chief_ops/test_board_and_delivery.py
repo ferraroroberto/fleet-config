@@ -5,10 +5,15 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_b
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 
 from _suite import _CHIEF_SID, _WORKER_SID, _exchange_columns, _h, _session_card, check, co, sd  # noqa: E402
+from chief import commands  # noqa: E402
 
 
 # ---- repo_occupancy ---------------------------------------------------------
@@ -94,6 +99,55 @@ check(
     ) != {},
     "repo_occupancy: a card with session_id None is not excluded by a blank id",
 )
+
+
+# ---- `sessions` hides the standing chief for every caller (fleet-config#1796) --
+#
+# A lane told to skip busy repos read the chief's cwd (fleet-config) as a worker
+# holding that repo. The synthetic board: the chief, one worker elsewhere, one
+# telegram channel in the chief's repo.
+
+_board_1796 = {
+    "claude_turn": [
+        _session_card(project="fleet-config", label="chief", session_id=_CHIEF_SID),
+        _session_card(project="app-launcher", label="", session_id=_WORKER_SID),
+        _session_card(project="fleet-config", label="telegram:health", session_id="tg-1796"),
+    ],
+    "your_turn": [],
+}
+
+
+def _run_sessions(caller_sid):
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        return {"columns": _board_1796}
+
+    prior_req, prior_env = co.launcher._request, os.environ.get("APP_LAUNCHER_SESSION_ID")
+    co.launcher._request = _fake_request
+    if caller_sid:
+        os.environ["APP_LAUNCHER_SESSION_ID"] = caller_sid
+    else:
+        os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            commands.cmd_sessions(argparse.Namespace(json=True, base_url=co.DEFAULT_BASE_URL))
+        return json.loads(buf.getvalue().split("\n(excluding")[0])
+    finally:
+        co.launcher._request = prior_req
+        if prior_env is None:
+            os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+        else:
+            os.environ["APP_LAUNCHER_SESSION_ID"] = prior_env
+
+
+for _who, _sid in (("a worker lane", _WORKER_SID), ("the chief", _CHIEF_SID)):
+    _occ = _run_sessions(_sid)
+    check("fleet-config" not in _occ,
+          f"sessions called by {_who}: the chief and a telegram channel do not make fleet-config busy (#1796)")
+check(set(_run_sessions("some-other-lane")) == {"app-launcher"},
+      "sessions called by a third lane: the worker still occupies its repo (#1796)")
+check("fleet-config" in co.repo_occupancy(_board_1796, exclude_sid=_WORKER_SID),
+      "repo_occupancy without hide_chief: dispatch still sees the chief's card -- occupancy unchanged (#1796)")
 
 
 # ---- Telegram channel sessions are standing, not workers (fleet-config#1212) --

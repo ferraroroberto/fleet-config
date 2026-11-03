@@ -357,7 +357,9 @@ def cmd_lane_compact(args: argparse.Namespace) -> int:
 def cmd_sessions(args: argparse.Namespace) -> int:
     board = launcher._request(args.base_url, "/api/board")
     self_sid = rails.caller_session_id()
-    occupancy = rails.repo_occupancy(board.get("columns") or {}, exclude_sid=self_sid)
+    columns = board.get("columns") or {}
+    chief_sid = rails.find_chief_session(columns)
+    occupancy = rails.repo_occupancy(columns, exclude_sid=self_sid, hide_chief=True)
     if args.json:
         print(json.dumps(occupancy, indent=2))
     else:
@@ -367,6 +369,8 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         # card it left out of the answer.
         if self_sid:
             print(f"(excluding this session: {self_sid})")
+        if chief_sid and chief_sid != self_sid:
+            print(f"(excluding the standing chief: {chief_sid})")
     return 0
 
 

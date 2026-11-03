@@ -96,6 +96,7 @@ def _is_channel_session(card: Dict[str, Any]) -> bool:
 def repo_occupancy(
     columns: Dict[str, Any],
     exclude_sid: Optional[str] = None,
+    hide_chief: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """Lowercased repo -> occupancy info, for every alive, non-external
     session card in `claude_turn` + `your_turn`.
@@ -116,6 +117,11 @@ def repo_occupancy(
     rather than "the chief" keeps the rule one a card cannot lie its way out
     of: a session does not occupy a repo against itself, and every other live
     session still does.
+
+    `hide_chief` additionally drops the standing chief's card for every caller.
+    Only the read-only `sessions` view sets it: a lane told to skip busy repos
+    otherwise saw the chief's cwd as a worker holding fleet-config. `dispatch`
+    leaves it off, so its occupancy gate is unchanged.
     """
     occ: Dict[str, Dict[str, Any]] = {}
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
@@ -123,6 +129,8 @@ def repo_occupancy(
         if not _holds_a_live_pty(card) or _is_channel_session(card):
             continue
         if exclude_sid and str(card.get("session_id") or "") == exclude_sid:
+            continue
+        if hide_chief and card.get("label") == "chief":
             continue
         repo = str(card.get("project") or "").strip().lower()
         if not repo:
