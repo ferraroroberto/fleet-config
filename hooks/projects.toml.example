@@ -288,6 +288,10 @@ never_kill_ports = [8000, 8090, 8446]
 telegram_chat           = "-1004408175579"   # fallback when a category chat is unset
 telegram_chat_attention = "-1004408175579"   # come-look pings
 telegram_chat_log       = "-1004387099086"   # activity record and weekly digests
+# secret_scan_guard refuses a command that prints an untracked secret-bearing
+# file (.env, *config*.json, ...). A false positive is fixed here, at once:
+#   secret_read_allow = ["*/some-repo/config/public_config.json"]   # path globs that may print
+#   secret_read_guard = false                                       # read sink off; commit/publish sinks stay on
 
 # Fleet scope. A repo listed here is dormant: out of every fleet-wide run and
 # off the architecture and config maps. Hooks still know it, and a run that

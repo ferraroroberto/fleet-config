@@ -1,6 +1,12 @@
-"""Block a live secret before it is committed or published to GitHub.
+"""Block a live secret before it is committed, published to GitHub, or printed.
 
-Triggers on `PreToolUse` for `Bash`/`PowerShell`, on two independent sinks:
+Triggers on `PreToolUse` for `Bash`/`PowerShell`, on three independent sinks:
+
+- **A printing read** — `cat`, `grep`, `Get-Content`, `Select-String`, an inline
+  Python one-liner and their kin naming an untracked secret-bearing file
+  (`.env`, `*config*.json`, …) would echo its values into the session
+  transcript. The rules, the allowed keys-only and sample reads, and the
+  machine-local switches live in `secret_scan/read_sink.py`.
 
 - **`git commit`** — scans the **staged diff** (`git diff --cached`) and the
   command string itself for a real credential.
@@ -48,6 +54,7 @@ from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+from secret_scan import read_sink, shell_paths  # noqa: E402
 
 
 # Staged-diff timeout, a stated bound rather than a measured one: this runs on every commit in every
@@ -89,21 +96,6 @@ MAX_BODY_BYTES = 1 << 20
 _CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 
-# Segment verbs that move the directory a later relative `--body-file` resolves
-# against. A push moves it like a cd; a pop makes the base unknown.
-_CD_VERBS = _lib.CD_VERBS | _lib.PUSH_VERBS
-
-
-def _cd_target(words: List[str]) -> Optional[str]:
-    """The one literal directory operand of a `cd`-like segment, else ``None``.
-
-    Option words (`-P`, `-Path`, `-LiteralPath`, …) are skipped; zero or several
-    remaining operands, or `cd -`, name no directory we can follow.
-    """
-    operands = [w for w in words[1:] if not w.startswith("-")]
-    return operands[0] if len(operands) == 1 else None
-
-
 def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]:
     """``(operand, base)`` for every `--body-file`/`-F` of a `gh` publish segment.
 
@@ -124,11 +116,8 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
         if not match:
             words = _lib.shell_words(segment)
             verb = words[0].lower() if words else ""
-            if verb in _CD_VERBS:
-                target = _cd_target(words)
-                current = _resolve(target, current) if target is not None else None
-            elif verb in _lib.POP_VERBS:
-                current = None
+            if verb in shell_paths.CD_VERBS or verb in shell_paths.POP_VERBS:
+                current = shell_paths.follow_cd(words, current)
             continue
         words = _lib.shell_words(segment[match.end():])
         i = 0
@@ -147,30 +136,14 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
     return operands
 
 
-def _resolve(raw: str, base: Optional[Path]) -> Optional[Path]:
-    """``raw`` as a path, or ``None`` when the hook cannot know where it points.
-
-    `-` is stdin; a `$VAR`, `$(…)` or backtick operand is expanded by the shell
-    only after the hook has run; a relative path under an unknown base (after
-    `cd $X`) has nowhere to resolve.
-    """
-    text = raw.strip()
-    if not text or text == "-" or "$" in text or "`" in text or text.startswith("("):
-        return None
-    path = Path(_lib.msys_to_drive(text)).expanduser()
-    if path.is_absolute():
-        return path
-    return base / path if base is not None else None
-
-
 def resolve_operand(raw: str, base: Optional[Path]) -> Optional[Path]:
     """A body-file operand as a path to read, or ``None`` (fail-open).
 
     A literal relative operand whose base a preceding `cd $X` made unknown
     leaves an info breadcrumb, so the unscanned publish stays diagnosable.
     """
-    path = _resolve(raw, base)
-    if path is None and base is None and _resolve(raw, Path(".")) is not None:
+    path = shell_paths.resolve(raw, base)
+    if path is None and base is None and shell_paths.resolve(raw, Path(".")) is not None:
         _lib.logger.info("ℹ️ secret_scan_guard: body file not scanned (%s): "
                          "a preceding cd names no literal directory", raw)
     return path
@@ -217,11 +190,15 @@ def main() -> None:
     cmd = _lib.command_string(payload)
     if not cmd:
         _lib.allow()
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+
+    reason = read_sink.refusal(cmd, _lib.cwd(payload))
+    if reason:
+        _lib.block(reason)
 
     # The gh trigger is the tight one, so it runs first: a gh command whose
     # inline body merely mentions "git commit" gets the publish refusal.
     if GH_PUBLISH_RE.search(cmd):
-        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
         _guard_gh_publish(cmd, _lib.cwd(payload))
 
     if not _lib.runs_git_commit(cmd):
