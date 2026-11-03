@@ -2,6 +2,8 @@
 
 > The system explained layer by layer: how I reach it, what runs it, the shared tools that enable everything, the apps I actually use, and the governance on top. This document is the **narrative companion** to the map, not its source: the visual map (horizontal, Janis-style) is generated from each repo's `.fleet.toml` plus `fleet.residual.json` by `.claude/skills/system-map/build_data.py`, which never reads this file. Edit a row here in the **same PR** as the `.fleet.toml` change it describes — `tests/run_acceptance.py` asserts the two never drift apart.
 
+> New to the fleet? Read [`docs/fleet-guide.md`](../docs/fleet-guide.md) first: the same layers in plain prose, plus how work flows and the shared mechanisms.
+
 ## How to read this doc (fixed structure)
 
 The system is a **stack of layers**; each layer builds on the ones beneath it.

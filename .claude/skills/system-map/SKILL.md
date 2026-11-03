@@ -14,7 +14,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`). All paths below are relative to it.
 - **Never leak hardware specs.** The render always forces `?placeholders=1`, so the committed PNG shows `<model> · <NN> GB` placeholders even though a local `system-map.local.js` exists. Do not put real specs into `ARCHITECTURE.md`, the `DATA` object, or the commit. (See `architecture/README.md`.)
 - **Keep the residual and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in `architecture/fleet.residual.json` (or the repo's `.fleet.toml`) *and* `ARCHITECTURE.md` in the same run, then regenerate `fleet.data.js` with `build_data.py`. Never hand-edit `fleet.data.js`.
-- **Don't disturb in-progress work.** Only touch `architecture/`, and only commit that path.
+- **Don't disturb in-progress work.** Only touch `architecture/` and the generated repo list in `docs/fleet-guide.md`, and only commit those two paths.
 - **Degrade gracefully, never block on a prompt** — this runs unattended.
 
 ## Steps
@@ -66,7 +66,7 @@ Then render the **text-native** companion — a second, independent consumer of 
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py
 ```
 
-Regenerates `architecture/system-map.mmd` (icons + names; `tag` edges solid, `depends_on` edges dotted), the fleet-map doc agents open on demand, and `architecture/CONTRACTS.md` (every declared interface, ownership and dependency). Idempotent; `--check` exits 1 when either is stale.
+Regenerates `architecture/system-map.mmd` (icons + names; `tag` edges solid, `depends_on` edges dotted), the fleet-map doc agents open on demand, `architecture/CONTRACTS.md` (every declared interface, ownership and dependency), and the repo list between the `fleet-repos` markers in `docs/fleet-guide.md` (`render_guide.py`; the prose around it is never touched). Idempotent; `--check` exits 1 when any of them is stale.
 
 ### 4. Compute the week-over-week change line
 
@@ -87,7 +87,7 @@ git status --porcelain architecture/
 If nothing changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did:
 
 ```
-git add architecture/
+git add architecture/ docs/fleet-guide.md
 git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 ```
 
