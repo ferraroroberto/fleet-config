@@ -68,6 +68,8 @@ check(pr.never_kill_ports({}) == frozenset({8000, 8090, 8446}), "never_kill_port
 check(pr.recipe_kind({"webapp_port": 8000, "tray_cmd": "t", "restart_cmd": "r"}, NEVER) == pr.OWNER, "recipe_kind: the hub port is owner-restart even with a recipe declared")
 check(pr.recipe_kind({"webapp_port": 8445, "session_host_port": 8446, "tray_cmd": "t", "restart_cmd": "r"}, NEVER) == pr.OWNER, "recipe_kind: a repo hosting the session host is owner-restart")
 check(pr.recipe_kind({"webapp_port": 8447, "tray_cmd": "t"}, NEVER) == pr.NO_RECIPE, "recipe_kind: a tray with no restart_cmd is no-restart-recipe")
+check(pr.recipe_kind({"webapp_port": 8447, "tray_cmd": "t", "api_version_path": "/api/version"}, NEVER) == pr.RESTART, "recipe_kind: a tray_cmd with a build-identity path is restartable through the shared helper")
+check(pr.recipe_kind({"webapp_port": 8000, "tray_cmd": "t", "api_version_path": "/admin/api/version"}, NEVER) == pr.OWNER, "recipe_kind: a tray_cmd-only table on a never-kill port stays owner-restart")
 check(pr.recipe_kind({"webapp_port": 8447, "tray_cmd": "t", "restart_cmd": "r"}, NEVER) == pr.RESTART, "recipe_kind: a tray with a restart_cmd is restartable")
 check(pr.recipe_kind({}, NEVER) == pr.NO_SERVICE, "recipe_kind: no tray declared means no service")
 
