@@ -55,6 +55,10 @@ Neither a component nor `--all-behind` → stop: "Pass a component name, e.g.
   Respect `skills/_lib/worktree_claim.py` exactly as `/issue-batch` does — a
   repo another session is actively working gets `MODE=worktree`, never a
   collision on `main`.
+- **One wave at a time, machine-wide.** A real run holds the wave claim from step 2 to
+  step 6; a second driver is refused with `REFUSED=wave-running holder=<wave-id> since=<t>`
+  and stops, never hand-rolls its own loop beside the first. Unknown claim state
+  (`WAVE_CLAIM=unknown`, exit 3) is also a stop, never "free". A dry run takes no claim.
 - **No per-repo issues, ever.** The scaffold issue/PR is the single record;
   see the README's "Why this skill never files a per-repo issue."
 - **`Part of …`, never `Closes …`** in a generated PR body — GitHub's
@@ -174,8 +178,14 @@ changes nothing that repo's gate runs.
 Then group the same scan by repo — read-only, the same call the real wave starts from:
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/plan.py plan --component <component>[,<component>…] [--allow-breaking <component>[,<component>…]] [--part-of <scaffold-issue-or-PR-url>] [--format text]
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/plan.py plan --component <component>[,<component>…] [--allow-breaking <component>[,<component>…]] [--part-of <scaffold-issue-or-PR-url>] [--format text] [--claim --holder <wave-id>]
 ```
+
+**A real run passes `--claim --holder <wave-id>`; a dry run never does.** It takes the
+machine-wide wave claim (`vendored_wave/wave_claim.py`, built on `worktree_claim`'s lock and
+its 8 h TTL) before scanning. Another wave running prints `REFUSED=wave-running …` and exits
+1, an unreadable claim exits 3: either way stop and report it, plan nothing. The same
+`<wave-id>` on a later call (the `--allow-breaking` re-run in step 4) renews the claim.
 
 JSON (default) is one entry per repo: `components` (each with `action`
 `re-vendor`|`adopt`, `old_sha`, `new_sha`, `files`), plus the `branch`,
@@ -368,6 +378,15 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 
   no per-repo issues filed (by design — see the scaffold record).
 ```
+
+Last, release the claim, on every exit path of a real run once step 2 took it (a stop on a
+contract change included):
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_wave/wave_claim.py release --holder <wave-id>
+```
+
+A crashed wave frees itself when the claim ages past the TTL.
 
 Then print the run's gate time, built from the ledger and the step-2 plan's repos
 (`--expect` makes a planned repo that recorded nothing show as unknown):

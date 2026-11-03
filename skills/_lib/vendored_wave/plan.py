@@ -14,9 +14,12 @@ is malformed or whose state could not be read is held for a human, never rewritt
 CLI:
 
   plan [--scaffold <path>] [--component a,b,...] [--allow-breaking a,b] [--part-of <url>]
-       [--format json|text]
+       [--format json|text] [--claim --holder <wave-id>]
       Scan the fleet (every component when `--component` is omitted) and print the
-      per-repo wave plan. Read-only; always exits 0, like `vendored_drift.py scan`.
+      per-repo wave plan. Read-only and exits 0, like `vendored_drift.py scan`, unless
+      `--claim` asks for the wave claim (wave_claim.py): a real wave passes it, a dry run
+      does not. A wave already running refuses with `REFUSED=wave-running ...` (exit 1)
+      and an unreadable claim exits 3 as unknown; the plan is printed only when held.
 """
 
 from __future__ import annotations
@@ -24,11 +27,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import vendored_drift as vd  # noqa: E402
+from vendored_wave import wave_claim  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -202,7 +207,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--allow-breaking", default="", help="components whose removed selectors a human approved")
     p.add_argument("--part-of", default=None, help="URL the PR body links as 'Part of'")
     p.add_argument("--format", choices=("json", "text"), default="json")
+    p.add_argument("--claim", action="store_true", help="take the one-wave-at-a-time claim before planning (real runs only)")
+    p.add_argument("--holder", default=None, help="the wave id; required with --claim")
+    p.add_argument("--lock-dir", default=None, help="claim directory (default: under the hooks state root)")
     args = ap.parse_args(argv)
+
+    if args.claim:
+        if not args.holder:
+            ap.error("--claim needs --holder <wave-id>")
+        lock = Path(args.lock_dir) if args.lock_dir else wave_claim.default_lock_dir()
+        claim = wave_claim.acquire(lock, args.holder, time.time(), session=wave_claim.holder_session())
+        if claim.state != wave_claim.HELD:
+            return wave_claim.report(claim)
+        sys.stderr.write(f"WAVE_CLAIM=held holder={args.holder}\n")
 
     scaffold = Path(args.scaffold)
     if not scaffold.is_dir():

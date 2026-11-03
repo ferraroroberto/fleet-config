@@ -615,6 +615,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "component branch and commit subject, and held components and carriers "
      "are reported instead of targeted -- is testable on its own against a "
      "throwaway scaffold and adopter repos"),
+    ("vendored_wave_claim", "repo/test_vendored_wave_claim.py",
+     "/propagate-vendored runs one wave at a time -- a second wave is "
+     "refused with REFUSED=wave-running while one holds the claim, the "
+     "holder may re-acquire and release, a claim past its TTL is reclaimable, "
+     "and an unreadable claim reports unknown instead of free"),
     ("vendored_ignore", "repo/test_vendored_ignore.py",
      "the generated .ignore block that hides vendored copies from agent "
      "search -- built from the [vendored] dest paths, hand-written lines kept, "
