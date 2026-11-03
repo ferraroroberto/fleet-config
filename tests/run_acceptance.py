@@ -117,6 +117,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _warn_channel_unit_checks,
 )
 from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
+from acceptance.guard_checks.secret_read_checks import _secret_read_unit_checks  # noqa: E402
 from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _safe_kill_git_bypass_unit_checks,
@@ -338,6 +339,9 @@ def _run_guard_checks(tally: _Tally) -> None:
 
     # ---- secret_scan_guard: gh issue/PR bodies before they post (#959) ----
     tally.run_unit(_secret_scan_gh_unit_checks)
+
+    # ---- secret_scan_guard: printing reads of untracked secret files ----
+    tally.run_unit(_secret_read_unit_checks)
 
     # ---- bash_cmdexe_syntax_guard: block + warn assertions (#264, #385) ----
     tally.run_unit(_bash_cmdexe_syntax_guard_unit_checks)

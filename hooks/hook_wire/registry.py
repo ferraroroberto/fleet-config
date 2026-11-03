@@ -83,6 +83,10 @@ class GlobalConfig:
     # default — notify_on_idle omits the board deep-link line entirely until
     # this is configured (see resolve_board_url).
     board_url: Optional[str] = None
+    # secret_scan_guard's read sink: off switch and path globs that may print.
+    # Machine-local so a false positive is fixed without a merge.
+    secret_read_guard: bool = True
+    secret_read_allow: Sequence[str] = ()
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,10 @@ def load_registry(path: Optional[Path] = None) -> Registry:
     telegram_attention = globals_table.get("telegram_chat_attention") or None
     telegram_log = globals_table.get("telegram_chat_log") or None
     board_url = globals_table.get("board_url") or None
+    secret_read_guard = globals_table.get("secret_read_guard", True) is not False
+    raw_allow = globals_table.get("secret_read_allow", [])
+    secret_read_allow = tuple(
+        g for g in (raw_allow if isinstance(raw_allow, list) else []) if isinstance(g, str) and g)
 
     projects: List[ProjectConfig] = []
     for name, table in data.items():
@@ -149,6 +157,8 @@ def load_registry(path: Optional[Path] = None) -> Registry:
             telegram_chat_attention=telegram_attention,
             telegram_chat_log=telegram_log,
             board_url=board_url,
+            secret_read_guard=secret_read_guard,
+            secret_read_allow=secret_read_allow,
         ),
     )
 

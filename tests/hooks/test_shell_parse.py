@@ -192,7 +192,7 @@ with tempfile.TemporaryDirectory() as tmp:
 # MSYS drive paths (`/e/x` -> `E:/x`), as each guard resolved them.
 for raw, expected in [("/e/x/b.md", "E:/x/b.md"), ("/E/x", "E:/x"), ("/ee/x", None),
                       ("e/x", None), ("C:/x", "C:/x")]:
-    got = _rel(_secret_scan._resolve(raw, None), _BASE)
+    got = _rel(_secret_scan.shell_paths.resolve(raw, None), _BASE)
     check(got == expected, f"secret_scan resolves {raw!r} to {expected!r} (got {got!r})")
 for raw, expected in [("/e/x/.venv", "E:/x/.venv"), ("/e/x/*", "E:/x"), ("/ee/x", "C:/ee/x"),
                       ("'/c/a b/.venv'", "C:/a b/.venv")]:
