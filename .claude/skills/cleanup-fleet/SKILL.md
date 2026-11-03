@@ -7,7 +7,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 **Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples (Claude Code only); the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, `/design-sweep` files an eighth (`design-drift`) and `/prompt-audit` a ninth (`prompt-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
+**Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, `/design-sweep` files an eighth (`design-drift`) `/prompt-audit` a ninth (`prompt-drift`) and `/system-map --coupling` a tenth (`fleet-contracts`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
 **`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure). `/design-sync`'s eighth queued bucket is `design-drift`; its sibling `cert-drift` is likewise **review-only** (a tailnet-cert migration must never be auto-applied). `/prompt-audit`'s `prompt-drift` is the ninth, and it **is** queued — its tier rule and preservation gate below keep an instruction-file rewrite from dropping a directive. A `security` or `cert-drift` label never appears in this skill.
 
@@ -22,7 +22,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 `/cleanup-fleet [<bucket>] [<mode>]` — both optional, order-independent.
 
-**Bucket** — fuzzy-matched to one of the nine *queued* audit labels (case-insensitive; voice-dictation friendly):
+**Bucket** — fuzzy-matched to one of the ten *queued* audit labels (case-insensitive; voice-dictation friendly):
 
 | Says | Label |
 |------|-------|
@@ -35,10 +35,11 @@ description: Take one bucket of audit findings (a label like documentation, drif
 | `bug`, `bugs` | `bug` |
 | `design`, `design-drift`, `css`, `css-drift` | `design-drift` |
 | `prompt`, `prompt-drift`, `prompting` | `prompt-drift` |
+| `contracts`, `fleet-contracts`, `coupling`, `depends-on` | `fleet-contracts` |
 
 (`security` is intentionally absent — self-healed inline by `/codebase-audit`; `cert-drift` is likewise absent — it's `/design-sync`'s review-only kind, never auto-fixed here.)
 
-If **no bucket** is given → run step 2's count query, then ask through the available user-input channel, listing the nine queued buckets each with its **live open-issue count**, and let the user pick.
+If **no bucket** is given → run step 2's count query, then ask through the available user-input channel, listing the ten queued buckets each with its **live open-issue count**, and let the user pick.
 
 **Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
@@ -70,7 +71,7 @@ Parse the args (order-independent): the mode token is `hard`/`easy`/`silent`; an
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then ask through the available user-input channel, listing the nine queued buckets with counts.
+Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then ask through the available user-input channel, listing the ten queued buckets with counts.
 
 ### 3. Fetch candidates — direct Issues API, one repo-scoped call per repo
 
@@ -96,6 +97,7 @@ Read each selected issue's title + body (for an audit bucket issue, also weigh t
 - **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
 - **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
 - **`design-drift` specifically:** pure token/palette/spacing drift is easy-tier; any **structural** finding — a hand-rolled nav, a forked or re-authored vendored component, a layout rewrite — is hard-tier. `/design-sync`'s rule is *never re-author nav/components* (reuse the vendored snippet, don't rewrite), so a `design-drift` issue carrying one is worked build-and-stop for review, never auto-merged.
+- **`fleet-contracts` specifically** (one issue per repo, filed from `build_data.py --coupling`). Fix recipe: declare every real cross-repo reference in the repo's `.fleet.toml` `depends_on`; exempt a reviewed false positive (a path in a docstring example, sample data) with a `[contracts] ignore_refs` entry `{ path, repo, why }`, `why` required. A build-time sibling read and a URL in `.env.example` or a sample config are real dependencies: declare them, never ignore them. Edits touch only `.fleet.toml`, so every such issue is easy-tier; re-run `build_data.py --coupling` and confirm the repo's undeclared count is 0 before merging.
 - **`prompt-drift` specifically** (the one home of this rule; `/cleanup-fleet-all` links here). Tier follows how consequential the rewrite is, not which model runs it (`docs/model-tiers.md`). **Easy:** soften ALL-CAPS, delete a verification / re-check / "if in doubt" line, fix a description to third person, add an agent-neutrality marker, trim a time-sensitive phrase, add a contents list to a long reference file (R-35), rewrite a backslash path with forward slashes (R-36), qualify an MCP tool name (R-37), name a default among interchangeable options (R-42), state a bundled script's run-or-read intent and its packages (R-43). **Hard (build-and-stop):** remove or restructure a step list, resolve a contradiction, flatten a nested reference chain (R-34), re-pin a step's degree of freedom (R-38), add a copyable workflow checklist (R-39), add a validate-fix-repeat loop (R-40), unify a skill's terminology (R-41), fix a skill that regressed on its evals (R-44), any change to `global-CLAUDE.md` or `project-scaffolding/CLAUDE.md`, any fix touching a double-quoted trigger phrase or a marked block. `/prompt-audit` tags every checklist item `· easy` / `· hard` by this rule and states the issue's tier in its body; take that line as the score, and a mixed checklist is hard per the rounding rule below.
 
 When genuinely on the fence, round **up** to hard-tier in `hard` mode (a human will still review it) and **down**-or-defer in `easy`/`silent` mode (never auto-merge something you weren't sure about).
