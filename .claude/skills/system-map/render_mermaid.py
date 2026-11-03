@@ -143,9 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="exit 1 if system-map.mmd is stale")
     args = ap.parse_args(argv)
 
-    # The contracts page is the second text-native view of the same data, so
-    # one render keeps both fresh.
+    # The contracts page and the fleet guide's repo list are the other
+    # text-native views of the same data, so one render keeps all three fresh.
     import render_contracts
+    import render_guide
 
     rendered = regenerate()
     current = MMD_OUT.read_text(encoding="utf-8") if MMD_OUT.exists() else None
@@ -160,7 +161,9 @@ def main(argv: list[str] | None = None) -> int:
             "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py` and commit.",
             file=stream,
         )
-        return render_contracts.main(["--check"]) or (0 if ok else 1)
+        contracts_rc = render_contracts.main(["--check"])
+        guide_rc = render_guide.main(["--check"])
+        return contracts_rc or guide_rc or (0 if ok else 1)
 
     if not mmd_fresh:
         MMD_OUT.write_text(rendered, encoding="utf-8")
@@ -168,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"render_mermaid: {MMD_OUT.name} already up to date.")
 
-    return render_contracts.main([])
+    return render_contracts.main([]) or render_guide.main([])
 
 
 if __name__ == "__main__":

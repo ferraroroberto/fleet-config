@@ -13,6 +13,10 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 Reference material lives in [`docs/`](docs), one file per topic, so starting
 work in this repo doesn't cost the whole catalogue:
 
+- **[`docs/fleet-guide.md`](docs/fleet-guide.md)** — the whole fleet explained
+  to a newcomer: the layers, every repo in one line (generated from each
+  `.fleet.toml`), how work flows from issue to merge, and the shared
+  mechanisms. Start here.
 - **[`docs/hooks.md`](docs/hooks.md)** — the Tier 1 hook reference: every hook
   in `hooks/`, what it blocks or nudges, its `projects.toml` keys, and why it
   exists. Also the tooling that ships in that tier: the context filter, the

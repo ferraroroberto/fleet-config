@@ -134,7 +134,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
   PERFREVIEW -->|"file: one perf-review issue per repo via audit_issue.py"| LIB
 
   subgraph fskills[".claude/skills/ — FLEET-ONLY tier (cwd-scoped to fleet-config)"]
-    SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · render_contracts.py · whatchanged.py"]
+    SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · render_contracts.py · render_guide.py · whatchanged.py"]
     AUDITFLEET["audit-fleet\ndelivery_check.py"] --> CLEANUPFLEET["cleanup-fleet\n(attended, single-bucket, human-gated)"]
     CLEANUPFLEET --> CLEANUPFLEETALL["cleanup-fleet-all\n(unattended, all-bucket, agent-validated)"]
     DESIGNSWEEP["design-sweep\nOpus orchestrator · Sonnet workers\ndesign_sweep_scan.py web-app + web-page gate"]
