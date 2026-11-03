@@ -32,6 +32,22 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | Repo | Depends on |
 |---|---|
 | fleet-config | project-scaffolding, local-llm-hub, app-launcher |
-| app-launcher | local-llm-hub, voice-transcriber, photo-ocr, task-os, life-os, fleet-config |
+| app-launcher | local-llm-hub, voice-transcriber, photo-ocr, task-os, life-os, fleet-config, automation, content-management |
 | local-llm-hub | voice-transcriber, automation, project-scaffolding |
+| voice-transcriber | local-llm-hub |
+| photo-ocr | local-llm-hub, project-scaffolding |
+| app-launcher-lite | app-launcher |
+| grocery-shopping-automation | local-llm-hub, voice-transcriber |
+| whatsapp-radar | home-automation, local-llm-hub, project-scaffolding, task-os |
+| facilitation-suite | local-llm-hub |
 | life-os | app-launcher, local-llm-hub, email-archiver, fleet-config |
+| home-automation | local-llm-hub, project-scaffolding, voice-transcriber |
+| folder-explorer | project-scaffolding |
+| parking-manager | fleet-config |
+| task-os | email-archiver, local-llm-hub, voice-transcriber |
+| accounting-quarterly | local-llm-hub |
+| content-management | local-llm-hub |
+| copilot-studio-transcripts | local-llm-hub |
+| automation | fleet-config |
+| minecraft-bedrock-bot | local-llm-hub |
+| oracle-to-gcp | local-llm-hub |
