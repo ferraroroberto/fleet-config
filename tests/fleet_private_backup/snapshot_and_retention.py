@@ -76,13 +76,27 @@ check(bp.verify_sample(day2, {"groups": {}})["status"] == "empty",
 prev = {"groups": {"life-os": {"files": [{"path": "identity/me.md"}]},
                    "quiet-repo": {"files": []}}}
 now_manifest = {"groups": {"life-os": {"files": []}, "quiet-repo": {"files": []}}}
-check(bp.check_zero_file_regressions(now_manifest, prev) == ["life-os"],
+check(bp.check_zero_file_regressions(now_manifest, prev) == (["life-os"], []),
       "regression: a repo that lost every file is flagged")
 check(bp.check_zero_file_regressions(
-    {"groups": {"life-os": {"files": [{"path": "x"}]}}}, prev) == [],
+    {"groups": {"life-os": {"files": [{"path": "x"}]}}}, prev) == ([], []),
     "regression: a repo that still has files is not flagged")
-check(bp.check_zero_file_regressions({"groups": {}}, prev) == [],
+check(bp.check_zero_file_regressions({"groups": {}}, prev) == ([], []),
       "regression: an opted-out repo (absent, not empty) is not flagged")
+
+prev_proof = {"groups": {"r": {"files": [{"path": ".proof/a.html"}, {"path": ".proof/b/c.html"}]}}}
+bulk_now = {"groups": {"r": {"files": [], "bulk_excluded": [{"path": ".proof/"}]}}}
+check(bp.check_zero_file_regressions(bulk_now, prev_proof) == ([], ["r"]),
+      "regression: all prior files inside a named bulk exclusion warn, not fail")
+check(bp.check_zero_file_regressions(
+    {"groups": {"r": {"files": [], "bulk_excluded": []}}}, prev_proof) == (["r"], []),
+    "regression: the same loss with no named exclusion still fails")
+mixed_prev = {"groups": {"r": {"files": [{"path": ".proof/a.html"}, {"path": "notes.md"}]}}}
+check(bp.check_zero_file_regressions(bulk_now, mixed_prev) == (["r"], []),
+      "regression: a file lost outside the exclusion still fails")
+check(bp.check_zero_file_regressions(
+    {"groups": {"r": {"files": [], "bulk_excluded": []}}}, prev_proof, [".proof"]) == ([], ["r"]),
+    "regression: prior files now under a denied directory warn")
 
 # ---- retention ---------------------------------------------------------
 names = [(datetime(2026, 8, 11) - timedelta(days=n)).strftime(bp.DATE_FMT)

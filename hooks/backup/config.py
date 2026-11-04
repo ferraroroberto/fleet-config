@@ -88,7 +88,7 @@ DEFAULT_DENY_DIRS: Tuple[str, ...] = (
     ".mypy_cache", ".ruff_cache", ".launcher-tmp", "site-packages", ".tox",
     "dist", "build", ".next", ".turbo", ".cache", ".parcel-cache", ".gradle",
     "target", "htmlcov", ".coverage", "playwright-report", "test-results",
-    ".playwright", ".idea", ".vs", "logs", ".git",
+    ".playwright", ".idea", ".vs", "logs", ".git", ".proof",
 )
 DEFAULT_DENY_GLOBS: Tuple[str, ...] = (
     "*.log", "*.pyc", "*.pyo", "*.pyd", "*.dll", "*.exe", "*.so", "*.dylib",

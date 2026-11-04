@@ -107,6 +107,9 @@ def report(manifest: Dict[str, Any]) -> None:
         )
         for error in archive.get("errors") or []:
             logger.error("   ❌ archive: %s", error)
+    for group in manifest.get("regression_warnings") or []:
+        logger.warning("   ⚠️ %s backed up 0 files: everything it had last run is now in a "
+                       "named exclusion above — not a failure", group)
     for group in manifest.get("regressions") or []:
         logger.error("   ❌ %s backed up 0 files but had files last run", group)
     if manifest.get("pruned"):
