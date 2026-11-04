@@ -29,6 +29,19 @@ $py = "E:/automation/fleet-config/.venv/Scripts/python.exe"
 
 `unknown` is never counted as `up`. The pid is always confirmed against the executable path, so a pid the system reused for another program cannot read as the app. `ensure` never kills a process and never touches the app's settings or startup entries; those are the owner's.
 
+## The app-launcher switch
+
+App Launcher's Settings > Chief has a Grok Bot switch (`settings.grokbot_enabled` on `GET /api/board/chief/settings`, default on). `skills/_lib/grokbot/switch.py` reads it fresh on every call and returns `on`, `off` or `unknown`; an unreachable launcher, a non-2xx, or a missing or non-boolean field is `unknown`, never `on`.
+
+| Reader | Off | Unknown |
+| --- | --- | --- |
+| `status.py ensure` | prints `ENSURE=disabled` and `GROKBOT=disabled`, exit 0; starts and pings nothing, outage counter untouched | prints `ENSURE=switch-unknown` and `GROKBOT=unknown`, exit 0 |
+| digest `grokbot=` | `grokbot=disabled` | `grokbot=unknown (reason)` |
+| `relay.py send` | `REFUSED reason=disabled`, nothing sent | `REFUSED reason=unknown`, nothing sent |
+| `attention.py` | quiet (the owner's choice) | an `UNKNOWN grokbot` line, exit 3 |
+
+`relay.py read` and `status.py status` ignore the switch. `tests/grokbot/test_switch.py` covers every case against a fake launcher response.
+
 ## The board digest
 
 `chief_ops.py board` ends with a `grokbot=` token: `up`, `down`, `signed-out`, or `unknown (reason)`. It is a read-only reading, so polling the board never changes the outage counter.

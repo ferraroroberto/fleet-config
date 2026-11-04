@@ -830,6 +830,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "versus items, an unreadable source printing UNKNOWN with exit 3 and "
      "never folding into none, channel sessions skipped, GET-only board "
      "reads, and a scan proving the verb has no write path"),
+    ("grokbot_switch", "grokbot/test_switch.py",
+     "the app-launcher Grok Bot switch reader and its consumers -- on, off, "
+     "missing field, non-boolean value and an unreachable endpoint each "
+     "mapping to on/off/unknown (never on), `ensure` doing nothing and exiting "
+     "0 when off or unknown, the digest line reading disabled/unknown, and the "
+     "attention digest quiet when off, over a fake launcher response with the "
+     "live switch never read"),
     ("grokbot_relay", "grokbot/test_relay.py",
      "the Grok Bot relay against a loopback fake launcher that records every "
      "POST -- the sender tag, delivery to the chief and channel sessions, "

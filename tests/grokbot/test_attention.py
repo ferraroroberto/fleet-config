@@ -18,12 +18,16 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 from grokbot import attention  # noqa: E402
 from grokbot import status as grok_status  # noqa: E402
+from grokbot import switch as grok_switch  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
+
+# The switch is read from the launcher; these tests never reach the live one. test_switch.py owns its cases.
+mock.patch.object(grok_switch, "read_switch", return_value=(grok_switch.ON, "")).start()
 
 
 _real_gather = attention.gather
