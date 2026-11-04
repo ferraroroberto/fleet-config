@@ -63,7 +63,9 @@ def log_problem() -> str:
     if _inside(path, REPO):
         return "the state directory is inside the code tree"
     try:
+        # runtime-write-exempt: the call log lives in the hooks state directory, and the check above refuses one inside the code tree
         path.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: same hooks-state call log, probed for writability before any send
         with path.open("a", encoding="utf-8"):
             pass
     except OSError as exc:
@@ -76,6 +78,7 @@ def write_log(verb: str, target: str, outcome: str, chars: int) -> None:
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     line = f"{stamp} verb={verb} target={safe_target} outcome={outcome} chars={chars}\n"
     try:
+        # runtime-write-exempt: the call log in the hooks state directory, never a code folder (log_problem refuses one that is)
         with log_path().open("a", encoding="utf-8") as handle:
             handle.write(line)
     except OSError as exc:
