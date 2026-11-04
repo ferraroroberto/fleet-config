@@ -10,7 +10,7 @@ so no human tap guards a call and everything below is the guard. Two verbs:
 target, the `telegram:*` channel sessions and the chief included.
 
 `send` refuses, before anything is sent and with a distinct `REFUSED reason=` line each time:
-an empty or unreadable file, text that looks like a credential, a destructive steer (discard work,
+the app-launcher Grok Bot switch off (`disabled`) or unreadable (`unknown`), an empty or unreadable file, text that looks like a credential, a destructive steer (discard work,
 delete or adopt a branch, tear down a worktree, force-push: those stay with the owner in the launcher
 terminal), a session that is not live or a prefix that names several, a board that cannot be read, and a
 call log that cannot be written. Text that passes goes in under a one-line sender tag, so the receiving
@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from chief import launcher, rails  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
-from grokbot import refusals  # noqa: E402
+from grokbot import refusals, switch  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
 
@@ -145,6 +145,11 @@ def refuse(verb: str, target: str, line: str, chars: int = 0) -> int:
 
 
 def cmd_send(args: argparse.Namespace) -> int:
+    state, _reason = switch.read_switch(args.base_url)
+    if state != switch.ON:
+        reason = "disabled" if state == switch.OFF else "unknown"
+        return refuse("send", "unresolved",
+                      f"REFUSED reason={reason} -- nothing sent; the Grok Bot switch is not confirmed on")
     problem = log_problem()
     if problem:
         print(f"REFUSED reason=log-unwritable -- nothing sent ({problem})")

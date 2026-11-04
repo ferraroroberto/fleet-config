@@ -39,18 +39,20 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # A direct run starts without `skills/_lib` on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
+from grokbot import switch as grok_switch  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
 
 REPO = Path(__file__).resolve().parents[3]
 UP, DOWN, SIGNED_OUT, UNKNOWN = "up", "down", "signed-out", "unknown"
+DISABLED = "disabled"
 EXE_NAME = "Grok Bot.exe"
 OUTAGE_STATE_NAME = "grokbot-outage.json"
 # Two consecutive failed checks before the ping: one blip (an update restart) stays quiet.
@@ -184,8 +186,16 @@ def read_status(
     return Status(DOWN, "no process runs the installed Grok Bot")
 
 
-def digest_line(**kwargs: Any) -> str:
-    """The `grokbot=` token for the chief board digest; a crash reads as unknown, never as up."""
+def digest_line(*, switch: Optional[Callable[[], Tuple[str, str]]] = None, **kwargs: Any) -> str:
+    """The `grokbot=` token for the chief board digest; a crash reads as unknown, never as up.
+
+    The owner's switch comes first: off reads `disabled`, an unreadable switch reads `unknown`.
+    """
+    state, reason = (switch or grok_switch.read_switch)()
+    if state == grok_switch.OFF:
+        return f"grokbot={DISABLED}"
+    if state != grok_switch.ON:
+        return f"grokbot=unknown ({reason})"
     try:
         status = read_status(**kwargs)
     except Exception as exc:  # noqa: BLE001 - the digest must print whatever happens here
@@ -240,7 +250,7 @@ def _load_outage(path: Path) -> Dict[str, Any]:
 
 @dataclass(frozen=True)
 class Ensured:
-    action: str  # none | started | start-failed | refused
+    action: str  # none | started | start-failed | refused | disabled | switch-unknown
     status: Status
     bad_checks: int
     pinged: bool
@@ -258,8 +268,18 @@ def ensure(
     notify: Callable[[str], bool] = send_attention,
     settle_seconds: float = SETTLE_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
+    switch: Optional[Callable[[], Tuple[str, str]]] = None,
 ) -> Ensured:
-    """Start the app when it is down, then record the outcome in the outage episode."""
+    """Start the app when it is down, then record the outcome in the outage episode.
+
+    The owner's switch is read first: off or unreadable does nothing, so no start, no ping and no
+    outage bookkeeping happen while the owner has Grok Bot turned off.
+    """
+    switch_state, switch_reason = (switch or grok_switch.read_switch)()
+    if switch_state == grok_switch.OFF:
+        return Ensured("disabled", Status(DISABLED, "turned off in the app-launcher settings"), 0, False)
+    if switch_state != grok_switch.ON:
+        return Ensured("switch-unknown", Status(UNKNOWN, switch_reason), 0, False)
     exe = exe or default_exe()
     # The hooks state dir exists wherever hooks run; a missing one surfaces as an unwritable state, not silence.
     outage_file = outage_file or hooks_state.state_dir() / OUTAGE_STATE_NAME
@@ -325,6 +345,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     result = ensure()
     print(f"ENSURE={result.action}")
     code = _print_status(result.status)
+    if result.action in ("disabled", "switch-unknown"):
+        return 0  # the Job must not alarm over the owner's switch
     print(f"OUTAGE bad_checks={result.bad_checks} pinged={'yes' if result.pinged else 'no'}")
     if result.state_error:
         print(f"OUTAGE_STATE=unwritable reason={result.state_error}")

@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import chief_plan  # noqa: E402
 from chief import launcher, rails  # noqa: E402
 from grokbot import status as grok_status  # noqa: E402
+from grokbot import switch as grok_switch  # noqa: E402
 from owner_check import github as owner_github  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
@@ -74,6 +75,12 @@ def _owner_lines() -> Tuple[List[str], List[str]]:
 
 
 def _grokbot_lines() -> Tuple[List[str], List[str]]:
+    # Off in the launcher is the owner's choice, not an outage; unreadable is unread, not "fine".
+    switch_state, switch_reason = grok_switch.read_switch()
+    if switch_state == grok_switch.OFF:
+        return [], []
+    if switch_state != grok_switch.ON:
+        return [], [f"UNKNOWN grokbot: {switch_reason}"]
     state = grok_status.read_status()
     if state.state == grok_status.UP:
         return [], []

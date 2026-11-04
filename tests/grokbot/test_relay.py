@@ -62,6 +62,7 @@ class FakeLauncher:
         self.board = BOARD
         self.exchange = EXCHANGE
         self.post_status = 200
+        self.settings = {"settings": {"grokbot_enabled": True}}
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -78,6 +79,8 @@ class FakeLauncher:
             def do_GET(self):
                 if self.path == "/api/board":
                     self._reply(200, outer.board) if outer.board is not None else self.send_error(500)
+                elif self.path == "/api/board/chief/settings":
+                    self._reply(200, outer.settings) if outer.settings is not None else self.send_error(500)
                 elif self.path.endswith("/exchange"):
                     self._reply(200, outer.exchange)
                 else:
@@ -233,6 +236,24 @@ try:
         capture_output=True, text=True, encoding="utf-8", env={**os.environ, "PYTHONUTF8": "1"}, check=False,
     )
     check(proc.returncode == 0 and "TARGET=chief" in proc.stdout, "relay.py runs directly as a script")
+
+    # --- the app-launcher switch: only a confirmed on lets a send through ------------------
+    for label, settings, reason in (
+        ("off", {"settings": {"grokbot_enabled": False}}, "disabled"),
+        ("missing", {"settings": {}}, "unknown"),
+        ("non-boolean", {"settings": {"grokbot_enabled": "yes"}}, "unknown"),
+        ("unreachable", None, "unknown"),
+    ):
+        fake.settings = settings
+        before = len(fake.posts)
+        code, out = run(fake, "send", WORKER[:8], "--file", message("rebase please"))
+        check(code == 1 and out.startswith(f"REFUSED reason={reason}") and len(fake.posts) == before,
+              f"send with the switch {label} is refused as {reason} and posts nothing")
+    code, out = run(fake, "read", CHIEF[:8])
+    check(code == 0 and "TARGET=chief" in out, "reads stay allowed while the switch is not on")
+    fake.settings = {"settings": {"grokbot_enabled": True}}
+    code, out = run(fake, "send", WORKER[:8], "--file", message("rebase please"))
+    check(code == 0 and out.startswith("SENT"), "send works again the moment the switch is on")
 
     # --- the pure checks -------------------------------------------------------------------
     check(refusals.destructive_family("please run the tests and report back") is None
