@@ -6,7 +6,7 @@ hook that sleeps 16 s before answering stands in for that slow start:
 `shared.run` passes under `HOOK_SPAWN_TIMEOUT_S` and raises `TimeoutExpired`
 under the former 15 s bound.
 
-Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_hook_spawn_timeout.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/guard_checks/test_hook_spawn_timeout.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent.parent
+REPO = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO / "tests"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from acceptance import shared  # noqa: E402
