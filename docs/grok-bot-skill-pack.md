@@ -24,7 +24,7 @@ $lib = "E:/automation/fleet-config/skills/_lib"
 | `& $py $lib/chief_ops.py exchange <session>` | a session's last reply |
 | `& $py $lib/chief_ops.py issues <repo>#<number> ...` | issue state |
 | `& $py $lib/grokbot/relay.py read <session>` | a session's last reply, credential-shaped text redacted |
-| `& $py $lib/grokbot/attention.py` | does anything need the owner: `ATTENTION=none` or one line per item; an `UNKNOWN` line (exit 3) means a source was not read, never "all clear" |
+| `& $py $lib/grokbot/attention.py` | does anything need the owner (waiting lanes, failed jobs, open Board questions, owner-check labels, Grok Bot status): `ATTENTION=none` or one line per item; an `UNKNOWN` line (exit 3) means a source was not read, never "all clear" |
 
 **Act, only when the owner explicitly asks in this chat for that exact action**
 

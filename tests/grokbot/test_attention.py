@@ -62,6 +62,28 @@ with mock.patch.object(attention.launcher, "_request", side_effect=OSError("down
     items, unknown = attention._board_lines("http://127.0.0.1:1")
 check(not items and unknown, "an unreachable board is unknown, not empty")
 
+import json  # noqa: E402
+import tempfile  # noqa: E402
+
+with tempfile.TemporaryDirectory() as tmp:
+    plan = Path(tmp) / "chief-plan.json"
+    doc = attention.chief_plan.empty_plan()
+    doc["updated_at"] = "2026-11-04T08:00:00Z"
+    with mock.patch.object(attention.chief_plan, "plan_file", return_value=plan):
+        check(attention._question_lines()[1], "a missing plan file is unknown, not none")
+        plan.write_text("{not json", encoding="utf-8")
+        check(attention._question_lines()[1] and not attention._question_lines()[0], "a corrupt plan is unknown")
+        plan.write_text(json.dumps(doc), encoding="utf-8")
+        check(attention._question_lines() == ([], []), "an empty question list prints none")
+        doc["waiting_on_roberto"] = [{"id": "q1", "text": "Merge the thing?", "ref": "repo-a#1"},
+                                     {"id": "q2", "text": "Ship it"}]
+        plan.write_text(json.dumps(doc), encoding="utf-8")
+        before = plan.read_bytes()
+        items, unknown = attention._question_lines()
+        check(items == ["question q1 repo-a#1: Merge the thing?", "question q2: Ship it"] and not unknown,
+              "two open questions print both with id, ref and text")
+        check(plan.read_bytes() == before, "reading the plan leaves the file untouched")
+
 with mock.patch.object(attention.grok_status, "read_status", return_value=grok_status.Status("unknown", "x")):
     check(attention._grokbot_lines()[1], "grokbot unknown is reported as unknown")
 with mock.patch.object(attention.grok_status, "read_status", return_value=grok_status.Status("down", "x")):

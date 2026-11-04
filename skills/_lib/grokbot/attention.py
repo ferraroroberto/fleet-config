@@ -3,7 +3,8 @@
     attention.py            print `ATTENTION=none` or one line per item; exit 0 when every source was read (items or none), 3 when any was not
 
 Sources, all read with GET requests or `gh` reads: the Board's live sessions (a lane waiting on the owner),
-its Job cards (a failed Job), the owner-check labels (`needs-owner`, `needs-validation`), and the Grok Bot
+its Job cards (a failed Job), the chief plan's open questions (`waiting_on_roberto[]`, read through
+`chief_plan.load`), the owner-check labels (`needs-owner`, `needs-validation`), and the Grok Bot
 status. A source that could not be read prints its own `UNKNOWN` line and the exit code is 3: unread is never
 folded into "nothing needs you". Nothing is sent, dispatched, stopped or written, and nothing polls: the owner
 asks, the check runs.
@@ -19,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # A direct run starts without `skills/_lib` on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import chief_plan  # noqa: E402
 from chief import launcher, rails  # noqa: E402
 from grokbot import status as grok_status  # noqa: E402
 from owner_check import github as owner_github  # noqa: E402
@@ -45,6 +47,22 @@ def _board_lines(base_url: str) -> Tuple[List[str], List[str]]:
     return items, []
 
 
+def _question_lines() -> Tuple[List[str], List[str]]:
+    path = chief_plan.plan_file()
+    # `load` reads a missing file as the empty plan; here a missing file is an unread source, not "no questions".
+    if not path.exists():
+        return [], ["UNKNOWN questions: no chief plan file"]
+    try:
+        doc = chief_plan.load(path)
+    except (OSError, ValueError) as exc:
+        return [], [f"UNKNOWN questions: {type(exc).__name__}"]
+    items = []
+    for row in doc["waiting_on_roberto"]:
+        ref = f" {row['ref']}" if row.get("ref") else ""
+        items.append(f"question {row.get('id', '?')}{ref}: {chief_plan.short_text(str(row.get('text', '')))}")
+    return items, []
+
+
 def _owner_lines() -> Tuple[List[str], List[str]]:
     try:
         result = owner_github.list_items(None)
@@ -66,7 +84,7 @@ def _grokbot_lines() -> Tuple[List[str], List[str]]:
 
 def gather(base_url: str, sources: Optional[List[Callable[[], Tuple[List[str], List[str]]]]] = None
            ) -> Dict[str, Any]:
-    sources = sources or [lambda: _board_lines(base_url), _owner_lines, _grokbot_lines]
+    sources = sources or [lambda: _board_lines(base_url), _question_lines, _owner_lines, _grokbot_lines]
     items: List[str] = []
     unknown: List[str] = []
     for source in sources:
