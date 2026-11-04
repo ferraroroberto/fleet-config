@@ -198,6 +198,17 @@ def fleet_repo_names(projects_toml: Optional[Path] = None) -> List[str]:
     return kept
 
 
+def newest_first(items: List[Dict[str, Any]]) -> None:
+    """Sort in place: latest `since` first, undated items last, ties by repo and number.
+
+    The Board's "Waiting for start" shows the most recent step on top; an item
+    with no block has no date and sinks rather than being given one. Two stable
+    passes, so the date's reverse order never flips the tie-break.
+    """
+    items.sort(key=lambda it: (it["repo"], it["number"] or 0))
+    items.sort(key=lambda it: str(it.get("since") or ""), reverse=True)
+
+
 def list_items(repos: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     """Every issue carrying an owner-check label, fleet-wide: the reader API.
 
@@ -229,5 +240,5 @@ def list_items(repos: Optional[Sequence[str]] = None) -> Dict[str, Any]:
                     failed.add(repo)
                 continue
             items.extend(_item(repo, row, kind) for row in result)
-    items.sort(key=lambda it: (it["kind"], it["repo"], it["number"] or 0))
+    newest_first(items)
     return {"items": items, "unknown": unknown}
