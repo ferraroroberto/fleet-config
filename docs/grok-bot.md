@@ -37,6 +37,12 @@ The episode lives in `grokbot-outage.json` in the hooks state directory, outside
 
 The check only counts when something runs `ensure` regularly. App Launcher runs it as a 10-minute Job; the Job entry belongs to that repo.
 
+## Talking to sessions
+
+`skills/_lib/grokbot/relay.py` is how the Bot sends text into a launcher session and reads one back. It tags every message with its sender, refuses credential-shaped and destructive text, and logs each call outside the code tree. The commands the Bot may run, and why they matter with approval off, are in [grok-bot-skill-pack.md](grok-bot-skill-pack.md).
+
 ## Test seams
+
+`tests/grokbot/test_relay.py` runs the relay against a loopback fake launcher that records every POST, so no real session is messaged.
 
 `tests/grokbot/test_status.py` drives every state from a fake process table, a temp status file, a fake launcher and a fake notifier, and replaces `subprocess` for the whole file so a real app start or a real message fails the test. The `GROKBOT_EXE` and `GROKBOT_STATUS_FILE` environment variables point the helper at other files; the chief test suites set them to nothing so they never read the real app.

@@ -93,6 +93,10 @@ Per-topic references that the intro used to carry, one file each:
 - **[`docs/grok-bot.md`](docs/grok-bot.md)** — keeping the Grok Bot desktop app
   running as a phone front door: status, ensure, the board token and the single
   outage ping.
+- **[`docs/grok-bot-skill-pack.md`](docs/grok-bot-skill-pack.md)** — the Grok Bot
+  instruction pack and the `relay.py` send/read helper behind it: the commands
+  it may run, why Always allow makes the rules the only guard, and what the relay
+  refuses.
 
 The rest of `docs/` is one file per durable topic — see the directory.
 
