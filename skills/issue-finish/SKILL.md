@@ -363,9 +363,10 @@ Decision below is driven by the project's `## CI expectations` block
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
 - **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)), after the close:
-  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|no --try "<what Roberto does>" [--proof <URL> …]`.
-  `yes` only when the original repro or acceptance re-ran and passed in the lane's own run; `no` when step 1
-  left a criterion `UNVERIFIABLE`. Exit 2 → re-run with `--try`. Step 7 carries its `OWNER_CHECK=` line
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|scheduled|no --try "<what Roberto does>" [--proof <URL> …]`.
+  `yes` only when the original repro or acceptance re-ran and passed in the lane's own run; `scheduled` when
+  all of it did except a criterion only a later scheduled run can show (the chief reads it); `no` when step 1
+  left any other criterion `UNVERIFIABLE`. Exit 2 → re-run with `--try`. Step 7 carries its `OWNER_CHECK=` line
   verbatim; `unknown` is its own state, never reported as none.
 - Clear the issue's Fleet Board marker now that the merge is authoritative:
   ```

@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-from owner_check import backfill, block, cli, github, rule  # noqa: E402
+from owner_check import backfill, block, cli, github, reclassify, rule  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -40,18 +40,39 @@ check(d.verdict == rule.REQUIRED, "iPhone in the title is a real-device check")
 d = rule.decide(ENH, "Fix", "Tested on iPhone 390px and the loopback 127.0.0.1 report page")
 check(d.verdict == rule.NONE, f"body words never fire (only the title is matched), got {d}")
 
-d = rule.decide(ENH, "Sign-in: renew from the app", "")
-check(any("account" in r for r in d.reasons), "account word in an enhancement title fires")
-check(rule.decide(["chore"], "Sign-in: renew from the app", "").verdict == rule.NONE,
+check(rule.decide(ENH, "Sign-in: lock out after six wrong passwords", "").verdict == rule.NONE,
+      "the app's own sign-in is drivable with test credentials: no owner check")
+d = rule.decide(ENH, "Calendar: Google sign-in for the import", "")
+check(any("third-party account" in r for r in d.reasons), f"a third-party sign-in fires, got {d}")
+check(rule.decide(ENH, "Add OAuth for the mail sync", "").verdict == rule.REQUIRED, "OAuth still fires")
+check(rule.decide(ENH, "Sign up for the newsletter provider", "").verdict == rule.REQUIRED, "a sign-up still fires")
+check(rule.decide(["chore"], "Add OAuth for the mail sync", "").verdict == rule.NONE,
       "the account clause is enhancement-only")
 
-d = rule.decide(ENH, "Tidy", "**Owner validation:** none — nothing to try", [("added", "webapp/static/new.js")])
-check(d.verdict == rule.REQUIRED and any("surface" in r for r in d.reasons),
+d = rule.decide(ENH, "Tidy", "**Owner validation:** none - nothing to try", [("added", "webapp/static/views/new.html")])
+check(d.verdict == rule.REQUIRED and any("new page or view" in r for r in d.reasons),
       f"an explicit none never suppresses a diff hit, got {d}")
-check(rule.decide(["chore"], "Tidy", "", [("added", "webapp/static/new.js")]).verdict == rule.NONE,
+check(rule.decide(ENH, "Tidy", "", [("added", "content/pages/privacy.html")]).verdict == rule.REQUIRED,
+      "a new page without proof fires")
+check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/js/views/card.js")]).verdict == rule.REQUIRED,
+      "a new view module without proof fires")
+check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/conversation-view.js")]).verdict == rule.REQUIRED,
+      "a *-view.js module fires")
+check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/views/new.html")], ux_proven=True).verdict == rule.NONE,
+      "a proofed new view no longer fires")
+check(rule.decide(ENH, "Tidy", "", [("added", "app/webapp/static/_vendored/sign-in/README.md"),
+                                    ("added", "app/webapp/static/_vendored/modal/modal.html")]).verdict == rule.NONE,
+      "a vendored README or file is not a new surface")
+check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/links/links-merge.js")]).verdict == rule.NONE,
+      "a helper script is not a new surface")
+check(rule.decide(ENH, "Tidy", "", [("added", "tests/fixtures/page.html")]).verdict == rule.NONE,
+      "a test fixture page is not a new surface")
+check(rule.decide(["chore"], "Tidy", "", [("added", "webapp/static/views/new.html")]).verdict == rule.NONE,
       "an added UI file only counts for enhancements")
-check(rule.decide(ENH, "Tidy", "", [("modified", "webapp/static/app.js")]).verdict == rule.NONE,
+check(rule.decide(ENH, "Tidy", "", [("modified", "webapp/static/views/app.html")]).verdict == rule.NONE,
       "a modified UI file is not a new surface")
+check(rule.ux_proven("- UX: VISUAL_PROOF=fresh (kept locally)") and not rule.ux_proven("VISUAL_PROOF=stale")
+      and not rule.ux_proven(""), "only a fresh VISUAL_PROOF line counts as proof")
 
 d = rule.decide(["chore"], "Tidy", "", [("modified", "src/capture/wasapi_loop.py")])
 check(any("live-input path" in r for r in d.reasons), "a live-input path fires for any type")
@@ -65,6 +86,8 @@ d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO)
 check(d.verdict == rule.REQUIRED and "could not verify" in d.reasons[0], "an unverifiable bug needs the owner")
 d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_UNSTATED)
 check(d.verdict == rule.REQUIRED and "did not state" in d.reasons[0], "unstated verification is never assumed")
+check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
+      "a criterion only a later scheduled run can show is the chief's to read, not the owner's")
 check(rule.decide(["bug"], "Dictation: fix", "", [], rule.VERIFIED_YES).verdict == rule.REQUIRED,
       "a live-only path still needs the owner even when the lane verified what it could")
 try:
@@ -139,6 +162,43 @@ check([(it.repo, it.anchor, it.source) for it in merged] == [("app-launcher", 10
       "a rule hit inside an audit item is dropped")
 
 
+# ---- reclassify ----
+
+def _item(reason, proof=("https://github.com/o/demo/pull/9",), block_=True):
+    return {"repo": "demo", "number": 7, "ref": "demo#7", "reason": reason, "proof": list(proof), "block": block_}
+
+
+def _iss(title="Lock out after six wrong passwords", labels=("enhancement",), body=""):
+    return {"title": title, "labels": list(labels), "body": body}
+
+
+def _re(item, issue, files=(), body=""):
+    return reclassify.reclassify(item, issue, lambda pr: list(files), lambda pr: body)
+
+
+v = _re(_item(backfill.BACKFILL_REASON), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["backfill"], f"a back-fill-only entry clears, got {v}")
+v = _re(_item("involves an account only the owner holds (sign-in); adds a new user-facing surface "
+              "(app/webapp/static/_vendored/sign-in/README.md)"), _iss(),
+        [("added", "app/webapp/static/_vendored/sign-in/README.md")])
+check(v.state == reclassify.CLEAR and v.dropped == ["own-sign-in", "surface"],
+      f"own sign-in + vendored README clear, got {v}")
+v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
+        [("added", "content/pages/privacy.html")])
+check(v.state == reclassify.KEEP, f"a new page with no proof stays, got {v}")
+v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
+        [("added", "content/pages/privacy.html")], "VISUAL_PROOF=fresh")
+check(v.state == reclassify.CLEAR and v.dropped == ["surface"], f"the same page with a fresh proof clears, got {v}")
+v = _re(_item("the lane could not verify the work in its own session"), _iss())
+check(v.state == reclassify.KEEP, "a recorded lane verification gap is kept as recorded")
+v = _re(_item("a hand-written reason", proof=()), _iss())
+check(v.state == reclassify.KEEP and v.kept == ["a hand-written reason"], "hand-written text is never re-derived")
+v = _re(_item("needs a real device or live input (mic), which a session cannot drive", proof=()), _iss("Mic: tune"))
+check(v.state == reclassify.UNKNOWN, "a rule reason with no PR to re-read is unknown, not cleared")
+v = _re(_item("", block_=False), _iss())
+check(v.state == reclassify.UNKNOWN, "an item with no block is unknown, not cleared")
+
+
 # ---- CLI against a fake gh ----
 
 class FakeGh:
@@ -148,6 +208,7 @@ class FakeGh:
         self.files = files
         self.fail = fail or ()
         self.comments = []
+        self.pr_body = ""
 
     def __call__(self, args):
         args = list(args)
@@ -159,6 +220,8 @@ class FakeGh:
             return json.dumps(self.issue)
         if key.startswith("api --paginate"):
             return self.files
+        if key.startswith("api repos/") and "pulls/" in args[1]:
+            return self.pr_body
         if key.startswith("issue comment"):
             path = args[args.index("--body-file") + 1]
             self.comments.append(Path(path).read_text(encoding="utf-8"))
@@ -192,6 +255,20 @@ def issue(labels=("bug",), title="Fix crash", body="", comments=()):
 fake = FakeGh(issue(), "modified\tsrc/app.py\n")
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 0 and "OWNER_CHECK=none" in out and not fake.writes(), f"verified bug: none, no writes ({code}, {out})")
+
+fake = FakeGh(issue(), "modified\tsrc/app.py\n")
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "scheduled"], fake)
+check(code == 0 and "SCHEDULED_READ=chief" in out and "OWNER_CHECK=none" in out and not fake.writes(),
+      f"a criterion only a scheduled run shows: none, the chief reads it ({code}, {out})")
+
+fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes", "--try", "open it"], fake)
+check(code == 1 and "REASON=adds a new page or view no UX proof covered" in out,
+      f"a new view without a visual proof is required ({code}, {out})")
+fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
+fake.pr_body = "Test plan\nVISUAL_PROOF=fresh"
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+check(code == 0 and "OWNER_CHECK=none" in out, f"the same view with VISUAL_PROOF=fresh in the PR is none ({code}, {out})")
 
 fake = FakeGh(issue(), "modified\tsrc/app.py\n")
 code, out = run(["finish", "demo#7", "--pr", "9"], fake)
@@ -287,5 +364,38 @@ finally:
     github._gh = original
 check(result == {"items": [], "unknown": []} and closed_rows == [],
       f"a repo with Issues switched off holds no items and is not unknown, got {result}")
+
+# ---- reclassify command ----
+
+class ReclassFake(FakeGh):
+    """One labelled backfill-only issue, plus one still-firing hand-written one."""
+
+    def __call__(self, args):
+        args = list(args)
+        if args[:2] == ["issue", "list"]:
+            label = args[args.index("--label") + 1]
+            if label != "needs-validation":
+                return "[]"
+            rows = []
+            for number, reason in ((5, backfill.BACKFILL_REASON), (6, "a hand-written reason")):
+                text = block.format_block(block.VALIDATE_AFTER, reason, "t", ["https://github.com/ferraroroberto/demo/pull/9"],
+                                          "2026-11-01")
+                rows.append({"number": number, "title": "Lock out", "state": "CLOSED", "url": "u",
+                             "labels": [], "comments": [{"body": text}]})
+            return json.dumps(rows)
+        return super().__call__(args)
+
+
+fake = ReclassFake(issue(labels=("enhancement", "needs-validation")))
+code, out = run(["reclassify", "--repo", "demo"], fake)
+check(code == 0 and "RECLASS would-clear demo#5" in out and "RECLASS keep demo#6" in out
+      and "RECLASSIFY=dry-run before=2 clear=1 keep=1 unknown=0" in out and not fake.writes(),
+      f"a dry run counts and writes nothing ({code}, {out})")
+fake = ReclassFake(issue(labels=("enhancement", "needs-validation")))
+code, out = run(["reclassify", "--repo", "demo", "--apply"], fake)
+cleared = block.parse_block(fake.comments[0]) if fake.comments else {}
+check(code == 0 and "RECLASSIFY=applied before=2 clear=1 keep=1" in out and cleared.get("kind") == block.CLEARED
+      and "back-fill-only" in cleared.get("answer", "") and len(fake.comments) == 1,
+      f"apply clears with a public-safe cleared block ({code}, {out}, {fake.comments})")
 
 _h.report_and_exit("test_owner_check")

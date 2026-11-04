@@ -96,6 +96,11 @@ def pr_files(repo: str, pr: int) -> List[Tuple[str, str]]:
     return files
 
 
+def pr_body(repo: str, pr: int) -> str:
+    """The PR's description, where `/issue-finish` records the `VISUAL_PROOF=` line."""
+    return _gh(["api", f"repos/{_slug(repo)}/pulls/{pr}", "--jq", ".body // \"\""])
+
+
 def pr_url(repo: str, pr: int) -> str:
     return f"https://github.com/{_slug(repo)}/pull/{pr}"
 

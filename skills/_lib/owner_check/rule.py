@@ -8,8 +8,9 @@ never hides real owner work.
 
 Self-verification comes first. Whatever the lane proved in its own session needs
 nobody; what it could not prove (no stated verification, or a live-only path a
-session cannot drive) and a new surface the owner has to try as a user need
-Roberto. Words are matched in the title only: issue bodies quote viewports
+session cannot drive) and a new page or view no UX proof covered need Roberto.
+An account clause fires only for a third party's account (sign-up, OAuth,
+subscription): the app's own password sign-in is drivable with test credentials. Words are matched in the title only: issue bodies quote viewports
 ("iPhone 390px"), network loopback and "report" so often that body matching
 flagged more issues than were enhancements at all.
 """
@@ -27,11 +28,14 @@ UNKNOWN = "unknown"
 # What the lane says about re-running the original repro / acceptance in-session.
 VERIFIED_YES = "yes"
 VERIFIED_NO = "no"
+# Everything verified in-session except a criterion only a later scheduled run can
+# show; reading that run is the chief's job, so it adds no reason.
+VERIFIED_SCHEDULED = "scheduled"
 VERIFIED_UNSTATED = "unstated"
 # Before the work exists (`/issue-add`) and for history (`backfill`) verification
 # is not a fact anyone can state, so the clause does not apply.
 VERIFIED_NA = "n/a"
-VERIFICATION_STATES = (VERIFIED_YES, VERIFIED_NO, VERIFIED_UNSTATED, VERIFIED_NA)
+VERIFICATION_STATES = (VERIFIED_YES, VERIFIED_SCHEDULED, VERIFIED_NO, VERIFIED_UNSTATED, VERIFIED_NA)
 
 _EXPLICIT = re.compile(r"^\W*owner validation\W*\s*(required|none)\b", re.IGNORECASE | re.MULTILINE)
 
@@ -42,13 +46,19 @@ _LIVE_ONLY_TITLE = re.compile(
     re.IGNORECASE,
 )
 _LIVE_ONLY_PATH_TOKENS = frozenset({"wasapi", "mic", "microphone", "camera", "webcam"})
-# An account only the owner holds (enhancements only).
+# A third party's account only the owner holds (enhancements only). The app's own
+# sign-in is not here: a session drives it with test credentials.
+_THIRD_PARTY = r"google|microsoft|apple|github|telegram|twitter|linkedin|notion|slack|stripe|cloudflare"
 _ACCOUNT_TITLE = re.compile(
-    r"\b(sign[- ]?ups?|sign[- ]?ins?|log[- ]?ins?|oauth|accounts?|subscriptions?)\b",
+    rf"\b(sign[- ]?ups?|oauth|subscriptions?|(?:sign|log)[- ]?in with|"
+    rf"(?:{_THIRD_PARTY}) (?:account|sign[- ]?in|log[- ]?in))\b",
     re.IGNORECASE,
 )
-# A new page, view or template is a surface the owner has to try (enhancements only).
-_SURFACE_PATH = re.compile(r"(^|/)(static|templates)/|\.html?$", re.IGNORECASE)
+# A new page or view entry is a surface the owner has to try (enhancements only);
+# a vendored component, a helper script or a test fixture is not.
+_PAGE_PATH = re.compile(r"\.html?$", re.IGNORECASE)
+_VIEW_PATH = re.compile(r"(^|/)views?/[^/]+\.m?js$|[-_.]view\.m?js$", re.IGNORECASE)
+_NOT_A_SURFACE = re.compile(r"(^|/)(_vendored|tests?|docs?|fixtures?)/", re.IGNORECASE)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 
 
@@ -62,6 +72,11 @@ def explicit_line(body: str) -> Optional[str]:
     """The issue's own `Owner validation: required|none` line, or None."""
     m = _EXPLICIT.search(body or "")
     return m.group(1).lower() if m else None
+
+
+def ux_proven(pr_body: str) -> bool:
+    """True when the PR description carries `/issue-finish`'s fresh visual-proof line."""
+    return "VISUAL_PROOF=fresh" in (pr_body or "")
 
 
 def _first(pattern: re.Pattern, text: str) -> Optional[str]:
@@ -78,7 +93,10 @@ def _live_only_path(files: Sequence[Tuple[str, str]]) -> Optional[str]:
 
 def _added_surface_path(files: Sequence[Tuple[str, str]]) -> Optional[str]:
     for status, path in files:
-        if status == "added" and _SURFACE_PATH.search(path.replace("\\", "/")):
+        norm = path.replace("\\", "/")
+        if status == "added" and not _NOT_A_SURFACE.search(norm) and (
+            _PAGE_PATH.search(norm) or _VIEW_PATH.search(norm)
+        ):
             return path
     return None
 
@@ -89,12 +107,14 @@ def decide(
     body: str,
     files: Optional[Sequence[Tuple[str, str]]] = None,
     verification: str = VERIFIED_NA,
+    ux_proven: bool = False,
 ) -> Decision:
     """Required or none, with every reason that fired.
 
     `files` are `(status, path)` pairs with GitHub's PR-file statuses
     (`added`, `modified`, `removed`, `renamed`); None means no diff is part of
-    this decision (an issue draft, a back-fill).
+    this decision (an issue draft, a back-fill). `ux_proven` is true when the PR
+    carries a fresh visual proof, which already showed the new page or view working.
     """
     if verification not in VERIFICATION_STATES:
         raise ValueError(f"verification must be one of {VERIFICATION_STATES}, got {verification!r}")
@@ -114,10 +134,10 @@ def decide(
     if enhancement:
         word = _first(_ACCOUNT_TITLE, title)
         if word:
-            reasons.append(f"involves an account only the owner holds ({word})")
-        added = _added_surface_path(files)
+            reasons.append(f"involves a third-party account only the owner holds ({word})")
+        added = None if ux_proven else _added_surface_path(files)
         if added:
-            reasons.append(f"adds a new user-facing surface ({added})")
+            reasons.append(f"adds a new page or view no UX proof covered ({added})")
     if verification == VERIFIED_UNSTATED:
         reasons.append("the lane did not state that it verified the work in its own session")
     elif verification == VERIFIED_NO:

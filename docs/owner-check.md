@@ -2,7 +2,7 @@
 
 Some work needs Roberto: after it ships, he has to try it as a user, or before it starts, he has to do a named step (a device probe, a signup, a decision). Owner checks make both states explicit. Code marks them at fixed points of the issue workflow; nobody's memory has to. The GitHub issue is the source of truth: the Board, the chief and every skill read it from there.
 
-Self-verification comes first. A lane proves everything it can in its own session: the gate, the original repro re-run, the screenshot baseline. Owner validation covers the rest, which is what a session cannot prove (a live microphone, a real phone, an account only Roberto holds) and a new surface he has to try as a user.
+Self-verification comes first. A lane proves everything it can in its own session: the gate, the original repro re-run, the screenshot baseline. Owner validation covers the rest, which is what a session cannot prove: a live microphone, a real phone, a third party's account only Roberto holds, and a new page or view no visual proof covered. A criterion that only a later scheduled run can show is the chief's to read, never the owner's.
 
 ## The two states
 
@@ -50,11 +50,11 @@ Every value is one line. Empty fields are left out. Repos are public, so a block
 | The issue says `Owner validation: required` | any type | the body's `Owner validation:` line |
 | A real device or live input: microphone, mic, camera, webcam, WASAPI, dictation, voice notes, iPhone, iPad, Android, on-device, haptics, on-screen keyboard, home-screen, Bluetooth | any type | the title |
 | A changed live-input path (`wasapi`, `mic`, `microphone`, `camera`, `webcam` path tokens) | any type | the PR's files |
-| An account only the owner holds: sign-up, sign-in, login, OAuth, account, subscription | enhancement | the title |
-| A new user-facing surface: an added file under `static/` or `templates/`, or an added `.html` | enhancement | the PR's files |
+| A third party's account: sign-up, OAuth, subscription, `sign in with`, or a named provider's account or sign-in | enhancement | the title |
+| A new page or view: an added `.html` page, or an added `.js` view module (`views/*.js`, `*-view.js`), outside `_vendored/`, `tests/`, `docs/` and `fixtures/`, when the PR has no `VISUAL_PROOF=fresh` line | enhancement | the PR's files and body |
 | The lane did not state in-session verification, or said it could not verify | any type | `finish --verified` |
 
-Words are matched in the title only. Issue bodies quote phone viewports, network loopback and "report" so often that body matching flagged more issues than there were enhancements. A UI tweak a screenshot baseline proves needs nobody. A bug the lane fixed and re-verified in-session needs nobody either, unless it touches a live-only path.
+Words are matched in the title only. Issue bodies quote phone viewports, network loopback and "report" so often that body matching flagged more issues than there were enhancements. The app's own password sign-in is drivable with test credentials, so it never fires; a vendored component's README, a helper script and a page a fresh visual proof covered do not either. A UI tweak a screenshot baseline proves needs nobody. A bug the lane fixed and re-verified in-session needs nobody either, unless it touches a live-only path.
 
 `unknown` is its own state, never folded into `none`. The CLI produces it when the issue or the PR cannot be read, or when a required label or comment write did not land.
 
@@ -70,7 +70,7 @@ Words are matched in the title only. Issue bodies quote phone viewports, network
 | Chief, parking | `owner_check mark <repo>#<N> --kind before-start --reason "…" --try "…"` | Owner-blocked work gets the label, never `plan set --status parked`. |
 | Board answer | `owner_check clear <repo>#<N> --answer "…"` | Removes the label and posts a `cleared` block with the answer. |
 
-`--verified yes` means the original repro or acceptance re-ran and passed in this session. Pass `no` when the step-1 acceptance audit left a criterion unverifiable. Omitting it counts as unstated, which is required.
+`--verified yes` means the original repro or acceptance re-ran and passed in this session. Pass `scheduled` when everything did except a criterion that only a later scheduled run can show: it adds no reason and prints `SCHEDULED_READ=chief`, the chief reading that run. Pass `no` when the step-1 acceptance audit left any other criterion unverifiable. Omitting it counts as unstated, which is required.
 
 Run every command as `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py <command> …`.
 
@@ -80,7 +80,7 @@ Run every command as `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Use
 | --- | --- | --- | --- | --- |
 | `classify`, `finish` | none | required (`APPLIED=yes` or `already`) | refused: required with no `--try` | unknown |
 | `gate` | clear | blocked | | unknown |
-| `mark`, `clear`, `ensure-labels`, `backfill`, `list` | every write or read landed | | | something did not land; named on its own line |
+| `mark`, `clear`, `ensure-labels`, `backfill`, `reclassify`, `list` | every write or read landed | | | something did not land; named on its own line |
 
 Each command prints `KEY=value` lines (`OWNER_CHECK=`, `OWNER_GATE=`, `REASON=`, `TRY=`, `MARKED=`, `CLEARED=`, `UNKNOWN=`).
 
@@ -89,6 +89,10 @@ Each command prints `KEY=value` lines (`OWNER_CHECK=`, `OWNER_GATE=`, `REASON=`,
 `owner_check.list_items(repos=None)` returns `{"items": [...], "unknown": [{"repo", "reason"}]}`, one item per labelled issue (open or closed). Each item has `repo`, `number`, `ref`, `title`, `url`, `state`, `kind` and `block`, plus the block's `reason`, `try`, `proof` and `since`. A labelled issue with no matching block is still an item, with `block: false` and empty fields; a reader never invents them. A repo that could not be read lands in `unknown`, never in an empty list. A repo with GitHub Issues switched off holds no items and is not `unknown`. `owner_check list --json` prints the same shape.
 
 GitHub's issue-list index trails a label write by a few seconds, so an item marked moments ago can be missing from `list` while the issue itself already carries the label. Read the issue (`gate`) when it has to be current to the second.
+
+## Re-classifying the list
+
+`owner_check reclassify [--repo R] [--apply]` re-runs the rule over every `needs-validation` issue and clears the label where no reason fires any more, with a `cleared` block that names the rule that stopped applying. A dry run prints `RECLASS keep|would-clear|unknown <ref>` per item and a `RECLASSIFY=` count line, and writes nothing. Three kinds of recorded reason are never recomputed, so they keep the item: what the lane said about its own verification, any text a person wrote by hand, and any item whose PR cannot be read (`unknown`, never cleared). Everything else is recomputed from the issue title and body, the PR's files and a `VISUAL_PROOF=fresh` line in the PR body. A back-fill-only entry has no rule reason, so it clears.
 
 ## Back-fill
 
