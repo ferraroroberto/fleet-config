@@ -55,7 +55,8 @@ class ReapReadOnlySearchTests(unittest.TestCase):
 
     def test_read_only_search_leftovers_exit_by_the_delivery_verdict(self):
         code, formatter, lines = self._run_with_orphan(["grep", "head"])
-        print(f"reaped read-only orphan: exit={code} · {lines[-3:]}", flush=True)
+        # ascii() keeps the progress glyphs from raising on a cp1252 stdout.
+        print(f"reaped read-only orphan: exit={code} - {ascii(lines[-3:])}", flush=True)
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertEqual(formatter.owned_orphans, 0)
         warning = [line for line in lines if "reaped" in line]
