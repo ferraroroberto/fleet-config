@@ -12,7 +12,13 @@ $py = "E:/automation/fleet-config/.venv/Scripts/python.exe"
 & $py skills/_lib/grokbot/status.py ensure   # start the app minimized when it is down, then record the check
 ```
 
-Both print `GROKBOT=<state>` and exit 0 for `up`, 1 for `down` and `signed-out`, 3 for `unknown`. `ensure` also prints `ENSURE=none|started|start-failed|refused` and the outage counter.
+`attention.py` answers "does anything need me?" on demand: nothing polls or pings. It prints `ATTENTION=none` or one `ATTENTION ...` line per item (a lane waiting on the owner, a failed Job, an open `needs-owner` or `needs-validation` issue, Grok Bot down), reading the Board and `gh` with GETs and reads only. A source it could not read prints its own `UNKNOWN ...` line and the exit is 3, so unread is never reported as quiet.
+
+```powershell
+& $py skills/_lib/grokbot/attention.py
+```
+
+`status` and `ensure` both print `GROKBOT=<state>` and exit 0 for `up`, 1 for `down` and `signed-out`, 3 for `unknown`. `ensure` also prints `ENSURE=none|started|start-failed|refused` and the outage counter.
 
 | State | Meaning | What `ensure` does |
 |---|---|---|

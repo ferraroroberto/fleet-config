@@ -825,6 +825,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "refusing on unknown, and the one-ping-per-outage episode, with the "
      "launcher and notifier faked and subprocess replaced so no real app "
      "start or message can happen"),
+    ("grokbot_attention", "grokbot/test_attention.py",
+     "the read-only Grok Bot attention digest over faked sources -- none "
+     "versus items, an unreadable source printing UNKNOWN with exit 3 and "
+     "never folding into none, channel sessions skipped, GET-only board "
+     "reads, and a scan proving the verb has no write path"),
     ("grokbot_relay", "grokbot/test_relay.py",
      "the Grok Bot relay against a loopback fake launcher that records every "
      "POST -- the sender tag, delivery to the chief and channel sessions, "

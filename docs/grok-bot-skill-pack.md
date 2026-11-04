@@ -24,6 +24,7 @@ $lib = "E:/automation/fleet-config/skills/_lib"
 | `& $py $lib/chief_ops.py exchange <session>` | a session's last reply |
 | `& $py $lib/chief_ops.py issues <repo>#<number> ...` | issue state |
 | `& $py $lib/grokbot/relay.py read <session>` | a session's last reply, credential-shaped text redacted |
+| `& $py $lib/grokbot/attention.py` | does anything need the owner: `ATTENTION=none` or one line per item; an `UNKNOWN` line (exit 3) means a source was not read, never "all clear" |
 
 **Act, only when the owner explicitly asks in this chat for that exact action**
 
@@ -32,9 +33,8 @@ $lib = "E:/automation/fleet-config/skills/_lib"
 | `& $py $lib/grokbot/relay.py send <session> --file <path>` | types the file's text into a live session |
 | `& $py $lib/chief_ops.py dispatch <repo> <number>` | starts a lane on an issue, behind the chief's own refusals |
 | `& $py $lib/chief_ops.py stop <session>` | quits a live session |
-| `& $py $lib/chief_ops.py say <session> --file <path>` | types text into a session |
 
-Prefer `relay.py send` to `say` for any text going into a session: only the relay tags the message as coming from the Bot and refuses credentials and destructive steers. `say` does neither.
+`relay.py send` is the only way to put text into a session. Never run `chief_ops.py say`: it adds no sender tag and refuses nothing.
 
 `<session>` is the 8-character id the board prints.
 
