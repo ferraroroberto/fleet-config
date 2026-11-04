@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Tuple
 
 from acceptance.hook_cases.host_power import ALLOWED, REFUSED
-from acceptance.shared import HOOKS, PYTHON, REPO, _Checker, hook_env
+from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, HOOKS, PYTHON, REPO, _Checker, hook_env
 
 _ENTRY = (
     "import sys\n"
@@ -30,7 +30,7 @@ def _codex_verdict(entry: Path, tool: str, command: str) -> Tuple[int, str]:
     payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": str(REPO),
                "tool_input": {"command": command}}
     res = subprocess.run([PYTHON, str(entry)], input=json.dumps(payload), capture_output=True,
-                         text=True, timeout=15, env=hook_env())
+                         text=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
     return res.returncode, res.stdout
 
 

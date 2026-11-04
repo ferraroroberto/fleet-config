@@ -20,7 +20,7 @@ from typing import Callable, Dict, Optional, Tuple
 
 from acceptance.checks_dispatch import BASH_HOOKS, POWERSHELL_HOOKS, dispatch
 from acceptance.hook_matrix import FAKE_GHP
-from acceptance.shared import HOOKS, PYTHON, _Checker, hook_env, run
+from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, HOOKS, PYTHON, _Checker, hook_env, run
 
 FAKE_VALUE = "FAKE-VALUE-NOT-A-SECRET-0000"
 
@@ -159,7 +159,7 @@ def _harness_checks(check: _Checker, root: Path) -> None:
     entry = _codex_entry(root)
     for command, refused in (("cat .env", True), ("cat .env.example", False)):
         res = subprocess.run([PYTHON, str(entry)], input=json.dumps(_payload("Bash", command, root)),
-                             capture_output=True, text=True, timeout=15, env=hook_env())
+                             capture_output=True, text=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
         check(f"secret_read: Codex `{command}` -> {'deny' if refused else 'allow'}",
               res.returncode == 0 and _is_codex_deny(res.stdout) is refused
               and FAKE_VALUE not in res.stdout + res.stderr, res.stdout + res.stderr)

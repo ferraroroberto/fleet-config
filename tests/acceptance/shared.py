@@ -22,6 +22,11 @@ from typing import Any, Callable, Dict, Tuple
 REPO = Path(__file__).resolve().parent.parent.parent
 HOOKS = REPO / "hooks"
 
+# Hang guard for every acceptance check that spawns a hook, not a speed assertion: a
+# cold interpreter start plus imports takes several seconds when other gates share
+# the box, and only a hook that never returns should fail the check.
+HOOK_SPAWN_TIMEOUT_S = 120
+
 sys.path.insert(0, str(HOOKS))
 # Imported for the constant rather than re-spelled as a literal here: the env
 # var name is the hooks' own contract (fleet-config#835), and a rename must
@@ -148,7 +153,7 @@ def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = N
         input=json.dumps(payload),
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=HOOK_SPAWN_TIMEOUT_S,
         env=env,
     )
     return res.returncode, res.stdout, res.stderr

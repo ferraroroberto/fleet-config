@@ -54,6 +54,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "rules it enforces, the skip in dead_code_leads and prompt-audit lint for "
      "an adopted repo, and an unknown or non-adopted repo still scanned "
      "(fleet-config#1645)"),
+    ("hook_spawn_timeout", "acceptance/test_hook_spawn_timeout.py",
+     "the shared acceptance hook-spawn bound is a hang guard: a slow start passes it and fails the former 15s bound"),
     ("structural_scope", "acceptance/test_structural_scope.py",
      "the structural check's scope (repo-specific, generalizable, "
      "scaffold-owned, n/a; an unreadable scaffold catalog is unknown) and the "
