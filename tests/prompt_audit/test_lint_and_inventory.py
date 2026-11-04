@@ -73,8 +73,8 @@ minimize tool calls
 r45 = pa.lint_entry(entry_for(R45), RULES, AUD)
 check(r45.counts().get("R-45") == 4, f"R-45 counts the four discouraging lines only (got {r45.counts()})")
 r45_scoped = by_rule(pa.lint_entry(entry_for(R45, audience="claude"), RULES, AUD), "R-45")
-check(r45_scoped and all(h.cap == "consider" for h in r45_scoped),
-      "R-45 is consider-only in its first cycle: consider even in a claude-scoped file")
+check(r45_scoped and all(h.cap != "consider" for h in r45_scoped),
+      "R-45 is a normal rule: a claude-scoped file's hits are not capped at consider")
 
 multi = pa.lint_entry(entry_for("# M\n\nKeep the hub on one port.\nRoute Claude traffic through it.\n"), RULES, AUD)
 check([h.line for h in by_rule(multi, "R-17")] == [4], "R-17 anchors on the line naming the vendor term, not the paragraph start")
