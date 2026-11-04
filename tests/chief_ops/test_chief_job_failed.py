@@ -13,35 +13,18 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_c
 
 from __future__ import annotations
 
-import contextlib
-import io
-import json
 import shutil
-import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import chief_ops as co  # noqa: E402
-
-sys.path.insert(0, str(REPO / "tests" / "_lib"))
-from check_harness import CheckHarness  # noqa: E402
-
-_h = CheckHarness()
-check = _h.check
+from _mailbox_support import publish, run_cli, stamp  # noqa: E402
+from _suite import _h, check, co  # noqa: E402,F401
 
 JOB_ID = "6b1f0c2e9d3a4f58a7c4e1d2b3a49586"
 NOT_CONFIRMED_ID = "7c2a1d3f0e4b5a69b8d5f2e3c4b5a697"
 REAPED_ID = "8d3b2e4a1f5c6b7ac9e6a3f4d5c6b7a8"
 V2_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
 NEEDS_INPUT_ID = "1a2b3c4d5e6f70819293a4b5c6d7e8f9"
-
-
-def stamp(seconds_ago: int) -> str:
-    # The readers filter by the real clock (24 h TTL), so events carry real stamps.
-    return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def job_event(event_id: str, **fields) -> dict:
@@ -52,24 +35,6 @@ def job_event(event_id: str, **fields) -> dict:
             "launcher_sid": None, "number": None, "agent": None, "dispatch_id": None,
             "ts": stamp(120), "excerpt": "Traceback\nValueError: stale", "excerpt_source": "job-output",
             **fields}
-
-
-def publish(inbox: Path, name: str, event: dict) -> None:
-    inbox.mkdir(parents=True, exist_ok=True)
-    (inbox / name).write_text(json.dumps(event), encoding="utf-8")
-
-
-def run_cli(inbox: Path, *argv: str) -> "tuple[int, str]":
-    old_dir, old_request = co.mailbox.chief_inbox_dir, co.launcher._request
-    co.mailbox.chief_inbox_dir = lambda: inbox
-    co.launcher._request = lambda base, path: {}  # the timeout path's board digest, never a live launcher
-    try:
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            code = co.main(list(argv))
-    finally:
-        co.mailbox.chief_inbox_dir, co.launcher._request = old_dir, old_request
-    return code, out.getvalue()
 
 
 HEAD = "- job Job tracker snapshot failed exit=1 run=20261022-050000 repo=life-os"

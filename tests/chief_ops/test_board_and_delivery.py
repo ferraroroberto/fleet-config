@@ -274,6 +274,30 @@ check(
 )
 
 
+# Cap scope `chief`: only sessions whose id the chief recorded count; `all` (managed_sids=None) keeps today's count.
+_scope_board = {
+    "claude_turn": [
+        _session_card(project="a", session_id="chief-lane"),
+        _session_card(project="b", session_id="owner-opened"),
+        _session_card(project="c", session_id="tg", label="telegram:x"),
+        _session_card(project="d", session_id="chief-lane-2", alive=False),
+    ],
+    "your_turn": [_session_card(project="e", session_id="plan-lane", status="needs-you"),
+                  _session_card(project="f", session_id="the-chief", label="chief")],
+}
+check(co.alive_worker_count(_scope_board) == 3, "alive_worker_count: scope all counts every live non-chief, non-telegram card")
+check(co.alive_worker_count(_scope_board, managed_sids={"chief-lane", "plan-lane", "tg", "the-chief", "chief-lane-2"}) == 2,
+      "alive_worker_count: scope chief counts only marked live cards, a plan-gated lane included, never the chief, a telegram or a dead one")
+check(co.alive_worker_count(_scope_board, managed_sids=set()) == 0,
+      "alive_worker_count: scope chief with no marks counts nothing")
+check(co.alive_worker_count(_scope_board, exclude_sid="chief-lane", managed_sids={"chief-lane"}) == 0,
+      "alive_worker_count: scope chief still excludes the caller's own card")
+check([co.rails.resolve_cap_scope(v) for v in (None, "chief", "all")]
+      == [("chief", None), ("chief", None), ("all", None)], "resolve_cap_scope: absent is chief, chief and all pass")
+check(all(co.rails.resolve_cap_scope(v)[0] is None and co.rails.resolve_cap_scope(v)[1] for v in ("", "ALL", 1, True)),
+      "resolve_cap_scope: any other value is an error with no scope")
+
+
 # ---- find_chief_session (fleet-config#443) -----------------------------------
 
 chief_sid = co.find_chief_session({

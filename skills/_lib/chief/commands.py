@@ -19,7 +19,7 @@ import urllib.error
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import active_issue
 import chief_managed
@@ -430,6 +430,46 @@ def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
     return refusal
 
 
+def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
+    """`(sids, error)` from the chief-managed marks: a missing file is an empty set (nothing
+    dispatched yet), an unreadable one is `None` with the reason, never an empty set."""
+    path = chief_managed.state_file()
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return set(), ""
+    except OSError as exc:
+        return None, f"{path.name} unreadable: {exc}"
+    try:
+        rows = json.loads(text)
+    except ValueError as exc:
+        return None, f"{path.name} is not JSON: {exc}"
+    if not isinstance(rows, dict):
+        return None, f"{path.name} is not a mapping"
+    return set(rows), ""
+
+
+def _worker_cap_inputs(chief_settings: Dict[str, Any]) -> Tuple[int, Optional[Set[str]], str]:
+    """`(cap, managed_sids, scope_error)` from the launcher's chief settings: the cap, the session
+    ids the cap counts (`None` counts every live session), and why the scope is unconfirmed."""
+    raw_cap = chief_settings.get("worker_cap")
+    cap = int(raw_cap) if raw_cap is not None else rails.DEFAULT_WORKER_CAP
+    scope, error = rails.resolve_cap_scope(chief_settings.get("worker_cap_scope"))
+    if scope != "chief":
+        return cap, None, error or ""
+    managed_sids, error = _chief_managed_sids()
+    return cap, managed_sids, error
+
+
+def _unconfirmed_dispatch_text(repo: str, number: int) -> str:
+    return (
+        f"DISPATCH=unconfirmed reason=timeout repo={repo} issue={number}\n"
+        f"The launcher may still be spawning this lane. Poll `chief_ops.py sessions` "
+        f"for up to a minute and do NOT dispatch again until it shows no {repo} "
+        f"session; a retry before then double-spawns."
+    )
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     brief = None
     if args.brief_file is not None:
@@ -452,15 +492,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     board = launcher._request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
     settings = launcher._request(args.base_url, "/api/board/chief/settings")
-    _worker_cap_raw = (settings.get("settings") or {}).get("worker_cap")
-    worker_cap = int(_worker_cap_raw) if _worker_cap_raw is not None else rails.DEFAULT_WORKER_CAP
+    worker_cap, managed_sids, scope_error = _worker_cap_inputs(settings.get("settings") or {})
+    if scope_error:
+        # What the cap counts is unknown: refuse rather than count either way.
+        print(f"REFUSED=worker cap scope not confirmed: {scope_error}")
+        return 1
 
     self_sid = rails.caller_session_id()
     reason = rails.refuse_dispatch(
         args.repo,
         args.mode,
         rails.repo_occupancy(columns, exclude_sid=self_sid),
-        rails.alive_worker_count(columns, exclude_sid=self_sid),
+        rails.alive_worker_count(columns, exclude_sid=self_sid, managed_sids=managed_sids),
         worker_cap,
         args.yolo_confirmed,
     ) or _owner_check_refusal(args.repo, args.number)
@@ -494,12 +537,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         if not isinstance(reason, TimeoutError):
             raise  # refused/unreachable: nothing was spawned, a plain failure
         # The server may still be spawning -- never a refusal, never a blind retry.
-        print(
-            f"DISPATCH=unconfirmed reason=timeout repo={args.repo} issue={args.number}\n"
-            f"The launcher may still be spawning this lane. Poll `chief_ops.py sessions` "
-            f"for up to a minute and do NOT dispatch again until it shows no {args.repo} "
-            f"session; a retry before then double-spawns."
-        )
+        print(_unconfirmed_dispatch_text(args.repo, args.number))
         return 1
     sid = (result.get("session") or {}).get("session_id")
     # One handle per dispatch, carried by every mailbox event the worker

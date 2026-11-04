@@ -9,7 +9,7 @@ import fnmatch
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple
 
 from fleet_core import fleet_repo_scan
 from owner_check import block as owner_block
@@ -21,6 +21,23 @@ from owner_check import block as owner_block
 # explicit 0 is a real setting and fails closed, so this applies only
 # to an absent value.
 DEFAULT_WORKER_CAP = 3
+
+# What the cap counts, from the launcher's `worker_cap_scope` setting: `chief`
+# only the sessions the chief dispatched (so a session Roberto opened himself
+# never takes a lane slot), `all` every live session. An absent value is
+# `chief`; any other value is an unreadable setting, never silently either.
+WORKER_CAP_SCOPES = ("chief", "all")
+DEFAULT_WORKER_CAP_SCOPE = "chief"
+
+
+def resolve_cap_scope(raw: Any) -> Tuple[Optional[str], Optional[str]]:
+    """`(scope, error)` for the settings' `worker_cap_scope`: one is always None."""
+    if raw is None:
+        return DEFAULT_WORKER_CAP_SCOPE, None
+    if raw in WORKER_CAP_SCOPES:
+        return str(raw), None
+    return None, f"worker_cap_scope {raw!r} is not one of {'/'.join(WORKER_CAP_SCOPES)}"
+
 
 # App Launcher stamps its own session id into every session it spawns
 # (`session_host.py`'s `agent_child_env`, the same `uuid4().hex` the board
@@ -145,7 +162,11 @@ def repo_occupancy(
     return occ
 
 
-def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = None) -> int:
+def alive_worker_count(
+    columns: Dict[str, Any],
+    exclude_sid: Optional[str] = None,
+    managed_sids: Optional[Collection[str]] = None,
+) -> int:
     """Alive, non-external session cards, excluding the caller's own and the
     standing chief's — the same liveness test as `repo_occupancy`
     (`_holds_a_live_pty`, fleet-config#932).
@@ -165,6 +186,10 @@ def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = Non
     Standing `telegram:*` channel sessions are not workers either
     (`_is_channel_session`, fleet-config#1212): three always-on ones would
     otherwise hold three lane slots forever.
+
+    `managed_sids` is the `chief` cap scope: only cards whose session id the
+    chief recorded at dispatch count, so a session the owner opened himself
+    holds no slot. `None` is the `all` scope, every card above.
     """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     return sum(
@@ -174,6 +199,7 @@ def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = Non
         and not _is_channel_session(c)
         and c.get("label") != "chief"
         and not (exclude_sid and str(c.get("session_id") or "") == exclude_sid)
+        and (managed_sids is None or str(c.get("session_id") or "") in managed_sids)
     )
 
 

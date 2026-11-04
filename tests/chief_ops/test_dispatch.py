@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 import contextlib
 import io
+import json
 
 from _suite import _CHIEF_SID, _WORKER_SID, _h, _session_card, check, co  # noqa: E402
 
@@ -57,9 +58,12 @@ check(
 # `cmd_dispatch` against a stubbed transport, with the launcher's env stamp
 # set exactly as a live session carries it.
 
+_STATE_DIR = Path(tempfile.mkdtemp(prefix="chief_ops_dispatch_scope_"))
+
+
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
                   jobs=None, allow_during_fleet_job=False, start_exc=None, model=None,
-                  catalog=(), effort=None, echo_effort=False, issue_state=None):
+                  catalog=(), effort=None, echo_effort=False, issue_state=None, worker_cap=3, scope=None, managed=None):
     posted = []
     requested = []
     _run_dispatch.start_timeout = None
@@ -77,7 +81,10 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         if path == "/api/board":
             return {"columns": {"claude_turn": cards, "your_turn": []}}
         if path == "/api/board/chief/settings":
-            return {"settings": {"worker_cap": 3}}
+            cap_settings = {"worker_cap": worker_cap}
+            if scope is not None:
+                cap_settings["worker_cap_scope"] = scope
+            return {"settings": cap_settings}
         if path == "/api/board/issues/start":
             posted.append(body)
             _run_dispatch.start_timeout = timeout
@@ -94,6 +101,13 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
 
     prior_request, prior_mark = co.launcher._request, co.chief_managed.mark
     prior_fetch = co.launcher.fetch_issue_state
+    prior_state_dir = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_STATE_DIR)  # the chief-managed marks, never the live ones
+    marks = _STATE_DIR / "chief-managed.json"
+    marks.unlink(missing_ok=True)
+    if managed is not None:
+        marks.write_text(managed if isinstance(managed, str) else json.dumps({sid: {} for sid in managed}),
+                         encoding="utf-8")
     prior_env = os.environ.get(co.LAUNCHER_SESSION_ID_ENV_VAR)
     co.launcher._request = _fake_request
     co.launcher.fetch_issue_state = lambda repo, number, owner=None: (
@@ -116,6 +130,10 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
     finally:
         co.launcher._request, co.chief_managed.mark = prior_request, prior_mark
         co.launcher.fetch_issue_state = prior_fetch
+        if prior_state_dir is None:
+            os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+        else:
+            os.environ["CLAUDE_HOOKS_STATE_DIR"] = prior_state_dir
         if prior_env is None:
             os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
         else:
@@ -129,6 +147,51 @@ _worker_card = _session_card(project="fleet-config", label="", session_id=_WORKE
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
 check(rc == 0 and len(posted) == 1,
       "cmd_dispatch: chief dispatches fleet-config while its own session is live (#838)")
+
+# The Settings worker cap is the only lane limit: read from the setting at each
+# dispatch, counting every live non-chief session, a lane idle at a plan gate
+# (a `your_turn` / `needs-you` card) included.
+_lanes = [_session_card(project=f"repo-{i}", session_id=f"lane-{i}") for i in range(2)]
+_plan_gated = _session_card(project="repo-9", session_id="lane-plan", status="needs-you")
+rc, posted = _run_dispatch([_chief_card, *_lanes], _CHIEF_SID, worker_cap=3, scope="all")
+check(rc == 0 and len(posted) == 1, "cmd_dispatch: 2 lanes under a cap of 3 dispatches")
+rc, posted = _run_dispatch([_chief_card, *_lanes], _CHIEF_SID, worker_cap=2, scope="all")
+check(rc == 1 and posted == [] and "REFUSED=at/over worker cap: 2/2 alive" in _run_dispatch.last_output
+      and _run_dispatch.last_requested == ["/api/board", "/api/board/chief/settings"],
+      "cmd_dispatch: lowering the cap to the live count refuses the next dispatch and stops nothing")
+rc, posted = _run_dispatch([_chief_card, _lanes[0], _plan_gated], _CHIEF_SID, worker_cap=2, scope="all")
+check(rc == 1 and posted == [] and "at/over worker cap: 2/2 alive" in _run_dispatch.last_output,
+      "cmd_dispatch: a lane idle at a plan gate holds a slot like any live lane")
+
+# The cap scope: `chief` (also the default when absent) counts only sessions the chief dispatched,
+# so lanes the owner opened himself never block a dispatch; `all` counts them.
+_own = [_session_card(project=f"own-{i}", session_id=f"own-{i}") for i in range(3)]
+_mine = [_lanes[0]]
+for _scope in ("chief", None):
+    rc, posted = _run_dispatch([_chief_card, *_own, *_mine], _CHIEF_SID, worker_cap=2, scope=_scope,
+                               managed=["lane-0"])
+    check(rc == 0 and len(posted) == 1,
+          f"cmd_dispatch: scope {_scope!r}: 3 owner-opened sessions do not use a slot (1 chief lane of 2)")
+rc, posted = _run_dispatch([_chief_card, *_own, *_lanes], _CHIEF_SID, worker_cap=2, scope="chief",
+                           managed=["lane-0", "lane-1"])
+check(rc == 1 and posted == [] and "REFUSED=at/over worker cap: 2/2 alive" in _run_dispatch.last_output,
+      "cmd_dispatch: scope chief: two chief lanes fill a cap of 2")
+rc, posted = _run_dispatch([_chief_card, *_own, *_mine], _CHIEF_SID, worker_cap=2, scope="all", managed=["lane-0"])
+check(rc == 1 and posted == [] and "at/over worker cap: 4/2 alive" in _run_dispatch.last_output,
+      "cmd_dispatch: scope all: owner-opened sessions count again")
+rc, posted = _run_dispatch([_chief_card, *_own, *_mine], _CHIEF_SID, worker_cap=2, scope="chief")
+check(rc == 0 and len(posted) == 1,
+      "cmd_dispatch: scope chief with no marks file yet counts nothing (nothing dispatched)")
+for _label, _bad in (("a corrupt marks file", "{not json"), ("a marks file that is not a mapping", "[1]")):
+    rc, posted = _run_dispatch([_chief_card, *_mine], _CHIEF_SID, worker_cap=2, scope="chief", managed=_bad)
+    check(rc == 1 and posted == [] and "REFUSED=worker cap scope not confirmed" in _run_dispatch.last_output,
+          f"cmd_dispatch: scope chief with {_label} is not confirmed, never counted as zero")
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, worker_cap=2, scope="bogus")
+check(rc == 1 and posted == [] and "worker cap scope not confirmed: worker_cap_scope 'bogus'" in _run_dispatch.last_output,
+      "cmd_dispatch: an unknown scope value is not confirmed")
+rc, posted = _run_dispatch([_chief_card, _session_card(project="tg", label="telegram:x", session_id="tg-1")],
+                           _CHIEF_SID, worker_cap=1, scope="all")
+check(rc == 0 and len(posted) == 1, "cmd_dispatch: neither the chief nor a telegram session counts in scope all")
 
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID,
                            issue_state={"labels": [{"name": "enhancement"}, {"name": "needs-owner"}]})
@@ -576,4 +639,5 @@ except ValueError:
     unknown_raised = True
 check(unknown_raised, "resolve_repo_path raises on an unknown repo name")
 
+shutil.rmtree(_STATE_DIR, ignore_errors=True)
 _h.report_and_exit("test_dispatch")
