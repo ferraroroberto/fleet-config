@@ -89,7 +89,6 @@ finally:
 # ---- wait-event: the chief inbox, claimed exactly once (fleet-config#999) ----
 
 import json  # noqa: E402
-import threading  # noqa: E402
 
 _inbox_tmp = Path(tempfile.mkdtemp(prefix="chief_inbox_ops_"))
 try:
@@ -140,18 +139,25 @@ try:
     got = co.wait_for_events(inbox, timeout=12, interval=5, sleep=lambda s: None, clock=lambda: next(ticks))
     check(got == [], "wait_for_events: an empty inbox returns [] at the timeout")
 
-    # Real timing: a writer thread's event makes the waiter return within the interval.
+    # CLI wiring: the event lands during the first interval wait. Sleep is faked, so the
+    # check asserts behaviour (the event is returned after one settle), never a wall-clock
+    # bound a loaded box could overrun.
     old_dir = co.mailbox.chief_inbox_dir
+    old_wait = co.mailbox.wait_for_events
+    cli_slept = []
+    def cli_sleep(seconds):
+        cli_slept.append(seconds)
+        if len(cli_slept) == 1:
+            publish("7-g.json", number=3, ts=real_ts())
     co.mailbox.chief_inbox_dir = lambda: inbox
+    co.mailbox.wait_for_events = lambda *a, **k: old_wait(*a, sleep=cli_sleep, **k)
     try:
-        threading.Timer(0.5, lambda: publish("7-g.json", number=3, ts=real_ts())).start()
-        started = time.monotonic()
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = co.main(["wait-event", "--timeout", "30", "--interval", "0.2"])
-        took = time.monotonic() - started
-        check(code == 0 and "WAIT_EVENT=events n=1" in out.getvalue() and took < 0.5 + 0.2 + co.WAIT_EVENT_SETTLE_SECONDS + 3,
-              f"wait-event CLI: exits soon after an event lands (took {took:.1f}s)")
+        check(code == 0 and "WAIT_EVENT=events n=1" in out.getvalue()
+              and cli_slept == [0.2, co.WAIT_EVENT_SETTLE_SECONDS],
+              f"wait-event CLI: returns the event after one interval wait and one settle (slept {cli_slept})")
 
         board_calls = []
         old_request = co.launcher._request
@@ -166,6 +172,7 @@ try:
               "wait-event CLI: an empty inbox times out with the board digest")
     finally:
         co.mailbox.chief_inbox_dir = old_dir
+        co.mailbox.wait_for_events = old_wait
 finally:
     shutil.rmtree(_inbox_tmp, ignore_errors=True)
 
