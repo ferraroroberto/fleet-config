@@ -20,6 +20,9 @@ Sample files (`.sample`, `.example`, `.template`, `.dist` in the name) and
 keys-only reads (`jq 'keys'`, `grep -o` ending at a key, `grep -c/-l/-q`,
 `Select-String -Quiet`, Python that only calls `.keys()`) stay allowed.
 
+Claude's own `Read` and `Grep` calls are judged by these same rules in
+`tool_sink.py`.
+
 Two machine-local switches in `hooks/projects.toml` `[global]`, so a false
 positive is fixed at once without a merge: `secret_read_allow` (path globs that
 may print) and `secret_read_guard = false` (turns this sink off; the commit and
@@ -34,7 +37,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
 import _lib
 from secret_scan import shell_paths
@@ -72,16 +75,17 @@ _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
 
 REFUSAL = (
-    "Blocked: this command would print the values of a secret-bearing file ({path}) "
+    "Blocked: this call would print the values of a secret-bearing file ({path}) "
     "into the session transcript, where everyone reading the session sees them. "
     "Inspect its shape without the values: `jq 'keys' {path}` for JSON, "
     "`grep -o '^[A-Za-z_][A-Za-z0-9_]*=' {path}` for a .env, or a Python one-liner "
-    "that prints only `.keys()`. A .sample/.example copy prints freely. "
+    "that prints only `.keys()`, or a Grep with output_mode `files_with_matches`. "
+    "A .sample/.example copy prints freely. "
     "A false positive is allowed by adding a path glob to `secret_read_allow` under "
     "`[global]` in hooks/projects.toml."
 )
 UNCONFIRMED = (
-    "Blocked: this command would print a secret-bearing file ({path}), and git could "
+    "Blocked: this call would print a secret-bearing file ({path}), and git could "
     "not confirm whether it is tracked ({reason}). Until git answers, it is treated "
     "as a live secret. Inspect its shape without the values (`jq 'keys' {path}`), "
     "or allow the path with `secret_read_allow` under `[global]` in hooks/projects.toml."
@@ -298,9 +302,9 @@ def tracked_status(path: Path) -> Tuple[Optional[bool], str]:
     return None, (err.splitlines() or [f"git exit {res.returncode}"])[0]
 
 
-def refusal(command: str, base: Path) -> Optional[str]:
-    """The refusal for a command that prints a live secret file, or ``None`` to allow it."""
-    candidates = list(dict.fromkeys(printed_secret_files(command, base)))
+def judge(candidates: Iterable[Path]) -> Optional[str]:
+    """The refusal for the first live secret file among ``candidates``, or ``None``."""
+    candidates = list(dict.fromkeys(candidates))
     if not candidates:
         return None
     settings = _settings()
@@ -316,3 +320,8 @@ def refusal(command: str, base: Path) -> Optional[str]:
         if tracked is None and unconfirmed is None:
             unconfirmed = UNCONFIRMED.format(path=path.as_posix(), reason=reason)
     return unconfirmed
+
+
+def refusal(command: str, base: Path) -> Optional[str]:
+    """The refusal for a command that prints a live secret file, or ``None`` to allow it."""
+    return judge(printed_secret_files(command, base))

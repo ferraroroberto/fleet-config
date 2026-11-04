@@ -133,7 +133,7 @@ fleet-config/
 │   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it
 │   ├── pre_commit_no_ai_trailer.py
 │   ├── secret_scan_guard.py
-│   ├── secret_scan/                # secret_scan_guard's read sink (refuse printing an untracked secret file) + shared shell-path resolution
+│   ├── secret_scan/                # secret_scan_guard's read sink (refuse printing an untracked secret file, from a shell or Read/Grep) + shared shell-path resolution
 │   ├── gh_body_file_guard.py       # PreToolUse on Bash: nudge gh --body heredocs/backticks → --body-file; PowerShell here-strings in Bash
 │   ├── bash_cmdexe_syntax_guard.py # PreToolUse on Bash: nudge cmd.exe-only syntax (%VAR%, dir /s, caret continuation) — Bash tool runs Git Bash, not cmd.exe
 │   ├── bash_windows_path_guard.py  # PreToolUse on Bash: block unquoted Windows drive-letter backslash paths — Git Bash strips the backslashes

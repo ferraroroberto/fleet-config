@@ -1,12 +1,15 @@
 """Block a live secret before it is committed, published to GitHub, or printed.
 
-Triggers on `PreToolUse` for `Bash`/`PowerShell`, on three independent sinks:
+Triggers on `PreToolUse` for `Bash`/`PowerShell`, on three independent sinks,
+and for Claude's `Read`/`Grep`, on the first alone:
 
 - **A printing read** — `cat`, `grep`, `Get-Content`, `Select-String`, an inline
-  Python one-liner and their kin naming an untracked secret-bearing file
-  (`.env`, `*config*.json`, …) would echo its values into the session
-  transcript. The rules, the allowed keys-only and sample reads, and the
-  machine-local switches live in `secret_scan/read_sink.py`.
+  Python one-liner and their kin, or a `Read` or content-mode `Grep`, naming an
+  untracked secret-bearing file (`.env`, `*config*.json`, …) would echo its
+  values into the session transcript. The rules, the allowed keys-only and
+  sample reads, and the machine-local switches live in
+  `secret_scan/read_sink.py`; `secret_scan/tool_sink.py` applies them to
+  `Read` and `Grep`.
 
 - **`git commit`** — scans the **staged diff** (`git diff --cached`) and the
   command string itself for a real credential.
@@ -54,7 +57,7 @@ from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-from secret_scan import read_sink, shell_paths  # noqa: E402
+from secret_scan import read_sink, shell_paths, tool_sink  # noqa: E402
 
 
 # Staged-diff timeout, a stated bound rather than a measured one: this runs on every commit in every
@@ -184,13 +187,19 @@ def _guard_gh_publish(cmd: str, base: Path) -> None:
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) not in {"Bash", "PowerShell"}:
+    tool = _lib.tool_name(payload)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+    if tool in {"Read", "Grep"}:
+        reason = tool_sink.tool_refusal(tool, _lib.tool_input(payload), _lib.cwd(payload))
+        if reason:
+            _lib.block(reason)
+        _lib.allow()
+    if tool not in {"Bash", "PowerShell"}:
         _lib.allow()
 
     cmd = _lib.command_string(payload)
     if not cmd:
         _lib.allow()
-    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     reason = read_sink.refusal(cmd, _lib.cwd(payload))
     if reason:
