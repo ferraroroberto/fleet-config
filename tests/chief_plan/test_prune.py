@@ -31,7 +31,7 @@ def _doc() -> dict:
     cp.add_item(doc, "app-launcher#1", "done one", status="merged")
     cp.add_item(doc, "app-launcher#2", "in flight", status="building")
     cp.add_item(doc, "life-os#3", "done two", status="merged")
-    cp.add_item(doc, "life-os#4", "parked one", status="parked")
+    cp.add_item(doc, "life-os#4", "parked one", status="parked", kind="umbrella")
     cp.set_lane(doc, "life-os", "gate", item="#3", session="sid-1")
     cp.add_waiting(doc, "Remember the last tab?", ref="app-launcher#2")
     return doc

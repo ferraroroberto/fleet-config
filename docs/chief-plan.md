@@ -41,9 +41,12 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | `queue[].ref` | `#N`, local to `repo`. |
 | `queue[].status` | `queued` \| `building` \| `gate` \| `merged` \| `parked` \| `waiting-roberto`. |
 | `queue[].note` | Free text, one short line. |
+| `queue[].kind` | Why a `parked` row is parked: `owner` (Roberto's step; the issue carries `needs-owner`, which is what lists it in the Board's "Waiting for start"), `umbrella` (kept open on purpose) or `blocked-by`. Optional so older files load; the writer sets it and drops it when the row leaves `parked`. |
+| `queue[].blocked_by` | `repo#N` the row waits on; present exactly when `kind` is `blocked-by`. |
 | `lanes[].model` / `queue[].model` | The model the lane or build item runs on: `opus` \| `sonnet`, picked per task by `docs/model-tiers.md`. Optional, so older files stay valid. |
 | `waiting_on_roberto[]` | `text` required: the short card line. `ref` optional and qualified (`repo#N`). Everything below is optional too. |
 | `waiting_on_roberto[].id` | Stable, unique within the list: a lowercase letter, then up to 31 letters, digits or hyphens. The writer assigns the next `q<N>` when none is given. Older files may have items without one. |
+| `waiting_on_roberto[].asked_at` | `YYYY-MM-DD` (UTC) the question was asked, stamped by the writer; the Board shows it beside the question. Older items have none. |
 | `waiting_on_roberto[].repo` | The fleet repo the question is about. It matches `ref`'s repo when both are set; the writer derives it from `ref`. |
 | `waiting_on_roberto[].question` / `detail` / `recommendation` | The full question, descriptive context, and the chief's recommendation. One line each, at most 1000 characters. |
 | `waiting_on_roberto[].options[]` | 0–4 choices: `label` required (at most 80 characters, unique), `description` optional, `recommended` optional bool. At most one is recommended unless `multi`. |
@@ -60,6 +63,14 @@ Every decision waiting on Roberto is an answerable question, and the writer enfo
 - `plan set <repo#N> --status waiting-roberto`, and `plan add … --status waiting-roberto`, are refused (exit 2, naming `plan ask`) unless an open `waiting_on_roberto` item with a `question` has that `ref`. Ask first, then set the status.
 - `plan wait "<text>"` files its text as the question, the short form of `plan ask`. It never writes an item with nothing to answer.
 - `validate()` does not enforce either rule, so a file written before them still loads.
+
+## Parked rows
+
+The Board's "Waiting for start" is the open questions plus every issue carrying `needs-owner`, newest first with a date. A parked row that does not say why would hide an owner step among umbrellas and blocked work, so the writer refuses `--status parked` without a kind:
+
+- `--kind owner` also reads the issue and refuses unless it carries `needs-owner` (put it there with `owner_check mark`); an unreadable issue is refused as not confirmed, never passed.
+- `--kind umbrella` is an issue kept open on purpose. `--kind "blocked-by <repo>#<N>"` is work waiting on another issue. Neither is on the owner's list.
+- A row already parked keeps its kind through `--note` and `--title` edits; a row written before kinds existed loads and can be edited until `skills/_lib/chief/migrate_parked.py` places it (a dry run by default; `--apply` writes the kinds it can place and prints the `owner_check mark` command for an owner row that lacks the label).
 
 ## Reader rules
 
@@ -79,8 +90,8 @@ Each update is one line. Queue items are addressed as `<repo>#<N>`.
 
 ```text
 chief_ops.py plan show
-chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet]
-chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus]   # --note "" / --model "" clear
+chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet] [--kind K]
+chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus] [--kind K]   # --note "" / --model "" clear; --status parked needs --kind (owner | umbrella | "blocked-by <repo>#<N>")
 chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273
 chief_ops.py plan prune [--status merged …]     # drop every queue row with a status (default merged); lanes and waiting items stay

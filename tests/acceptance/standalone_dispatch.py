@@ -509,6 +509,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "file, corrupt file left byte-identical) and the CLI `PRUNED=<n>` line "
      "with a repeatable `--status` -- is testable on its own, with no real "
      "chief-plan.json touched"),
+    ("chief_plan_parked_kind", "chief_plan/test_parked_kind.py",
+     "a parked plan row needing a kind (owner / umbrella / blocked-by), the "
+     "owner kind refused without the needs-owner label or when it cannot be "
+     "read, a pre-kind row still loading and editable, the question date, the "
+     "newest-first owner list and the one-time migration's guesses and "
+     "apply -- is testable on its own, with no real chief-plan.json and no gh "
+     "call"),
     ("chief_ops_transport", "acceptance/test_chief_ops_transport.py",
      "chief_ops against a slow or dead launcher -- the distinct "
      "`UNCONFIRMED=timeout` and `UNREACHABLE=` lines and exit codes with no "

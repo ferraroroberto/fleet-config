@@ -327,7 +327,7 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   leave an explicit comment saying so and why — this is what stops the same
   parked issue from being re-litigated on a later sweep. Don't rely on
   remembering it was already discussed.
-- **Owner-blocked work is the `needs-owner` label, never `plan set --status parked`**
+- **Owner-blocked work is the `needs-owner` label, and a parked plan row names why** (`plan set … --status parked --kind owner|umbrella|"blocked-by <repo>#<N>"`; `owner` is refused without the label, so "Waiting for start" matches the owner rows one to one)
   ([owner-check](E:/automation/fleet-config/docs/owner-check.md)). Work that waits on a step of
   Roberto's (a device probe, a signup, a decision) gets
   `owner_check/cli.py mark <repo>#<N> --kind before-start --reason "…" --try "…"`;

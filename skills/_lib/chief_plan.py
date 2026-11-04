@@ -41,6 +41,9 @@ VERSION = 1
 
 LANE_STATUSES = ("building", "gate", "idle", "waiting")
 QUEUE_STATUSES = ("queued", "building", "gate", "merged", "parked", "waiting-roberto")
+# Why a row is `parked`. Only `owner` rows are Roberto's to act on, and they
+# ride the `needs-owner` label into the Board's "Waiting for start".
+PARKED_KINDS = ("owner", "umbrella", "blocked-by")
 # The model a lane or build item runs on, picked per task by docs/model-tiers.md.
 MODELS = ("opus", "sonnet")
 
@@ -54,15 +57,16 @@ MAX_OPTIONS = 4
 
 TOP_FIELDS = {"version", "updated_at", "lanes", "queue", "waiting_on_roberto"}
 LANE_FIELDS = {"repo", "session", "item", "status", "model"}
-QUEUE_FIELDS = {"repo", "ref", "title", "status", "note", "model"}
+QUEUE_FIELDS = {"repo", "ref", "title", "status", "note", "model", "kind", "blocked_by"}
 WAITING_FIELDS = {"text", "ref", "id", "repo", "question", "detail", "recommendation",
-                  "options", "multi"}
+                  "options", "multi", "asked_at"}
 OPTION_FIELDS = {"label", "description", "recommended"}
 
 _LOCAL_REF = re.compile(r"#[1-9][0-9]*")
 _REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUALIFIED_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(#[1-9][0-9]*)")
 _ISO_Z = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # Letter-first, so `unwait <key>` can still tell an id from a 1-based index.
 _ID = re.compile(r"[a-z][a-z0-9-]{0,31}")
@@ -171,6 +175,7 @@ def validate(doc: Any) -> List[str]:
         if "note" in row:
             _check_text(errors, f"{where}.note", row["note"], required=False)
         _check_model(errors, where, row)
+        _check_kind(errors, where, row)
 
     ids: set = set()
     for i, row in enumerate(doc["waiting_on_roberto"]):
@@ -179,6 +184,19 @@ def validate(doc: Any) -> List[str]:
             continue
         _check_waiting(errors, where, row, ids)
     return errors
+
+
+def _check_kind(errors: List[str], where: str, row: Dict[str, Any]) -> None:
+    """A row's optional parked `kind` and, for `blocked-by`, the issue it waits on."""
+    kind = row.get("kind")
+    blocker = row.get("blocked_by")
+    if "kind" in row and kind not in PARKED_KINDS:
+        errors.append(f"{where}.kind: must be one of {', '.join(PARKED_KINDS)}")
+    if kind == "blocked-by":
+        if not isinstance(blocker, str) or not _QUALIFIED_REF.fullmatch(blocker):
+            errors.append(f"{where}.blocked_by: must be repo#N when kind is blocked-by")
+    elif "blocked_by" in row:
+        errors.append(f"{where}.blocked_by: only allowed when kind is blocked-by")
 
 
 def _check_waiting(errors: List[str], where: str, row: Dict[str, Any], ids: set) -> None:
@@ -196,6 +214,9 @@ def _check_waiting(errors: List[str], where: str, row: Dict[str, Any], ids: set)
             errors.append(f"{where}.id: {row['id']} is already used by another waiting item")
         else:
             ids.add(row["id"])
+    if "asked_at" in row and not (isinstance(row["asked_at"], str)
+                                  and _ISO_DATE.fullmatch(row["asked_at"])):
+        errors.append(f"{where}.asked_at: must be YYYY-MM-DD")
     if "repo" in row:
         _check_repo(errors, f"{where}.repo", row["repo"])
         if ref_match and row["repo"] != ref_match.group(1):
@@ -363,14 +384,84 @@ def _require_question(doc: Dict[str, Any], ref: str) -> None:
             f'[--option "Label::description" ...]` first, then set waiting-roberto')
 
 
+def parse_kind(spec: str) -> Tuple[str, str]:
+    """`owner` | `umbrella` | `blocked-by <repo>#<N>` -> (kind, blocked_by or "")."""
+    kind, _, rest = spec.strip().partition(" ")
+    rest = rest.strip()
+    if kind not in PARKED_KINDS:
+        raise ValueError(f"unknown kind {spec!r}; use owner, umbrella or 'blocked-by <repo>#<N>'")
+    if kind == "blocked-by":
+        if not rest:
+            raise ValueError("blocked-by needs the blocking issue: --kind 'blocked-by <repo>#<N>'")
+        repo, local = split_ref(rest)
+        return kind, f"{repo}{local}"
+    if rest:
+        raise ValueError(f"kind {kind!r} takes no argument, got {rest!r}")
+    return kind, ""
+
+
+def owner_label_state(ref: str) -> Optional[bool]:
+    """Whether the issue carries `needs-owner`; None when GitHub could not say.
+
+    One `gh` read per owner-kind write: the label is what puts the item in the
+    Board's "Waiting for start", so a kind that disagrees with it is the drift
+    this check exists to stop. Tests replace this function.
+    """
+    from owner_check import block, github  # lazy: only an owner-kind write needs gh
+    repo, local = split_ref(ref)
+    try:
+        issue = github.fetch_issue(repo, int(local[1:]))
+    except github.GhError:
+        return None
+    return block.LABELS["before-start"] in issue["labels"]
+
+
+def _apply_kind(row: Dict[str, Any], status: str, kind: Optional[str]) -> None:
+    """Stamp or drop a row's parked kind so it always matches its status.
+
+    A `parked` status needs a kind, passed now or already on the row. Leaving
+    `parked` drops it. An `owner` kind is refused unless the issue already carries
+    `needs-owner`, because that label is the Board's only owner list.
+    """
+    if status != "parked":
+        if kind:
+            raise ValueError(f"--kind only applies to a parked item, not {status!r}")
+        row.pop("kind", None)
+        row.pop("blocked_by", None)
+        return
+    if not kind and not row.get("kind"):
+        raise ValueError("parked needs a kind: --kind owner (Roberto's step; the issue must carry "
+                         "needs-owner via owner_check mark), --kind umbrella (kept open on purpose) "
+                         "or --kind 'blocked-by <repo>#<N>'")
+    if not kind:
+        return
+    parsed, blocker = parse_kind(kind)
+    if parsed == "owner":
+        ref = f"{row['repo']}{row['ref']}"
+        state = owner_label_state(ref)
+        if state is None:
+            raise ValueError(f"could not confirm {ref} carries needs-owner (GitHub unreadable); "
+                             "not written")
+        if not state:
+            raise ValueError(f"{ref} has no needs-owner label, so it would not reach Waiting for "
+                             f'start: run `owner_check mark {ref} --kind before-start --reason "..." '
+                             '--try "..."` first')
+    row["kind"] = parsed
+    if blocker:
+        row["blocked_by"] = blocker
+    else:
+        row.pop("blocked_by", None)
+
+
 def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
              note: Optional[str] = None, at: Optional[int] = None,
-             model: Optional[str] = None) -> None:
+             model: Optional[str] = None, kind: Optional[str] = None) -> None:
     """Queue `ref`; `at` is a 1-based position (default: the end)."""
     repo, local = split_ref(ref)
     if status == "waiting-roberto":
         _require_question(doc, ref)
     row: Dict[str, Any] = {"repo": repo, "ref": local, "title": title, "status": status}
+    _apply_kind(row, status, kind)
     if note:
         row["note"] = note
     _set_model(row, model)
@@ -380,13 +471,19 @@ def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
 
 def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
              note: Optional[str] = None, title: Optional[str] = None,
-             model: Optional[str] = None) -> None:
-    """Change an item in place; an empty `note` or `model` clears it."""
-    if status is None and note is None and title is None and model is None:
-        raise ValueError("nothing to set: pass --status, --note, --title or --model")
+             model: Optional[str] = None, kind: Optional[str] = None) -> None:
+    """Change an item in place; an empty `note` or `model` clears it.
+
+    Setting `status` to `parked` needs a kind; a row already parked keeps the one
+    it has, which lets a pre-kind row be edited until it is migrated.
+    """
+    if status is None and note is None and title is None and model is None and kind is None:
+        raise ValueError("nothing to set: pass --status, --note, --title, --model or --kind")
     row = doc["queue"][_index(doc, ref)]
     if status == "waiting-roberto":
         _require_question(doc, ref)
+    if status == "parked" or kind or (status is not None and row["status"] == "parked"):
+        _apply_kind(row, status or row["status"], kind)
     _set_model(row, model)
     if status is not None:
         row["status"] = status
@@ -497,8 +594,10 @@ def add_question(
     (option count, one recommendation unless `multi`, repo/ref agreement,
     unique ids) are `validate()`'s, so they hold for every writer.
     """
+    # `asked_at` is the date the Board's "Waiting for start" shows beside the question.
     row: Dict[str, Any] = {"id": item_id or _next_id(doc),
-                           "text": short_text(question) if text is None else text}
+                           "text": short_text(question) if text is None else text,
+                           "asked_at": _iso_z(_now())[:10]}
     if ref:
         row["repo"] = repo or split_ref(ref)[0]
         row["ref"] = ref.strip()
@@ -584,8 +683,8 @@ def _run(args: argparse.Namespace) -> int:
     mutations: Dict[str, Callable[[Dict[str, Any]], None]] = {
         "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session, args.model),
         "drop-lane": lambda d: drop_lane(d, args.repo),
-        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model),
-        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model),
+        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model, args.kind),
+        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model, args.kind),
         "move": lambda d: move_item(d, args.ref, args.to),
         "remove": lambda d: remove_item(d, args.ref),
         "wait": lambda d: added.append(add_waiting(d, args.text, args.ref)),
@@ -596,6 +695,9 @@ def _run(args: argparse.Namespace) -> int:
     doc = update(path, mutations[action], reset=action == "clear")
     print(_summary(doc) + "".join(f" id={item}" for item in added))
     return 0
+
+
+_KIND_HELP = "why it is parked (needed with --status parked): owner | umbrella | 'blocked-by <repo>#<N>'"
 
 
 def add_cli(parser: argparse.ArgumentParser) -> None:
@@ -623,6 +725,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--note", default=None)
     add.add_argument("--at", type=int, default=None, help="1-based position (default: end)")
     add.add_argument("--model", default=None, help="|".join(MODELS))
+    add.add_argument("--kind", default=None, help=_KIND_HELP)
 
     set_p = acts.add_parser("set", help="change a queued item's status, note, title or model")
     set_p.add_argument("ref")
@@ -630,6 +733,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     set_p.add_argument("--note", default=None, help='"" clears it')
     set_p.add_argument("--title", default=None)
     set_p.add_argument("--model", default=None, help=f"{'|'.join(MODELS)}; \"\" clears it")
+    set_p.add_argument("--kind", default=None, help=_KIND_HELP)
 
     move = acts.add_parser("move", help="move a queued item to a 1-based position")
     move.add_argument("ref")
