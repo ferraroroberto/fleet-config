@@ -47,7 +47,9 @@ Subcommands
   board [--base-url URL] [--json]
       The ~12-line phone-readable digest: column counts, one line per live
       session, PR/job cards, running fleet-wide jobs (`/api/jobs`,
-      fleet-config#1078), the 5h rate-limit line. A count or reading that
+      fleet-config#1078), the 5h rate-limit line, and a `grokbot=` token
+      (`up` | `down` | `signed-out` | `unknown (reason)`; read-only, from
+      `grokbot/status.py`). A count or reading that
       can't be established prints `?` with its reason, never `0`/`None`
       (fleet-config#840).
 
