@@ -235,7 +235,7 @@ _page_sections = {"Avoid time-sensitive information", "Naming conventions", "Tok
                   "Runtime environment", "MCP tool references", "Set appropriate degrees of freedom",
                   "Use workflows for complex tasks", "Implement feedback loops", "Create verifiable intermediate outputs",
                   "Use consistent terminology", "Avoid offering too many options", "Provide utility scripts",
-                  "Package dependencies", "Avoid assuming tools are installed", "Solve, don't defer", "Code and scripts",
+                  "Package dependencies", "Avoid assuming tools are installed", "Solve, don’t defer", "Code and scripts",
                   "Concise is key", "Progressive disclosure patterns", "Visual overview: From simple to complex",
                   "Pattern 1: High-level guide with references", "Pattern 2: Domain-specific organization",
                   "Pattern 3: Conditional details", "Template pattern", "Examples pattern",
