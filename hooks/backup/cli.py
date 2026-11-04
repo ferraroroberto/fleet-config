@@ -154,7 +154,8 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
 
     logger.info("⏳ %s: verifying the sample and reconciling the archive", leg)
     manifest["verification"] = verify_sample(snapshot_dir, manifest)
-    manifest["regressions"] = check_zero_file_regressions(manifest, prev_manifest)
+    manifest["regressions"], manifest["regression_warnings"] = check_zero_file_regressions(
+        manifest, prev_manifest, cfg.deny_dirs)
     failed_groups = [
         name for name, payload in manifest["groups"].items() if payload["status"] == "failed"
     ]

@@ -20,7 +20,7 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from .config import DB_LOCK_TIMEOUT_SECONDS, DB_SIDECAR_MARKERS, DB_SUFFIXES
 
@@ -262,23 +262,48 @@ def verify_sample(snapshot_dir: Path, manifest: Dict[str, Any],
     }
 
 
-def check_zero_file_regressions(manifest: Dict[str, Any],
-                                prev_manifest: Dict[str, Any]) -> List[str]:
+def _explained_by_exclusion(prev_files: List[Dict[str, Any]], payload: Dict[str, Any],
+                            deny_dirs: Iterable[str]) -> bool:
+    """True when every file the group had last run is now inside a deliberate,
+    already-reported exclusion: a bulk-guard directory named in this run's
+    manifest, or a directory the deny list now covers."""
+    excluded = [entry["path"] for entry in payload.get("bulk_excluded") or []]
+    denied = {name.lower() for name in deny_dirs}
+    for entry in prev_files:
+        rel = str(entry.get("path", ""))
+        if any(rel.startswith(prefix) for prefix in excluded):
+            continue
+        if any(part.lower() in denied for part in rel.split("/")[:-1]):
+            continue
+        return False
+    return True
+
+
+def check_zero_file_regressions(manifest: Dict[str, Any], prev_manifest: Dict[str, Any],
+                                deny_dirs: Iterable[str] = ()) -> Tuple[List[str], List[str]]:
     """Groups that had files in the previous manifest and have none now.
 
-    The failure mode this exists for is silent: a `.gitignore` edit, a moved
-    directory, or a mistyped `backup_exclude` can stop backing a repo up while
-    every other repo keeps succeeding and the run stays green. A repo that was
-    deliberately opted out is absent from `groups` entirely, not present-and-empty,
-    so it does not trip this.
+    Returns `(regressions, warnings)`. The failure mode this exists for is
+    silent: a `.gitignore` edit, a moved directory, or a mistyped
+    `backup_exclude` can stop backing a repo up while every other repo keeps
+    succeeding and the run stays green. A repo that was deliberately opted out
+    is absent from `groups` entirely, not present-and-empty, so it does not trip
+    this. A repo whose whole previous content moved into an exclusion the report
+    already names (bulk-guard directory, denied directory) is a warning: the
+    loss is deliberate and visible, not silent.
     """
     previous = {
-        group: len(payload.get("files", []))
+        group: payload.get("files") or []
         for group, payload in (prev_manifest.get("groups") or {}).items()
     }
-    regressed = []
+    regressed, warned = [], []
     for group, payload in (manifest.get("groups") or {}).items():
-        if previous.get(group, 0) > 0 and not payload.get("files"):
+        prev_files = previous.get(group, [])
+        if not prev_files or payload.get("files"):
+            continue
+        if _explained_by_exclusion(prev_files, payload, deny_dirs):
+            warned.append(group)
+        else:
             regressed.append(group)
-    return sorted(regressed)
+    return sorted(regressed), sorted(warned)
 

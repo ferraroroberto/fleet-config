@@ -12,6 +12,8 @@ check(bp._denied("app/node_modules/y.js", cfg), "deny: node_modules nested is de
 check(bp._denied("logs/run.log", cfg), "deny: *.log matches the glob list")
 check(bp._denied("build/out.PYC", cfg), "deny: glob match is case-insensitive")
 check(bp._denied("app/.VENV/lib.py", cfg), "deny: a deny-dir match is case-insensitive")
+check(bp._denied(".proof/page.html", cfg), "deny: generated .proof pages are never selected")
+check(bp._denied("app/.proof/x.html", cfg), "deny: a nested .proof is denied")
 check(not bp._denied("identity/me.md", cfg), "deny: an ordinary personal file survives")
 check(not bp._denied(".env", cfg), "deny: .env survives")
 check(not bp._denied("venv-notes.md", cfg),
