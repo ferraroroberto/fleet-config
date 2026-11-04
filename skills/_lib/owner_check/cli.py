@@ -20,7 +20,7 @@ _LIB = Path(__file__).resolve().parent.parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
-from owner_check import backfill, block, github, rule  # noqa: E402
+from owner_check import backfill, block, github, reclassify, rule  # noqa: E402
 
 EXIT_NONE, EXIT_REQUIRED, EXIT_REFUSED, EXIT_UNKNOWN = 0, 1, 2, 3
 
@@ -58,10 +58,13 @@ def cmd_finish(args: argparse.Namespace) -> int:
     try:
         issue = github.fetch_issue(repo, number)
         files = github.pr_files(repo, args.pr)
+        proven = rule.ux_proven(github.pr_body(repo, args.pr))
     except github.GhError as exc:
         print(f"OWNER_CHECK=unknown reason=could not read the issue or PR: {exc}")
         return EXIT_UNKNOWN
-    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified)
+    if args.verified == rule.VERIFIED_SCHEDULED:
+        print("SCHEDULED_READ=chief reason=a criterion only a later scheduled run can show")
+    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified, proven)
     if decision.verdict == rule.NONE:
         print("OWNER_CHECK=none")
         return EXIT_NONE
@@ -197,6 +200,46 @@ def _backfill_one(item: backfill.Item, apply: bool) -> str:
     return "marked"
 
 
+def _reclassify_one(item: dict, apply: bool) -> str:
+    """One validate-after item's outcome line under the current rule."""
+    repo, number = item["repo"], item["number"]
+    issue = github.fetch_issue(repo, number)
+    if block.LABELS[block.BEFORE_START] in issue["labels"]:
+        return f"RECLASS keep {item['ref']} reason=also needs-owner; left alone"
+    verdict = reclassify.reclassify(item, issue, lambda pr: github.pr_files(repo, pr),
+                                    lambda pr: github.pr_body(repo, pr))
+    if verdict.state == reclassify.UNKNOWN:
+        return f"RECLASS unknown {item['ref']} reason={verdict.why}"
+    if verdict.state == reclassify.KEEP:
+        return f"RECLASS keep {item['ref']} reason={'; '.join(verdict.kept)}"
+    words = "; ".join(reclassify.DROPPED_WORDS[key] for key in verdict.dropped) or "no reason fires"
+    if apply:
+        label = block.LABELS[block.VALIDATE_AFTER]
+        cleared = block.format_block(block.CLEARED, "re-checked under the tightened owner-check rule", "", (),
+                                     _today(), answer=f"no owner-check reason fires any more: {words}")
+        github.clear(repo, number, [label], cleared)
+    return f"RECLASS {'cleared' if apply else 'would-clear'} {item['ref']} dropped={words}"
+
+
+def cmd_reclassify(args: argparse.Namespace) -> int:
+    result = github.list_items(args.repo or None)
+    todo = [it for it in result["items"] if it["kind"] == block.VALIDATE_AFTER]
+    counts = {"keep": 0, "clear": 0, "unknown": len(result["unknown"])}
+    for item in todo:
+        try:
+            line = _reclassify_one(item, args.apply)
+        except github.GhError as exc:
+            line = f"RECLASS unknown {item['ref']} reason={exc}"
+        print(line)
+        word = line.split()[1]
+        counts["clear" if word in ("cleared", "would-clear") else "keep" if word == "keep" else "unknown"] += 1
+    for miss in result["unknown"]:
+        print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
+    print(f"RECLASSIFY={'applied' if args.apply else 'dry-run'} before={len(todo)} "
+          f"clear={counts['clear']} keep={counts['keep']} unknown={counts['unknown']}")
+    return EXIT_UNKNOWN if counts["unknown"] else EXIT_NONE
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     audit, ruled, unknown = _collect_backfill(args)
     items = backfill.merge(audit, ruled)
@@ -232,8 +275,10 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("finish", help="after merge: decide, then label + block when required (/issue-finish)")
     f.add_argument("ref", type=_ref)
     f.add_argument("--pr", type=int, required=True)
-    f.add_argument("--verified", choices=(rule.VERIFIED_YES, rule.VERIFIED_NO), default=rule.VERIFIED_UNSTATED,
-                   help="yes = the original repro / acceptance re-ran and passed in this session")
+    f.add_argument("--verified", choices=(rule.VERIFIED_YES, rule.VERIFIED_SCHEDULED, rule.VERIFIED_NO),
+                   default=rule.VERIFIED_UNSTATED,
+                   help="yes = the original repro / acceptance re-ran and passed in this session; "
+                        "scheduled = all of it did except a criterion only a later scheduled run shows")
     f.add_argument("--try", dest="try_text", default="")
     f.add_argument("--proof", action="append", default=[])
     f.set_defaults(func=cmd_finish)
@@ -264,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     el = sub.add_parser("ensure-labels", help="create both labels in every fleet repo (idempotent)")
     el.add_argument("--repo", action="append", default=[])
     el.set_defaults(func=cmd_ensure_labels)
+
+    rc = sub.add_parser("reclassify", help="re-run the rule over every open needs-validation item (dry run unless --apply)")
+    rc.add_argument("--repo", action="append", default=[])
+    rc.add_argument("--apply", action="store_true")
+    rc.set_defaults(func=cmd_reclassify)
 
     b = sub.add_parser("backfill", help="label shipped-but-unvalidated work once (dry run unless --apply)")
     b.add_argument("--list", default=None, help="audit list file of repo#N items")
