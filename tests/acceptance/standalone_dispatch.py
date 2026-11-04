@@ -446,6 +446,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "null exit_code/repo, not-confirmed, any trigger as-is), count and ack it "
      "like every kind, and leave v1, v2 and needs-input lines unchanged "
      "(fleet-config#1539)"),
+    ("chief_cap_raised", "chief_ops/test_chief_cap_raised.py",
+     "a raised Settings worker cap through the mailbox -- the real inbox and "
+     "wait-event render a cap-raised event (old/new, a non-integer bound as -), "
+     "count and ack it like every kind, and leave worker lines unchanged "
+     "(fleet-config#1839)"),
     ("chief_mailbox", "chief_ops/test_chief_mailbox.py",
      "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
      "an unacked claim after the stale window (injected clock), the "

@@ -298,6 +298,30 @@ def _job_failed_lines(event: Dict[str, Any]) -> List[str]:
     return [head, f"  job_id={field('job_id')} trigger={field('trigger')} script={field('script_path')}"]
 
 
+def _cap_raised_lines(event: Dict[str, Any]) -> List[str]:
+    """A `cap-raised` event's one line: the Settings worker cap went up, so the chief fills the new slots.
+
+    The launcher writes it, not a worker, so there is no repo, issue or sid to
+    show. A bound that is not an integer reads `-` rather than rejecting the
+    event: it still rings, and the chief re-reads the real cap at `dispatch`.
+    """
+    def bound(name: str) -> str:
+        value = event.get(name)
+        return str(value) if isinstance(value, int) and not isinstance(value, bool) else "-"
+
+    return [f"- worker cap raised old={bound('old')} new={bound('new')}"]
+
+
+def _kind_lines(event: Dict[str, Any]) -> Optional[List[str]]:
+    """The head (and detail) lines of an event kind that is not a worker's, or None for a worker's."""
+    kind = event.get("kind")
+    if kind == "job-failed":
+        return _job_failed_lines(event)
+    if kind == "cap-raised":
+        return _cap_raised_lines(event)
+    return None
+
+
 def _event_line(event: Dict[str, Any], moment: datetime) -> str:
     """`- <repo>#<n>: <what> (<agent>) sid=<8> age=<age>` -- the v1 line, unchanged."""
     kind = event.get("kind")
@@ -331,8 +355,9 @@ def format_inbox_digest(events: List[Dict[str, Any]], now: Optional[datetime] = 
     lines = [f"WAIT_EVENT=events n={len(events)}"]
     for event in events:
         kind = f" kind={event['kind']}" if event.get("kind") else ""
-        if event.get("kind") == "job-failed":
-            head, *detail = _job_failed_lines(event)
+        own = _kind_lines(event)
+        if own is not None:
+            head, *detail = own
             lines.extend([head + kind, *detail])
         else:
             lines.append(_event_line(event, moment) + kind)
@@ -352,8 +377,9 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
     for event in events:
         tail = f" kind={event.get('kind') or '?'} id={event['id']} dispatch={event.get('dispatch_id') or '-'}"
         again_mark = " re-offered" if event["id"] in again else ""
-        if event.get("kind") == "job-failed":
-            head, *detail = _job_failed_lines(event)
+        own = _kind_lines(event)
+        if own is not None:
+            head, *detail = own
             lines.extend([head + tail + again_mark, *detail])
         else:
             lines.append(_event_line(event, moment) + tail + again_mark)

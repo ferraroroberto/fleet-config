@@ -49,7 +49,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end`, `needs-input` or `job-failed`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). |
+| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed` or `cap-raised`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
@@ -106,6 +106,35 @@ An app-launcher Job run that failed is published as one `job-failed` event, so a
 | `excerpt`, `excerpt_source` | The last 1,500 characters of the run's `output.log`, with `excerpt_source: "job-output"`. `excerpt` and `excerpt_source` are `null`, with `excerpt_unavailable`, when the log is missing or empty. Job output can hold private data: it is for the chief's eyes only and never copied into an issue. |
 
 The event `id` is the dedupe key, as for every event. Readers render the event as `job <job_name> failed exit=<n> run=<run_id> repo=<repo>` (`-` for a null `exit_code` or `repo`; ` outcome=not-confirmed` appended when `outcome` is not `failed`), then a `job_id=… trigger=… script=…` line, then the excerpt lines.
+
+### Cap events (`kind: "cap-raised"`)
+
+When the launcher saves Settings > Chief > Worker cap higher than before, or a `worker_cap_scope` change frees slots (`all` to `chief`), it publishes one `cap-raised` event, so the chief fills the new slots at once instead of at the next lane event. Lowering the cap writes nothing: running lanes finish, and `chief_ops.py dispatch` refuses until the live count is under the new cap. The launcher writes the file and never imports from `hooks/`.
+
+```json
+{
+  "v": 2,
+  "id": "2b3c4d5e6f708192a3b4c5d6e7f80910",
+  "kind": "cap-raised",
+  "event": "CapRaised",
+  "old": 2,
+  "new": 3,
+  "launcher_sid": null,
+  "repo": null,
+  "number": null,
+  "agent": null,
+  "dispatch_id": null,
+  "ts": "2026-11-04T15:30:00Z"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `old`, `new` | The saved cap before and after, integers with `new >= old`: a `worker_cap_scope` change that frees slots carries the unchanged cap in both. A reader renders a value that is not an integer as `-` and still delivers the event. |
+| `launcher_sid`, `repo`, `number`, `agent`, `dispatch_id` | Always `null`: no worker is involved. |
+| `excerpt` | Omitted. |
+
+The event `id` is the dedupe key, as for every event. Readers render the event as `worker cap raised old=<n> new=<n>`. The numbers are informational: the chief re-reads the live cap at every `dispatch`.
 
 ## Pending: the counting rule
 
@@ -178,3 +207,4 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/chief_ops/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
 - `tests/chief_ops/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
 - `tests/chief_ops/test_chief_job_failed.py`: a synthetic `job-failed` event through the real `inbox` and `wait-event` (the head line, the detail line, the excerpt, a null `exit_code` and `repo`, `not-confirmed`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2 and `needs-input` events rendering unchanged beside it.
+- `tests/chief_ops/test_chief_cap_raised.py`: a synthetic `cap-raised` event through the real `inbox` and `wait-event` (the one-line render, a non-integer bound reading `-`), the event counted as pending by file name, claimed and acked like any kind, and worker lines rendering unchanged beside it.
