@@ -90,6 +90,9 @@ Per-topic references that the intro used to carry, one file each:
   coding agents can run (server, own computer, hybrid, vendor cloud), how work
   and wake-ups reach them, and how a VPS + tmux setup compares with the tower +
   launcher model.
+- **[`docs/grok-bot.md`](docs/grok-bot.md)** — keeping the Grok Bot desktop app
+  running as a phone front door: status, ensure, the board token and the single
+  outage ping.
 
 The rest of `docs/` is one file per durable topic — see the directory.
 

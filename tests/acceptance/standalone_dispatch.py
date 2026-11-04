@@ -811,6 +811,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "allowed), the PreToolUse guard's closed list, and the owner-only "
      "Telegram poller against a fake transport, with no grok run, network "
      "or token"),
+    ("grokbot_status", "grokbot/test_status.py",
+     "the Grok Bot desktop-app check -- every state read from a fake process "
+     "table and status file (a reused pid or a half-started app is never up, "
+     "unknown is never counted as up), `ensure` starting only a down app, "
+     "refusing on unknown, and the one-ping-per-outage episode, with the "
+     "launcher and notifier faked and subprocess replaced so no real app "
+     "start or message can happen"),
     ("readme_fence_refs", "acceptance/readme_fence/test_readme_fence_refs.py",
      "the fenced-block half of the docs-history check the vendored "
      "scripts/docs_ratchet.py deliberately skips -- README.md's `## Layout` "

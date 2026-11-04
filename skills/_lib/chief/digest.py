@@ -81,9 +81,12 @@ def format_board_digest(
     board: Dict[str, Any],
     fleet_jobs: Optional[Tuple[Optional[List[str]], Optional[str]]] = None,
     caller_sid: Optional[str] = None,
+    grokbot_line: Optional[str] = None,
 ) -> str:
     """The ~12-line phone-readable digest: counts, live sessions, PR/job
-    cards, running fleet-wide jobs, one rate-limit line.
+    cards, running fleet-wide jobs, one rate-limit line, and the `grokbot=`
+    token when the caller passes one (`board` does; the wait-event fallback
+    does not).
 
     A count whose source can't be established renders `?` and the next line
     says why — the token shape stays `key=value` so the chief's poll still
@@ -153,6 +156,8 @@ def format_board_digest(
         else:
             lines.append(f"fleet jobs running: {', '.join(running) or 'none'}")
     lines.append(_format_rate_limit_line(board))
+    if grokbot_line:
+        lines.append(grokbot_line)
     return "\n".join(lines)
 
 

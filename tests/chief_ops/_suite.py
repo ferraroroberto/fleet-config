@@ -12,6 +12,9 @@ from pathlib import Path
 # `inbox` asks the launcher about the chief only when it runs inside a launcher session; a suite
 # started from one must not reach the live launcher.
 os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+# `board` appends a `grokbot=` reading; point it at nothing so no suite reads the real app's files.
+os.environ["GROKBOT_EXE"] = os.devnull
+os.environ["GROKBOT_STATUS_FILE"] = os.devnull
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))

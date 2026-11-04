@@ -28,6 +28,7 @@ from chief import chief_sweep
 import dirty_tree_check
 import gate_evidence
 import owner_check
+from grokbot import status as grokbot_status
 from fleet_core import hooks_state
 from no_window import NO_WINDOW
 from vendored_wave import primaries
@@ -139,7 +140,10 @@ def cmd_board(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(board, indent=2))
     else:
-        print(digest.format_board_digest(board, launcher.fetch_running_fleet_jobs(args.base_url)))
+        print(digest.format_board_digest(
+            board, launcher.fetch_running_fleet_jobs(args.base_url),
+            grokbot_line=grokbot_status.digest_line(),
+        ))
     return 0
 
 
