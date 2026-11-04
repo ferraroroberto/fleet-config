@@ -825,6 +825,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "refusing on unknown, and the one-ping-per-outage episode, with the "
      "launcher and notifier faked and subprocess replaced so no real app "
      "start or message can happen"),
+    ("grokbot_relay", "grokbot/test_relay.py",
+     "the Grok Bot relay against a loopback fake launcher that records every "
+     "POST -- the sender tag, delivery to the chief and channel sessions, "
+     "refusal of credentials, destructive steers, dead/external/ambiguous "
+     "targets and an unwritable or in-tree log (each with nothing sent), "
+     "redacted reads, and a call log with no bodies or ids, with no write in "
+     "the code tree"),
     ("readme_fence_refs", "acceptance/readme_fence/test_readme_fence_refs.py",
      "the fenced-block half of the docs-history check the vendored "
      "scripts/docs_ratchet.py deliberately skips -- README.md's `## Layout` "
