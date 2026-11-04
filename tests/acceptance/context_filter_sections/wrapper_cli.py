@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
+from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, HOOKS, PYTHON, REPO, _Checker
 
 
 def fixture_eval(check: _Checker) -> None:
@@ -26,7 +26,7 @@ def fixture_eval(check: _Checker) -> None:
         ],
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=HOOK_SPAWN_TIMEOUT_S,
     )
     check(
         "context_filter_eval: fixture benchmark passes",

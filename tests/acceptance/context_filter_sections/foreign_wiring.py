@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from acceptance.shared import PYTHON, REPO, _Checker, run
+from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, PYTHON, REPO, _Checker, run
 
 
 def codex_wired_hook_fails_open(check: _Checker) -> None:
@@ -24,7 +24,7 @@ def codex_wired_hook_fails_open(check: _Checker) -> None:
             ),
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=HOOK_SPAWN_TIMEOUT_S,
             env={**os.environ, "FLEET_CONTEXT_FILTER_MODE": "rewrite"},
         )
         check(

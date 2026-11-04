@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from acceptance.shared import (
+    HOOK_SPAWN_TIMEOUT_S,
     HOOKS,
     NO_SETTINGS_JSON,
     PYTHON,
@@ -603,7 +604,7 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
         [PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import _lib; "
                        "print(ascii(_lib.read_stdin_json()['tool_input']['command']))", str(HOOKS)],
         input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        capture_output=True, timeout=15, env=env,
+        capture_output=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=env,
     )
     check(
         "hook_transport: _lib.read_stdin_json decodes a UTF-8 pipe exactly",
@@ -617,7 +618,7 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
         [PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import _lib; "
                        "print(ascii(_lib.read_stdin_json().get('tool_input', {}).get('command')))", str(HOOKS)],
         input=b"\xef\xbb\xbf" + json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        capture_output=True, timeout=15, env=env,
+        capture_output=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=env,
     )
     check(
         "hook_transport: _lib.read_stdin_json parses a BOM-prefixed UTF-8 pipe",
