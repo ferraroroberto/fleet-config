@@ -107,8 +107,8 @@ check(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 6)
       "R-39 assist: a five-item numbered list is under the threshold")
 check(len(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 8))), "R-39")) == 1,
       "R-39 assist: a seven-item top-level numbered list counts when there are no step headings")
-check(sorted(r for r, v in RULES.items() if v["consider_only"]) == ["R-46", "R-47", "R-48"],
-      "only R-46..R-48 carry the consider-only first-cycle flag (R-39, R-41 and R-45 became normal rules)")
+check(sorted(r for r, v in RULES.items() if v["consider_only"]) == [],
+      "no rule carries the consider-only first-cycle flag (R-39, R-41 and R-45..R-48 are normal rules)")
 CONSIDER_RULES = {**RULES, "R-39": {**RULES["R-39"], "consider_only": True}}
 r39_hits = [h for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
                                                key="x/.claude/skills/s/SKILL.md"), CONSIDER_RULES, AUD).hits
