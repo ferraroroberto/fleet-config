@@ -3,7 +3,8 @@
 A command that prints an untracked secret-bearing file (`cat .env`, `grep token
 config/webapp_config.json`, `Get-Content config\\notify_config.json`, an inline
 Python dump) is refused; keys-only reads, sample files, tracked files, missing
-files and unrelated commands pass. Every fixture is an invented file in a temp
+files and unrelated commands pass. Claude's `Read` and content-mode `Grep`
+of the same files are refused by the same rules. Every fixture is an invented file in a temp
 dir holding one obviously fake value, and every refusal is asserted not to
 contain it. The verdicts come from real hook processes: the standalone module,
 `hook_dispatch.py` with the live Bash and PowerShell lists, and a Codex
@@ -165,6 +166,78 @@ def _harness_checks(check: _Checker, root: Path) -> None:
               and FAKE_VALUE not in res.stdout + res.stderr, res.stdout + res.stderr)
 
 
+def _tool_payload(tool: str, tool_input: Dict[str, object], cwd: Path) -> Dict[str, object]:
+    return {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": str(cwd),
+            "session_id": "secret-read-acceptance", "tool_input": tool_input}
+
+
+def _tool_cases(root: Path) -> Tuple[Tuple[str, str, Dict[str, object]], ...]:
+    """`(label, tool, tool_input)` for Claude's own Read and Grep, refused first."""
+    return (
+        ("Read of an untracked .env", "Read", {"file_path": str(root / ".env")}),
+        ("Read of a relative .env.local", "Read", {"file_path": ".env.local"}),
+        ("Grep content over config/webapp_config.json", "Grep",
+         {"pattern": "token", "path": str(root / "config/webapp_config.json"), "output_mode": "content"}),
+        ("Grep content with glob config/*.json", "Grep",
+         {"pattern": "token", "path": str(root), "glob": "config/*.json", "output_mode": "content"}),
+        ("Grep content with glob **/.env", "Grep",
+         {"pattern": "TOKEN", "glob": "**/.env", "output_mode": "content"}),
+        ("Grep content with a bare-name glob .env under sub/", "Grep",
+         {"pattern": "TOKEN", "path": str(root / "sub"), "glob": ".env", "output_mode": "content"}),
+        ("Grep content with a brace glob config/*.{json,toml}", "Grep",
+         {"pattern": "token", "glob": "config/*.{json,toml}", "output_mode": "content"}),
+    )
+
+
+_TOOL_ALLOWED = (
+    ("Read of .env.example", "Read", {"file_path": ".env.example"}),
+    ("Read of a sample config", "Read", {"file_path": "config/webapp_config.sample.json"}),
+    ("Read of a missing config", "Read", {"file_path": "config/missing_config.json"}),
+    ("Read of a hook source file", "Read", {"file_path": str(HOOKS / "secret_scan_guard.py")}),
+    ("Grep files_with_matches over .env", "Grep",
+     {"pattern": "TOKEN", "path": ".env", "output_mode": "files_with_matches"}),
+    ("Grep count over .env", "Grep", {"pattern": "TOKEN", "path": ".env", "output_mode": "count"}),
+    ("Grep with the default output mode over .env", "Grep", {"pattern": "TOKEN", "path": ".env"}),
+    ("Grep content over hooks/", "Grep",
+     {"pattern": "def main", "path": str(HOOKS), "output_mode": "content"}),
+    ("Grep content over hooks/ with glob *.py", "Grep",
+     {"pattern": "def main", "path": str(HOOKS), "glob": "**/*.py", "output_mode": "content"}),
+)
+
+
+def _tool_checks(check: _Checker, root: Path) -> None:
+    """Claude's `Read` and `Grep` tools print a file without a shell; the same rules judge them."""
+    def verdict(tool: str, tool_input: Dict[str, object], cwd: Optional[Path] = None,
+                extra_env: Optional[Dict[str, str]] = None) -> Tuple[int, str, str]:
+        return run("secret_scan_guard", _tool_payload(tool, tool_input, cwd or root), extra_env=extra_env)
+
+    for label, tool, tool_input in _tool_cases(root):
+        code, out, err = verdict(tool, tool_input)
+        check(f"secret_read: {label} -> refused",
+              code == 2 and "secret-bearing file" in err and FAKE_VALUE not in out + err, err)
+    for label, tool, tool_input in _TOOL_ALLOWED:
+        code, out, err = verdict(tool, tool_input)
+        check(f"secret_read: {label} -> allowed", code == 0 and not out, err)
+    repo = root / "repo"
+    check("secret_read: Read of a tracked config.json -> allowed",
+          verdict("Read", {"file_path": "config.json"}, repo)[0] == 0)
+    allow = _registry(root, "tool-allow", 'secret_read_allow = ["*/config/notify_config.json"]\n')
+    check("secret_read: secret_read_allow lets a Read of that path through",
+          verdict("Read", {"file_path": "config/notify_config.json"}, None, allow)[0] == 0)
+    check("secret_read: secret_read_allow leaves another Read refused",
+          verdict("Read", {"file_path": "config/webapp_config.json"}, None, allow)[0] == 2)
+    off = _registry(root, "tool-off", "secret_read_guard = false\n")
+    check("secret_read: secret_read_guard = false lets a Read of .env through",
+          verdict("Read", {"file_path": ".env"}, None, off)[0] == 0)
+    check("secret_read: secret_read_guard = false lets a content Grep of .env through",
+          verdict("Grep", {"pattern": "TOKEN", "path": ".env", "output_mode": "content"}, None, off)[0] == 0)
+    template = json.loads((HOOKS.parent / "settings.template.json").read_text(encoding="utf-8"))
+    wired = [hook.get("command", "") for block in template["hooks"]["PreToolUse"]
+             if block.get("matcher") == "Read|Grep" for hook in block.get("hooks", [])]
+    check("secret_read: settings.template.json wires secret_scan_guard on Read|Grep",
+          any(cmd.endswith("-Hook secret_scan_guard") for cmd in wired), str(wired))
+
+
 def _secret_read_unit_checks() -> Tuple[int, int]:
     check = _Checker()
     root = Path(tempfile.mkdtemp(prefix="secret_read_"))
@@ -177,6 +250,7 @@ def _secret_read_unit_checks() -> Tuple[int, int]:
 
         _matrix_checks(check, verdict, root)
         _git_and_switch_checks(check, verdict, root)
+        _tool_checks(check, root)
         _harness_checks(check, root)
     finally:
         shutil.rmtree(root, ignore_errors=True)
