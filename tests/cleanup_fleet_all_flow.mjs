@@ -61,7 +61,7 @@ const ISSUES = {
 
 function reply(label, kind) {
   if (label.includes(':build:')) return { status: 'built', branch: 'fix/x', worktree: 'E:\\wt', verification: kind.buildFail ? 'FAIL' : 'PASS', retryable: false, reason: 'gate failed' }
-  if (label.includes(':validate:')) return { pass: !kind.validateFail, feedback: 'f', verification: 'PASS' }
+  if (label.includes(':validate:')) return { pass: !kind.validateFail, feedback: 'f', verification: 'PASS', unrequested: [] }
   if (label.includes(':execute:')) return { result: 'MERGED', pr: 'pr/1', mergeSha: 'deadbee' }
   if (label.includes(':teardown:')) {
     return {

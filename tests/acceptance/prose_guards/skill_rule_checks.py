@@ -179,6 +179,10 @@ def _acceptance_audit_wiring_check() -> Tuple[int, int]:
           "{criterion, proof_location, verdict, evidence}" in yolo)
     check("acceptance audit: docs/independent-review-gate.md matches the criteria array",
           "{criterion, proof_location, verdict, evidence}" in read("docs/independent-review-gate.md"))
+    check("independent review: /issue-yolo 3h, the gate doc and the workflow schema all require `unrequested`",
+          "`unrequested`" in yolo and "`unrequested`" in read("docs/independent-review-gate.md")
+          and "required: ['pass', 'feedback', 'verification', 'unrequested']"
+          in read(".claude/workflows/cleanup-fleet-all.js"))
     check("acceptance audit: /issue-add requires pass/fail-decidable criteria",
           "decidable pass/fail" in read("skills/issue-add/SKILL.md"))
     check("acceptance audit: /issue-finish-batch finishes unattended",

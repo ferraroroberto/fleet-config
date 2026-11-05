@@ -44,6 +44,15 @@ context:
    `skills/_lib/acceptance_audit.py`, and an unattended finish ships an
    `UNVERIFIABLE` item only when it is `EXTERNAL` and checkable after merge by
    nature.
+   The criteria answer "was everything asked done"; the verdict's required
+   `unrequested` array answers the opposite, "what does the diff do that nothing
+   asked for". Each entry is `{location, description}` — a file or hunk and one
+   line of behaviour no fetched criterion or issue comment asked for — and the
+   array is empty when there is none. A verdict without the key fails schema
+   validation. Entries never fail the review on their own (the lenient stance is
+   unchanged); the skill lists them in its final report and the PR body so the
+   owner sees them. It is one field on the one fresh reviewer, never a second
+   agent.
 3. **Execute** — ships an already-validated change: push, PR, CI-advisory wait,
    merge, tray restart. Never guesses past a failure; reports FAILED with a
    reason rather than force-completing.
