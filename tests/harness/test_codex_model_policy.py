@@ -137,6 +137,17 @@ class CodexModelPolicyTests(unittest.TestCase):
         self.assertIn("$psArgs += '-ConfigureCodexModelPolicy'", installer)
         self.assertIn("(Join-Path $RepoRoot 'codex_model_policy.py') --apply", installer)
 
+    def test_hung_codex_is_a_policy_error_not_a_hang(self) -> None:
+        def hang(argv, **kwargs):
+            self.assertEqual(kwargs.get("timeout"), policy.CODEX_TIMEOUT_S)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+        with mock.patch.object(policy.subprocess, "run", side_effect=hang):
+            with self.assertRaisesRegex(policy.PolicyError, "bundled model catalog within"):
+                policy.build_catalog("codex")
+            with self.assertRaisesRegex(policy.PolicyError, "did not load the policy within"):
+                policy.validate_cli('model_catalog_json = "x"\n', "{}", "codex")
+
 
 if __name__ == "__main__":
     unittest.main()

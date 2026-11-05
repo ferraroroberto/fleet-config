@@ -24,6 +24,10 @@ from worktree_residue import WT_SEP
 # The CLI a stale-worktree hint tells the reader to run.
 _CLI = Path(__file__).resolve().parent.parent / "worktree_claim.py"
 
+# `mklink /J` and `rmdir` on a junction return in milliseconds; 30 s bounds a wedged
+# console host without cutting a slow disk short.
+JUNCTION_TIMEOUT_S = 30
+
 # ---- git / junction ops (Windows; thin subprocess wrappers) ---------------
 
 def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -301,11 +305,14 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     # decode yields empty output, so setup_worktree aborted with
     # "Failed to junction <rel> into the worktree:" and an *empty* reason
     # Same rule listening_ports() below already documents.
-    res = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-        capture_output=True, encoding="oem", errors="replace",
-        creationflags=NO_WINDOW,
-    )
+    try:
+        res = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True, encoding="oem", errors="replace",
+            creationflags=NO_WINDOW, timeout=JUNCTION_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"mklink /J did not finish within {JUNCTION_TIMEOUT_S}s"
     ok = res.returncode == 0 and link.exists()
     return ok, "" if ok else (res.stderr.strip() or res.stdout.strip())
 
@@ -321,11 +328,17 @@ def _strip_junction(path: Path) -> None:
     if path.exists() or path.is_symlink():
         # encoding="oem" for the same reason as _junction: cmd's own error text
         # is OEM-encoded and bare text=True silently blanks it.
-        subprocess.run(
-            ["cmd", "/c", "rmdir", str(path)],
-            capture_output=True, encoding="oem", errors="replace",
-            creationflags=NO_WINDOW,
-        )
+        try:
+            subprocess.run(
+                ["cmd", "/c", "rmdir", str(path)],
+                capture_output=True, encoding="oem", errors="replace",
+                creationflags=NO_WINDOW, timeout=JUNCTION_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            # Never carry on: an unconfirmed strip lets the recursive delete that
+            # follows walk through the junction into its real target.
+            sys.exit(f"rmdir of the junction {path} did not finish within {JUNCTION_TIMEOUT_S}s; "
+                     f"stopping before any recursive delete can follow it")
 
 
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:

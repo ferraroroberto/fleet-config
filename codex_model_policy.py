@@ -38,6 +38,10 @@ ROLE_SPECS = {
     "normal": ("gpt-5.6-terra", "high"),
     "hard": ("gpt-5.6-sol", "high"),
 }
+# `codex debug models` prints a local JSON catalog in a second or two; 60 s is room
+# for a cold start on a loaded box without letting a wedged CLI stall the opt-in
+# reconcile command.
+CODEX_TIMEOUT_S = 60
 
 
 class PolicyError(ValueError):
@@ -165,10 +169,14 @@ def build_catalog(executable: str) -> str:
     """Filter the installed bundled catalog while retaining required model metadata."""
 
     binary = shutil.which(executable) or executable
-    result = subprocess.run(
-        [binary, "debug", "models", "--bundled"], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
-    )
+    try:
+        result = subprocess.run(
+            [binary, "debug", "models", "--bundled"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
+            timeout=CODEX_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PolicyError(f"Codex did not return its bundled model catalog within {CODEX_TIMEOUT_S}s") from exc
     if result.returncode != 0:
         raise PolicyError(f"unable to read Codex's bundled model catalog: {result.stderr.strip() or result.stdout.strip()}")
     try:
@@ -199,10 +207,13 @@ def validate_cli(config_text: str, catalog_text: str, executable: str) -> None:
         (home / "config.toml").write_text(rendered_config, encoding="utf-8", newline="")
         environment = {**os.environ, "CODEX_HOME": str(home)}
         command = [binary, "debug", "models"]
-        result = subprocess.run(
-            command, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            env=environment, creationflags=NO_WINDOW,
-        )
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=environment, creationflags=NO_WINDOW, timeout=CODEX_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PolicyError(f"installed Codex did not load the policy within {CODEX_TIMEOUT_S}s") from exc
         if result.returncode != 0:
             raise PolicyError(f"installed Codex rejected the policy: {result.stderr.strip() or result.stdout.strip()}")
         try:

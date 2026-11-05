@@ -23,6 +23,7 @@ when that does.
 """
 from __future__ import annotations
 
+import logging
 import socket
 import subprocess
 import sys
@@ -169,8 +170,12 @@ class PreviewServer:
             try:
                 proc.wait(timeout=STOP_TIMEOUT_S)
             except subprocess.TimeoutExpired:
-                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
-                               creationflags=NO_WINDOW)
+                try:
+                    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                                   creationflags=NO_WINDOW, timeout=STOP_TIMEOUT_S)
+                except subprocess.TimeoutExpired:
+                    logging.getLogger(__name__).warning(
+                        "taskkill of pid %s did not finish within %gs", proc.pid, STOP_TIMEOUT_S)
                 proc.wait(timeout=STOP_TIMEOUT_S)
         if self._log is not None and not self._log.closed:
             self._log.close()

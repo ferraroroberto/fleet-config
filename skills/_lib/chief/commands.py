@@ -55,6 +55,11 @@ DEFAULT_TAIL = 2000
 
 DEFAULT_VERIFY_TIMEOUT = 20.0
 
+# One Telegram send through hooks/notify_send.py; a healthy send takes a couple of
+# seconds, so 60 s covers its own retries and keeps an escalation from hanging the
+# chief's turn when the network is down.
+ESCALATE_TIMEOUT_S = 60.0
+
 # `POST /api/board/issues/start` spawns the PTY before answering: 12.5/15.8/22.5/
 # 41.2 s under load. A client that gives up at the 10 s
 # default leaves the server spawning anyway, and a blind retry then double-spawns.
@@ -744,13 +749,18 @@ def cmd_escalate(args: argparse.Namespace) -> int:
     message = f"🚨 CHIEF ESCALATION 🚨\n{text}"
     repo_root = Path(__file__).resolve().parents[3]
     notify_send_path = repo_root / "hooks" / "notify_send.py"
-    proc = subprocess.run(
-        [sys.executable, str(notify_send_path), "--category", "attention",
-         "--text", message],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
-        cwd=str(repo_root), check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(notify_send_path), "--category", "attention",
+             "--text", message],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+            cwd=str(repo_root), check=False, timeout=ESCALATE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        print("ESCALATED=no")  # logging-not-print-exempt: KEY=value protocol
+        print(f"notify_send did not finish within {ESCALATE_TIMEOUT_S:g}s", file=sys.stderr)
+        return 1
     ok = proc.returncode == 0
     print(f"ESCALATED={'yes' if ok else 'no'}")
     if not ok:

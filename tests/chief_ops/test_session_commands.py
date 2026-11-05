@@ -411,4 +411,36 @@ finally:
         os.environ["CLAUDE_HOOKS_STATE_DIR"] = _saved[2]
     shutil.rmtree(_compact_tmp, ignore_errors=True)
 
+# ---- escalate: a hung notify_send is its own failure, never a hang -----------
+# `escalate` shells out to hooks/notify_send.py; with no bound a dead network held
+# the chief's turn forever. An expiry prints ESCALATED=no and names the timeout.
+
+def _run_escalate_with_hung_send():
+    import subprocess
+    from chief import commands as chief_commands
+
+    seen = {}
+
+    def _hang(argv, **kwargs):
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    saved = (chief_commands.subprocess.run, chief_commands.read_brief)
+    chief_commands.subprocess.run = _hang
+    chief_commands.read_brief = lambda _file: "brief"
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = chief_commands.cmd_escalate(argparse.Namespace(file=None))
+    finally:
+        chief_commands.subprocess.run, chief_commands.read_brief = saved
+    return code, out.getvalue(), err.getvalue(), seen
+
+
+_esc_code, _esc_out, _esc_err, _esc_seen = _run_escalate_with_hung_send()
+check(_esc_seen.get("timeout"), "escalate bounds the notify_send spawn")
+check(_esc_code == 1 and "ESCALATED=no" in _esc_out,
+      f"escalate: a hung send exits 1 with ESCALATED=no, got {_esc_code}: {_esc_out!r}")
+check("did not finish within" in _esc_err, f"escalate: the expiry names the timeout, got {_esc_err!r}")
+
 _h.report_and_exit("test_session_commands")
