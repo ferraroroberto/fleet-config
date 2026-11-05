@@ -193,13 +193,12 @@ upkeep) on this branch. Integration rules:
   line (what gate ran and its result), and `Closes #<N>` so the issue
   auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan
   boxes, one per unverifiable criterion, naming its verifier.
-  If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`,
-  a `.gitignore` line over a tracked path), say so in the Summary, naming each
-  path: every checkout that pulls it loses its live copy unless its
-  fast-forward goes through `untrack_guard.py` (fleet-config#1086).
+  If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`, a `.gitignore` line over a tracked path), say so in the Summary, naming each path: every checkout that pulls it loses its live copy unless its fast-forward goes through `untrack_guard.py` (fleet-config#1086).
   Paste `skills/_lib/instruction_delta/delta.py`'s `INSTRUCTION_DELTA=` line verbatim into the Summary.
+  A `bug` PR names the confirmed cause: `**Cause:** <the hypothesis the repro proved>`.
   Add `**Merge danger:** two-way door · blast radius: <word>` (one-way appends ` · <reason>`);
-  `skills/_lib/merge_danger/check.py <body-file>` must pass before `gh pr create`.
+  `skills/_lib/merge_danger/check.py <body-file>` must pass before `gh pr create`, and so must
+  `skills/_lib/debug_tags/check.py .`: each `FOUND=` line is leftover debug output to delete; `NOT_CONFIRMED` stops the finish.
   Match the PR-body style of recent merged PRs in the repo.
   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 

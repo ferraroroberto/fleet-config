@@ -542,6 +542,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a finish PR body is accepted only with a well-formed `Merge danger:` "
      "line (door, one-word blast radius, a reason for a one-way door) and "
      "refused without it"),
+    ("debug_tags", "repo/test_debug_tags.py",
+     "a branch that adds a `[DEBUG-<id>]` tagged line is refused before the "
+     "PR, committed, uncommitted or untracked, a clean branch passes, and an "
+     "unresolvable base reports not confirmed rather than clean"),
     ("dirty_tree_check", "repo/test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "
