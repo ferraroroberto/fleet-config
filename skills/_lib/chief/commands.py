@@ -466,12 +466,24 @@ def _worker_cap_inputs(chief_settings: Dict[str, Any]) -> Tuple[int, Optional[Se
     return cap, managed_sids, error
 
 
-def _unconfirmed_dispatch_text(repo: str, number: int) -> str:
+def _unconfirmed_dispatch_reason(exc: Exception) -> Optional[str]:
+    """Why a failed start POST left the spawn unconfirmed (`timeout`, `http-5xx`), or `None` when
+    nothing spawned: a refused/unreachable connection or a 4xx the launcher rejected."""
+    if isinstance(exc, urllib.error.HTTPError):
+        # A 5xx does not prove nothing spawned: the launcher can answer 503 and still spawn the lane.
+        return f"http-{exc.code}" if exc.code >= 500 else None
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    return "timeout" if isinstance(reason, TimeoutError) else None
+
+
+def _unconfirmed_dispatch_text(repo: str, number: int, reason: str) -> str:
     return (
-        f"DISPATCH=unconfirmed reason=timeout repo={repo} issue={number}\n"
-        f"The launcher may still be spawning this lane. Poll `chief_ops.py sessions` "
+        f"DISPATCH=unconfirmed reason={reason} repo={repo} issue={number}\n"
+        f"The launcher may still be spawning this lane, even after an error: the lane can "
+        f"surface after a `sessions` read shows nothing. Poll `chief_ops.py sessions` "
         f"for up to a minute and do NOT dispatch again until it shows no {repo} "
-        f"session; a retry before then double-spawns."
+        f"session; a retry before then double-spawns. A lane that appears was not marked "
+        f"by this call: `chief_managed.py mark <sid> {repo} {number}`."
     )
 
 
@@ -538,11 +550,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         result = launcher._request(args.base_url, "/api/board/issues/start", method="POST", body=body,
                                    timeout=DISPATCH_TIMEOUT)
     except (TimeoutError, urllib.error.URLError) as exc:
-        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
-        if not isinstance(reason, TimeoutError):
-            raise  # refused/unreachable: nothing was spawned, a plain failure
+        unconfirmed = _unconfirmed_dispatch_reason(exc)
+        if unconfirmed is None:
+            raise  # refused/unreachable/4xx: nothing was spawned, a plain failure
         # The server may still be spawning -- never a refusal, never a blind retry.
-        print(_unconfirmed_dispatch_text(args.repo, args.number))
+        print(_unconfirmed_dispatch_text(args.repo, args.number, unconfirmed))
         return 1
     sid = (result.get("session") or {}).get("session_id")
     # One handle per dispatch, carried by every mailbox event the worker

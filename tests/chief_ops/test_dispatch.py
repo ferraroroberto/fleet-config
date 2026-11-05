@@ -361,6 +361,30 @@ try:
 except co.urllib.error.URLError:
     check(True, "cmd_dispatch: a refused connection is not mislabelled unconfirmed (#1329)")
 
+# A 5xx from the start endpoint does not prove nothing spawned: a 503 once spawned the
+# lane, and the "failed" call's retry double-spawned it. It reads like a timeout.
+for _code in (500, 502, 503, 504):
+    _http = co.urllib.error.HTTPError(co.DEFAULT_BASE_URL, _code, "Service Unavailable", None, None)
+    try:
+        rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr", start_exc=_http)
+    except Exception as _raised:  # noqa: BLE001 - the pre-fix raise is what's under test
+        check(False, f"cmd_dispatch: HTTP {_code} must not raise ({type(_raised).__name__})")
+        continue
+    _out = _run_dispatch.last_output
+    check(rc == 1 and len(posted) == 1 and f"DISPATCH=unconfirmed reason=http-{_code}" in _out
+          and "sessions" in _out and "chief_managed.py mark" in _out
+          and "DISPATCHED" not in _out and "REFUSED" not in _out,
+          f"cmd_dispatch: HTTP {_code} -> DISPATCH=unconfirmed reason=http-{_code}, exit 1, no retry")
+
+# A 4xx means the request was rejected: nothing spawned, still a plain failure.
+for _code in (400, 404, 409):
+    _http = co.urllib.error.HTTPError(co.DEFAULT_BASE_URL, _code, "Rejected", None, None)
+    try:
+        _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr", start_exc=_http)
+        check(False, f"cmd_dispatch: HTTP {_code} must still raise, not read as unconfirmed")
+    except co.urllib.error.HTTPError:
+        check(True, f"cmd_dispatch: HTTP {_code} stays a plain failure")
+
 
 # ---- fleet-wide jobs: warn on dispatch, refuse fleet-wide lanes (#1078) -----
 #
