@@ -23,8 +23,14 @@ under-counted every description containing an apostrophe (fleet-config#626).
 It also prints the before/after token delta (~4 chars/token, the same estimate
 audit.py trends on) so the purge report quotes exact numbers.
 
+With `--moved-to <sibling>...` it also checks a branch-disclosure split: the
+text moved out of a SKILL.md must land verbatim in a sibling file, so every
+sentence of the before-file must appear in the after-file or a sibling
+(reflow- and link-target-insensitive). Each missing sentence prints as `LOST`
+and fails the run; `WORDS:` gives the main file's before/after size.
+
 stdlib only. CLI:
-    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <before-file> <after-file>
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <before-file> <after-file> [--moved-to <sibling>...]
     E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py --base origin/main [--repo <path>]
 The `--base` form checks every instruction file (CLAUDE.md, AGENTS.md,
 SKILL.md, .claude/rules/*.md) the branch changed since its merge-base with
@@ -54,11 +60,69 @@ from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 _MARKED_BLOCK = re.compile(
     r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S
 )
+_LINK = re.compile(r"\[([^\]]*)\]\([^)\s]*\)")
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_BLOCK_START = re.compile(r"^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>)")
+# A sentence ends at terminal punctuation, also inside a closing bold (`**Rule.** Then…`).
+_SENTENCE_END = re.compile(r"(?:(?<=[.!?:;])|(?<=[.!?:;]\*\*)) ")
 
 
 def est_tokens(text: str) -> int:
     """Rough token estimate (~4 chars/token) — matches audit.py's trend metric."""
     return round(len(text) / 4)
+
+
+def word_count(text: str) -> int:
+    """Whitespace-separated words, the figure `wc -w` reports."""
+    return len(text.split())
+
+
+def _normalize(text: str) -> str:
+    """Whitespace collapsed, link targets and link-text backticks dropped.
+
+    A reflowed line or a re-pointed link carries the same directive, so neither
+    may read as a lost sentence.
+    """
+    text = _LINK.sub(lambda m: m.group(1).replace("`", ""), text)
+    return " ".join(text.split())
+
+
+def content_units(text: str) -> list[str]:
+    """The file's sentences, normalized: each fenced line alone, prose per block then per sentence."""
+    units: list[str] = []
+    block: list[str] = []
+    in_fence = False
+
+    def flush() -> None:
+        if block:
+            units.extend(u for u in _SENTENCE_END.split(_normalize(" ".join(block))) if u)
+            block.clear()
+
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            flush()
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            if line.strip():
+                units.append(_normalize(line))
+            continue
+        if not line.strip() or _BLOCK_START.match(line):
+            flush()
+        if line.strip():
+            block.append(line)
+    flush()
+    return units
+
+
+def split_lost(before: str, targets: List[str]) -> List[str]:
+    """Sentences of `before` found in none of `targets` (the main file and its siblings).
+
+    A branch-disclosure split moves text verbatim, so every original sentence
+    must still exist somewhere the skill can reach; new pointer text is allowed.
+    """
+    haystacks = [_normalize(t) for t in targets]
+    return [u for u in dict.fromkeys(content_units(before)) if not any(u in h for h in haystacks)]
 
 
 def marked_blocks(text: str) -> list[str]:
@@ -134,6 +198,19 @@ def _report(before: str, after: str, label: str) -> List[str]:
     return failures
 
 
+def _split_report(before: str, after: str, siblings: List[str]) -> List[str]:
+    """Print the split's word counts and every sentence it lost; return the lost ones."""
+    lost = split_lost(before, [after, *siblings])
+    print(f"WORDS: main_before={word_count(before)} main_after={word_count(after)} "
+          f"siblings={sum(word_count(s) for s in siblings)}")
+    for unit in lost:
+        print(f"LOST  {unit}")
+    print(f"SPLIT: units={len(set(content_units(before)))} siblings={len(siblings)} lost={len(lost)}")
+    if not lost:
+        print("PASS  split: every sentence of before is in the main file or a sibling")
+    return lost
+
+
 def check_branch(repo: Path, base: str) -> int:
     found = changed_instruction_files(repo, base)
     if found is None:
@@ -170,18 +247,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("after", type=Path, nargs="?")
     ap.add_argument("--base", help="check every instruction file changed since the merge-base with this ref")
     ap.add_argument("--repo", type=Path, default=Path("."), help="working tree for --base (default: cwd)")
+    ap.add_argument("--moved-to", type=Path, nargs="+", default=[], metavar="SIBLING",
+                    help="a branch-disclosure split: every sentence of <before> must be in <after> or a sibling")
     args = ap.parse_args(argv)
 
     if args.base:
-        if args.before or args.after:
-            ap.error("--base takes no before/after files")
+        if args.before or args.after or args.moved_to:
+            ap.error("--base takes no before/after files and no --moved-to")
         return check_branch(args.repo, args.base)
     if not (args.before and args.after):
         ap.error("pass <before> <after>, or --base <ref>")
 
     before = args.before.read_text(encoding="utf-8")
     after = args.after.read_text(encoding="utf-8")
-    return 0 if not _report(before, after, "") else 2
+    failures = _report(before, after, "")
+    if args.moved_to:
+        siblings = [p.read_text(encoding="utf-8") for p in args.moved_to]
+        failures += _split_report(before, after, siblings)
+    return 0 if not failures else 2
 
 
 if __name__ == "__main__":
