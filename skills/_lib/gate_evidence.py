@@ -232,6 +232,7 @@ def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
         # child loses the inherited stdout/stderr and the gate's own FAIL
         # lines vanish while its exit code still arrives.
         with inflight_marker(repo, label):
+            # subprocess-timeout-exempt: foreground runner for the caller's gate, whose length is the caller's to set
             proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
                                   stdout=_handle(sys.stdout), stderr=_handle(sys.stderr))
         code = proc.returncode

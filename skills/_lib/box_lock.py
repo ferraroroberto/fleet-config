@@ -231,6 +231,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # console, so the gate's output is handed over explicitly.
             sys.stdout.flush()
             sys.stderr.flush()
+            # subprocess-timeout-exempt: foreground runner for the caller's own gate command, whose length is the caller's to set
             return subprocess.run([program, *command[1:]], stdout=sys.stdout.fileno(),
                                   stderr=sys.stderr.fileno(), creationflags=NO_WINDOW).returncode
     except BoxLockTimeout as exc:

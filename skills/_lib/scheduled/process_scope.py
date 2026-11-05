@@ -410,6 +410,7 @@ def _bootstrap() -> int:
     if sys.stdin.buffer.read(1) != b"1":
         return 2
     try:
+        # subprocess-timeout-exempt: foreground shim for the scoped command; the owning scope's job object and deadline end it
         return subprocess.call(sys.argv[2:], stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
     except OSError:
         return 127

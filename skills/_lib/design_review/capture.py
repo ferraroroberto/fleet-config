@@ -52,6 +52,7 @@ import dataclasses
 import datetime as _dt
 import hashlib
 import json
+import logging
 import os
 import queue
 import re
@@ -84,6 +85,7 @@ DEFAULT_SCAFFOLD = "E:/automation/project-scaffolding"
 PROBE_TIMEOUT_S = 5.0
 WALK_TIMEOUT_S = 1800.0
 SYNTHETIC_STOP_S = 30.0   # a launcher gets this long to clean up after its stdin closes
+TASKKILL_TIMEOUT_S = 30.0  # a tree kill returns in well under a second; this bounds a wedged one
 SCHEMA_VERSION = measure.SCHEMA_VERSION
 
 
@@ -318,8 +320,13 @@ def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], p
 def kill_tree(proc: subprocess.Popen) -> None:
     """Kill a child this module started and every process it started in turn (`taskkill /T` on Windows)."""
     if sys.platform == "win32":
-        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
-                       creationflags=NO_WINDOW)
+        try:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                           creationflags=NO_WINDOW, timeout=TASKKILL_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            # The callers' own bounded waits after this call report whether the child is gone.
+            logging.getLogger(__name__).warning(
+                "taskkill of pid %s did not finish within %gs", proc.pid, TASKKILL_TIMEOUT_S)
     else:
         proc.kill()
 

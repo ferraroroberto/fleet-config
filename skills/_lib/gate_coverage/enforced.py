@@ -62,6 +62,11 @@ CONVENTIONS: dict[str, tuple[str, str]] = {
     "no-drive-path": ("claude-md-drift", "hardcoded drive-letter paths"),
     "secret-compare": ("claude-md-drift", "secrets compared without a constant-time compare"),
     "git-wrapper": ("claude-md-drift", "raw git spawns outside the git wrapper"),
+    "password-input-vendored": ("claude-md-drift", "password inputs outside the vendored sign-in sheet"),
+    "login-lockout": ("claude-md-drift", "login routes that skip the vendored lockout"),
+    "no-pwsh-stub": ("claude-md-drift", "the 0-byte pwsh stub run as a command in text files"),
+    "must-use": ("claude-md-drift", "calls to a named primitive outside its one declared helper"),
+    "subprocess-timeout": ("claude-md-drift", "blocking subprocess calls with no timeout"),
 }
 # The prompt-audit lint rules the vendored instruction ratchet enforces (its `RULES`). R-13 and
 # R-37 stay with the weekly audit: the ratchet cannot decide them from one tree.

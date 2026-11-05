@@ -696,4 +696,29 @@ finally:
     wgit._strip_junction = real_strip
     shutil.rmtree(deregistered_base, ignore_errors=True)
 
+# ---- junction ops are bounded; a hung strip stops before any recursive delete ----
+
+def _hung_run(argv, **kwargs):
+    assert kwargs.get("timeout") == wgit.JUNCTION_TIMEOUT_S, "the junction spawn must be bounded"
+    raise wgit.subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+
+_junction_tmp = Path(tempfile.mkdtemp(prefix="junction-timeout-"))
+_real_run = wgit.subprocess.run
+wgit.subprocess.run = _hung_run
+try:
+    _ok, _msg = wgit._junction(_junction_tmp / "link", _junction_tmp)
+    check(_ok is False and "did not finish within" in _msg,
+          f"_junction: a hung mklink returns (False, its own message), got {(_ok, _msg)!r}")
+    _exit = None
+    try:
+        wgit._strip_junction(_junction_tmp)
+    except SystemExit as exc:
+        _exit = str(exc)
+    check(_exit is not None and "before any recursive delete" in _exit,
+          f"_strip_junction: a hung rmdir stops the caller instead of letting a delete follow the junction, got {_exit!r}")
+finally:
+    wgit.subprocess.run = _real_run
+    shutil.rmtree(_junction_tmp, ignore_errors=True)
+
 _h.report_and_exit("test_claim_and_landing")

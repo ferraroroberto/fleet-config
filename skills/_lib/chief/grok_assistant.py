@@ -347,6 +347,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         env = dict(os.environ, GROK_FOLDER_TRUST="0", GROK_ASSISTANT_HOME=str(home))
         with (home / "session.log").open("a", encoding="utf-8") as log:
+            # subprocess-timeout-exempt: foreground runner for the Grok session, which serves until the owner stops it
             return subprocess.run(argv_, cwd=home / "session", env=env, stdout=log,
                                   stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                   creationflags=NO_WINDOW).returncode

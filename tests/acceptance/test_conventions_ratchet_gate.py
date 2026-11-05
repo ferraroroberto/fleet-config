@@ -63,7 +63,7 @@ def _ratchet(root: Path, *args: str) -> tuple[int, str]:
 
 _CONFIG = """[conventions_ratchet]
 enabled = true
-rules = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper"]
+rules = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout"]
 print_paths = ["lib/"]
 git_wrappers = ["lib/git_run.py"]
 """
