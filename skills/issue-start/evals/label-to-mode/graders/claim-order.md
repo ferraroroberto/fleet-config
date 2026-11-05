@@ -1,7 +1,7 @@
 ---
-type: llm
+type: regex
+pattern: '^(?:[^`]|`(?!``))*```[^\n]*\n(?:[ \t]*(?:#[^\n]*|[^\n]*(?:APP_LAUNCHER_SESSION_ID|workflow-capabilities)[^\n]*)?\n)*[^\n]*worktree_claim\.py[^\n]*acquire[^\n]*--force-worktree'
+match: contains
 ---
 
-Judge only the order of the first steps; the mode and the branch are graded elsewhere.
-PASS if the `worktree_claim.py acquire` with `--force-worktree` is the first real action: the only things before it are the check of `APP_LAUNCHER_SESSION_ID` and the skill's own capability-preflight read of `docs/workflow-capabilities.md`. Nothing in the answer reads the issue, the code, `CLAUDE.md` or `README.md`, or runs git, before the claim. Reads that come after the claim are fine.
-FAIL if the answer says it reads the issue, the code, `CLAUDE.md` or `README.md` before the claim, runs git or `gh` before it, or omits the claim.
+The claim is the first real action: in the answer's first fenced command block, the only lines before `worktree_claim.py acquire … --force-worktree` are the `APP_LAUNCHER_SESSION_ID` check, the capability-preflight read of `workflow-capabilities.md`, blank lines and comments. Any `git`, `gh` or file read before it, or no claim at all, fails. A regex, not an LLM judge: the judge split PASS/FAIL on identical correct orderings, which read as a skill regression that was not one.
