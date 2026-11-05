@@ -20,7 +20,8 @@ Subcommands:
         CLASSIFIER=present|absent            scripts/classify_e2e.py
         CLASSIFIER_MATCHES_SCAFFOLD=yes|no|n/a
         E2E_TABLE=present|absent|invalid     [e2e] in .fleet.toml
-        SUITE=present|absent                 test files under tests/e2e/
+        SUITE=present|absent                 test files under tests/e2e/ plus a browser signal
+                                             (playwright/selenium import or dependency)
         SUITE_DIR=tests/e2e
         WEB_SURFACE=yes|no                   is this a webapp/Streamlit repo?
         WEB_KIND=webapp|streamlit|none
@@ -81,6 +82,8 @@ SUITE_REL = Path("tests/e2e")
 KNOWN_TIERS = ("skip", "static", "full", "surface")
 _WEB_DEP = re.compile(r"\b(fastapi|flask|uvicorn|starlette)\b", re.IGNORECASE)
 _STREAMLIT_DEP = re.compile(r"\bstreamlit\b", re.IGNORECASE)
+_BROWSER_DEP = re.compile(r"\b(pytest-playwright|playwright|selenium)\b", re.IGNORECASE)
+_BROWSER_IMPORT = re.compile(r"^\s*(?:import|from)\s+(?:playwright|selenium)\b", re.MULTILINE)
 
 
 # ---- pure helpers (unit-tested without git or subprocess) -----------------
@@ -112,11 +115,25 @@ def e2e_table_state(repo: Path) -> str:
 
 
 def suite_state(repo: Path) -> str:
-    """`present` when tests/e2e/ holds at least one test module."""
+    """`present` when tests/e2e/ holds a test module AND a browser signal.
+
+    The folder name alone proves nothing: a repo with no browser surface can
+    keep unit tests *of* its e2e tooling there. The signal is a playwright or
+    selenium import in any module under the folder, or such a dependency
+    declared by the repo.
+    """
     suite = repo / SUITE_REL
-    if not suite.is_dir():
+    if not suite.is_dir() or not any(suite.rglob("test_*.py")):
         return "absent"
-    return "present" if any(suite.rglob("test_*.py")) else "absent"
+    if _BROWSER_DEP.search(_dependency_text(repo)):
+        return "present"
+    for module in suite.rglob("*.py"):
+        try:
+            if _BROWSER_IMPORT.search(module.read_text(encoding="utf-8", errors="replace")):
+                return "present"
+        except OSError:
+            continue
+    return "absent"
 
 
 def _dependency_text(repo: Path) -> str:

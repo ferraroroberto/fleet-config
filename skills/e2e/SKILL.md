@@ -68,7 +68,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 It prints `CLASSIFIER=`, `CLASSIFIER_MATCHES_SCAFFOLD=`, `E2E_TABLE=`,
 `SUITE=`, `WEB_SURFACE=`, `WEB_KIND=`, `WEB_REASON=`, `GATE_ROUTING=`. Every branch below is
-keyed on these printed facts — never re-derive them by eye.
+keyed on these printed facts — never re-derive them by eye. `SUITE=present`
+needs a browser signal (a playwright/selenium import under `tests/e2e/` or
+such a dependency), not just the folder name: tests *of* the e2e tooling can
+live there, so a folder without the signal reads `absent`.
 
 `GATE_ROUTING` is the gate contract (fleet-config#1134): whether the repo's own
 gate runs the classifier and splits its space-joined `E2E_PYTEST_TARGET`.

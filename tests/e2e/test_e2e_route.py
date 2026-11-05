@@ -77,7 +77,26 @@ with tempfile.TemporaryDirectory() as td:
     check((surface, kind) == ("yes", "webapp"), "fastapi dependency -> webapp surface")
     check(er.suite_state(api) == "absent", "empty tests/e2e dir is not a suite")
     (api / "tests" / "e2e" / "test_smoke.py").write_text("def test_up(): pass\n", encoding="utf-8")
-    check(er.suite_state(api) == "present", "a test module under tests/e2e -> suite present")
+    # a test module alone is not a browser suite: tooling tests share the folder name
+    check(er.suite_state(api) == "absent", "tests/e2e without a browser signal -> suite absent")
+    (api / "tests" / "e2e" / "conftest.py").write_text(
+        "from playwright.sync_api import Page\n", encoding="utf-8")
+    check(er.suite_state(api) == "present", "a playwright import under tests/e2e -> suite present")
+    (api / "tests" / "e2e" / "conftest.py").unlink()
+    check(er.suite_state(api) == "absent", "signal removed -> suite absent again")
+    (api / "requirements-dev.txt").write_text("pytest-playwright==0.5\n", encoding="utf-8")
+    check(er.suite_state(api) == "present", "a playwright dependency + test module -> suite present")
+    (api / "requirements-dev.txt").unlink()
+    (api / "tests" / "e2e" / "conftest.py").write_text(
+        "from playwright.sync_api import Page\n", encoding="utf-8")
+
+    # ---- tooling-only folder (this repo's shape): test modules, no browser signal ----
+    tool = root / "tool"
+    (tool / "tests" / "e2e").mkdir(parents=True)
+    (tool / "tests" / "e2e" / "test_e2e_route.py").write_text(
+        "# unit tests for the e2e tooling; mentions playwright in prose only\ndef test_x(): pass\n",
+        encoding="utf-8")
+    check(er.suite_state(tool) == "absent", "tooling-only tests/e2e is not a browser suite")
 
     # ---- probe output shape ----
     rc, out = _capture(er.cmd_probe, api, scaffold)
