@@ -1,6 +1,6 @@
 ---
 name: e2e-audit
-description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against project-scaffolding's "<15 tests total" target, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. /e2e triggers it when a suite exceeds its node or time budget or grows ~10 tests; never on a clock. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
+description: Audit a repo's e2e/regression suite (redundancy, bloat, coverage gaps, gate time, failure history) against project-scaffolding's "<15 tests total" target; file a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. On demand, or via /e2e when a suite passes its node/time budget or grows ~10 tests; never on a clock. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
 ---
 
 # e2e-audit
