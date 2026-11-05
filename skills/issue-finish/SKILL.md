@@ -251,8 +251,8 @@ Decision below is driven by the project's `## CI expectations` block
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches <repo> --delete --remote
   ```
   **The rule (the same one `/cleanup-fleet-all` states):** a ref classed `landed`
-  (closed issue, no open PR, tip proven merged or equal to the recorded head of
-  its own PR merged into the default branch) or `superseded` (closed issue, no
+  (no open PR, tip proven merged with a closed issue, or equal to the recorded head of
+  its own PR merged into the default branch whatever the issue says) or `superseded` (closed issue, no
   open PR, tip contained in the merge of another branch's PR that closed the issue)
   holds no unshipped work, so any run deletes it, local and on `origin`. The
   helper re-judges each target from a fresh tip, proof and PR lookup right before

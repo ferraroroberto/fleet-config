@@ -3,10 +3,9 @@
 Why this exists
 ----------------
 Teardown deletes only the lane's own branch and, by design, reports nothing
-about anyone else's (fleet-config#572), so branches from closed issues pile up:
-23 local and 16 remote refs in this repo at filing time. Judging whether one is
-safe to drop used to be hand-run `gh pr list` / `git diff` lookups in a prompt.
-This module is that judgement as a deterministic, read-only report.
+about anyone else's (fleet-config#572), so branches from closed issues pile up.
+This module judges whether one is safe to drop (a hand-run `gh pr list` /
+`git diff` lookup otherwise) as a deterministic, read-only report.
 
 `branches` only reports. The one mutating path is `branches --delete` (below),
 which acts only on `landed` and `superseded` refs; no folder is ever removed here.
@@ -31,30 +30,29 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
                   branch (or conflicts with it), and no superseding merge
                   contains them: unmerged work.
   open-pr      -- an open PR has this head.
-  landed       -- issue closed AND no open PR AND the tip is proven landed,
-                  either by `worktree_residue.head_merged` or because the
-                  branch's own PR into the default branch merged with this
-                  exact tip as its head.
+  landed       -- no open PR AND the tip is proven landed: by
+                  `worktree_residue.head_merged` (issue closed), or by its own
+                  PR into the default branch merged with this exact tip as
+                  its head (any issue state: outranks open-issue, unknown).
   superseded   -- issue closed AND no open PR AND, though the tip is not
                   landed, merging it into the merge commit of a PR from a
                   *different* head that closed the issue (based on, and
                   present in, the default branch) changes nothing.
 
 `--delete` acts on `landed` and `superseded` only: neither holds unshipped work.
-
-`landed` needs both facts. The closed issue alone says nothing about the
-content; the merge proof alone would call a fresh empty branch landed. Neither
-is inferred from absence. `git branch --merged` is never used: the fleet
-squash-merges, so a landed tip is never an ancestor (fleet-config#567).
-Local and remote tips are judged independently -- one can be ahead of the other.
+The merge proof needs a closed issue too, or it would call a fresh empty branch
+landed. `git branch --merged` is never used: the fleet squash-merges, so a
+landed tip is never an ancestor (fleet-config#567). Local and remote tips are
+judged independently.
 
 The own-PR route covers a branch that squash-merged before the default branch
 edited the same lines, so the merge proof now conflicts. GitHub records each
 merged PR's head sha (`headRefOid`); when it equals the tip, nothing was pushed
 after the merge, so the tip holds no work the PR did not ship. A PR based on
 another branch, or with no recorded `mergedAt`, is never proof; a failed lookup
-is `unknown`; one commit pushed after the merge is `unlanded`. It is tried only
-for a tip that neither the merge proof nor `superseded` holds for.
+is `unknown`; one commit pushed after the merge is `unlanded`. It needs no
+issue: a branch named for another repo's issue is `landed` on it alone; without
+it a failed lookup stays `unknown`, an open issue `open-issue`.
 
 `superseded` covers a branch whose issue shipped through another branch (a
 `-v2` re-cut): that squash is not this tip, so `landed` cannot see it. The
@@ -68,10 +66,10 @@ failed lookup, a merge commit missing locally or an errored proof is
 
 Orphan folders
 ---------------
-A sibling `<repo>-wt-*` directory (any suffix, not only digits) that
-`git worktree list` does not register. Reported as
-`orphan-with-git-file | orphan-has-content | orphan-empty | unknown`; never
-removed here (`chief_ops.py sweep --apply` owns empty-shell removal).
+A sibling `<repo>-wt-*` directory (any suffix) that `git worktree list` does
+not register. Reported as `orphan-with-git-file | orphan-has-content |
+orphan-empty | unknown`; never removed here (`chief_ops.py sweep --apply` owns
+empty-shell removal).
 
 Subcommands
 -----------
@@ -91,9 +89,9 @@ Subcommands
         `/issue-finish` runs it as a fixed step after its own merge. Without
         `--branch` it acts on every deletable row, with it only on the named
         ones; naming any other class (the default, a checked-out branch,
-        `no-issue`, `unlanded`, `unknown`, ...) is refused with its class. Each target is re-judged immediately before acting from a fresh
-        tip sha, fresh proof and a fresh PR lookup, so a branch that moved or
-        gained a PR since the report is skipped.
+        `no-issue`, `unlanded`, `unknown`, ...) is refused with its class. Each
+        target is re-judged immediately before acting from a fresh tip sha,
+        proof and PR lookup, so a branch that moved or gained a PR is skipped.
           local   `git branch -D` (`-d` refuses squash-merged branches).
           remote  only with `--remote`, only `origin`; the remote tip is proven
                   on its own from `ls-remote` and deleted with
@@ -108,10 +106,10 @@ Subcommands
 
 The report exits 0 -- it reports, the caller decides. The decision core
 (`classify_ref`, `branch_issue`, `summarize`) is pure; `build_report` and
-`delete_landed` take the issue, open-PR, closing-PR and own-PR lookups as injected callables so tests
-never touch `gh` or the network. The tip proof is cached per sha and the `gh`
-and merge-tree lookups run on a small pool: serial, a 62-ref repo took 72 s
-(fleet-config#1528). stdlib only.
+`delete_landed` take the issue, open-PR, closing-PR and own-PR lookups as
+injected callables so tests never touch `gh` or the network. The tip proof is
+cached per sha and the `gh` and merge-tree lookups run on a small pool: serial,
+a 62-ref repo took 72 s (fleet-config#1528). stdlib only.
 """
 
 from __future__ import annotations
@@ -258,6 +256,12 @@ def classify_ref(
         return CHECKED_OUT, "checked out in a worktree"
     if issue is None:
         return NO_ISSUE, "name carries no issue number, so there is no closed issue to prove"
+    if issue_state != "closed" and own_pr:  # nothing is unshipped, so a possibly foreign issue number cannot matter
+        if open_pr is None:
+            return UNKNOWN, "could not establish whether an open PR has this head"
+        if open_pr:
+            return OPEN_PR, "an open PR has this head"
+        return LANDED, f"{own_pr_how} (issue #{issue} not consulted)"
     if issue_state == "open":
         return OPEN_ISSUE, f"issue #{issue} is still open"
     if issue_state != "closed":
@@ -574,6 +578,8 @@ class _Judge:
         with ThreadPoolExecutor(max_workers=LOOKUP_WORKERS) as pool:
             list(pool.map(self.state, numbers))
             closed = [r for r in live if self._states.get(branch_issue(r.name)) == "closed"]
+            unclosed = [r for r in live if branch_issue(r.name) is not None and r not in closed]
+            list(pool.map(lambda r: self.own_landed(r.name, r.sha), unclosed))
             list(pool.map(self.proof, sorted({r.sha for r in closed})))
             unmerged = [r for r in closed if self._proofs[r.sha][0] and self._proofs[r.sha][1] is False]
             list(pool.map(lambda r: self.supersede(r.name, r.sha, branch_issue(r.name)), unmerged))
@@ -594,6 +600,10 @@ class _Judge:
         superseded_how = ""
         own_pr: Optional[bool] = False
         own_pr_how = ""
+        if not gated and state != "closed":
+            own_pr, own_pr_how = self.own_landed(ref.name, ref.sha)  # None (lookup failed) leaves the issue's answer standing
+            if own_pr:
+                open_pr = self.has_open_pr(ref.name)
         if not gated and state == "closed":
             readable, merged, how = self.proof(ref.sha)
             if readable and merged is False:

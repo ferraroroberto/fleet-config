@@ -31,6 +31,7 @@ import io
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
@@ -101,8 +102,23 @@ check(cr(merged=False, superseded=False, own_pr=None) == br.UNKNOWN, "classify: 
 check(cr(merged=False, superseded=False, own_pr=True, open_pr=True) == br.OPEN_PR
       and cr(merged=False, superseded=False, own_pr=True, open_pr=None) == br.UNKNOWN,
       "classify: an own-PR landing still needs a proven absence of an open PR")
-check(cr(merged=False, superseded=False, own_pr=True, issue_state="open") == br.OPEN_ISSUE,
-      "classify: an open issue is never landed through its own PR")
+# the own-PR proof needs no issue: a ref named for another repo's issue is judged on its PR alone.
+for state in (None, "open"):
+    check(cr(issue_state=state, merged=None, tip_readable=False, own_pr=True, own_pr_how="own PR #9") == br.LANDED,
+          f"classify: an own-PR landing holds whatever the issue lookup says (issue_state={state})")
+    check(cr(issue_state=state, own_pr=True, open_pr=True) == br.OPEN_PR
+          and cr(issue_state=state, own_pr=True, open_pr=None) == br.UNKNOWN,
+          f"classify: an own-PR landing past an unclosed issue still needs a proven absence of an open PR (issue_state={state})")
+check(br.classify_ref(is_default=False, checked_out=False, issue=7, issue_state=None, tip_readable=True, merged=None,
+                      merged_how="", open_pr=False, own_pr=True, own_pr_how="own PR #9 x")[1]
+      == "own PR #9 x (issue #7 not consulted)", "classify: an own-PR landing past an unclosed issue says the issue was not consulted")
+check(cr(issue_state=None, own_pr=False) == br.UNKNOWN and cr(issue_state=None, own_pr=None) == br.UNKNOWN,
+      "classify: no own merged PR and no issue state stays unknown")
+check(cr(issue_state="open", own_pr=False) == br.OPEN_ISSUE and cr(issue_state="open", own_pr=None) == br.OPEN_ISSUE,
+      "classify: an open issue without an own-PR landing stays open-issue")
+check(cr(is_default=True, issue_state=None, own_pr=True) == br.DEFAULT and cr(checked_out=True, issue_state=None, own_pr=True) == br.CHECKED_OUT
+      and cr(issue=None, issue_state=None, own_pr=True) == br.NO_ISSUE,
+      "classify: the own-PR proof never outranks default, checked-out or no-issue")
 check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
       and br.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
 check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and br.parse_own_prs("9\t\tmain\t2026\n") is None
@@ -723,7 +739,7 @@ check(code == 0 and f"DELETED=local:{s28}" in out and f"DELETED=remote:{s28}" in
       f"cli: --branch takes a superseded ref and SUMMARY counts superseded on its own (got {code}, {out[-400:]!r})")
 
 # S9: a branch whose own merged PR has its tip is deleted, local and remote; one pushed after its merge stays.
-def add_own_pr(f: Fx, n: int, push_after: bool = False) -> str:
+def add_own_pr(f: Fx, n: int, push_after: bool = False, issue: Optional[str] = "closed") -> str:
     """`feat/<n>-own`, squash-merged by its own PR, then main edited the same file so the merge proof conflicts."""
     name, fname = f"feat/{n}-own", f"o{n}.txt"
     git(f.primary, "checkout", "-q", "-b", name, "main")
@@ -736,7 +752,10 @@ def add_own_pr(f: Fx, n: int, push_after: bool = False) -> str:
     commit(f.primary, fname, "shipped\n", f"squash of {n}")
     commit(f.primary, fname, "reworked\n", f"later edit of {fname}")
     git(f.primary, "push", "-q", "origin", "main")
-    f.issues[n] = "closed"
+    if issue is None:
+        f.issues.pop(n, None)  # the lookup yields None: the number is another repo's, not an issue here
+    else:
+        f.issues[n] = issue
     f.own[name] = [br.OwnPr(300 + n, head, "main", "2026-11-05T10:00:00Z")]
     return name
 
@@ -759,6 +778,31 @@ f9b.own_ok = False
 o9b = br.delete_landed(f9b.primary, rep9b, f9b.factory, names=[o42], remote=True)
 check(o9b and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o9b) and o42 in fx_local(f9b)
       and o42 in fx_remote(f9b), "own-pr: an own-PR lookup that fails at the re-judge skips the target as unknown")
+
+# S10: the own-PR proof does not need the branch's issue (fleet-config#1878).
+f10 = make_fixture("own-pr-no-issue")
+o43 = add_own_pr(f10, 43, issue=None)
+o44 = add_own_pr(f10, 44, issue="open")
+f10.issues.pop(21)  # feat/21-landed-sq: squash-merged, but its issue lookup now fails and no PR is its own
+t10 = table(fx_report(f10))
+check(all(cls_of(t10, o43, w) == br.LANDED for w in ("local", "remote")) and "own PR #343" in t10[(o43, "local")][1],
+      f"no-issue lookup: a branch whose own merged PR has its tip is landed (got {t10.get((o43, 'local'))})")
+check(cls_of(t10, o44) == br.LANDED, f"open-issue lookup: the same proof lands it (got {t10.get((o44, 'local'))})")
+check(cls_of(t10, "feat/21-landed-sq") == br.UNKNOWN and cls_of(t10, "feat/24-open") == br.OPEN_ISSUE,
+      "no-issue lookup: without a merged PR of its own a failed lookup stays unknown and an open issue stays open-issue")
+f10.prs = {o43}
+check(cls_of(table(fx_report(f10)), o43) == br.OPEN_PR, "no-issue lookup: an open PR on the branch still keeps it")
+f10.prs = {"feat/25-openpr"}
+code, out = cli(f10, "branches", str(f10.primary), "--no-fetch", "--delete", "--remote")
+check(code == 0 and all(f"DELETED={w}:{o}" in out for o in (o43, o44) for w in ("local", "remote"))
+      and not ({o43, o44} & fx_local(f10)) and not ({o43, o44} & set(fx_remote(f10))),
+      f"no-issue lookup: --delete removes the own-PR branches, local and remote (got {code}, {out[-400:]!r})")
+check("feat/21-landed-sq" in fx_local(f10) and "feat/24-open" in fx_local(f10),
+      "no-issue lookup: --delete leaves the unknown and open-issue branches")
+f10b = make_fixture("own-pr-no-issue-late")
+o45 = add_own_pr(f10b, 45, push_after=True, issue=None)
+check(cls_of(table(fx_report(f10b)), o45) == br.UNKNOWN,
+      "no-issue lookup: a commit pushed after the own PR merged keeps the branch unknown")
 
 # The report path never mutates: `branches` without --delete leaves every ref byte-identical.
 f6 = make_fixture("readonly")
