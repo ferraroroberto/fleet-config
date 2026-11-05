@@ -124,7 +124,7 @@ KIND = "context-purge-digest"
 TITLE = "[ledger] context-purge run digests (machine-managed, not actionable)"
 PRIMARY_LABEL = "chore"
 # ...and `audit-meta` on top, because that is what makes `/issue-start`'s pick
-# mode and `/issue-triage` skip it. The title tells a human; the label tells the
+# mode skip it. The title tells a human; the label tells the
 # tooling.
 LEDGER_LABEL = "audit-meta"
 STAMP_PREFIX = "context-purge-digest"

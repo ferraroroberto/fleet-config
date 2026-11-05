@@ -28,7 +28,7 @@ The two files must declare the same repo tables. A new repo, or a new key on one
 | `iter_fleet_repos(include_ignored=True)` | the `fleet_membership` acceptance check | keeps them: a dormant repo is still declared |
 | `fleet_repo_tables()` | `/design-review <repo>` target resolution | unfiltered: it answers what a repo declares, not whether a run reaches it |
 | `_lib.load_registry()` | every hook | unfiltered: hooks serve any session in any repo |
-| `gh_issue_fetch.py fetch` (owner-wide `gh repo list`) | `/cleanup-fleet`, `/cleanup-fleet-all`, `/issue-triage`, `/audit-fleet`'s drift counts, `/chief` backlog search | drops dormant repos and still fetches a repo the list does not declare; `--include-dormant` fetches all; `SKIPPED_DORMANT=<n>: <names>` on stderr names what was dropped |
+| `gh_issue_fetch.py fetch` (owner-wide `gh repo list`) | `/cleanup-fleet`, `/cleanup-fleet-all`, `/audit-fleet`'s drift counts, `/chief` backlog search | drops dormant repos and still fetches a repo the list does not declare; `--include-dormant` fetches all; `SKIPPED_DORMANT=<n>: <names>` on stderr names what was dropped |
 | `design_review.fleet.fleet_targets()` | `/design-review fleet` | skips dormant web apps and records them in the digest as skipped (`skipped_dormant`, `SKIPPED_DORMANT=`), never as absent |
 | `perf_review.sweep.web_apps()` | `/perf-sweep` | reuses `fleet_targets()`; dormant web apps are named in the digest as not measured, and a named `--only` repo still runs |
 | `audit.py`'s CLAUDE.md budget scan | `/context-audit` | drops dormant repos and lists them as `NOT MEASURED (dormant)`; their context cost is unknown, never zero, and an undeclared directory is still measured |

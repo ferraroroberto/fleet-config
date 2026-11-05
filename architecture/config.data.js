@@ -177,11 +177,6 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
-      "nm": "issue-triage",
-      "ds": "Pull every open GitHub issue across all repos owned by ferraroroberto, score each Small/Medium/Large, and present a per-project m…",
-      "scope": "fleet"
-    },
-    {
       "nm": "issue-yolo",
       "ds": "One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard (including an independent fr…",
       "scope": "repo"

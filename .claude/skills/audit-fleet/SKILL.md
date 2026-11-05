@@ -181,7 +181,7 @@ Hold each sub-agent's structured report as it returns. When the to-audit list is
 
 ### 4b. Upsert the fleet practices ledger
 
-Collect `Promotion candidates` lines from every sub-agent report. If **all** were empty, skip this step (digest notes "no new assets"). Otherwise maintain one living catalog issue in **`ferraroroberto/project-scaffolding`** — the cross-fleet "things that work" ledger — labelled `audit-meta` so `/issue-triage` filters it out.
+Collect `Promotion candidates` lines from every sub-agent report. If **all** were empty, skip this step (digest notes "no new assets"). Otherwise maintain one living catalog issue in **`ferraroroberto/project-scaffolding`** — the cross-fleet "things that work" ledger — labelled `audit-meta` so it stays out of work listings.
 
 Read the existing ledger:
 

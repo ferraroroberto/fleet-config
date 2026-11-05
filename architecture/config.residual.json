@@ -61,7 +61,7 @@
       }
     }
   ],
-  "fleet_wide_skills": ["issue-batch", "issue-finish-batch", "issue-triage"],
+  "fleet_wide_skills": ["issue-batch", "issue-finish-batch"],
   "hooks_extra": [
     { "nm": "restart_and_verify_webapp", "ev": "/restart-webapp (slash command)" },
     { "nm": "conversation_capture", "ev": "Stop (opt-in per project)" },

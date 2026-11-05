@@ -500,4 +500,4 @@ are.
   never filed publicly. `/security-review` is the diff-scoped reviewer.
 - Step 2's four decisions and step 6's dedupe are one Python function
   (`evaluate_repo`), never LLM judgment. The `audit-meta` ledger label keeps it
-  out of `/issue-triage` and `/issue-start`.
+  out of `/issue-start`'s issue picker.

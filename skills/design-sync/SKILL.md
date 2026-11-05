@@ -353,8 +353,7 @@ even on a clean app).
   bucket surfaced in the `/audit-fleet` digest (`fleet-config#180`). The step-1b
   cert check rides that sweep. Run this skill directly for a single repo.
 - `design-drift` and `cert-drift` are both first-class audit buckets
-  (`audit_issue.py` `KINDS`) — `/cleanup-fleet` fans out fixers for each, and
-  `/issue-triage` treats both like any other issue.
+  (`audit_issue.py` `KINDS`) — `/cleanup-fleet` fans out fixers for each.
 - The cert convention lives in `project-scaffolding#89`; the heuristic in the
   pure, unit-tested `skills/_lib/cert_drift.py`. The lint lenses live in
   `skills/_lib/design_lint/` (unit-tested, wired into `run_acceptance.py`);
