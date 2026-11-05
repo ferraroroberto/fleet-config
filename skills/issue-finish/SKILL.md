@@ -80,13 +80,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 `MANIFEST=absent` → **silent no-op**, skip straight to step 3.
 `MANIFEST=<path>` with an empty `STALE` → also a no-op (say so in the finish
 summary: `docs-shots: no visual-docs feature touched by this diff`). A
-non-empty `STALE` → run the full `/docs-shots` judgment + propose-then-capture
-flow (`skills/docs-shots/SKILL.md`) **inside this run**: show the stale set +
-reasons, wait for the user's explicit OK, and on approval invoke the repo's own
-doc-capture engine for just those features, fold the result into the finish
-summary. Also surface any `UNMAPPED` changed files for the user to add a
-manifest entry for — never guess one. On decline, note the refresh was skipped
-and continue to step 3 — never block the finish over it.
+non-empty `STALE` → read [`visual-docs.md`](E:/automation/fleet-config/skills/issue-finish/visual-docs.md)
+and run its refresh flow inside this run.
 
 ### 3. Verification gate
 
@@ -130,39 +125,11 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   surface was untouched (fleet-config#681). Treat as `yes`: run both legs
   against every `KEY_VIEWS` entry, say `UX surface: unknown (diff failed) —
   gate run in full` in the step-7 summary.
-- `TOUCHED=yes` → run both legs against the files in `MATCHED`:
-  - **Token check (fix-now).** Compare the touched CSS custom properties (light
-    **and** dark) and the nav contract to `~/.claude/design.md` +
-    `design.dark.md`, and **fix material drift in this branch now**, committing
-    it — do *not* file-and-defer a `design-drift` issue (that's `/design-sync`'s
-    periodic-sweep job; this gate's job is to not *introduce* drift).
-    Materiality bar: a wrong canvas color, missing dark theme, hand-rolled nav,
-    or broken layout is a blocker; a 1-unit radius nitpick is not.
-  - **Visual proof (merge gate).** Every UI diff needs `.proof/<PR>/index.html`: `ui_proof capture --phase before|after --url <gate instance>` (main, branch), then once the PR exists `ui_proof build . --pr <PR>` with one `--criterion` line per criterion (`C:/Users/rober/.claude/skills/_lib/ui_proof`, this venv). Where `layout_lint` is vendored (`ENFORCED=yes`), also capture each criterion's state with `capture_states` and `ui_proof record`. The merge hook enforces this: `ui_proof_merge_guard` refuses `gh pr merge` until the page exists and, where enforced, the proof is fresh; fix what its `NEED=` names. Run `ui_proof check . --pr <PR>` once for the `VISUAL_PROOF=` line, which goes verbatim into the PR body and step-7 report; `ENFORCED=no` → also the visual check below. After the merge, before branch/worktree cleanup, re-run `build --sha <merge sha>` (it copies the proof into the primary's `.proof/`) and send the page privately; report `SENT=`. Commands and states: [ux-conformance-gate](E:/automation/fleet-config/docs/skills/ux-conformance-gate.md).
-  - **Visual check (in-session only — never attach the image).** Launch the
-    feature-branch working tree, look at the touched view via the repo's own
-    launch skill (app-launcher's project `verify`), else Claude Code's built-in
-    `run` skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one).
-    Inspect the render against the spec — nav pill, layout, palette. Save the
-    screenshot to a local scratch path, never commit it, and **never attach it
-    to the PR body, an issue, or a comment** — assume every repo is public; a
-    UI screenshot is an information breach. Text-only conformance line in the
-    PR instead (e.g. `Visual: touched view renders per spec — nav pill, layout,
-    palette conform`).
-    - **Browser-backend preflight (Codex — no live `iab`).** Pick the backend
-      deterministically: prefer the in-app Browser (`iab`) when
-      `agent.browsers.list()` includes it; `[]` → fall back to installed
-      Playwright with real Chrome — `iab` absence is **not** a reason to skip
-      the visual leg (fleet-config#351). Get the plan (backend, venv,
-      `channel="chrome"` launch kwargs honoring the browser-safety contract,
-      the `KEY_VIEWS` × {light, dark} capture list) from:
-      ```
-      E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
-      ```
-      Missing Playwright, missing Chrome, unreachable app, or exhausted
-      profile-lock each report distinctly (never one generic error) — report
-      only the one observed. Codes/background/recovery: `docs/codex-browser.md`.
-      Claude Code: the launch skill's MCP browser is the `iab`-equivalent path.
+- `TOUCHED=yes` → run both legs against the files in `MATCHED`.
+
+**`TOUCHED=yes`, `TOUCHED=unknown` or a forcing override** → read
+[`ux-conformance.md`](E:/automation/fleet-config/skills/issue-finish/ux-conformance.md)
+now: it holds both legs (token check, visual proof, visual check).
 
 **Overrides** (words in the finish invocation): `ux`/`design` forces the gate
 even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
@@ -243,16 +210,9 @@ Decision below is driven by the project's `## CI expectations` block
   own `[e2e]` table declared that target sufficient for those paths. **State it**,
   e.g. `CI not awaited — /e2e routed skip: docs-only diff`. Never re-derive the
   surface match by eye — the routing decision is step 3c's.
-- **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>
-  --watch`. The moment elapsed crosses the block's **investigate threshold**,
-  stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`)
-  and classify **flake vs real failure**.
-  - **Real failure** (test assertion, compile/lint/type error, a leg that isn't
-    the documented flaky one) → stop and report. **Never rerun a real failure.**
-  - **Documented flaky leg wedged** (per the block — e.g. the Playwright
-    WebKit/PTY-input leg) → cancel + rerun **once** automatically, saying so
-    (`cancelled wedged <leg> run, rerunning once`). If it flakes a **second**
-    time → stop and surface it to the user; do not rerun again.
+- **Otherwise watch — but proactively, not passively.** Read
+  [`ci-watch.md`](E:/automation/fleet-config/skills/issue-finish/ci-watch.md)
+  for the watch command, the flake-vs-real classification and the rerun-once rule.
 - **Keep-control guardrails.** Always **state** the CI decision (skip vs wait,
   plus any cancel/rerun) in the finish summary so the user can veto. Auto-rerun
   is capped at **once** and only for the *documented* flaky leg. Nothing
@@ -260,106 +220,14 @@ Decision below is driven by the project's `## CI expectations` block
   needed — but **if a repo later marks the `e2e` check *required*** in branch
   protection, the skip-rule must **fall back to watching** (`--admin` is out of
   scope). This skips only the *remote CI wait*; never the step-3 gate.
-- **Merge — the flag depends on the checkout mode** (from pre-flight):
-  - **Primary checkout:** `gh pr merge <PR> --squash --delete-branch` — squash
-    merge (the fleet pipeline's rule); branch deleted on both remote and local.
-  - **Linked worktree:** `gh pr merge <PR> --squash` — **no `--delete-branch`**.
-    From inside a worktree that flag fails its *local* half every time
-    (`'main' is already used by worktree at <primary>`): `gh` tries to check out
-    the default branch to delete the ref, and the primary holds it. The remote
-    merge still succeeds, so the failure is cosmetic. Delete the refs
-    explicitly instead, after the landing step below:
-    ```
-    git push origin --delete <branch>
-    git -C <repo> branch -D <branch>
-    ```
-    **Gate the local delete on a landed check** — confirm the tip's content is
-    already in the default branch: `git -C <repo> diff --quiet
-    origin/<default> <branch>` is clean. Not `git branch --merged`: the
-    squash merge rewrites the SHA, so the tip is never an ancestor of the
-    default branch and a genuinely-merged branch reads as unmerged
-    (fleet-config#567). The same rewrite is why it's `-D`, not `-d`. The landed
-    check is what makes `-D` safe — never skip it, never `-D` a tip you haven't
-    confirmed landed.
-- **Land + clean up, by checkout mode** (from pre-flight):
-  - **Primary checkout:** before switching, guard against landing this merge on
-    a tree that isn't this session's to touch — the claim system routes a
-    *second* session into a worktree but never re-checks who holds the claim at
-    the moment something runs `git checkout <main>` here (fleet-config#473):
-    ```
-    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py assert-owner <repo> <N>
-    ```
-    `ASSERT_OWNER=pass` (tree clean, claim free or owned by `<N>`) → proceed.
-    `ASSERT_OWNER=refuse: <reason>` (dirty tree, or another issue's claim live)
-    → **stop immediately, do not checkout or pull** — surface the refusal
-    reason rather than improvising a recovery. Only on a pass: `git checkout
-    <main>`, then fast-forward it through the untrack guard (never a bare
-    `git pull` — it deletes every live file the merge untracks,
-    fleet-config#1086):
-    ```
-    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward .
-    ```
-    `FF=done` → carry any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line into the
-    step-7 summary; `FF=refused` → stop and report. Then release the claim so
-    the next session can own the primary:
-    ```
-    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
-    ```
-    **Verify the release** — a hard acceptance step. A finisher that is not the
-    acquiring session (build-and-stop → separate finisher, `/cleanup-fleet`,
-    `/issue-finish-batch`) or an abbreviated finish must not silently skip it
-    and leak the claim until the 8h TTL (fleet-config#174). Immediately run:
-    ```
-    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py status <repo>
-    ```
-    and confirm it prints `CLAIM=free`. Still shows `CLAIM=held` → release did
-    not take — re-run `release <repo>` and re-check before reporting the finish
-    done.
-  - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout
-    may belong to another live session. That does **not** mean leaving it
-    behind: `cd` out to the primary repo path (`<repo>`), remove this worktree,
-    then **land the primary** (fleet-config#647).
-    1. Remove the worktree (the helper strips the `.venv` junction *before*
-       `git worktree remove`, so the primary's real venv is never touched):
-       ```
-       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
-       ```
-    2. **Land the primary, or say plainly that you didn't.** A merged PR is not
-       a deployed fix: until the primary tree fast-forwards, the merged change
-       is not live for anyone working there — and in `fleet-config`
-       specifically, `hooks/` and `skills/` reach `~/.claude` through junctions
-       rooted at the primary, so the change does nothing *fleet-wide*:
-       ```
-       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py land-primary <repo> <N>
-       ```
-       It applies the same guard as `assert-owner` (clean tree, claim free or
-       owned by `<N>`) plus "already on the default branch", then a
-       fast-forward guarded by `untrack_guard.py` and a `rev-list --count
-       HEAD..origin/<default>` check. It prints exactly one `PRIMARY=` line
-       either way, plus a `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line for each
-       live file the merge untracked and the guard kept (fleet-config#1086) —
-       carry those into the summary too:
-       - `PRIMARY=live behind=0` — the merge is live locally.
-       - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not
-         improvise, do not stash, do not force, do not `git checkout`.**
-         Reporting stale *is* the correct outcome; recovering a dirty or
-         claimed primary is never this lane's job. `reason=live process
-         serving this tree (…)` is correct by design (fleet-config#665): a repo
-         declaring `tray_cmd` serves out of its checkout, so fast-forwarding
-         would serve one UI out of two commits. The named restart is the
-         remedy — nothing here is broken.
-       **Put that line in the finish summary, verbatim, next to the merge
-       result** — never absent, never implied by silence. "Merged" and "live"
-       are two facts and the summary carries both.
-    3. **`fleet-config` only — prove the junction is serving the merge.** When
-       the diff touched `hooks/` or `skills/`, landing the primary is what
-       *deploys*. Read a changed file back through its `~/.claude/...` path
-       (e.g. `C:/Users/rober/.claude/skills/issue-finish/SKILL.md`) and confirm
-       it carries the edit — an artefact check, never inferred from the
-       junction's existence. Same class as the `#199`/`#459` deploy-coverage
-       gate.
-
-    A worktree session holds no primary claim, so there is nothing to release.
+- **Merge, then land + clean up, by checkout mode** (from pre-flight). Read the
+  one file for your mode and follow it to its end before the bullets below:
+  - **Primary checkout** → [`land-primary.md`](E:/automation/fleet-config/skills/issue-finish/land-primary.md)
+    (squash merge with `--delete-branch`, `assert-owner`, fast-forward, release
+    and verify the claim).
+  - **Linked worktree** → [`land-worktree.md`](E:/automation/fleet-config/skills/issue-finish/land-worktree.md)
+    (squash merge without `--delete-branch`, landed-check ref deletes, remove
+    the worktree, `land-primary`, its `PRIMARY=` line).
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
 - **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)), after the close:
@@ -401,58 +269,15 @@ Decision below is driven by the project's `## CI expectations` block
 ### 6. Restart the tray (only if the project runs one)
 
 If the project's `CLAUDE.md` describes a tray or long-running local process,
-follow that procedure **exactly**. The non-negotiables:
-- **Prefer the deterministic restart.** If the project ships a `tray.bat` with
-  a `--restart` flag (canonical orphan-proof reclaim-then-start — every fleet
-  tray has one), run **`tray.bat --restart`** and nothing else: subtree kill +
-  per-`.venv` port reclaim + start atomically. **Do not** hand-roll a
-  `Get-NetTCPConnection`/`taskkill` kill — it catches only the listener it
-  finds, misses the orphan the reclaim sweep exists to kill, then re-runs a
-  start-only script.
-- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.**
-  Run via the harness PowerShell tool, or
-  `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
-  (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Via the
-  Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites `/c` to
-  `C:/`; `cmd.exe` opens an interactive prompt and the batch never runs — only
-  the `cmd` banner, no `Stopping previous…` echoes, old build untouched. Fire
-  the PowerShell invocation non-blocking (the tray holds its console — a
-  foreground launch never returns), then move to the bounded poll below.
-- **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
-  kill, safe only for a tray whose linked-but-independent children (a
-  session-host + its PTY-backed shells) are spawned **detached** and
-  re-adopted on start (scaffold `docs/windows-tray.md`). Read the target
-  repo's `CLAUDE.md` to know which case — don't assume by app name. A tray
-  declaring its linked children detach-compliant (e.g. `app-launcher`, per
-  `project-scaffolding#35`: its `:8446` session-host is spawned via `cmd /c
-  start` and re-adopted, so `--restart` preserves open Coding sessions, safe
-  even from inside one) is fine to restart. A tray still hosting such children
-  *in its subtree* — or silent on the point — is unsafe: `--restart` would kill
-  the user's open Coding sessions (and yours, if inside one) — **confirm with
-  the user first**, or use its non-destructive path (kill only the webapp
-  port, let the tray re-adopt).
-- **Fallback only** for a project with no `--restart`: kill **only** the
-  specific process listening on the project's port (`Get-NetTCPConnection
-  -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw`
-  kill), then relaunch via its start script.
-- Confirm the new build is live with a **bounded** poll of the project's
-  version endpoint (e.g. `GET /api/version`): a **hard timeout + attempt cap**
-  (≤30 s / fixed attempts), then **fail loud** — never an open-ended wait. The
-  git SHA must match `HEAD` (a `/healthz` 200 is not enough — a stale process
-  passes it) and the asset hash should have changed. Report that build line.
-- **On a `git_sha` ≠ `HEAD` mismatch (a silent adopt-stale), stop and surface it
-  to the user — do not improvise process kills.** A by-hand `taskkill`/
-  `Get-NetTCPConnection` kill during recovery is what the safe-restart rules
-  above warn against, and a mistimed single-PID kill can take the server fully
-  down. Robust reclaim is the tray's job (`project-scaffolding#54`); the
-  finisher's contract is to invoke it correctly and **report** a mismatch, not
-  hand-fix it.
+follow that procedure **exactly**. The non-negotiables: read
+[`tray-restart.md`](E:/automation/fleet-config/skills/issue-finish/tray-restart.md)
+before running any restart.
 
 If the project has no tray, skip this step.
 
 ### 6b. Deploy-coverage check (repos with declared not-fully-covered components only)
 
-After step 6, **read [deploy-coverage.md](deploy-coverage.md) and run its `deploy_coverage.py check .`**: `DECLARED=no` is a silent no-op, any other result qualifies the step-7 summary as confirmed live, merged but not yet live, or unknown — never blocking the merge.
+After step 6, **read [`deploy-coverage.md`](E:/automation/fleet-config/skills/issue-finish/deploy-coverage.md) and run its `deploy_coverage.py check .`**: `DECLARED=no` is a silent no-op, any other result qualifies the step-7 summary as confirmed live, merged but not yet live, or unknown — never blocking the merge.
 
 ### 7. Report
 

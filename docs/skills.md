@@ -8,6 +8,8 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 
 A skill runs from any repo and is loaded through a junction in each agent's skills dir, so a `../../docs/...` link resolves against the junction and a bare `docs/...` link against the working repo — neither reaches this repo's `docs/`. Skill markdown links shared docs by the absolute `E:/automation/fleet-config/docs/...` path, the same convention its `.venv` commands use; the acceptance run's `skill doc links` check fails a relative or dead link into `docs/`.
 
+A skill's main `SKILL.md` holds what every invocation needs. Material only some branches reach (a mode, a repo shape, a failure path) lives in a sibling `skills/<name>/<topic>.md`, linked from a pointer that names its branch by the absolute `E:/automation/fleet-config/skills/...` path. The same check fails a dead absolute link. `/issue-finish` is split this way, and `/context-purge`'s compression contract carries the test and the `check.py --moved-to` proof that a split lost nothing.
+
 ## Tiers and scheduling
 
 - [Skill tiers and scheduled runs](skills/tiers-and-scheduling.md) — the three tiers, the scheduled-run adapter, stall watchdog, false-success guards, by-name invocation
