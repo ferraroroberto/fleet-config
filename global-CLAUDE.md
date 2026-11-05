@@ -86,7 +86,7 @@ Never add an AI/Anthropic/OpenAI attribution trailer of any kind — a `Co-Autho
 
 ### Git discipline
 
-Never auto-commit or push, and never stage files, without being asked — prepare a ready-to-copy commit message; the user runs it. Conventional prefixes (`feat:` `fix:` `refactor:` `docs:` `chore:` `test:` `perf:`). Multi-line body: first line ≤72 chars, blank line, then bullets explaining *why* not *what*.
+Never auto-commit or push, and never stage files, without being asked — prepare a ready-to-copy commit message; the user runs it. Conventional prefixes (`feat:` `fix:` `refactor:` `docs:` `chore:` `test:` `perf:`). Multi-line body: first line short (aim for about 72 chars, a soft target), blank line, then bullets explaining *why* not *what*.
 
 ### Branch & PR pipeline
 
@@ -120,7 +120,7 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 
 ### Markdown that will be rendered — no hard wraps
 
-Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. Does **not** apply to: source code, plain repo `.md` read as source, commit messages (wrap at 72), terminal-only output.
+Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. Does **not** apply to: source code, plain repo `.md` read as source, commit message bodies (wrap at 72), terminal-only output.
 
 ### Issue workflow skills
 
