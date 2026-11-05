@@ -219,6 +219,14 @@ In **fast mode**: think the approach through, then go straight to implementing.
 Do **not** enter plan mode and do **not** wait for approval. Only pause to ask
 a question if there is genuine, expensive, or hard-to-undo ambiguity.
 
+**Bug diagnosis (`bug` label, any mode).** The repro is the exit test. Before
+reading code for a theory, name one command that drives the real code path and
+asserts the reported symptom, run it once and show its red output (redacted);
+no such command → stop and say what is missing. Then list 3–5 ranked causes,
+each with a prediction that rules it in or out, before probing any. Tag every
+temporary debug line `[DEBUG-<id>]`, one id per diagnosis: `/issue-finish`
+refuses a diff that still adds one. The cause that held goes in the PR body.
+
 In **plan mode**: present an implementation plan and wait for approval, per
 the project's plan-mode default in `CLAUDE.md`. Resolve real ambiguity with
 questions first.
