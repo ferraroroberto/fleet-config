@@ -382,6 +382,19 @@ def _fleet_gate_check() -> Tuple[int, int, int]:
     return check.failures, check.total, check.skipped
 
 
+def _tray_apps_missing_restart_cmd(toml: dict) -> List[str]:
+    """Repos with a `tray_cmd` and an `app/*/manager.py` webapp manager but no `restart_cmd`.
+
+    The manager is what respawns the webapp under a live tray; a repo not on
+    this disk has nothing to inspect and is skipped.
+    """
+    return sorted(
+        name for name, table in toml.items()
+        if isinstance(table, dict) and "tray_cmd" in table and "restart_cmd" not in table
+        and any(Path(str(table.get("cwd_prefix", ""))).glob("app/*/manager.py"))
+    )
+
+
 def _projects_toml_contract_check() -> Tuple[int, int]:
     """The local registry and its tracked example agree on the fleet.
 
@@ -412,6 +425,11 @@ def _projects_toml_contract_check() -> Tuple[int, int]:
         unknown = sorted(set(toml.get("global", {}).get("architecture_ignore", [])) - declared)
         check(f"projects_toml: every {label} architecture_ignore entry is a declared repo "
               f"(unknown: {unknown or 'none'})", not unknown)
+    for label, toml in parsed.items():
+        orphans = _tray_apps_missing_restart_cmd(toml)
+        check(f"projects_toml: every {label} tray-owned webapp has a restart_cmd "
+              f"(missing: {orphans or 'none'})", not orphans,
+              "a bare tray_cmd no-ops while the tray lives, so the restart hook never respawns the webapp")
     if len(parsed) == 2:
         local = _repo_tables(parsed["projects.toml"])
         example = _repo_tables(parsed["projects.toml.example"])
