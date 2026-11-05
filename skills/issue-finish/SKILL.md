@@ -244,27 +244,30 @@ Decision below is driven by the project's `## CI expectations` block
   the finish early — a failed finish is still in flight and must remain marked.
   The remove is idempotent (`ACTIVE_ISSUE=absent` is success), but a helper
   error is not: retry once and stop if it still cannot update the shared file.
-- **Report the repo's leftover branches and orphan folders** (fleet-config#1516),
-  from the primary repo path, after the landing above — one call, read-only,
-  non-blocking:
+- **Delete the repo's proven-landed and superseded branches, report the rest**,
+  from the primary repo path, after the landing above — one call, non-blocking,
+  no question to anyone:
   ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches <repo>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches <repo> --delete --remote
   ```
-  Put one summary line in the step-7 summary from its `SUMMARY landed=… unlanded=…
-  keep=… unknown=…` line: `branch residue: N landed, M unlanded, K unknown`, plus
-  each `ORPHAN=` line (a `<repo>-wt-*` folder git no longer registers). Take every
-  `CLASS` as given: `landed` means a closed issue **and** a tip proven merged **and**
-  no open PR; `unknown` is its own state (a fact was not established), never folded
-  into a count of landed or kept branches. If the helper could not run, or printed
-  `VERDICT=unknown`/`partial`, say `branch residue: not established` — never `0`.
-  **This only reports.** Do not delete any branch or folder it names, and never
-  pass the helper's `--delete`: the branch this finish just merged was already
-  deleted above, and every other ref belongs to someone else (the foreign-branch
-  rule in `/cleanup-fleet-all`, fleet-config#572). Removing a `landed` branch is an
-  explicit act by the owner, or the chief after a Board yes (delete with:
-  `branch_residue.py branches <repo> --delete --branch <name>`, fleet-config#1528).
-  The landed check that gates your own branch's `-D` (the `git diff --quiet` test
-  above) is unchanged.
+  **The rule (the same one `/cleanup-fleet-all` states):** a ref classed `landed`
+  (closed issue, tip proven merged, no open PR) or `superseded` (closed issue, no
+  open PR, tip contained in the merge of another branch's PR that closed the issue)
+  holds no unshipped work, so any run deletes it, local and on `origin`. The
+  helper re-judges each target from a fresh tip, proof and PR lookup right before
+  deleting it and skips anything that moved or changed class. It never touches
+  the default branch, a checked-out branch, or an `open-issue`, `open-pr`,
+  `no-issue`, `unlanded` or `unknown` ref.
+  Put its result in the step-7 summary: every `DELETED=` line (with its
+  `RESTORE=`), then `branch residue: N unlanded, K unknown` from the `SUMMARY` line,
+  naming each `unlanded` ref, plus each `ORPHAN=` line (a `<repo>-wt-*` folder git
+  no longer registers). `unlanded` refs stay for a human, raised as one batched
+  question per repo, never one per branch. `unknown` is its own state (a fact was
+  not established), never folded into another count. If the helper could not run,
+  or printed `VERDICT=unknown`/`partial`, say `branch residue: not established` —
+  never `0`. `FAILED=` lines are reported, never retried by hand; no folder is
+  removed here. The landed check that gates your own branch's `-D` (the
+  `git diff --quiet` test above) is unchanged.
 
 ### 6. Restart the tray (only if the project runs one)
 

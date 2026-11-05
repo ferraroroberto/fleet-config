@@ -74,8 +74,24 @@ check(cr(open_pr=True) == br.OPEN_PR, "classify: an open PR on a merged tip is o
 
 rows = [br.Row(br.Ref("a", "local", "0" * 40), 1, c, "") for c in
         (br.LANDED, br.LANDED, br.UNLANDED, br.UNKNOWN, br.DEFAULT, br.CHECKED_OUT, br.NO_ISSUE, br.OPEN_ISSUE, br.OPEN_PR)]
-check(br.summarize(rows) == {"landed": 2, "unlanded": 1, "keep": 5, "unknown": 1},
+check(br.summarize(rows) == {"landed": 2, "superseded": 0, "unlanded": 1, "keep": 5, "unknown": 1},
       "summarize: unknown is counted on its own, never folded into landed or keep")
+check(br.summarize([br.Row(br.Ref("a", "local", "0" * 40), 1, br.SUPERSEDED, "")])["superseded"] == 1,
+      "summarize: superseded has its own count")
+
+# superseded: a tip not landed on the default branch but contained in another branch's merged PR.
+check(cr(merged=False, superseded=True) == br.SUPERSEDED, "classify: unmerged but contained in a superseding merge is superseded")
+check(cr(merged=False, superseded=False) == br.UNLANDED, "classify: unmerged with no superseding merge stays unlanded")
+check(cr(merged=False, superseded=None) == br.UNKNOWN, "classify: an unestablished supersede proof is unknown, never superseded")
+check(cr(merged=False, superseded=True, open_pr=True) == br.OPEN_PR and cr(merged=False, superseded=True, open_pr=None) == br.UNKNOWN,
+      "classify: a superseded tip still needs a proven absence of an open PR")
+check(cr(merged=False, superseded=True, issue_state="open") == br.OPEN_ISSUE,
+      "classify: an open issue is never superseded")
+check(br.DELETABLE == (br.LANDED, br.SUPERSEDED), "delete: landed and superseded are the only deletable classes")
+check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
+      and br.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
+check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and br.parse_closing_prs("x\ty\n") is None,
+      "parse_closing_prs: a row without a merge sha or with a bad shape makes the lookup unknown")
 
 check(wr.classify_orphan(True, True)[0] == "orphan-with-git-file"
       and wr.classify_orphan(False, True)[0] == "orphan-has-content"
@@ -130,13 +146,73 @@ commit(primary, "extra19.txt", "local only\n", "local extra")
 git(primary, "checkout", "-q", "main")
 
 git(primary, "branch", "housekeeping-2026", "main")  # local only, no issue number
+
+
+def recut(old: str, old_files: dict, shipped: dict) -> str:
+    """`old` carries `old_files`, never merged; a re-cut's squash lands `shipped` on main. Returns that merge sha."""
+    git(primary, "checkout", "-q", "-b", old, "main")
+    for fname, text in old_files.items():
+        commit(primary, fname, text, f"{old}: {fname}")
+    git(primary, "push", "-q", "origin", old)
+    git(primary, "checkout", "-q", "main")
+    for fname, text in shipped.items():
+        (primary / fname).write_text(text, encoding="utf-8")
+        git(primary, "add", fname)
+    git(primary, "commit", "-q", "-m", f"squash of the re-cut of {old}")
+    git(primary, "push", "-q", "origin", "main")
+    return git(primary, "rev-parse", "HEAD")
+
+
+# A -v2 re-cut shipped this branch's work plus more; main then edited the same file after the merge.
+m30 = recut("feat/30-first-cut", {"v30.txt": "shipped\n"}, {"v30.txt": "shipped\n", "w30.txt": "more\n"})
+commit(primary, "v30.txt", "edited after the merge\n", "later edit of v30")
+git(primary, "push", "-q", "origin", "main")
+# The re-cut shipped one of the branch's two files: one hunk never landed.
+m31 = recut("feat/31-partial", {"p31a.txt": "a\n", "p31b.txt": "b\n"}, {"p31a.txt": "a\n"})
+# Shipped like 30, but each case below withholds one fact the proof needs.
+m32 = recut("feat/32-lookup-fails", {"v32.txt": "x\n"}, {"v32.txt": "x\n"})
+commit(primary, "v32.txt", "later\n", "later edit of v32")
+m33 = recut("feat/33-merge-missing", {"v33.txt": "x\n"}, {"v33.txt": "x\n"})
+commit(primary, "v33.txt", "later\n", "later edit of v33")
+m34 = recut("feat/34-other-base", {"v34.txt": "x\n"}, {"v34.txt": "x\n"})
+commit(primary, "v34.txt", "later\n", "later edit of v34")
+git(primary, "push", "-q", "origin", "main")
+# A commit carrying the content but never on main (a PR merged into another base branch).
+git(primary, "checkout", "-q", "-b", "side-35", "main")
+commit(primary, "v35.txt", "x\n", "side copy")
+m35_off = git(primary, "rev-parse", "HEAD")
+git(primary, "checkout", "-q", "-b", "feat/35-off-default", "main")
+commit(primary, "v35.txt", "x\n", "35 work")
+git(primary, "push", "-q", "origin", "feat/35-off-default")
+git(primary, "checkout", "-q", "main")
+git(primary, "branch", "-D", "side-35")
+m36 = recut("feat/36-own-pr", {"v36.txt": "x\n"}, {"v36.txt": "x\n"})
+commit(primary, "v36.txt", "later\n", "later edit of v36")
+git(primary, "push", "-q", "origin", "main")
+
+CLOSING = {
+    30: [br.ClosingPr(130, "feat/30-second-cut", "main", m30)],
+    31: [br.ClosingPr(131, "feat/31-second-cut", "main", m31)],
+    33: [br.ClosingPr(133, "feat/33-second-cut", "main", "f" * 40)],
+    34: [br.ClosingPr(134, "feat/34-second-cut", "release", m34)],
+    35: [br.ClosingPr(135, "feat/35-second-cut", "main", m35_off)],
+    # The branch's own merged PR is never a supersede candidate, even when its merge contains the tip.
+    36: [br.ClosingPr(136, "feat/36-own-pr", "main", m36)],
+}
+
+
+def closing(n: int):
+    return None if n == 32 else list(CLOSING.get(n, []))
+
+
 git(primary, "fetch", "-q", "origin")
 
 wt16 = base / "alpha-wt-16"
 git(primary, "worktree", "add", "-q", str(wt16), "feat/16-checkedout")
 
 ISSUES = {10: "closed", 11: "closed", 12: "closed", 13: "closed", 14: "open", 15: "closed", 16: "closed",
-          18: "closed", 19: "closed"}  # 17 is a PR number: the lookup yields None
+          18: "closed", 19: "closed", 30: "closed", 31: "closed", 32: "closed", 33: "closed", 34: "closed",
+          35: "closed", 36: "closed"}  # 17 is a PR number: the lookup yields None
 lookups: list = []
 
 
@@ -147,7 +223,7 @@ def issue_state(n: int):
 
 def report(prs=lambda: {"feat/15-openpr"}, fetch=False, repo=primary):
     lookups.clear()
-    return br.build_report(repo, fetch=fetch, issue_state_fn=issue_state, open_pr_heads_fn=prs)
+    return br.build_report(repo, fetch=fetch, issue_state_fn=issue_state, open_pr_heads_fn=prs, closing_prs_fn=closing)
 
 
 def table(rep):
@@ -190,6 +266,20 @@ check(cls_of(t, "feat/17-pr-number") == br.UNKNOWN and cls_of(t, "feat/17-pr-num
       "unknown: an issue number the lookup cannot resolve (a PR number) is unknown, never landed")
 check(cls_of(t, "feat/19-ahead") == br.UNLANDED and cls_of(t, "feat/19-ahead", "remote") == br.LANDED,
       "per-tip: a local branch ahead of its landed remote tip is judged separately")
+check(cls_of(t, "feat/30-first-cut") == br.SUPERSEDED and cls_of(t, "feat/30-first-cut", "remote") == br.SUPERSEDED,
+      f"superseded: a first cut whose re-cut shipped it, then edited on main, is superseded (got {t.get(('feat/30-first-cut', 'local'))})")
+check("PR #130" in t[("feat/30-first-cut", "local")][1] and m30[:7] in t[("feat/30-first-cut", "local")][1],
+      "superseded: the reason names the superseding PR and its merge commit")
+check(cls_of(t, "feat/31-partial") == br.UNLANDED and cls_of(t, "feat/31-partial", "remote") == br.UNLANDED,
+      "superseded: a branch with one hunk the re-cut never shipped stays unlanded")
+check(cls_of(t, "feat/32-lookup-fails") == br.UNKNOWN and "could not list" in t[("feat/32-lookup-fails", "local")][1],
+      "superseded: a failed closing-PR lookup is unknown, never superseded or unlanded")
+check(cls_of(t, "feat/33-merge-missing") == br.UNKNOWN and "not present locally" in t[("feat/33-merge-missing", "local")][1],
+      "superseded: a superseding merge commit missing locally is unknown")
+check(cls_of(t, "feat/34-other-base") == br.UNLANDED, "superseded: a PR based on another branch is never a candidate")
+check(cls_of(t, "feat/35-off-default") == br.UNLANDED,
+      "superseded: a merge commit that is not on the default branch is never a candidate")
+check(cls_of(t, "feat/36-own-pr") == br.UNLANDED, "superseded: the branch's own merged PR is never a supersede candidate")
 check(rep.verdict == br.VERDICT_COMPLETE and not rep.reason, f"report: a full read is complete (got {rep.verdict})")
 check(snapshot() == before, "report-only: refs, remote refs, worktrees and sibling folders are byte-identical after the report")
 
@@ -223,7 +313,8 @@ check(all(w == "local" for _, w in table(rep_bad)) and cls_of(table(rep_bad), "f
       "partial: the local half is still classified")
 
 # An unreadable repo is unknown with a reason.
-rep_none = br.build_report(base / "not-a-repo-dir", fetch=False, issue_state_fn=issue_state, open_pr_heads_fn=lambda: set())
+rep_none = br.build_report(base / "not-a-repo-dir", fetch=False, issue_state_fn=issue_state, open_pr_heads_fn=lambda: set(),
+                           closing_prs_fn=closing)
 check(rep_none.verdict == br.VERDICT_UNKNOWN and rep_none.reason and not rep_none.rows,
       "unknown: an unreadable repo has no rows and a reason, not an empty clean list")
 
@@ -264,7 +355,7 @@ def run_cli(*argv: str) -> str:
 
 
 br_issue_state_real = br.make_gh_lookups
-br.make_gh_lookups = lambda slug: (issue_state, lambda: set())  # keep the CLI run off the network
+br.make_gh_lookups = lambda slug: (issue_state, lambda: set(), closing)  # keep the CLI run off the network
 try:
     out = run_cli("branches", str(primary), "--no-fetch")
 finally:
@@ -323,13 +414,16 @@ def make_fixture(tag: str) -> Fx:
 
     f.issues = {21: "closed", 22: "closed", 23: "closed", 24: "open", 25: "closed", 26: "closed", 27: "closed"}
     f.prs = {"feat/25-openpr"}
-    f.factory = lambda: (lambda n: f.issues.get(n), lambda: set(f.prs))
+    f.closing = {}
+    f.closing_ok = True
+    f.closing_fn = lambda n: list(f.closing.get(n, [])) if f.closing_ok else None
+    f.factory = lambda: (lambda n: f.issues.get(n), lambda: set(f.prs), f.closing_fn)
     return f
 
 
 def fx_report(f: Fx):
     return br.build_report(f.primary, fetch=False, issue_state_fn=lambda n: f.issues.get(n),
-                           open_pr_heads_fn=lambda: set(f.prs))
+                           open_pr_heads_fn=lambda: set(f.prs), closing_prs_fn=f.closing_fn)
 
 
 def fx_local(f: Fx) -> set:
@@ -495,12 +589,12 @@ check(fx_local(f4) == {"main", "feat/23-unlanded", "feat/24-open", "feat/25-open
       "open-pr: in a sweep the PR head is skipped while the other landed refs go")
 f4b = make_fixture("lookups")
 rep4b = fx_report(f4b)
-no_pr_lookup = lambda: (lambda n: f4b.issues.get(n), lambda: None)  # noqa: E731
+no_pr_lookup = lambda: (lambda n: f4b.issues.get(n), lambda: None, f4b.closing_fn)  # noqa: E731
 o4b = br.delete_landed(f4b.primary, rep4b, no_pr_lookup, remote=True)
 check(o4b and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o4b)
       and fx_local(f4b) >= {"feat/21-landed-sq", "feat/22-landed-anc"},
       "unknown: a failed PR lookup skips every target instead of reading as 'no PR'")
-no_issue_lookup = lambda: (lambda n: None, lambda: set())  # noqa: E731
+no_issue_lookup = lambda: (lambda n: None, lambda: set(), f4b.closing_fn)  # noqa: E731
 o4c = br.delete_landed(f4b.primary, rep4b, no_issue_lookup)
 check(o4c and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o4c) and "feat/21-landed-sq" in fx_local(f4b),
       "unknown: a failed issue lookup skips every target")
@@ -516,6 +610,62 @@ check(code == 1 and "FAILED=local:feat/21-landed-sq REASON=" in out,
 check("DELETED=local:feat/22-landed-anc" in out and "feat/22-landed-anc" not in fx_local(f5),
       "failure: later targets are still attempted after one fails")
 check("DELETE_SUMMARY deleted=1 skipped=0 failed=1" in out, "failure: the summary counts the failure")
+
+# S6: superseded refs are deleted like landed ones, under the same fresh re-judge.
+def add_superseded(f: Fx, n: int) -> str:
+    """`feat/<n>-first-cut`, pushed, whose re-cut squash shipped it before main edited the file again."""
+    name, fname = f"feat/{n}-first-cut", f"v{n}.txt"
+    git(f.primary, "checkout", "-q", "-b", name, "main")
+    commit(f.primary, fname, "shipped\n", f"first cut {n}")
+    git(f.primary, "push", "-q", "origin", name)
+    git(f.primary, "checkout", "-q", "main")
+    commit(f.primary, fname, "shipped\n", f"squash of the re-cut of {n}")
+    merge = git(f.primary, "rev-parse", "HEAD")
+    commit(f.primary, fname, "reworked\n", f"later edit of {fname}")
+    git(f.primary, "push", "-q", "origin", "main")
+    f.issues[n] = "closed"
+    f.closing[n] = [br.ClosingPr(200 + n, f"feat/{n}-second-cut", "main", merge)]
+    return name
+
+
+f7 = make_fixture("superseded")
+s28, s29 = add_superseded(f7, 28), add_superseded(f7, 29)
+rep7 = fx_report(f7)
+t7 = table(rep7)
+check(all(cls_of(t7, n, w) == br.SUPERSEDED for n in (s28, s29) for w in ("local", "remote")),
+      f"superseded fixture: both first cuts are superseded, local and remote (got {t7.get((s28, 'local'))})")
+git(f7.primary, "checkout", "-q", s29)
+commit(f7.primary, "late29.txt", "late\n", "late local work on a superseded branch")
+git(f7.primary, "checkout", "-q", "main")
+o7 = br.delete_landed(f7.primary, rep7, f7.factory, remote=True)
+o7l, o7r = by_name(o7, "local"), by_name(o7, "remote")
+check(o7l[s28].action == "deleted" and o7r[s28].action == "deleted" and s28 not in fx_local(f7) and s28 not in fx_remote(f7),
+      "superseded: a sweep deletes a superseded ref, local and remote")
+check("PR #228" in o7l[s28].detail and f"RESTORE=git branch {s28} " in "\n".join(br.render_outcomes(o7)),
+      "superseded: the delete prints the supersede proof and a restore command")
+check(o7l[s29].action == "skipped" and "tip moved since the report" in o7l[s29].detail and s29 in fx_local(f7),
+      "superseded: a local tip that moved after the report is skipped, not deleted")
+check(o7r[s29].action == "deleted" and s29 not in fx_remote(f7),
+      "superseded: the unmoved remote tip of the same branch is still judged and deleted on its own")
+check("feat/23-unlanded" in fx_local(f7) and "feat/23-unlanded" in fx_remote(f7) and "feat/24-open" in fx_local(f7),
+      "superseded: a sweep leaves unlanded and open-issue refs alone")
+
+f8 = make_fixture("superseded-pr")
+s28 = add_superseded(f8, 28)
+rep8 = fx_report(f8)
+f8.prs = {s28}
+o8 = br.delete_landed(f8.primary, rep8, f8.factory, names=[s28], remote=True)
+check(all(o.action == "skipped" and "CLASS=open-pr" in o.detail for o in o8) and s28 in fx_local(f8) and s28 in fx_remote(f8),
+      "superseded: a ref that gained an open PR since the report is skipped, local and remote")
+f8.prs = set()
+f8.closing_ok = False
+o8b = br.delete_landed(f8.primary, rep8, f8.factory, names=[s28], remote=True)
+check(o8b and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o8b) and s28 in fx_local(f8),
+      "superseded: a closing-PR lookup that fails at the re-judge skips the target as unknown")
+f8.closing_ok = True
+code, out = cli(f8, "branches", str(f8.primary), "--no-fetch", "--delete", "--remote", "--branch", s28)
+check(code == 0 and f"DELETED=local:{s28}" in out and f"DELETED=remote:{s28}" in out and "SUMMARY landed=7 superseded=2 " in out,
+      f"cli: --branch takes a superseded ref and SUMMARY counts superseded on its own (got {code}, {out[-400:]!r})")
 
 # The report path never mutates: `branches` without --delete leaves every ref byte-identical.
 f6 = make_fixture("readonly")
