@@ -52,7 +52,9 @@ decide(cache: dict, now: datetime, threshold_pct: float = 90.0,
   and below `threshold_pct`.
 - **`PAUSE`** (`over_threshold`) — `seven_day.used_percentage >= threshold_pct`.
   Carries the window's `resets_at` and a computed `wait_seconds` (`resets_at − now`
-  plus a small buffer; a bounded fallback wait if `resets_at` is missing).
+  plus a small buffer; a bounded fallback wait if `resets_at` is missing). `resets_at`
+  is epoch seconds as the statusline caches it; ISO text is read too. A present but
+  unparseable value reports `REASON=reset_unreadable` (still `PAUSE`, fallback wait).
   Unattended, that wait is capped under the stall watchdog; see "Unattended
   waits vs the stall watchdog" below.
 

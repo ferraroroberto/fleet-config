@@ -78,6 +78,21 @@ check(rg.decide(legacy_five_only, NOW).reason == "usage_missing" and rg.decide(l
 check(rg.decide(legacy_five_only, NOW, unattended=True).status == "PAUSE",
       "unattended + no seven_day figure -> PAUSE, never OK")
 
+# ---- decide: reset time parsing (epoch seconds from the statusline, ISO too) ----
+reset_epoch = int((NOW + dt.timedelta(hours=3)).timestamp())
+reset_iso = (NOW + dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+expected_wait = 3 * 3600 + rg.WAIT_BUFFER_SECONDS
+for label, raw in (("epoch int", reset_epoch), ("epoch float", float(reset_epoch)), ("iso", reset_iso)):
+    d = rg.decide(_cache(95.0, raw, "2026-07-04T11:59:00Z"), NOW)
+    check(d.reason == "over_threshold" and d.wait_seconds == expected_wait,
+          f"{label} resets_at -> wait until the reset, not the default")
+for label, raw in (("garbage text", "soon"), ("bool", True), ("nan", float("nan")), ("huge", 1e30)):
+    d = rg.decide(_cache(95.0, raw, "2026-07-04T11:59:00Z"), NOW)
+    check(d.status == "PAUSE" and d.reason == "reset_unreadable" and d.wait_seconds == float(rg.DEFAULT_WAIT_SECONDS),
+          f"unreadable resets_at ({label}) -> reset_unreadable PAUSE")
+check(rg.decide(_cache(95.0, None, "2026-07-04T11:59:00Z"), NOW).reason == "over_threshold",
+      "absent resets_at stays plain over_threshold")
+
 # ---- decide: stale cache -> UNKNOWN regardless of usage ----
 stale_cache = _cache(95.0, "2026-07-04T13:00:00Z", "2026-07-04T11:00:00Z")  # 1h old, default max_age=30min
 check(rg.decide(stale_cache, NOW).status == "UNKNOWN", "stale captured_at -> UNKNOWN even if usage is high")

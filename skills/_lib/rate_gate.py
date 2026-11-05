@@ -19,10 +19,10 @@ Subcommand
   check  [--threshold PCT] [--max-age SECONDS] [--state-dir PATH] [--unattended]
          Reads the cache and prints:
            DECISION=OK|PAUSE|UNKNOWN
-           REASON=below_threshold|over_threshold|cache_missing|cache_stale|usage_missing
+           REASON=below_threshold|over_threshold|reset_unreadable|cache_missing|cache_stale|usage_missing
            MODE=interactive|unattended
            USED_PCT=<float|null>
-           RESETS_AT=<iso|null>
+           RESETS_AT=<epoch seconds|iso|null>
            WAIT_SECONDS=<float|null>
            WATCHDOG_SECONDS=<float|off|unknown|null>
 
@@ -83,7 +83,7 @@ WATCHDOG_WAIT_FRACTION = 0.5
 
 class Decision(NamedTuple):
     status: str  # "OK" | "PAUSE" | "UNKNOWN"
-    reason: str  # "below_threshold" | "over_threshold" | "cache_missing" | "cache_stale" | "usage_missing"
+    reason: str  # "below_threshold" | "over_threshold" | "reset_unreadable" | "cache_missing" | "cache_stale" | "usage_missing"
     used_pct: Optional[float]
     resets_at: Optional[str]
     wait_seconds: Optional[float]
@@ -96,6 +96,18 @@ def _parse_iso(value: object) -> Optional[_dt.datetime]:
         return _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _parse_reset(value: object) -> Optional[_dt.datetime]:
+    """The statusline writes `resets_at` as epoch seconds; accept ISO text too."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return _dt.datetime.fromtimestamp(value, _dt.timezone.utc)
+        except (OverflowError, OSError, ValueError):  # NaN, inf, out-of-range
+            return None
+    return _parse_iso(value)
 
 
 def is_unattended(environ: Mapping[str, str]) -> bool:
@@ -174,12 +186,13 @@ def _decide(
         return Decision("OK", "below_threshold", used_pct, seven_day.get("resets_at"), None)
 
     resets_at_raw = seven_day.get("resets_at")
-    resets_at = _parse_iso(resets_at_raw)
+    resets_at = _parse_reset(resets_at_raw)
     if resets_at is not None:
         wait_seconds = max((resets_at - now).total_seconds(), 0) + WAIT_BUFFER_SECONDS
-    else:
-        wait_seconds = float(DEFAULT_WAIT_SECONDS)
-    return Decision("PAUSE", "over_threshold", used_pct, resets_at_raw, wait_seconds)
+        return Decision("PAUSE", "over_threshold", used_pct, resets_at_raw, wait_seconds)
+    # Present-but-unparseable is its own state; only an absent reset is the plain default.
+    reason = "over_threshold" if resets_at_raw is None else "reset_unreadable"
+    return Decision("PAUSE", reason, used_pct, resets_at_raw, float(DEFAULT_WAIT_SECONDS))
 
 
 def load_cache(path: Path) -> dict:
