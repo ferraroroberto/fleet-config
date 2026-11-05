@@ -20,6 +20,7 @@ A skill runs from any repo and is loaded through a junction in each agent's skil
 - [`/perf-review`](skills/perf-review.md) — phone-profile load timing against versioned budgets
 - [`/e2e`](skills/e2e.md) — e2e decisioning, execution and inline suite maintenance
 - [`/quick`](skills/quick.md) — trunk-commit lane below the issue threshold
+- [`/retro`](skills/retro.md) — one session's mistakes sorted into mechanical (file a check) or judgement (file a rule), filed via `/issue-add` on approval
 - [`/e2e-audit`](skills/e2e-audit.md) — on-demand e2e suite redundancy audit
 - [`/docs-shots`](skills/docs-shots.md) — judgment + orchestration of a repo's visual-docs screenshots
 - [`/propagate-vendored`](skills/propagate-vendored.md) — byte-for-byte re-vendor of a scaffolding component to every adopter
