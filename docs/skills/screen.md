@@ -1,0 +1,3 @@
+# `/screen`
+
+- **`/screen [N | Nm]`** — attach recent screenshots from the owner's snaps folder without copy-paste. It triggers on the literal `/screen` token anywhere in a message: bare takes the newest file, `N` the newest N, `Nm` every file modified in the last N minutes, ordered oldest to newest by modification time (`.jpg`, `.jpeg`, `.png`, `.webp`). One PowerShell listing resolves the files, the Read tool renders each one into the conversation, and the rest of the message is answered as the question about them. It only reads: no edits, commits, moves or deletes. Windows-only by design, because the source folder is a Windows path.

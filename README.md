@@ -30,6 +30,10 @@ work in this repo doesn't cost the whole catalogue:
   UX-conformance gate, the deploy-coverage gate, the design-review
   measure/rubric/scoring/judgment/report core with its run ledger, issue
   filing and fleet sweep, and stranded index locks.
+- **[`docs/ratchets.md`](docs/ratchets.md)** — the nine ratchets that gate
+  the acceptance run: what each fails on, its gate, `.fleet.toml` options,
+  baseline size and scaffold doc, and how to fix a hit or burn a baseline
+  down.
 - **[`docs/cross-agent-parity.md`](docs/cross-agent-parity.md)** — the
   per-agent capability matrix (Claude Code · Codex · Pi · Copilot · Grok ·
   Antigravity), what is wired and what is a documented non-goal, the
@@ -191,15 +195,7 @@ fleet-config/
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
-├── scripts/static_ratchet.py       # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `static_ratchet`) — the baseline-and-ratchet duplicate/unused-code stage `tests/run_acceptance.py` runs; findings already present live in `.static-ratchet-baseline.json`
-├── scripts/docs_ratchet.py         # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `docs_ratchet`) — the README-size and history-marker stage `tests/run_acceptance.py` runs; markers already present live in `.docs-ratchet-baseline.json`
-├── scripts/structure_ratchet.py    # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `structure_ratchet`) — the file-size, function-length, flat-directory and root-layout stage `tests/run_acceptance.py` runs; offenders already present live in `.structure-ratchet-baseline.json`
-├── scripts/comment_ratchet.py      # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `comment_ratchet`) — the issue-reference-in-comment stage `tests/run_acceptance.py` runs; references already present live in `.comment-ratchet-baseline.json`
-├── scripts/instruction_ratchet.py  # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `instruction_ratchet`) — the prompt-audit lint-rule stage over CLAUDE.md, SKILL.md files, linked skill docs and `global-CLAUDE.md` that `tests/run_acceptance.py` runs; hits already present live in `.instruction-ratchet-baseline.json`
-├── scripts/doc_refs_ratchet.py     # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `doc_refs_ratchet`) — the stage over `README.md`, `CLAUDE.md` and `docs/**/*.md` that fails on a path, module or link that does not exist and that `tests/run_acceptance.py` runs; stale references already present live in `.doc-refs-ratchet-baseline.json`
-├── scripts/dead_code_ratchet.py    # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `dead_code_ratchet`) — the stage that fails on a function, class or method nothing refers to and that `tests/run_acceptance.py` runs; dead definitions already present live in `.dead-code-ratchet-baseline.json`
-├── scripts/conventions_ratchet.py  # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `conventions_ratchet`) — the fleet-convention `ast` rule stage (`no-window`, `logging-not-print`, `no-drive-path`, `git-wrapper`, `subprocess-timeout`) that `tests/run_acceptance.py` runs; existing hits live in `.conventions-ratchet-baseline.json`
-├── scripts/runtime_write_ratchet.py # vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored], key `runtime_write_ratchet`, with its sibling `scripts/runtime_write_resolve.py`, key `runtime_write_resolve`) — the stage that fails on a write target resolving under a code folder, and the snapshot/probe bracket around the acceptance run, that `tests/run_acceptance.py` runs; existing targets live in `.runtime-write-ratchet-baseline.json`
+├── scripts/                        # the nine ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)

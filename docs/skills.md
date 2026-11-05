@@ -1,8 +1,6 @@
 # Skills
 
-The skill inventory across both tiers, why the tiers are split the way they are, and the shared `skills/_lib/` primitives the issue-workflow skills are built on. One file per skill or topic under `docs/skills/`; this page is the index.
-
-Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) and `/handoff-commit`, this repo also ships the skills below.
+The skill inventory across both tiers, why the tiers are split the way they are, and the shared `skills/_lib/` primitives the issue-workflow skills are built on. One file per skill or topic under `docs/skills/`; this page is the index, and it lists every skill directory under `skills/` and `.claude/skills/` (the acceptance run's `docs_index` check fails on a skill with no entry, or an entry with no skill).
 
 ## Linking shared docs from a skill
 
@@ -14,8 +12,20 @@ A skill's main `SKILL.md` holds what every invocation needs. Material only some 
 
 - [Skill tiers and scheduled runs](skills/tiers-and-scheduling.md) — the three tiers, the scheduled-run adapter, stall watchdog, false-success guards, by-name invocation
 
+## Issue workflow
+
+The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose always-on description is the spec.
+
+- [`/issue-add`](../skills/issue-add/SKILL.md) — turn a rough idea or transcript into a well-formed, labelled, self-assigned issue
+- [`/issue-start`](../skills/issue-start/SKILL.md) — claim the repo, sync main, cut the branch or worktree, then plan or build by type label
+- [`/issue-finish`](../skills/issue-finish/SKILL.md) — acceptance, docs, gate, PR, merge, branch teardown and tray restart
+- [`/issue-yolo`](skills/issue-yolo.md) — the whole workflow in one run, no plan gate, hard validation before ship
+- [`/issue-batch`](skills/issue-batch.md) — one background build-and-stop sub-agent per issue, shipped later by `/issue-finish`
+- [`/handoff-commit`](../skills/handoff-commit/SKILL.md) — a copy-paste prompt handing one commit to another LLM for a sister repo
+
 ## Skills
 
+- [`/screen`](skills/screen.md) — attach recent screenshots by count or by minutes and answer the question about them
 - [`/codebase-audit`](skills/codebase-audit.md) — read-only quality sweep of a resting codebase; ledger issue, skip rules, traceability, vulture dead-code pre-pass
 - [`/design-sync`](skills/design-sync.md) — web-app design-conformance detector against the fleet design system
 - [`/design-review`](skills/design-review.md) — rendered-design review: live measurement, rubric score, judge, ledger, report
