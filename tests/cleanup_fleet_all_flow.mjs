@@ -488,24 +488,27 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
     'check 2 does not re-flag the registered foreign worktree as a leftover directory')
 }
 
-// --- Case 13b: check 3 takes the branch report from the helper, report-only (#1516) ---
+// --- Case 13b: check 3 runs the branch helper's delete of proven-shipped refs ---
 {
   const { sink, agentImpl } = promptSpy(l => reply(l, {}))
   sink.args = { issuesByBucket: ISSUES_1077 }
   await makeRunner(agentImpl, sink)
   const p1 = sink.prompts['documentation:teardown:alpha#1']
-  check(/branch_residue\.py branches E:\/automation\/alpha/.test(p1),
-    'check 3 runs the branch report on the lane\'s repo')
+  check(/branch_residue\.py branches E:\/automation\/alpha --delete --remote`/.test(p1),
+    'check 3 runs the branch helper on the lane\'s repo with --delete --remote')
   check(!/gh pr list --repo/.test(p1), 'the hand-run per-branch gh lookups are gone from check 3')
   check(/branch report not established/.test(p1) && /never an empty field that reads as clean/.test(p1),
     'a report that could not run is stated, not folded into an empty foreignBranches')
-  check(/teardown does not delete any branch but your own/.test(p1) && !/branch_residue\.py[^\n]*--(delete|remote)\b/.test(p1) && !/delete with:/.test(p1),
-    'check 3 stays report-only: no delete flag is ever offered')
+  check(/`landed`/.test(p1) && /`superseded`/.test(p1) && /holds no unshipped work/.test(p1),
+    'check 3 states the delete rule: landed and superseded hold no unshipped work')
+  check(/one batched question per repo/.test(p1) && /never makes this lane RESIDUE/.test(p1),
+    'unlanded refs go to one batched question; a failed delete never makes the lane RESIDUE')
+  check(!/--branch\b/.test(p1) && !/Board yes/.test(p1), 'check 3 never hand-names a branch to delete and asks no Board yes')
 }
 
-// --- Case 13c: no teardown or scheduled path passes the helper's --delete (#1528) ---
-// The delete path is the owner's (or the chief's after a Board yes). The docs may name it
-// as the "delete with:" hint; no command a skill runs may carry it.
+// --- Case 13c: /issue-finish and /cleanup-fleet-all state the same delete rule ---
+// Deleting landed and superseded refs is a fixed step for any run; no doc may keep the old
+// owner-only wording or hand-name a branch to delete.
 {
   const files = [
     ['.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'],
@@ -514,16 +517,12 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
   ]
   for (const rel of files) {
     const txt = readFileSync(join(REPO, ...rel), 'utf8').replace(/\r\n/g, '\n')
-    // Hints wrap across lines in issue-finish, so judge each paragraph, not each line.
-    const offenders = txt.split(/\n\s*\n/).filter(par => /branch_residue\.py[^\n]*--delete/.test(par.replace(/\n\s*/g, ' ')) && !/delete with:/.test(par.replace(/\n\s*/g, ' ')))
-    check(offenders.length === 0, `${rel.join('/')}: --delete appears only in the "delete with:" owner hint (${offenders.length} offending paragraphs)`)
-    const fenced = [...txt.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].filter(m => /branch_residue\.py[^\n]*--(delete|remote)/.test(m[1]))
-    check(fenced.length === 0, `${rel.join('/')}: no fenced command carries --delete or --remote`)
+    const flat = txt.replace(/\n\s*/g, ' ')
+    check(/branch_residue\.py branches [^\s`]+ --delete --remote/.test(flat), `${rel.join('/')}: runs the helper with --delete --remote`)
+    check(/`landed`/.test(flat) && /`superseded`/.test(flat) && /holds? no unshipped work/.test(flat) && /one batched question per repo/.test(flat),
+      `${rel.join('/')}: states the shared rule (landed + superseded deleted, unlanded batched)`)
+    check(!/Board yes/.test(flat) && !/--delete --branch/.test(flat), `${rel.join('/')}: no Board-yes wording and no hand-named delete`)
   }
-  check(/delete with:/.test(readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')),
-    'SKILL.md documents the explicit delete path for the owner')
-  check(!/branch_residue\.py[^\n]*--(delete|remote)\b/.test(SRC) && !/delete with:/.test(SRC),
-    'the workflow script itself never hands the branch helper a delete flag')
 }
 
 // --- Case 14: SKILL.md carries the #1077 rules too ------------------------
