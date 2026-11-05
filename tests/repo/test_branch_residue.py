@@ -6,7 +6,8 @@ is proven merged AND no open PR has the head. These checks pin that rule and,
 above all, the ways it must refuse:
 
   * landed -- a squash-merged tip and an ancestor tip, local and remote, with
-    the proof in the reason;
+    the proof in the reason; a tip that is its own merged PR's recorded head
+    even after main edited the same lines (fleet-config#1871);
   * never landed -- closed issue but unmerged work, a squash later edited on the
     same lines (conservative), an open issue (a fresh empty branch is trivially
     an ancestor), an open PR, a checked-out branch, the default branch, a name
@@ -88,6 +89,25 @@ check(cr(merged=False, superseded=True, open_pr=True) == br.OPEN_PR and cr(merge
 check(cr(merged=False, superseded=True, issue_state="open") == br.OPEN_ISSUE,
       "classify: an open issue is never superseded")
 check(br.DELETABLE == (br.LANDED, br.SUPERSEDED), "delete: landed and superseded are the only deletable classes")
+
+# own merged PR: a tip the merge proof cannot see is landed when it is its own merged PR's head.
+check(cr(merged=False, superseded=False, own_pr=True, own_pr_how="own PR #9") == br.LANDED,
+      "classify: an unmerged-looking tip that is its own merged PR's head is landed")
+check(br.classify_ref(is_default=False, checked_out=False, issue=7, issue_state="closed", tip_readable=True, merged=False,
+                      merged_how="conflicts", open_pr=False, superseded=False, own_pr=True, own_pr_how="own PR #9 x")[1]
+      == "issue #7 closed; own PR #9 x", "classify: an own-PR landing carries the own-PR proof as its reason")
+check(cr(merged=False, superseded=False, own_pr=False) == br.UNLANDED, "classify: no own merged PR at this tip stays unlanded")
+check(cr(merged=False, superseded=False, own_pr=None) == br.UNKNOWN, "classify: a failed own-PR lookup is unknown, never unlanded or landed")
+check(cr(merged=False, superseded=False, own_pr=True, open_pr=True) == br.OPEN_PR
+      and cr(merged=False, superseded=False, own_pr=True, open_pr=None) == br.UNKNOWN,
+      "classify: an own-PR landing still needs a proven absence of an open PR")
+check(cr(merged=False, superseded=False, own_pr=True, issue_state="open") == br.OPEN_ISSUE,
+      "classify: an open issue is never landed through its own PR")
+check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
+      and br.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
+check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and br.parse_own_prs("9\t\tmain\t2026\n") is None
+      and br.parse_own_prs("x\ty\n") is None,
+      "parse_own_prs: a row without a merge time or head sha, or with a bad shape, makes the lookup unknown")
 check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
       and br.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
 check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and br.parse_closing_prs("x\ty\n") is None,
@@ -189,6 +209,29 @@ git(primary, "branch", "-D", "side-35")
 m36 = recut("feat/36-own-pr", {"v36.txt": "x\n"}, {"v36.txt": "x\n"})
 commit(primary, "v36.txt", "later\n", "later edit of v36")
 git(primary, "push", "-q", "origin", "main")
+tip36 = git(primary, "rev-parse", "feat/36-own-pr")
+# Own PR squash-merged, main then edited the same lines, so the merge proof conflicts.
+recut("feat/37-own-then-pushed", {"v37.txt": "x\n"}, {"v37.txt": "x\n"})
+pr37_head = git(primary, "rev-parse", "feat/37-own-then-pushed")
+git(primary, "checkout", "-q", "feat/37-own-then-pushed")
+commit(primary, "late37.txt", "after the merge\n", "pushed after the PR merged")
+git(primary, "push", "-q", "origin", "feat/37-own-then-pushed")
+git(primary, "checkout", "-q", "main")
+recut("feat/38-own-lookup-fails", {"v38.txt": "x\n"}, {"v38.txt": "x\n"})
+recut("feat/39-own-other-base", {"v39.txt": "x\n"}, {"v39.txt": "x\n"})
+for fname in ("v37.txt", "v38.txt", "v39.txt"):
+    commit(primary, fname, "later\n", f"later edit of {fname}")
+git(primary, "push", "-q", "origin", "main")
+OWN = {
+    "feat/36-own-pr": [br.OwnPr(236, tip36, "main", "2026-11-05T10:00:00Z")],
+    "feat/37-own-then-pushed": [br.OwnPr(237, pr37_head, "main", "2026-11-05T10:00:00Z")],
+    "feat/39-own-other-base": [br.OwnPr(239, git(primary, "rev-parse", "feat/39-own-other-base"), "release",
+                                        "2026-11-05T10:00:00Z")],
+}
+
+
+def own(name: str):
+    return None if name == "feat/38-own-lookup-fails" else list(OWN.get(name, []))
 
 CLOSING = {
     30: [br.ClosingPr(130, "feat/30-second-cut", "main", m30)],
@@ -212,7 +255,7 @@ git(primary, "worktree", "add", "-q", str(wt16), "feat/16-checkedout")
 
 ISSUES = {10: "closed", 11: "closed", 12: "closed", 13: "closed", 14: "open", 15: "closed", 16: "closed",
           18: "closed", 19: "closed", 30: "closed", 31: "closed", 32: "closed", 33: "closed", 34: "closed",
-          35: "closed", 36: "closed"}  # 17 is a PR number: the lookup yields None
+          35: "closed", 36: "closed", 37: "closed", 38: "closed", 39: "closed"}  # 17 is a PR number: the lookup yields None
 lookups: list = []
 
 
@@ -223,7 +266,8 @@ def issue_state(n: int):
 
 def report(prs=lambda: {"feat/15-openpr"}, fetch=False, repo=primary):
     lookups.clear()
-    return br.build_report(repo, fetch=fetch, issue_state_fn=issue_state, open_pr_heads_fn=prs, closing_prs_fn=closing)
+    return br.build_report(repo, fetch=fetch, issue_state_fn=issue_state, open_pr_heads_fn=prs, closing_prs_fn=closing,
+                           own_prs_fn=own)
 
 
 def table(rep):
@@ -279,7 +323,15 @@ check(cls_of(t, "feat/33-merge-missing") == br.UNKNOWN and "not present locally"
 check(cls_of(t, "feat/34-other-base") == br.UNLANDED, "superseded: a PR based on another branch is never a candidate")
 check(cls_of(t, "feat/35-off-default") == br.UNLANDED,
       "superseded: a merge commit that is not on the default branch is never a candidate")
-check(cls_of(t, "feat/36-own-pr") == br.UNLANDED, "superseded: the branch's own merged PR is never a supersede candidate")
+check(cls_of(t, "feat/36-own-pr") == br.LANDED and cls_of(t, "feat/36-own-pr", "remote") == br.LANDED
+      and "own PR #236" in t[("feat/36-own-pr", "local")][1] and tip36[:7] in t[("feat/36-own-pr", "local")][1],
+      f"own-pr: a tip that is its own merged PR's head is landed though main edited the lines since, never superseded"
+      f" (got {t.get(('feat/36-own-pr', 'local'))})")
+check(cls_of(t, "feat/37-own-then-pushed") == br.UNLANDED and cls_of(t, "feat/37-own-then-pushed", "remote") == br.UNLANDED,
+      "own-pr: one commit pushed after the PR merged keeps the branch unlanded")
+check(cls_of(t, "feat/38-own-lookup-fails") == br.UNKNOWN and "could not list the merged PRs whose head is"
+      in t[("feat/38-own-lookup-fails", "local")][1], "own-pr: a failed own-PR lookup is unknown")
+check(cls_of(t, "feat/39-own-other-base") == br.UNLANDED, "own-pr: a merged PR into another base branch is never proof")
 check(rep.verdict == br.VERDICT_COMPLETE and not rep.reason, f"report: a full read is complete (got {rep.verdict})")
 check(snapshot() == before, "report-only: refs, remote refs, worktrees and sibling folders are byte-identical after the report")
 
@@ -314,7 +366,7 @@ check(all(w == "local" for _, w in table(rep_bad)) and cls_of(table(rep_bad), "f
 
 # An unreadable repo is unknown with a reason.
 rep_none = br.build_report(base / "not-a-repo-dir", fetch=False, issue_state_fn=issue_state, open_pr_heads_fn=lambda: set(),
-                           closing_prs_fn=closing)
+                           closing_prs_fn=closing, own_prs_fn=own)
 check(rep_none.verdict == br.VERDICT_UNKNOWN and rep_none.reason and not rep_none.rows,
       "unknown: an unreadable repo has no rows and a reason, not an empty clean list")
 
@@ -355,7 +407,7 @@ def run_cli(*argv: str) -> str:
 
 
 br_issue_state_real = br.make_gh_lookups
-br.make_gh_lookups = lambda slug: (issue_state, lambda: set(), closing)  # keep the CLI run off the network
+br.make_gh_lookups = lambda slug: (issue_state, lambda: set(), closing, own)  # keep the CLI run off the network
 try:
     out = run_cli("branches", str(primary), "--no-fetch")
 finally:
@@ -417,13 +469,16 @@ def make_fixture(tag: str) -> Fx:
     f.closing = {}
     f.closing_ok = True
     f.closing_fn = lambda n: list(f.closing.get(n, [])) if f.closing_ok else None
-    f.factory = lambda: (lambda n: f.issues.get(n), lambda: set(f.prs), f.closing_fn)
+    f.own = {}
+    f.own_ok = True
+    f.own_fn = lambda name: list(f.own.get(name, [])) if f.own_ok else None
+    f.factory = lambda: (lambda n: f.issues.get(n), lambda: set(f.prs), f.closing_fn, f.own_fn)
     return f
 
 
 def fx_report(f: Fx):
     return br.build_report(f.primary, fetch=False, issue_state_fn=lambda n: f.issues.get(n),
-                           open_pr_heads_fn=lambda: set(f.prs), closing_prs_fn=f.closing_fn)
+                           open_pr_heads_fn=lambda: set(f.prs), closing_prs_fn=f.closing_fn, own_prs_fn=f.own_fn)
 
 
 def fx_local(f: Fx) -> set:
@@ -589,12 +644,12 @@ check(fx_local(f4) == {"main", "feat/23-unlanded", "feat/24-open", "feat/25-open
       "open-pr: in a sweep the PR head is skipped while the other landed refs go")
 f4b = make_fixture("lookups")
 rep4b = fx_report(f4b)
-no_pr_lookup = lambda: (lambda n: f4b.issues.get(n), lambda: None, f4b.closing_fn)  # noqa: E731
+no_pr_lookup = lambda: (lambda n: f4b.issues.get(n), lambda: None, f4b.closing_fn, f4b.own_fn)  # noqa: E731
 o4b = br.delete_landed(f4b.primary, rep4b, no_pr_lookup, remote=True)
 check(o4b and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o4b)
       and fx_local(f4b) >= {"feat/21-landed-sq", "feat/22-landed-anc"},
       "unknown: a failed PR lookup skips every target instead of reading as 'no PR'")
-no_issue_lookup = lambda: (lambda n: None, lambda: set(), f4b.closing_fn)  # noqa: E731
+no_issue_lookup = lambda: (lambda n: None, lambda: set(), f4b.closing_fn, f4b.own_fn)  # noqa: E731
 o4c = br.delete_landed(f4b.primary, rep4b, no_issue_lookup)
 check(o4c and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o4c) and "feat/21-landed-sq" in fx_local(f4b),
       "unknown: a failed issue lookup skips every target")
@@ -666,6 +721,44 @@ f8.closing_ok = True
 code, out = cli(f8, "branches", str(f8.primary), "--no-fetch", "--delete", "--remote", "--branch", s28)
 check(code == 0 and f"DELETED=local:{s28}" in out and f"DELETED=remote:{s28}" in out and "SUMMARY landed=7 superseded=2 " in out,
       f"cli: --branch takes a superseded ref and SUMMARY counts superseded on its own (got {code}, {out[-400:]!r})")
+
+# S9: a branch whose own merged PR has its tip is deleted, local and remote; one pushed after its merge stays.
+def add_own_pr(f: Fx, n: int, push_after: bool = False) -> str:
+    """`feat/<n>-own`, squash-merged by its own PR, then main edited the same file so the merge proof conflicts."""
+    name, fname = f"feat/{n}-own", f"o{n}.txt"
+    git(f.primary, "checkout", "-q", "-b", name, "main")
+    commit(f.primary, fname, "shipped\n", f"work {n}")
+    head = git(f.primary, "rev-parse", "HEAD")
+    if push_after:
+        commit(f.primary, f"late{n}.txt", "late\n", f"pushed after PR of {n} merged")
+    git(f.primary, "push", "-q", "origin", name)
+    git(f.primary, "checkout", "-q", "main")
+    commit(f.primary, fname, "shipped\n", f"squash of {n}")
+    commit(f.primary, fname, "reworked\n", f"later edit of {fname}")
+    git(f.primary, "push", "-q", "origin", "main")
+    f.issues[n] = "closed"
+    f.own[name] = [br.OwnPr(300 + n, head, "main", "2026-11-05T10:00:00Z")]
+    return name
+
+
+f9 = make_fixture("own-pr")
+o40, o41 = add_own_pr(f9, 40), add_own_pr(f9, 41, push_after=True)
+t9 = table(fx_report(f9))
+check(all(cls_of(t9, o40, w) == br.LANDED for w in ("local", "remote")) and cls_of(t9, o41) == br.UNLANDED,
+      f"own-pr fixture: the own-PR branch is landed, the pushed-after one unlanded (got {t9.get((o40, 'local'))}, {t9.get((o41, 'local'))})")
+code, out = cli(f9, "branches", str(f9.primary), "--no-fetch", "--delete", "--remote")
+check(code == 0 and f"DELETED=local:{o40}" in out and f"DELETED=remote:{o40}" in out and "own PR #340" in out
+      and o40 not in fx_local(f9) and o40 not in fx_remote(f9),
+      f"own-pr: --delete removes a branch whose own merged PR has its tip, local and remote (got {code}, {out[-400:]!r})")
+check(o41 in fx_local(f9) and o41 in fx_remote(f9) and f"DELETED=local:{o41}" not in out,
+      "own-pr: a branch with a commit pushed after its PR merged is never deleted")
+f9b = make_fixture("own-pr-rejudge")
+o42 = add_own_pr(f9b, 42)
+rep9b = fx_report(f9b)
+f9b.own_ok = False
+o9b = br.delete_landed(f9b.primary, rep9b, f9b.factory, names=[o42], remote=True)
+check(o9b and all(o.action == "skipped" and "CLASS=unknown" in o.detail for o in o9b) and o42 in fx_local(f9b)
+      and o42 in fx_remote(f9b), "own-pr: an own-PR lookup that fails at the re-judge skips the target as unknown")
 
 # The report path never mutates: `branches` without --delete leaves every ref byte-identical.
 f6 = make_fixture("readonly")
