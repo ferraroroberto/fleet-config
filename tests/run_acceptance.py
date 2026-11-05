@@ -26,7 +26,8 @@ lint ratchet (`instruction_ratchet_gate`), the stale-doc-reference ratchet
 (`dead_code_ratchet_gate`), the fleet-convention rule ratchet
 (`conventions_ratchet_gate`), the runtime-write ratchet and the snapshot/probe
 bracket around the whole run (`runtime_write/runtime_write_ratchet_gate`), the
-fleet-scope enumeration guard (`fleet_scope_guard`), the foreign-tool-id-leak
+fleet-scope enumeration guard (`fleet_scope_guard`), the ratchet and skills
+index drift check (`docs_index/`), the foreign-tool-id-leak
 scanner (`tool_id_leak_scanner`), and the
 standalone pure-logic test-file dispatch layer (`standalone_dispatch`).
 
@@ -164,6 +165,7 @@ from acceptance.dead_function_gate import _dead_function_unit_check  # noqa: E40
 from acceptance.comment_ratchet_gate import _comment_ratchet_check  # noqa: E402
 from acceptance.conventions_ratchet_gate import _conventions_ratchet_check  # noqa: E402
 from acceptance.dead_code_ratchet_gate import _dead_code_ratchet_check  # noqa: E402
+from acceptance.docs_index.index_drift_checks import _docs_index_check  # noqa: E402
 from acceptance.doc_refs_ratchet_gate import _doc_refs_ratchet_check  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
@@ -439,6 +441,10 @@ def _run_repo_guards(tally: _Tally) -> None:
 
     # ---- skill links into docs/ are absolute and resolve ----
     tally.run_unit(_skill_doc_links_check)
+
+    # ---- docs/ratchets.md and docs/skills.md agree with .fleet.toml, the gates,
+    # the baselines, the vendored rule registries and the skill directories ----
+    tally.run_unit(_docs_index_check)
 
 
 def _run_wiring_checks(tally: _Tally) -> None:
