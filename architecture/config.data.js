@@ -123,7 +123,7 @@ window.CONFIG = {
     },
     {
       "nm": "design-review",
-      "ds": "Review a running fleet web app's rendered design — real-browser measurement (phone/desktop, light/dark), rubric score, fresh-cont…",
+      "ds": "Score a running fleet web app's rendered design in-browser (phone/desktop × light/dark) with rubric, fresh-context judge, ledger…",
       "scope": "repo"
     },
     {
@@ -143,7 +143,7 @@ window.CONFIG = {
     },
     {
       "nm": "e2e-audit",
-      "ds": "On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against proj…",
+      "ds": "Audit a repo's e2e/regression suite (redundancy, bloat, coverage gaps, gate time, failure history) against project-scaffolding's…",
       "scope": "repo"
     },
     {
@@ -194,6 +194,11 @@ window.CONFIG = {
     {
       "nm": "quick",
       "ds": "Trunk-based lane for changes below the issue threshold — one capped, verified, conventional commit pushed directly to the default…",
+      "scope": "repo"
+    },
+    {
+      "nm": "retro",
+      "ds": "Reviews one agent session for mistakes and friction, labels each finding mechanical (file a check) or judgement (file a rule), pr…",
       "scope": "repo"
     },
     {
@@ -411,10 +416,10 @@ window.CONFIG = {
     },
     {
       "nm": "secret_scan_guard",
-      "ev": "PreToolUse · Bash·PowerShell",
+      "ev": "PreToolUse · Bash·PowerShell·Read·Grep",
       "block": true,
       "reach": "Claude + Codex",
-      "ds": "Block a live secret before it is committed or published to GitHub."
+      "ds": "Block a live secret before it is committed, published to GitHub, or printed."
     },
     {
       "nm": "safe_kill_guard",
@@ -629,9 +634,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 31,
-    "claude_md": "30/31",
-    "fleet_toml": "31/31"
+    "total": 30,
+    "claude_md": "29/30",
+    "fleet_toml": "30/30"
   },
   "principles": [
     [
