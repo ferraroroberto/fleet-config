@@ -31,8 +31,10 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
                   branch (or conflicts with it), and no superseding merge
                   contains them: unmerged work.
   open-pr      -- an open PR has this head.
-  landed       -- issue closed AND the tip is proven landed by
-                  `worktree_residue.head_merged` AND no open PR.
+  landed       -- issue closed AND no open PR AND the tip is proven landed,
+                  either by `worktree_residue.head_merged` or because the
+                  branch's own PR into the default branch merged with this
+                  exact tip as its head.
   superseded   -- issue closed AND no open PR AND, though the tip is not
                   landed, merging it into the merge commit of a PR from a
                   *different* head that closed the issue (based on, and
@@ -45,6 +47,14 @@ content; the merge proof alone would call a fresh empty branch landed. Neither
 is inferred from absence. `git branch --merged` is never used: the fleet
 squash-merges, so a landed tip is never an ancestor (fleet-config#567).
 Local and remote tips are judged independently -- one can be ahead of the other.
+
+The own-PR route covers a branch that squash-merged before the default branch
+edited the same lines, so the merge proof now conflicts. GitHub records each
+merged PR's head sha (`headRefOid`); when it equals the tip, nothing was pushed
+after the merge, so the tip holds no work the PR did not ship. A PR based on
+another branch, or with no recorded `mergedAt`, is never proof; a failed lookup
+is `unknown`; one commit pushed after the merge is `unlanded`. It is tried only
+for a tip that neither the merge proof nor `superseded` holds for.
 
 `superseded` covers a branch whose issue shipped through another branch (a
 `-v2` re-cut): that squash is not this tip, so `landed` cannot see it. The
@@ -98,7 +108,7 @@ Subcommands
 
 The report exits 0 -- it reports, the caller decides. The decision core
 (`classify_ref`, `branch_issue`, `summarize`) is pure; `build_report` and
-`delete_landed` take the issue, PR and closing-PR lookups as injected callables so tests
+`delete_landed` take the issue, open-PR, closing-PR and own-PR lookups as injected callables so tests
 never touch `gh` or the network. The tip proof is cached per sha and the `gh`
 and merge-tree lookups run on a small pool: serial, a 62-ref repo took 72 s
 (fleet-config#1528). stdlib only.
@@ -163,7 +173,18 @@ class ClosingPr(NamedTuple):
 
 # Merged PRs that closed issue N, or None when the lookup failed.
 ClosingPrsFn = Callable[[int], Optional[List[ClosingPr]]]
-Lookups = Tuple[IssueStateFn, OpenPrHeadsFn, ClosingPrsFn]
+
+
+class OwnPr(NamedTuple):
+    number: int
+    head_sha: str
+    base: str
+    merged_at: str
+
+
+# Merged PRs whose head is branch `name`, or None when the lookup failed.
+OwnPrsFn = Callable[[str], Optional[List[OwnPr]]]
+Lookups = Tuple[IssueStateFn, OpenPrHeadsFn, ClosingPrsFn, OwnPrsFn]
 
 
 class Ref(NamedTuple):
@@ -222,11 +243,14 @@ def classify_ref(
     open_pr: Optional[bool],
     superseded: Optional[bool] = False,
     superseded_how: str = "",
+    own_pr: Optional[bool] = False,
+    own_pr_how: str = "",
 ) -> Tuple[str, str]:
     """Pure (class, reason) for one ref. `None` means "could not establish".
 
-    `merged` / `superseded` / `open_pr` are only consulted past the gates that
-    make them matter, so a caller may leave them `None` for a ref decided earlier.
+    `merged` / `superseded` / `own_pr` / `open_pr` are only consulted past the
+    gates that make them matter, so a caller may leave them `None` for a ref
+    decided earlier.
     """
     if is_default:
         return DEFAULT, "the default branch"
@@ -246,14 +270,19 @@ def classify_ref(
         if superseded is None:
             return UNKNOWN, superseded_how or "could not establish whether another merged PR contains the tip"
         if not superseded:
-            return UNLANDED, merged_how or "tip carries changes not in the default branch"
+            if own_pr is None:
+                return UNKNOWN, own_pr_how or "could not establish whether this branch's own PR merged at this tip"
+            if not own_pr:
+                return UNLANDED, merged_how or "tip carries changes not in the default branch"
     if open_pr is None:
         return UNKNOWN, "could not establish whether an open PR has this head"
     if open_pr:
         return OPEN_PR, "an open PR has this head"
-    if not merged:
+    if merged:
+        return LANDED, f"issue #{issue} closed; {merged_how}"
+    if superseded:
         return SUPERSEDED, f"issue #{issue} closed; {superseded_how}"
-    return LANDED, f"issue #{issue} closed; {merged_how}"
+    return LANDED, f"issue #{issue} closed; {own_pr_how}"
 
 
 def summarize(rows: Sequence[Row]) -> Dict[str, int]:
@@ -342,7 +371,26 @@ def make_gh_lookups(slug: Optional[str]) -> Lookups:
                 closing_cache[n] = parse_closing_prs(r.stdout or "")
         return closing_cache[n]
 
-    return issue_state, open_pr_heads, closing_prs
+    own_cache: Dict[str, Optional[List[OwnPr]]] = {}
+
+    def own_prs(name: str) -> Optional[List[OwnPr]]:
+        if slug is None:
+            return None
+        if name not in own_cache:
+            own_cache[name] = None
+            try:
+                r = git_run.run_gh(
+                    ["pr", "list", "-R", slug, "--state", "merged", "--head", name, "--limit", "100",
+                     "--json", "number,headRefOid,baseRefName,mergedAt", "--jq", _OWN_PRS_JQ],
+                    timeout=GH_TIMEOUT_S, stdin=subprocess.DEVNULL,
+                )
+            except (OSError, subprocess.SubprocessError):
+                return None
+            if r.returncode == 0:
+                own_cache[name] = parse_own_prs(r.stdout or "")
+        return own_cache[name]
+
+    return issue_state, open_pr_heads, closing_prs, own_prs
 
 
 # `includeClosedPrs` keeps a merged PR listed; the jq keeps only MERGED rows.
@@ -355,6 +403,22 @@ _CLOSING_PRS_JQ = (
     '.data.repository.issue.closedByPullRequestsReferences.nodes[] | select(.state == "MERGED") '
     '| [.number, .headRefName, .baseRefName, (.mergeCommit.oid // "")] | @tsv'
 )
+
+
+_OWN_PRS_JQ = '.[] | [.number, .headRefOid, .baseRefName, (.mergedAt // "")] | @tsv'
+
+
+def parse_own_prs(text: str) -> Optional[List[OwnPr]]:
+    """TSV rows from `_OWN_PRS_JQ`; one malformed row (no head sha, no merge time) makes the lookup unknown."""
+    prs: List[OwnPr] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) != 4 or not parts[0].isdigit() or not parts[1] or not parts[3]:
+            return None
+        prs.append(OwnPr(int(parts[0]), parts[1], parts[2], parts[3]))
+    return prs
 
 
 def parse_closing_prs(text: str) -> Optional[List[ClosingPr]]:
@@ -412,17 +476,21 @@ class _Judge:
     """Classifies refs, caching the expensive facts behind a class.
 
     Issue state and closing PRs per number, tip proof per sha (a local and a
-    remote ref at the same tip share one `merge-tree`), open-PR heads once.
+    remote ref at the same tip share one `merge-tree`), own merged PRs per
+    branch name, open-PR heads once.
     """
 
     def __init__(self, repo: Path, default_ref: str, issue_state_fn: IssueStateFn,
-                 open_pr_heads_fn: OpenPrHeadsFn, closing_prs_fn: ClosingPrsFn) -> None:
+                 open_pr_heads_fn: OpenPrHeadsFn, closing_prs_fn: ClosingPrsFn,
+                 own_prs_fn: OwnPrsFn) -> None:
         self.repo = repo
         self.default_ref = default_ref
         self.default_name = default_ref[len("origin/"):] if default_ref.startswith("origin/") else default_ref
         self._issue_state_fn = issue_state_fn
         self._open_pr_heads_fn = open_pr_heads_fn
         self._closing_prs_fn = closing_prs_fn
+        self._own_prs_fn = own_prs_fn
+        self._own: Dict[str, Optional[List[OwnPr]]] = {}
         self._states: Dict[int, Optional[str]] = {}
         self._closing: Dict[int, Optional[List[ClosingPr]]] = {}
         self._supersedes: Dict[Tuple[str, str, int], Tuple[Optional[bool], str]] = {}
@@ -480,6 +548,19 @@ class _Judge:
                 unknown = how
         return (None, unknown) if unknown else (False, "")
 
+    def own_landed(self, name: str, sha: str) -> Tuple[Optional[bool], str]:
+        """(own PR merged at this tip, how); rule in the module docstring."""
+        if name not in self._own:
+            self._own[name] = self._own_prs_fn(name)
+        prs = self._own[name]
+        if prs is None:
+            return None, f"could not list the merged PRs whose head is {name}"
+        for pr in prs:
+            if pr.base == self.default_name and pr.head_sha == sha:
+                return True, (f"own PR #{pr.number} merged into {pr.base} at {pr.merged_at}"
+                              f" with head {sha[:7]}, the current tip")
+        return False, ""
+
     def has_open_pr(self, name: str) -> Optional[bool]:
         if not self._pr_heads:
             self._pr_heads.append(self._open_pr_heads_fn())
@@ -496,6 +577,8 @@ class _Judge:
             list(pool.map(self.proof, sorted({r.sha for r in closed})))
             unmerged = [r for r in closed if self._proofs[r.sha][0] and self._proofs[r.sha][1] is False]
             list(pool.map(lambda r: self.supersede(r.name, r.sha, branch_issue(r.name)), unmerged))
+            not_superseded = [r for r in unmerged if self.supersede(r.name, r.sha, branch_issue(r.name))[0] is False]
+            list(pool.map(lambda r: self.own_landed(r.name, r.sha), not_superseded))
 
     def judge(self, ref: Ref, checked_out: Set[str]) -> Row:
         issue = branch_issue(ref.name)
@@ -509,16 +592,20 @@ class _Judge:
         open_pr: Optional[bool] = None
         superseded: Optional[bool] = False
         superseded_how = ""
+        own_pr: Optional[bool] = False
+        own_pr_how = ""
         if not gated and state == "closed":
             readable, merged, how = self.proof(ref.sha)
             if readable and merged is False:
                 superseded, superseded_how = self.supersede(ref.name, ref.sha, issue)  # type: ignore[arg-type]
-            if readable and (merged or superseded):
+                if superseded is False:
+                    own_pr, own_pr_how = self.own_landed(ref.name, ref.sha)
+            if readable and (merged or superseded or own_pr):
                 open_pr = self.has_open_pr(ref.name)
         cls, why = classify_ref(
             is_default=is_default, checked_out=is_checked_out, issue=issue, issue_state=state,
             tip_readable=readable, merged=merged, merged_how=how, open_pr=open_pr,
-            superseded=superseded, superseded_how=superseded_how,
+            superseded=superseded, superseded_how=superseded_how, own_pr=own_pr, own_pr_how=own_pr_how,
         )
         return Row(ref, issue, cls, why)
 
@@ -531,6 +618,7 @@ def build_report(
     issue_state_fn: Optional[IssueStateFn] = None,
     open_pr_heads_fn: Optional[OpenPrHeadsFn] = None,
     closing_prs_fn: Optional[ClosingPrsFn] = None,
+    own_prs_fn: Optional[OwnPrsFn] = None,
 ) -> Report:
     """Real git calls + classification. Never raises."""
     try:
@@ -552,15 +640,17 @@ def build_report(
         verdict = VERDICT_PARTIAL
         notes.append(f"remote branches not listed: {exc}")
 
-    if issue_state_fn is None or open_pr_heads_fn is None or closing_prs_fn is None:
-        real_issue, real_prs, real_closing = make_gh_lookups(repo_slug(repo))
+    if issue_state_fn is None or open_pr_heads_fn is None or closing_prs_fn is None or own_prs_fn is None:
+        real_issue, real_prs, real_closing, real_own = make_gh_lookups(repo_slug(repo))
         issue_state_fn = issue_state_fn or real_issue
         open_pr_heads_fn = open_pr_heads_fn or real_prs
         closing_prs_fn = closing_prs_fn or real_closing
+        own_prs_fn = own_prs_fn or real_own
 
     worktrees = wr.parse_all_worktrees(porcelain)
     checked_out = {w.branch for w in worktrees if w.branch}
-    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), issue_state_fn, open_pr_heads_fn, closing_prs_fn)
+    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), issue_state_fn, open_pr_heads_fn, closing_prs_fn,
+                   own_prs_fn)
     refs = local + remote
     judge.prefetch(refs, checked_out)
     rows = [judge.judge(ref, checked_out) for ref in refs]
@@ -707,8 +797,7 @@ def _attempt(repo: Path, row: Row, lookups_factory: LookupsFactory) -> Outcome:
         return Outcome("skipped", ref.where, ref.name, sha_now, f"tip moved since the report ({ref.sha[:7]} -> {sha_now[:7]})")
     porcelain = git_run.run_git_or_raise(repo, "worktree", "list", "--porcelain")
     checked_out = {w.branch for w in wr.parse_all_worktrees(porcelain) if w.branch}
-    issue_state_fn, open_pr_heads_fn, closing_prs_fn = lookups_factory()
-    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), issue_state_fn, open_pr_heads_fn, closing_prs_fn)
+    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), *lookups_factory())
     fresh = judge.judge(Ref(ref.name, ref.where, sha_now), checked_out)
     if fresh.cls not in DELETABLE:
         return Outcome("skipped", ref.where, ref.name, sha_now, f"no longer deletable, CLASS={fresh.cls}: {fresh.reason}")
