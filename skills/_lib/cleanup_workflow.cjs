@@ -16,6 +16,9 @@ function validate(value, schema, name = 'result') {
     for (const [key, field] of Object.entries(schema.properties || {})) {
       if (Object.hasOwn(value, key)) validate(value[key], field, `${name}.${key}`)
     }
+  } else if (schema.type === 'array') {
+    if (!Array.isArray(value)) throw new Error(`${name}: expected array`)
+    value.forEach((item, i) => validate(item, schema.items, `${name}[${i}]`))
   } else if (typeof value !== schema.type) {
     throw new Error(`${name}: expected ${schema.type}`)
   }

@@ -39,7 +39,7 @@ class WorkflowCapabilitiesTests(unittest.TestCase):
 
     def test_collects_all_roles_before_complete(self):
         self.assertEqual(self.collect(self.built()), 'Build')
-        self.assertEqual(self.collect({'pass': True, 'feedback': 'independent pass', 'verification': 'PASS'}), 'Validate')
+        self.assertEqual(self.collect({'pass': True, 'feedback': 'independent pass', 'verification': 'PASS', 'unrequested': []}), 'Validate')
         self.assertEqual(self.collect({'result': 'MERGED', 'mergeSha': 'synthetic'}), 'Execute')
         self.assertEqual(self.collect({'residue': 'CLEAN', 'detail': 'synthetic clean'}), 'Teardown')
         final = self.invoke()
@@ -65,7 +65,7 @@ class WorkflowCapabilitiesTests(unittest.TestCase):
     def test_rejected_review_never_executes_and_retries_only_twice(self):
         for _ in range(2):
             self.assertEqual(self.collect(self.built()), 'Build')
-            self.assertEqual(self.collect({'pass': False, 'feedback': 'acceptance missing', 'verification': 'PASS'}), 'Validate')
+            self.assertEqual(self.collect({'pass': False, 'feedback': 'acceptance missing', 'verification': 'PASS', 'unrequested': []}), 'Validate')
         self.assertEqual(self.collect({'residue': 'CLEAN', 'detail': 'preserved evidence'}), 'Teardown')
         lane = self.invoke()['result']['buckets'][0]['results'][0]
         self.assertEqual(lane['status'], 'escalated')
@@ -88,10 +88,30 @@ class WorkflowCapabilitiesTests(unittest.TestCase):
 
     def test_malformed_and_contradictory_verdicts_rejected(self):
         self.collect(self.built())
-        self.collect({'pass': 'true', 'feedback': 'wrong type', 'verification': 'PASS'})
+        self.collect({'pass': 'true', 'feedback': 'wrong type', 'verification': 'PASS', 'unrequested': []})
         self.assertIn('expected boolean', self.invoke(False))
-        self.state['results'][-1]['result'] = {'pass': True, 'feedback': 'contradiction', 'verification': 'FAIL'}
+        self.state['results'][-1]['result'] = {'pass': True, 'feedback': 'contradiction', 'verification': 'FAIL', 'unrequested': []}
         self.assertIn('consistent verification', self.invoke(False))
+
+    def test_verdict_without_unrequested_is_rejected(self):
+        self.collect(self.built())
+        verdict = {'pass': True, 'feedback': 'looks fine', 'verification': 'PASS'}
+        self.collect(verdict)
+        self.assertIn('missing unrequested', self.invoke(False))
+        self.state['results'][-1]['result'] = {**verdict, 'unrequested': 'none'}
+        self.assertIn('expected array', self.invoke(False))
+        self.state['results'][-1]['result'] = {**verdict, 'unrequested': [{'location': 'a.py'}]}
+        self.assertIn('missing description', self.invoke(False))
+
+    def test_unrequested_entries_are_listed_and_do_not_fail_the_review(self):
+        entry = {'location': 'skills/x.py:12', 'description': 'adds a retry nobody asked for'}
+        self.collect(self.built())
+        self.collect({'pass': True, 'feedback': 'ok', 'verification': 'PASS', 'unrequested': [entry]})
+        self.collect({'result': 'MERGED', 'mergeSha': 'synthetic'})
+        self.collect({'residue': 'CLEAN', 'detail': 'synthetic clean'})
+        lane = self.invoke()['result']['buckets'][0]['results'][0]
+        self.assertEqual(lane['status'], 'merged')
+        self.assertEqual(lane['unrequested'], [entry])
 
     def test_extra_result_cannot_be_ignored(self):
         self.state['issuesByBucket'] = {}

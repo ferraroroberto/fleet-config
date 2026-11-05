@@ -206,6 +206,9 @@ Spawn a genuinely fresh independent context through the capability contract. Cla
    requires zero `NOT DONE`; an `UNVERIFIABLE` item is never counted as
    satisfied — Phase 5's report lists each one. Leniency on style and
    convention judgment is unchanged; this tightens only the accounting.
+   Also `unrequested`, required (empty when none): one `{location,
+   description}` per hunk adding behaviour no fetched criterion or issue
+   comment asked for. It never fails the review; Phase 5 and the PR body list it.
 
 **On `pass: false` — stop and report.** Surface the reviewer's `feedback`
 verbatim, leave the branch as-is, let the user decide retry / adjust scope /
@@ -229,7 +232,8 @@ Three YOLO-specific deltas on top of the delegated steps:
 - **`/issue-finish` step 4's PR body carries Phase 3's validation, not just
   the gate result** — the **Validation** section names what Phase 3 ran
   (including the reproduction proof for a bug fix and the 3h independent
-  review's verdict), not only the consolidated verification gate.
+  review's verdict and each `unrequested` entry), not only the consolidated
+  verification gate.
 - **Step 3b (UX-conformance) is already satisfied by Phase 3e above** — do not
   re-run `ux_surface.py check` or re-screenshot in this phase; any drift was
   already fixed and the text-only conformance line already belongs in the PR
@@ -247,7 +251,7 @@ Single concise summary:
 - Validation: which Phase 3 gates ran and their results (one line each),
   **plus the 3h independent-review verdict** (`pass: true` + a one-line
   summary of the reviewer's `feedback`, and each `UNVERIFIABLE` criterion
-  listed on its own line)
+  listed on its own line, and each `unrequested` entry on its own line)
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)
