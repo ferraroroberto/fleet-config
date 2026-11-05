@@ -170,8 +170,7 @@ webapp_port      = 8502
 browser_scheme   = "https"
 tray_cmd         = "tray.bat"
 api_version_path = "/api/version"
-# No restart_cmd: its tray manager lives in app/tray/, and its own CLAUDE.md
-# declares `tray.bat --restart` as the recipe.
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.tray.manager import WebappManager; WebappManager().start(wait=True)"'
 
 [illustration-color-edit]
 cwd_prefix = "E:/automation/illustration-color-edit"
