@@ -149,6 +149,21 @@ try {
         Remove-Item -Force -ErrorAction SilentlyContinue
 
     $target = Join-Path $stateDir 'rate-limits.json'
+
+    # The file is shared by every live session, so a render that knows less
+    # (no API response yet, or a payload without the window) must not replace
+    # a reading another session already wrote. The existing file stays as is,
+    # with its own captured_at, so the gate still ages it out as stale; the
+    # quota publisher below gets that same preserved reading.
+    $preserved = $false
+    if ($seven_d -eq $null) {
+        try {
+            $existing = Get-Content -LiteralPath $target -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+            if ($existing.seven_day.used_percentage -ne $null) { $cache = $existing; $preserved = $true }
+        } catch {
+            # No readable file: nothing to preserve, fall through to the write.
+        }
+    }
     $json = $cache | ConvertTo-Json -Depth 4
 
     # tmp+move-force, retried — this file is written by every concurrently
@@ -158,7 +173,7 @@ try {
     # was tried first but throws "The path is empty" on this PowerShell
     # 5.1 / .NET Framework combo regardless of backup-path value (verified
     # empirically) — Move-Item -Force reliably overwrites an existing target.
-    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    for ($attempt = 0; -not $preserved -and $attempt -lt 3; $attempt++) {
         $tmp = Join-Path $stateDir ("rate-limits.json.tmp.$([guid]::NewGuid().ToString('N'))")
         try {
             # [System.Text.Encoding]::UTF8 (the static instance) writes a UTF-8

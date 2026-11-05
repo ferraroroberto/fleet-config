@@ -14,10 +14,14 @@ TUI render time, and never persisted it to disk.
 
 That constraint no longer holds. `statusline-command.ps1` now caches
 `rate_limits.seven_day` (`used_percentage` + `resets_at`) plus a
-`captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on **every**
-statusline render, specifically so a
+`captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on every
+statusline render that carries a weekly reading, specifically so a
 non-statusline process can read current usage without being the statusline
-itself. `rate_gate.py` reads that cache and lets a skill
+itself. The file is shared by every live session, so a render with no weekly
+reading (a new session before its first API response, or a payload without the
+window) leaves an existing reading untouched, `captured_at` included: it is
+never replaced by an empty one and never refreshed, so it still ages out as
+`cache_stale`. `rate_gate.py` reads that cache and lets a skill
 **self-pace proactively** — pause before hitting the wall, wait in place, resume
 — instead of dying and hoping a scheduled relaunch picks up the pieces next week.
 
