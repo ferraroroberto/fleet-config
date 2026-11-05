@@ -25,6 +25,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "and peer addresses read from a hub config file they had moved out of -- "
      "are testable on their own against synthetic runs and a temp ledger "
      "(fleet-config#812)"),
+    ("retro_digest", "audit/test_retro_digest.py",
+     "the /retro digest holds only counts, tool names, error classes and "
+     "repo-relative paths: no prompt text, tool output, absolute path or "
+     "private-repo path, and an unreadable transcript is not confirmed rather "
+     "than an empty, clean-looking digest"),
     ("audit_issue", "audit/test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),
