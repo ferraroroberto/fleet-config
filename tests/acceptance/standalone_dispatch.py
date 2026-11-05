@@ -538,6 +538,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "only, added and removed lines summed, new untracked files counted, an "
      "unresolvable base reported as a reason rather than +0 -0 -- is testable "
      "on its own, with a throwaway upstream and clone"),
+    ("merge_danger", "repo/test_merge_danger.py",
+     "a finish PR body is accepted only with a well-formed `Merge danger:` "
+     "line (door, one-word blast radius, a reason for a one-way door) and "
+     "refused without it"),
     ("dirty_tree_check", "repo/test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "

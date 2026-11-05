@@ -197,8 +197,9 @@ upkeep) on this branch. Integration rules:
   a `.gitignore` line over a tracked path), say so in the Summary, naming each
   path: every checkout that pulls it loses its live copy unless its
   fast-forward goes through `untrack_guard.py` (fleet-config#1086).
-  Paste the output of `skills/_lib/instruction_delta/delta.py` (`INSTRUCTION_DELTA=`)
-  verbatim into the Summary; it is the net instruction-line change.
+  Paste `skills/_lib/instruction_delta/delta.py`'s `INSTRUCTION_DELTA=` line verbatim into the Summary.
+  Add `**Merge danger:** two-way door · blast radius: <word>` (one-way appends ` · <reason>`);
+  `skills/_lib/merge_danger/check.py <body-file>` must pass before `gh pr create`.
   Match the PR-body style of recent merged PRs in the repo.
   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 
@@ -464,7 +465,7 @@ listed individually (verifier named), the UX-conformance gate decision (ran / sk
 any drift fixed, the `VISUAL_PROOF=` line and the proof page `SENT=` line — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not
 touched / confirmed live / merged but not yet live / unknown — step 6b),
-the live build line, and the step-5 `OWNER_CHECK=` line. **Worktree mode also carries step 5's `PRIMARY=` line
+the live build line, the step-4 `Merge danger:` line, and the step-5 `OWNER_CHECK=` line. **Worktree mode also carries step 5's `PRIMARY=` line
 verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right
 next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
 (both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting

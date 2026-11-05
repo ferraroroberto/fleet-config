@@ -1,0 +1,9 @@
+# Merge danger (how reversible a merge is)
+
+Every `/issue-finish` PR body carries one line: `**Merge danger:** two-way door · blast radius: <word>`, repeated in the step-7 summary.
+
+- **Two-way door**: a revert undoes the merge.
+- **One-way door**: destructive, a data migration, an external publish, anything hard to walk back. The line appends ` · <reason>`.
+- **Blast radius**: one word for what the merge touches, such as `local`, `fleet-wide` or `hooks-live`. A merge into `hooks/` is fleet-wide the moment it lands, because the folder is junctioned live.
+
+`skills/_lib/merge_danger/check.py <body-file>` prints `MERGE_DANGER=<line>` or `MERGE_DANGER=MISSING` (exit 1); `/issue-finish` runs it before `gh pr create`. The line holds no paths, names or personal data.
