@@ -602,7 +602,11 @@ def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
     # an agent following a YOLO run actually reads across both files.
     yolo_skill = (REPO / "skills" / "issue-yolo" / "SKILL.md").read_text(encoding="utf-8")
     finish_skill = (REPO / "skills" / "issue-finish" / "SKILL.md").read_text(encoding="utf-8")
-    combined_flat = re.sub(r"\s+", " ", (yolo_skill + finish_skill).replace("**", ""))
+    # The restart mechanics sit in the sibling file step 6 points to for a tray repo.
+    tray_ref = (REPO / "skills" / "issue-finish" / "tray-restart.md").read_text(encoding="utf-8")
+    check("cmdexe_guard: issue-finish step 6 points a tray repo at tray-restart.md",
+          "tray-restart.md" in finish_skill.partition("### 6.")[2].partition("### 6b.")[0])
+    combined_flat = re.sub(r"\s+", " ", (yolo_skill + finish_skill + tray_ref).replace("**", ""))
     check("cmdexe_guard: issue-yolo (via its delegation to issue-finish) mandates "
           "a real Windows shell for tray restart",
           "real Windows shell" in combined_flat and "cmd /c" in combined_flat)

@@ -109,6 +109,32 @@ check(cp.check("# plain\n", "# plain, shorter\n") == [],
 
 # ---- token estimate ----
 check(cp.est_tokens("x" * 400) == 100, "est_tokens ~ chars/4")
+check(cp.word_count("one two\nthree  four\n") == 4, "word_count matches wc -w")
+
+# ---- --moved-to: a branch-disclosure split moves text verbatim ----
+SPLIT_BEFORE = (
+    "# skill\n\n### 1. Always\n\nEvery run does this. Then step 2.\n\n"
+    "### 2. Tray\n\nIf a tray runs, restart it:\n- **Prefer the restart.** Run `tray.bat --restart`\n"
+    "  and nothing else.\n- Read [notes](notes.md) first.\n\n```\ntray.bat --restart\n```\n"
+)
+SPLIT_MAIN = (
+    "# skill\n\n### 1. Always\n\nEvery run does this. Then step 2.\n\n"
+    "### 2. Tray\n\nIf a tray runs, restart it: read [`tray.md`](E:/x/skills/s/tray.md).\n"
+)
+SPLIT_SIBLING = (
+    "# Tray (loaded when a tray runs)\n\n- **Prefer the restart.** Run `tray.bat --restart` and nothing else.\n"
+    "- Read [`notes`](E:/x/notes.md) first.\n\n```\ntray.bat --restart\n```\n"
+)
+check(cp.split_lost(SPLIT_BEFORE, [SPLIT_MAIN, SPLIT_SIBLING]) == [],
+      "a verbatim move, reflowed and with a re-pointed link, loses nothing")
+_lost = cp.split_lost(SPLIT_BEFORE, [SPLIT_MAIN])
+check("- **Prefer the restart.**" in _lost and "tray.bat --restart" in _lost,
+      f"the moved prose and fenced line are lost without the sibling (got {_lost})")
+check(cp.split_lost(SPLIT_BEFORE, [SPLIT_MAIN, SPLIT_SIBLING.replace("nothing else", "little else")])
+      == ["Run `tray.bat --restart` and nothing else."],
+      "a reworded sentence in the sibling is reported, alone")
+check(cp.split_lost(SPLIT_BEFORE, [SPLIT_MAIN.replace("Every run does this. ", ""), SPLIT_SIBLING])
+      == ["Every run does this."], "a sentence dropped from the main file is reported")
 
 # ---- --base: every changed instruction file on a branch (fleet-config#833) ----
 check(cp.is_instruction_file("CLAUDE.md") and cp.is_instruction_file("a/.claude/skills/x/SKILL.md")
@@ -171,6 +197,25 @@ try:
     with contextlib.redirect_stdout(out):
         code = cp.main(["--base", "no-such-ref", "--repo", str(_tmp)])
     check(code == 3 and out.getvalue().startswith("UNKNOWN"), "an undiffable base is unknown (exit 3), never a pass")
+
+    split_dir = _tmp / "split"
+    split_dir.mkdir()
+    for name, text in (("before.md", SPLIT_BEFORE), ("main.md", SPLIT_MAIN), ("tray.md", SPLIT_SIBLING)):
+        (split_dir / name).write_text(text, encoding="utf-8")
+
+    def _run_split(*siblings: str) -> tuple:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cp.main([str(split_dir / "before.md"), str(split_dir / "main.md"),
+                            "--moved-to", *[str(split_dir / s) for s in siblings]])
+        return code, out.getvalue()
+
+    code, out = _run_split("tray.md")
+    check(code == 0 and "lost=0" in out and "PASS  split:" in out and "WORDS: main_before=" in out,
+          f"--moved-to passes a complete split and prints the word counts (got {out!r})")
+    (split_dir / "empty.md").write_text("# nothing moved here\n", encoding="utf-8")
+    code, out = _run_split("empty.md")
+    check(code == 2 and "LOST  tray.bat --restart" in out, f"--moved-to fails a split that lost text (got {out!r})")
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 
