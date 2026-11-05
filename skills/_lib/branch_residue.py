@@ -22,7 +22,8 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
   no-issue     -- the name is not `<type>/<N>-slug`, so there is no issue to
                   prove closed. Never `landed`.
   open-issue   -- issue N is open (protects a freshly cut, still-empty branch,
-                  which is trivially an ancestor of the default branch).
+                  which is trivially an ancestor of the default branch), unless
+                  the own-PR proof below holds.
   unknown      -- a fact could not be established: issue N is not an issue of
                   this repo (a PR number, another repo's), `gh` failed, the tip
                   object is missing, or the merge proof errored. A separate
@@ -31,10 +32,10 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
                   branch (or conflicts with it), and no superseding merge
                   contains them: unmerged work.
   open-pr      -- an open PR has this head.
-  landed       -- issue closed AND no open PR AND the tip is proven landed,
-                  either by `worktree_residue.head_merged` or because the
+  landed       -- no open PR AND the tip is proven landed, either (issue
+                  closed) by `worktree_residue.head_merged`, or because the
                   branch's own PR into the default branch merged with this
-                  exact tip as its head.
+                  exact tip as its head (any issue state: see below).
   superseded   -- issue closed AND no open PR AND, though the tip is not
                   landed, merging it into the merge commit of a PR from a
                   *different* head that closed the issue (based on, and
@@ -42,8 +43,9 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
 
 `--delete` acts on `landed` and `superseded` only: neither holds unshipped work.
 
-`landed` needs both facts. The closed issue alone says nothing about the
-content; the merge proof alone would call a fresh empty branch landed. Neither
+`landed` through the merge proof needs both facts. The closed issue alone says
+nothing about the content; the merge proof alone would call a fresh empty branch
+landed. Neither
 is inferred from absence. `git branch --merged` is never used: the fleet
 squash-merges, so a landed tip is never an ancestor (fleet-config#567).
 Local and remote tips are judged independently -- one can be ahead of the other.
@@ -53,8 +55,12 @@ edited the same lines, so the merge proof now conflicts. GitHub records each
 merged PR's head sha (`headRefOid`); when it equals the tip, nothing was pushed
 after the merge, so the tip holds no work the PR did not ship. A PR based on
 another branch, or with no recorded `mergedAt`, is never proof; a failed lookup
-is `unknown`; one commit pushed after the merge is `unlanded`. It is tried only
-for a tip that neither the merge proof nor `superseded` holds for.
+is `unknown`; one commit pushed after the merge is `unlanded`. With a closed
+issue it is tried only for a tip that neither the merge proof nor `superseded`
+holds for. It does not depend on the issue at all: a branch named for another
+repo's issue (the number is a PR, a foreign issue, or does not resolve here) is
+`landed` on this proof alone, whatever the issue lookup says. Without it, a
+failed lookup stays `unknown` and an open issue stays `open-issue`.
 
 `superseded` covers a branch whose issue shipped through another branch (a
 `-v2` re-cut): that squash is not this tip, so `landed` cannot see it. The
@@ -258,6 +264,14 @@ def classify_ref(
         return CHECKED_OUT, "checked out in a worktree"
     if issue is None:
         return NO_ISSUE, "name carries no issue number, so there is no closed issue to prove"
+    if issue_state != "closed" and own_pr:
+        # The tip is the head of its own merged PR: nothing is unshipped, so the number in the name (which may be
+        # another repo's) cannot change the answer.
+        if open_pr is None:
+            return UNKNOWN, "could not establish whether an open PR has this head"
+        if open_pr:
+            return OPEN_PR, "an open PR has this head"
+        return LANDED, f"{own_pr_how} (issue #{issue} not consulted)"
     if issue_state == "open":
         return OPEN_ISSUE, f"issue #{issue} is still open"
     if issue_state != "closed":
@@ -573,7 +587,9 @@ class _Judge:
         numbers = sorted({n for n in (branch_issue(r.name) for r in live) if n is not None})
         with ThreadPoolExecutor(max_workers=LOOKUP_WORKERS) as pool:
             list(pool.map(self.state, numbers))
-            closed = [r for r in live if self._states.get(branch_issue(r.name)) == "closed"]
+            with_issue = [r for r in live if branch_issue(r.name) is not None]
+            closed = [r for r in with_issue if self._states.get(branch_issue(r.name)) == "closed"]
+            list(pool.map(lambda r: self.own_landed(r.name, r.sha), [r for r in with_issue if r not in closed]))
             list(pool.map(self.proof, sorted({r.sha for r in closed})))
             unmerged = [r for r in closed if self._proofs[r.sha][0] and self._proofs[r.sha][1] is False]
             list(pool.map(lambda r: self.supersede(r.name, r.sha, branch_issue(r.name)), unmerged))
@@ -594,6 +610,11 @@ class _Judge:
         superseded_how = ""
         own_pr: Optional[bool] = False
         own_pr_how = ""
+        if not gated and state != "closed":
+            own_pr, own_pr_how = self.own_landed(ref.name, ref.sha)
+            own_pr = own_pr is True  # a failed lookup leaves the issue's own answer standing
+            if own_pr:
+                open_pr = self.has_open_pr(ref.name)
         if not gated and state == "closed":
             readable, merged, how = self.proof(ref.sha)
             if readable and merged is False:
