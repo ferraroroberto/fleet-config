@@ -1,6 +1,6 @@
 ---
 name: issue-batch
-description: Fan out GitHub issues to parallel background sub-agents — one per issue, in git worktrees when several hit the same repo. Each cuts a branch, builds, runs the verification gate, then STOPS for review; you run `/issue-finish` per branch, sequentially. Use after `/issue-triage` — e.g. "/issue-batch app-launcher#23 app-launcher#45 photo-ocr#12" or bare "/issue-batch 23 45 12".
+description: Fan out GitHub issues to parallel background sub-agents — one per issue, in git worktrees when several hit the same repo. Each cuts a branch, builds, runs the verification gate, then STOPS for review; you run `/issue-finish` per branch, sequentially. Use e.g. "/issue-batch app-launcher#23 app-launcher#45 photo-ocr#12" or bare "/issue-batch 23 45 12".
 ---
 
 # issue-batch
@@ -9,7 +9,7 @@ description: Fan out GitHub issues to parallel background sub-agents — one per
 
 **Goal:** Take a list of selected GitHub issues, set up isolated workspaces (worktrees when needed), and spawn a parallel **background** sub-agent per issue to build + verify the change. Each sub-agent stops before pushing — you review and `/issue-finish` each branch yourself, one at a time.
 
-Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each result, sequentially).
+Pairs with `/issue-finish` (ship each result, sequentially).
 
 ## Execution rules
 

@@ -99,7 +99,7 @@ conversation_title — user titles in a titles.json sidecar (#1348)"]
 
   subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]
     ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]
-    ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
+    ISSUEEXTRA["issue-batch · issue-finish-batch · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · e2e · e2e-audit · docs-shots · handoff-commit · quick · screen"]
     DESIGNREVIEWSKILL["design-review [file] · design-review fleet [file]\nprobe → measure → evaluate → judge-prompt → fresh judge agent(s) → judge-merge → ledger → render → file (dry run unless `file`)\nfleet: every webapp_port table serially, judgment skipped, one digest\nprivate artifact only where the host has one; the judge spawn is capability-bound"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]

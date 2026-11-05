@@ -50,7 +50,7 @@ If **no bucket** is given → run step 2's count query, then ask through the ava
 
 - **Shell:** use the actual execution tool’s declared shell; translate examples without mixing Bash and PowerShell syntax.
 - **The orchestrator only does cheap, safe work:** resolve the bucket, **one** issue-fetch call, score, plan, per-repo pre-flight, fan-out, aggregate. **It never edits source, commits, pushes, or merges** — every write happens inside a spawned agent.
-- **Read the issue JSON directly.** Do not spawn jq / python / awk to process the output — group, score, and select model-side, exactly like `/issue-triage`.
+- **Read the issue JSON directly.** Do not spawn jq / python / awk to process the output — group, score, and select model-side.
 - **One agent per repo, period.** Never spawn two agents against the same checkout.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched.
 - **Degrade, don't block** (so `easy`/`silent` can run unattended via `claude -p`): a per-repo failure is reported and skipped; only a pre-flight failure stops the whole run.
@@ -92,7 +92,7 @@ Bucket the surviving issues by `repository.name`. For each repo:
 
 ### 5. Score each selected issue → easy tier or hard tier
 
-Read each selected issue's title + body (for an audit bucket issue, also weigh the checklist length and the nature of its items). Two tiers, same spirit as `/issue-triage`'s S/M/L calibration collapsed to two (see `docs/model-tiers.md` for how each tier resolves to a model):
+Read each selected issue's title + body (for an audit bucket issue, also weigh the checklist length and the nature of its items). Two tiers, S/M/L calibration collapsed to two (see `docs/model-tiers.md` for how each tier resolves to a model):
 
 - **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
 - **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
@@ -392,7 +392,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 
 ## Notes
 
-- **Where this sits:** `/codebase-audit` / `/audit-fleet` find and file (read-only on source); `/cleanup-fleet` fixes one bucket (write-capable via its agents); `/issue-triage` stays the read-only overview across all buckets.
+- **Where this sits:** `/codebase-audit` / `/audit-fleet` find and file (read-only on source); `/cleanup-fleet` fixes one bucket (write-capable via its agents).
 - **Noise control starts at filing time, not here** — `/codebase-audit`'s materiality bar (fleet-config#251) gates what becomes a checklist item; this skill's triage and approval gate are about execution *shape* and safety, not deselecting noise.
 - **Compose `/issue-yolo` and `/issue-start`+gate rather than re-implement** — they own the branch/build/validate/ship choreography; this skill is just bucket selection, tiering, and fan-out.
 - **Scheduling `easy` mode:** it degrades rather than blocks and never merges hard work, so `claude -p "/cleanup-fleet documentation easy" --permission-mode bypassPermissions` is safe after a weekly `/audit-fleet` — the easy pass clears the mechanical findings, the rest wait for an attended `hard` run.

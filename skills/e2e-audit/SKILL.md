@@ -393,8 +393,7 @@ stops the re-trigger.
   (decided **standalone**, not a `/codebase-audit` lens, which would put it on
   that skill's weekly cadence).
 - `e2e-redundancy` is a first-class audit bucket (`audit_issue.py` `KINDS`) —
-  `/cleanup-fleet e2e-redundancy` fans out fixers, and `/issue-triage` treats
-  it like any other issue.
+  `/cleanup-fleet e2e-redundancy` fans out fixers.
 - The suite-size target and the "delete with the feature" discipline are
   owned by `project-scaffolding`'s `docs/playwright-ui-testing.md` — this
   skill measures against that target, it doesn't redefine it.

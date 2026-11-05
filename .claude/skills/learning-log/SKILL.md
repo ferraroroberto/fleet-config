@@ -87,7 +87,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/
 
 A non-zero exit here means the prior ledger could not be read (transient `gh` auth / rate-limit / network failure) — no body was written, so stop and skip the upsert below rather than publishing an archive built from an empty prior (fleet-config#1061).
 
-Then upsert the one canonical `kind=learning` ledger (deduped by `C:/Users/rober/.claude/skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so `/issue-triage` filters it out):
+Then upsert the one canonical `kind=learning` ledger (deduped by `C:/Users/rober/.claude/skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so work listings skip it):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
