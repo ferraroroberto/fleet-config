@@ -60,7 +60,7 @@ def _source_unavailable(board: Dict[str, Any], source: str) -> Optional[str]:
 
 
 def _format_rate_limit_line(board: Dict[str, Any]) -> str:
-    """Claude's 5h window from `quota_lines` — `?` with the row's reason when
+    """Claude's weekly window from `quota_lines` — `?` with the row's reason when
     there is no reading, never `None%` (fleet-config#840)."""
     row = next(
         (line for line in board.get("quota_lines") or []
@@ -68,12 +68,12 @@ def _format_rate_limit_line(board: Dict[str, Any]) -> str:
         None,
     )
     if row is None:
-        return "rate_limit_5h=? resets=? (no claude quota row reported)"
-    five = row.get("five_hour") or {}
-    pct = five.get("used_percentage")
+        return "rate_limit_7d=? resets=? (no claude quota row reported)"
+    weekly = row.get("weekly") or {}
+    pct = weekly.get("used_percentage")
     if not isinstance(pct, (int, float)) or row.get("state") != "available":
-        return f"rate_limit_5h=? resets=? ({row.get('state') or '?'}: {row.get('reason') or '?'})"
-    line = f"rate_limit_5h={round(float(pct), 1)}% resets={five.get('resets_at') or '?'}"
+        return f"rate_limit_7d=? resets=? ({row.get('state') or '?'}: {row.get('reason') or '?'})"
+    line = f"rate_limit_7d={round(float(pct), 1)}% resets={weekly.get('resets_at') or '?'}"
     return line + " stale" if row.get("stale") else line
 
 

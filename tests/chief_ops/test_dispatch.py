@@ -509,9 +509,9 @@ board = {
     "live_sessions": {"available": True, "error": None},
     "quota_lines": [
         {"harness": "claude", "state": "available", "stale": False,
-         "five_hour": {"used_percentage": 42.0, "resets_at": "2026-07-27T18:00:00Z"}},
+         "weekly": {"used_percentage": 42.0, "resets_at": "2026-07-27T18:00:00Z"}},
         {"harness": "codex", "state": "available", "stale": False,
-         "five_hour": {"used_percentage": 7.0, "resets_at": "2026-07-27T19:00:00Z"}},
+         "weekly": {"used_percentage": 7.0, "resets_at": "2026-07-27T19:00:00Z"}},
     ],
 }
 digest = co.format_board_digest(board)
@@ -521,8 +521,8 @@ check(lines[0] == "backlog=2 claude_turn=1 your_turn=1 other=2 done=1",
       f"format_board_digest leads with the counts line (got {lines[0]!r})")
 check(any("app-launcher" in l for l in lines), "format_board_digest lists the live session")
 check(any("audit-fleet" in l for l in lines), "format_board_digest lists the job card")
-check(any(l == "rate_limit_5h=42.0% resets=2026-07-27T18:00:00Z" for l in lines),
-      "format_board_digest carries the claude 5h rate-limit line from quota_lines")
+check(any(l == "rate_limit_7d=42.0% resets=2026-07-27T18:00:00Z" for l in lines),
+      "format_board_digest carries the claude weekly rate-limit line from quota_lines")
 check("None" not in digest, "a fully-readable board prints no `None` anywhere")
 check(not any(l.startswith("unknown:") for l in lines), "a fully-readable board carries no unknown line")
 
@@ -585,21 +585,21 @@ check(lines[0] == "backlog=? claude_turn=? your_turn=? other=? done=?",
       f"a payload with no source sections renders every count `?` (got {lines[0]!r})")
 check(any("not reported" in l for l in lines), "an absent source section is reported as not reported")
 check("None" not in digest, "an empty payload prints no `None` anywhere")
-check(any(l.startswith("rate_limit_5h=? ") for l in lines), "no quota_lines renders the rate limit `?`")
+check(any(l.startswith("rate_limit_7d=? ") for l in lines), "no quota_lines renders the rate limit `?`")
 
 # The quota row exists but carries no reading.
 unread_quota = dict(board, quota_lines=[{"harness": "claude", "state": "error",
                                          "reason": "consumer_contract_unavailable",
-                                         "five_hour": {"used_percentage": None, "resets_at": None}}])
+                                         "weekly": {"used_percentage": None, "resets_at": None}}])
 digest = co.format_board_digest(unread_quota)
 check("None" not in digest, "an unreadable quota row prints no `None%`")
-no_reason = dict(board, quota_lines=[{"harness": "claude", "five_hour": {}}])
+no_reason = dict(board, quota_lines=[{"harness": "claude", "weekly": {}}])
 check("None" not in co.format_board_digest(no_reason), "a quota row with no state/reason prints no `None`")
-check(any(l.startswith("rate_limit_5h=? resets=?") and "consumer_contract_unavailable" in l
+check(any(l.startswith("rate_limit_7d=? resets=?") and "consumer_contract_unavailable" in l
           for l in digest.splitlines()),
       "an unreadable quota row renders `?` and names its reason")
 stale_quota = dict(board, quota_lines=[dict(board["quota_lines"][0], stale=True)])
-check(any(l.startswith("rate_limit_5h=42.0% ") and "stale" in l
+check(any(l.startswith("rate_limit_7d=42.0% ") and "stale" in l
           for l in co.format_board_digest(stale_quota).splitlines()),
       "a stale quota reading keeps its value but is marked stale")
 

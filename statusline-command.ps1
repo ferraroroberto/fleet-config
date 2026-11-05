@@ -1,6 +1,6 @@
 # Claude Code status line — Windows PowerShell
 # Reads the status JSON from stdin and prints one line.
-# Format: 4%c - 5%s - 10%w | sonnet | app-launcher (main)   (ctx/session/weekly used; ctx+session+weekly color-coded)
+# Format: 4%c - 10%w | sonnet | app-launcher (main)   (ctx/weekly used; both color-coded)
 
 # UTF-8 on both legs (same recipe as run-hook.ps1).
 # `[Console]::In` decodes with the OEM code page (ibm850), so a non-ASCII cwd
@@ -76,22 +76,14 @@ if ($used -ne $null) {
     $ctx_str = "$col${pct}%c$esc[0m"
 }
 
-# --- rate limits: session (5h rolling) and weekly (7d) ---
-$five_h  = $data.rate_limits.five_hour.used_percentage
+# --- rate limit: weekly (7d) only; the plan reports no five-hour window ---
 $seven_d = $data.rate_limits.seven_day.used_percentage
 
 $esc = [char]27
 
-# --- build usage segment: ctx - session - weekly (omit absent parts) ---
+# --- build usage segment: ctx - weekly (omit absent parts) ---
 $usage_parts = @()
 if ($ctx_str) { $usage_parts += $ctx_str }
-if ($five_h -ne $null) {
-    $p5 = [int][math]::Round($five_h)
-    if     ($p5 -ge 80) { $c5 = "$esc[31m" }
-    elseif ($p5 -ge 60) { $c5 = "$esc[33m" }
-    else                { $c5 = '' }
-    $usage_parts += "${c5}${p5}%s$(if ($c5) { "$esc[0m" })"
-}
 if ($seven_d -ne $null) {
     $p7 = [int][math]::Round($seven_d)
     if     ($p7 -ge 80) { $c7 = "$esc[31m" }
@@ -114,7 +106,7 @@ $stdout.Write($line_bytes, 0, $line_bytes.Length)
 $stdout.Flush()
 
 # --- rate-limits cache ---
-# Pure additive side effect: cache the same 5h/7d numbers this script just
+# Pure additive side effect: cache the same 7d number this script just
 # printed (plus each window's reset epoch, which the printed line omits) to
 # a shared JSON file so a non-statusline process (the app-launcher Board /
 # Coding tabs) can read current usage without being the statusline itself.
@@ -125,22 +117,16 @@ $stdout.Flush()
 # here is swallowed — this must never break the statusline itself, which has
 # already printed by this point regardless of what follows.
 try {
-    $five_h_resets  = $data.rate_limits.five_hour.resets_at
     $seven_d_resets = $data.rate_limits.seven_day.resets_at
 
-    $five_h_window = $null
-    if ($five_h -ne $null -or $five_h_resets -ne $null) {
-        $five_h_window = [ordered]@{ used_percentage = $five_h; resets_at = $five_h_resets }
-    }
     $seven_d_window = $null
     if ($seven_d -ne $null -or $seven_d_resets -ne $null) {
         $seven_d_window = [ordered]@{ used_percentage = $seven_d; resets_at = $seven_d_resets }
     }
 
     $cache = [ordered]@{
-        five_hour    = $five_h_window
         seven_day    = $seven_d_window
-        captured_at  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        captured_at  =(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
 
     # CLAUDE_HOOKS_STATE_DIR overrides the directory, same env var

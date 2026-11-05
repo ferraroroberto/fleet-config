@@ -230,7 +230,7 @@ def run_dir(date: dt.date) -> Path:
 
 
 def quota_reading() -> Optional[Dict[str, float]]:
-    """Fresh Claude quota windows ({"five_hour": pct, "seven_day": pct}), or
+    """Fresh Claude quota windows ({"seven_day": pct}), or
     `None` when no available statusline observation exists. Never estimated:
     a missing reading is reported as unknown in the footer."""
     for source in quota_snapshot.read_snapshot()["sources"]:

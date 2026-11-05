@@ -28,13 +28,13 @@ PAYLOAD = {
 }
 
 
-def _snapshot(state: str = "available", five: object = 5, week: object = 71) -> dict:
+def _snapshot(state: str = "available", week: object = 71) -> dict:
     def window(wid: str, pct: object) -> dict:
         return {"id": wid, "state": state, "used_percentage": pct}
 
     return {"sources": [{
         "producer": "claude-statusline", "state": state,
-        "observations": [{"state": state, "windows": [window("five_hour", five), window("seven_day", week)]}],
+        "observations": [{"state": state, "windows": [window("seven_day", week)]}],
     }]}
 
 
@@ -45,22 +45,22 @@ def _plain(text: str) -> str:
 class RenderTests(unittest.TestCase):
     def test_full_row_labels_the_limits_as_claudes(self) -> None:
         row = _plain(grok_statusline.render(PAYLOAD, _snapshot()))
-        self.assertEqual(row, "12%c $0.42 | Claude 5%s 71%w | Grok 4.5 high | demo (main)")
+        self.assertEqual(row, "12%c $0.42 | Claude 71%w | Grok 4.5 high | demo (main)")
 
     def test_stale_or_absent_claude_reading_shows_unknown_never_a_number(self) -> None:
-        for snapshot in (_snapshot(state="stale"), {"sources": []}, _snapshot(five=None)):
-            self.assertIn("Claude ?%s", _plain(grok_statusline.render(PAYLOAD, snapshot)))
+        for snapshot in (_snapshot(state="stale"), {"sources": []}, _snapshot(week=None)):
+            self.assertIn("Claude ?%w", _plain(grok_statusline.render(PAYLOAD, snapshot)))
 
     def test_no_grok_limit_is_ever_rendered(self) -> None:
         # Even a payload carrying limit-shaped fields shows only Claude's.
-        payload = dict(PAYLOAD, rate_limits={"five_hour": {"used_percentage": 3}})
+        payload = dict(PAYLOAD, rate_limits={"seven_day": {"used_percentage": 3}})
         row = _plain(grok_statusline.render(payload, _snapshot()))
-        self.assertEqual(row.count("%s"), 1)
-        self.assertNotIn("3%s", row)
+        self.assertEqual(row.count("%w"), 1)
+        self.assertNotIn("3%w", row)
 
     def test_absent_fields_are_omitted_not_zeroed(self) -> None:
         row = _plain(grok_statusline.render({"model": {"display_name": "Grok 4.5"}}, _snapshot()))
-        self.assertEqual(row, "Claude 5%s 71%w | Grok 4.5")
+        self.assertEqual(row, "Claude 71%w | Grok 4.5")
 
     def test_worktree_name_wins_over_the_repo_folder(self) -> None:
         payload = dict(PAYLOAD, worktree={"name": "demo-wt-3", "path": "E:/work/demo-wt-3"})
@@ -126,7 +126,7 @@ class MergeTests(unittest.TestCase):
                 capture_output=True, env=env, check=True,
             ).stdout.decode("utf-8")
         self.assertTrue(out.endswith("demo (main)\n"))
-        self.assertIn("Claude ?%s ?%w", _plain(out))
+        self.assertIn("Claude ?%w", _plain(out))
 
     def test_installer_switch_is_scoped_and_forwarded(self) -> None:
         installer = (REPO / "install.ps1").read_text(encoding="utf-8")

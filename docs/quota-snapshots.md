@@ -4,7 +4,7 @@ Native quota measurements have a shared consumer contract in skills/_lib/quota_s
 
 ## Producers and refresh
 
-- Claude: statusline-command.ps1 sends its already-built quota subset to quota_sources.py after writing the existing rate-limits.json. This uses the original native render's captured_at, never the reader's time. The legacy five_hour/seven_day fields, numeric reset epochs, BOM-less JSON and existing consumer behavior stay unchanged.
+- Claude: statusline-command.ps1 sends its already-built quota subset to quota_sources.py after writing the existing rate-limits.json. This uses the original native render's captured_at, never the reader's time. The legacy seven_day field, numeric reset epochs, BOM-less JSON and existing consumer behavior stay unchanged.
 - Codex: quota_sources.py codex makes one bounded native app-server account/rateLimits/read request using the installed CLI's normal authentication. It initializes the local stdio child and checks account/read with refreshToken=false first. It never starts a thread or model turn, invokes an account mutation, reads auth files, or copies credentials. Only its own disposable child is stopped.
 - Pi/Grok: no native producer is claimed here. Adapters can publish an empty_source with their actual provider and unsupported/unknown state using the same schema. Harness is a route, never the provider or an independent quota allowance.
 
@@ -37,7 +37,7 @@ Each source carries:
 
 Each observation carries bucket, account, pool_id, observed_at, expires_at, state and windows. Every window carries its native id, duration_minutes, nullable used_percentage, nullable resets_at, and state. Resets and all other timestamps are normalized to timezone-bearing UTC strings ending in Z. Epoch seconds are accepted at the adapter boundary; naive timestamps, booleans, nonfinite/out-of-range percentages and nonpositive durations are not accepted as available measurements. Null reset times remain null; they do not become the current time or an estimated reset.
 
-Codex primary and secondary retain their native labels and duration values. A primary window can be weekly; it is never assumed to mean five hours. Null/absent windows are omitted, not generated with zero usage. Missing utilization on a reported window is null/unknown. Claude's explicitly named five_hour/seven_day windows carry their defined 300/10080-minute durations. Multiple Codex limit buckets remain separate, and the single-bucket compatibility view is not duplicated when that bucket is in rateLimitsByLimitId. Credits, plan/upsell data, earned reset credits, individual spend controls, token activity and catalogs are outside this measurement contract; a percentage does not promise an account can execute a request.
+Codex primary and secondary retain their native labels and duration values. A primary window can be weekly; it is never assumed to mean five hours. Null/absent windows are omitted, not generated with zero usage. Missing utilization on a reported window is null/unknown. Claude's explicitly named seven_day window carries its defined 10080-minute duration; Claude reports no five-hour window. Multiple Codex limit buckets remain separate, and the single-bucket compatibility view is not duplicated when that bucket is in rateLimitsByLimitId. Credits, plan/upsell data, earned reset credits, individual spend controls, token activity and catalogs are outside this measurement contract; a percentage does not promise an account can execute a request.
 
 ## Consumer rules
 

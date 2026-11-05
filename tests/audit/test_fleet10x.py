@@ -149,10 +149,10 @@ check(len(table.splitlines()) == 2 + len(ranked), "one table row per recommendat
 
 # ---- quota line: observed or unknown, never estimated ----
 
-check(f10._quota_line({"five_hour": 6.0, "seven_day": 37.0}, {"five_hour": 21.0, "seven_day": 40.5})
-      == "five_hour:6%->21%,seven_day:37%->40.5%", "quota line shows start -> end per window")
-check(f10._quota_line(None, {"five_hour": 21.0}) == "unknown", "no start reading -> unknown")
-check(f10._quota_line({"five_hour": 6.0}, None) == "unknown", "no end reading -> unknown")
+check(f10._quota_line({"seven_day": 37.0}, {"seven_day": 40.5})
+      == "seven_day:37%->40.5%", "quota line shows start -> end per window")
+check(f10._quota_line(None, {"seven_day": 21.0}) == "unknown", "no start reading -> unknown")
+check(f10._quota_line({"seven_day": 6.0}, None) == "unknown", "no end reading -> unknown")
 
 foot = f10.footer_text("rule-x", "1h05m", "unknown", 21, None)
 check("Wall time: 1h05m" in foot and "rule-x" in foot, "footer states selection rule and wall time")

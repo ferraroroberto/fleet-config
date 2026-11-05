@@ -34,13 +34,11 @@ def claude_source(raw: Any) -> dict[str, Any]:
     if observed is None or observed > now:
         return dict(source, state="unknown", reason="observation_time_missing")
     windows = []
-    for name, minutes in (("five_hour", 300), ("seven_day", 10080)):
-        entry = raw.get(name)
-        if entry is None:
-            continue
+    entry = raw.get("seven_day")
+    if entry is not None:
         if not isinstance(entry, dict):
             return dict(source, state="error", reason="source_shape")
-        windows.append(window(name, minutes, entry.get("used_percentage"), entry.get("resets_at")))
+        windows.append(window("seven_day", 10080, entry.get("used_percentage"), entry.get("resets_at")))
     if not windows:
         return source
     item = observation("anthropic", "claude-code", windows, now=observed)

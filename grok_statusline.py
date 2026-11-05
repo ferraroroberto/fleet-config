@@ -72,16 +72,16 @@ def _cost(payload: dict) -> str:
     return f"${usd:.2f}" if usd is not None and usd >= MIN_COST_USD else ""
 
 
-def _limit(window: Optional[dict], suffix: str) -> str:
+def _limit(window: Optional[dict]) -> str:
     pct = _number((window or {}).get("used_percentage"))
     if not window or window.get("state") != "available" or pct is None:
-        return f"?%{suffix}"
+        return "?%w"
     pct = round(pct)
-    return _colored(f"{pct}%{suffix}", "31" if pct >= 80 else "33" if pct >= 60 else None)
+    return _colored(f"{pct}%w", "31" if pct >= 80 else "33" if pct >= 60 else None)
 
 
 def claude_limits(snapshot: dict) -> str:
-    """Claude's session and weekly use, labelled as Claude's; ``?`` when not fresh."""
+    """Claude's weekly use, labelled as Claude's; ``?`` when not fresh."""
     source = next((s for s in snapshot.get("sources", []) if s.get("producer") == CLAUDE_PRODUCER), {})
     windows: dict = {}
     if source.get("state") == "available":
@@ -89,7 +89,7 @@ def claude_limits(snapshot: dict) -> str:
             if observation.get("state") == "available":
                 windows = {w.get("id"): w for w in observation.get("windows", [])}
                 break
-    return f"Claude {_limit(windows.get('five_hour'), 's')} {_limit(windows.get('seven_day'), 'w')}"
+    return f"Claude {_limit(windows.get('seven_day'))}"
 
 
 def _model(payload: dict) -> str:

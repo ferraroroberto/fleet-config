@@ -147,7 +147,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 Read the stdout JSON directly — `{"dispatch": [...], "skipped_closed": [...], "unresolved": [...]}`. **Only `dispatch` items get a sub-agent below.** For every `skipped_closed` item, drop it and report `already closed — dropped, no agent dispatched`. For every `unresolved` item — the check could not establish open vs. closed (network error, rate limit) — **also drop it from this run**, never guessed as open, and report `state unresolved — dropped, not dispatched (<detail>)` as its own category, never merged into either the closed count or the dispatched count. The run's final summary must show all three counts (`dispatched` / `already-closed` / `unresolved`) even when the latter two are zero — a run that silently shrank its own working set reads as "nothing to do" (fleet-config#623, #560, #612).
 
 Before the mass easy-tier dispatch below, call
-`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check`
 once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against
 the printed `WAIT_SECONDS` (never `RESETS_AT`, fleet-config#891) before firing the batch (see
 `docs/rate-gate.md`), then re-check. **Cap: 3 pause cycles** — still `PAUSE`

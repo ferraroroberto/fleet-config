@@ -2,18 +2,18 @@
 
 ## Why this replaced the dead-man's switch
 
-`/audit-fleet` used to survive the rolling 5-hour session rate limit with a
+`/audit-fleet` used to survive the rolling session rate limit with a
 "dead-man's switch": before the heavy dispatch
 phase it armed a one-shot Windows Scheduled Task ~4h out, so if the process died
 mid-sweep from hitting the limit, the task relaunched the audit as a `resume`
 continuation, and the idempotent per-repo ledger gate skipped work already done.
 That design existed because there was genuinely no way to read the live session
 usage % from a headless `claude -p` run — Claude Code fed
-`rate_limits.five_hour.used_percentage` to the statusline via stdin JSON only at
+`rate_limits.*.used_percentage` to the statusline via stdin JSON only at
 TUI render time, and never persisted it to disk.
 
 That constraint no longer holds. `statusline-command.ps1` now caches
-`rate_limits.five_hour` / `seven_day` (`used_percentage` + `resets_at`) plus a
+`rate_limits.seven_day` (`used_percentage` + `resets_at`) plus a
 `captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on **every**
 statusline render, specifically so a
 non-statusline process can read current usage without being the statusline
@@ -28,14 +28,15 @@ Pure logic, unit-tested in `tests/claude_progress/test_rate_gate.py` (same disci
 live in Python, not the model):
 
 ```
-decide(cache: dict, now: datetime, threshold_pct: float = 70.0,
+decide(cache: dict, now: datetime, threshold_pct: float = 90.0,
        max_age_seconds: int = 1800, unattended: bool = False) -> Decision
 ```
 
 - **No signal** — the cache file is missing or unreadable (`cache_missing`), its
   `captured_at` is older than `max_age_seconds` (`cache_stale`: nothing rendered
-  a statusline recently), or it carries no `five_hour.used_percentage`
-  (`usage_missing`). What happens next depends on who is attending:
+  a statusline recently), or it carries no `seven_day.used_percentage`
+  ((`usage_missing`: the weekly window is the only one the gate reads, so a cache
+  that carries no `seven_day` figure is its own unknown state, never a pass). What happens next depends on who is attending:
   - **Interactive → `UNKNOWN`, proceed.** Someone is watching the session and
     the statusline is usually rendering, so this is a transient gap.
   - **Unattended → `PAUSE`, never proceed.** `USED_PCT=null`,
@@ -43,15 +44,15 @@ decide(cache: dict, now: datetime, threshold_pct: float = 70.0,
     waits and re-reads on its normal pause path, and its 3-cycle cap ends the
     run as `SKIPPED (session limit — exceeded pause retries)` if a signal never
     appears. See "Unattended runs" below.
-- **`OK`** (`below_threshold`) — `five_hour.used_percentage` is present, fresh
+- **`OK`** (`below_threshold`) — `seven_day.used_percentage` is present, fresh
   and below `threshold_pct`.
-- **`PAUSE`** (`over_threshold`) — `five_hour.used_percentage >= threshold_pct`.
+- **`PAUSE`** (`over_threshold`) — `seven_day.used_percentage >= threshold_pct`.
   Carries the window's `resets_at` and a computed `wait_seconds` (`resets_at − now`
   plus a small buffer; a bounded fallback wait if `resets_at` is missing).
   Unattended, that wait is capped under the stall watchdog; see "Unattended
   waits vs the stall watchdog" below.
 
-CLI: `rate_gate.py check [--threshold 70] [--state-dir <path>] [--unattended]`
+CLI: `rate_gate.py check [--threshold 90] [--state-dir <path>] [--unattended]`
 prints `DECISION=OK|PAUSE|UNKNOWN`, `REASON=<reason above>`,
 `MODE=interactive|unattended`, `USED_PCT=<n|null>`, `RESETS_AT=<iso|null>`,
 `WAIT_SECONDS=<n|null>`, `WATCHDOG_SECONDS=<n|off|unknown|null>` for the
@@ -66,7 +67,7 @@ The gate does not treat `UNKNOWN` as OK for unattended runs, although an
 interactive run still does. Treating `UNKNOWN` as OK everywhere rests on the
 reasoning that no signal is no evidence of a problem. That tradeoff was tested
 in production and lost on **2026-09-10**: the scheduled `codebase-audit-fleet` run ran 54
-minutes on `UNKNOWN`, hit the 5-hour session limit mid-flight, lost 13
+minutes on `UNKNOWN`, hit the session limit mid-flight, lost 13
 sub-agents in the same second, delivered no digest, and took
 `design-sweep-fleet` and `cleanup-fleet-all-weekly` down behind it in the chain.
 The reactive rate-limit-signature fallback didn't save it either, because the
@@ -86,7 +87,7 @@ So unattended runs behave differently, and only unattended runs:
    3-cycle cap then ends the run in its session-limit skip bucket instead of
    dispatching blind. Each caller's report names the gate decision
    (`DECISION`/`REASON`/`MODE`).
-3. **Interactive behaviour is unchanged**, and the 70% threshold stays until a
+3. **Interactive behaviour is unchanged**, and the 90% weekly threshold stays until a
    real number flows in unattended runs.
 
 In practice an unattended run only dispatches while an interactive Claude Code
@@ -100,7 +101,7 @@ Replay the headless case against a deliberately stale or absent cache in a temp
 dir instead:
 
 ```
-FLEET_SCHEDULED_RUN=1 rate_gate.py check --threshold 70 --state-dir <empty temp dir>
+FLEET_SCHEDULED_RUN=1 rate_gate.py check --state-dir <empty temp dir>
 ```
 
 The cache path resolves via `CLAUDE_HOOKS_STATE_DIR` first, falling back to
