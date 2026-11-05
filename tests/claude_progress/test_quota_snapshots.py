@@ -18,6 +18,7 @@ from unittest.mock import patch
 REPO = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import quota_snapshot as contract
+import rate_gate
 import quota_sources as sources
 from scheduled.codex_app_server import AppServerSession
 from fleet_core import hooks_state
@@ -322,6 +323,53 @@ class NativeTransportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((Path(directory) / "quota-v1" / "claude-statusline.json").is_file(),
                             "trailing-backslash state dir: shared quota snapshot was not published")
+
+
+    def _render(self, directory: str, rate_limits: dict | None) -> None:
+        raw = {} if rate_limits is None else {"rate_limits": rate_limits}
+        result = subprocess.run(["C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                                 "-NoProfile", "-File", str(REPO / "statusline-command.ps1")],
+                                input=json.dumps(raw), capture_output=True, text=True,
+                                env=dict(os.environ, CLAUDE_HOOKS_STATE_DIR=directory),
+                                timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_statusline_null_render_keeps_another_sessions_good_reading(self) -> None:
+        if sys.platform != "win32":
+            self.skipTest("Native PowerShell integration requires Windows")
+        with tempfile.TemporaryDirectory() as directory:
+            good = {"seven_day": {"used_percentage": 34, "resets_at": RESET}}
+            self._render(directory, good)
+            target = Path(directory) / "rate-limits.json"
+            before = json.loads(target.read_text(encoding="utf-8"))
+            self._render(directory, None)  # a new session: no rate_limits before its first API response
+            self._render(directory, {"seven_day": {}})  # a payload that leaves the window empty
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), before)
+            shared = json.loads((Path(directory) / "quota-v1" / "claude-statusline.json").read_text(encoding="utf-8"))
+            weekly = [w for w in shared["observations"][0]["windows"] if w["id"] == "seven_day"]
+            self.assertEqual([w["used_percentage"] for w in weekly], [34])
+
+    def test_statusline_good_render_replaces_good_reading(self) -> None:
+        if sys.platform != "win32":
+            self.skipTest("Native PowerShell integration requires Windows")
+        with tempfile.TemporaryDirectory() as directory:
+            self._render(directory, {"seven_day": {"used_percentage": 34, "resets_at": RESET}})
+            self._render(directory, {"seven_day": {"used_percentage": 41, "resets_at": RESET}})
+            cache = json.loads((Path(directory) / "rate-limits.json").read_text(encoding="utf-8"))
+            self.assertEqual(cache["seven_day"]["used_percentage"], 41)
+
+    def test_statusline_null_render_does_not_refresh_a_stale_reading(self) -> None:
+        if sys.platform != "win32":
+            self.skipTest("Native PowerShell integration requires Windows")
+        with tempfile.TemporaryDirectory() as directory:
+            self._render(directory, {"seven_day": {"used_percentage": 34, "resets_at": RESET}})
+            target = Path(directory) / "rate-limits.json"
+            cache = json.loads(target.read_text(encoding="utf-8"))
+            cache["captured_at"] = "2000-01-01T00:00:00Z"  # far older than the gate's stale limit
+            target.write_text(json.dumps(cache), encoding="utf-8")
+            self._render(directory, None)
+            decision = rate_gate.decide(rate_gate.load_cache(target), dt.datetime.now(dt.timezone.utc))
+            self.assertEqual((decision.status, decision.reason), ("UNKNOWN", "cache_stale"))
 
 
 if __name__ == "__main__":
