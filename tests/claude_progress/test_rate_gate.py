@@ -33,7 +33,7 @@ NOW = dt.datetime(2026, 7, 4, 12, 0, 0, tzinfo=dt.timezone.utc)
 
 def _cache(used_pct, resets_at, captured_at):
     return {
-        "five_hour": {"used_percentage": used_pct, "resets_at": resets_at},
+        "seven_day": {"used_percentage": used_pct, "resets_at": resets_at},
         "captured_at": captured_at,
     }
 
@@ -43,8 +43,8 @@ def _cache(used_pct, resets_at, captured_at):
 check(rg.decide({}, NOW).status == "UNKNOWN", "empty cache -> UNKNOWN")
 check(rg.decide({"captured_at": None}, NOW).status == "UNKNOWN", "no captured_at -> UNKNOWN")
 check(
-    rg.decide({"five_hour": None, "captured_at": "2026-07-04T11:59:00Z"}, NOW).status == "UNKNOWN",
-    "five_hour null -> UNKNOWN",
+    rg.decide({"seven_day": None, "captured_at": "2026-07-04T11:59:00Z"}, NOW).status == "UNKNOWN",
+    "seven_day null -> UNKNOWN",
 )
 check(
     rg.decide(_cache(None, None, "2026-07-04T11:59:00Z"), NOW).status == "UNKNOWN",
@@ -57,13 +57,34 @@ check(
     "used_percentage null names usage_missing",
 )
 
+# ---- decide: weekly-only cache (no five-hour window is reported any more) ----
+# The shape the statusline wrote on 2026-11-05 that paused every unattended run:
+# fresh, `five_hour` null, `seven_day` populated.
+weekly_only = {"five_hour": None, "seven_day": {"used_percentage": 72, "resets_at": 1793923200},
+               "captured_at": "2026-07-04T11:59:00Z"}
+for unattended in (False, True):
+    d = rg.decide(weekly_only, NOW, unattended=unattended)
+    check(d.status == "OK" and d.reason == "below_threshold" and d.used_pct == 72,
+          f"fresh weekly-only cache below 90% -> OK (unattended={unattended})")
+check(rg.DEFAULT_THRESHOLD_PCT == 90.0, "the weekly gate defaults to a 90% threshold")
+over_weekly = dict(weekly_only, seven_day={"used_percentage": 91, "resets_at": 1793923200})
+check(rg.decide(over_weekly, NOW, unattended=True).reason == "over_threshold",
+      "weekly-only cache at 91% -> over_threshold PAUSE")
+# Unknown is never a pass: a cache carrying only the retired window names usage_missing.
+legacy_five_only = {"five_hour": {"used_percentage": 5, "resets_at": None}, "seven_day": None,
+                    "captured_at": "2026-07-04T11:59:00Z"}
+check(rg.decide(legacy_five_only, NOW).reason == "usage_missing" and rg.decide(legacy_five_only, NOW).status == "UNKNOWN",
+      "a cache without seven_day is its own unknown state, never OK")
+check(rg.decide(legacy_five_only, NOW, unattended=True).status == "PAUSE",
+      "unattended + no seven_day figure -> PAUSE, never OK")
+
 # ---- decide: stale cache -> UNKNOWN regardless of usage ----
 stale_cache = _cache(95.0, "2026-07-04T13:00:00Z", "2026-07-04T11:00:00Z")  # 1h old, default max_age=30min
 check(rg.decide(stale_cache, NOW).status == "UNKNOWN", "stale captured_at -> UNKNOWN even if usage is high")
 check(rg.decide(stale_cache, NOW).reason == "cache_stale", "stale captured_at names cache_stale")
 
 # ---- decide: unattended + no signal -> bounded PAUSE, never proceed (fleet-config#825) ----
-# The 2026-09-10 weekly chain proceeded on UNKNOWN into the 5-hour limit.
+# The 2026-09-10 weekly chain proceeded on UNKNOWN into the session limit.
 for label, no_signal, reason in (
     ("empty cache", {}, "cache_missing"),
     ("stale cache", stale_cache, "cache_stale"),
@@ -115,7 +136,7 @@ check(rg.decide(_cache(10.0, None, "2026-07-04T11:55:00Z"), NOW, max_wait_second
 # A fresh signal decides exactly as it does interactively.
 check(rg.decide(_cache(42.0, None, "2026-07-04T11:55:00Z"), NOW, unattended=True).status == "OK",
       "unattended + fresh low usage -> OK")
-check(rg.decide(_cache(80.0, None, "2026-07-04T11:55:00Z"), NOW, unattended=True).reason == "over_threshold",
+check(rg.decide(_cache(95.0, None, "2026-07-04T11:55:00Z"), NOW, unattended=True).reason == "over_threshold",
       "unattended + fresh high usage -> over_threshold PAUSE")
 
 check(rg.is_unattended({rg.UNATTENDED_ENV: "1"}), "FLEET_SCHEDULED_RUN=1 -> unattended")
@@ -129,14 +150,14 @@ check(d.status == "OK", "fresh + below threshold -> OK")
 check(d.used_pct == 42.0, "OK carries used_pct")
 
 # ---- decide: fresh + at/above threshold -> PAUSE, with resets_at-derived wait ----
-fresh_high = _cache(70.0, "2026-07-04T14:00:00Z", "2026-07-04T11:55:00Z")
+fresh_high = _cache(90.0, "2026-07-04T14:00:00Z", "2026-07-04T11:55:00Z")
 d = rg.decide(fresh_high, NOW)
 check(d.status == "PAUSE", "used_pct == threshold -> PAUSE (>=)")
 check(d.resets_at == "2026-07-04T14:00:00Z", "PAUSE carries resets_at")
 check(d.wait_seconds == 2 * 3600 + rg.WAIT_BUFFER_SECONDS, "wait_seconds = resets_at - now + buffer")
 
 # ---- decide: PAUSE with no resets_at -> bounded fallback wait ----
-fresh_high_no_reset = _cache(88.0, None, "2026-07-04T11:55:00Z")
+fresh_high_no_reset = _cache(95.0, None, "2026-07-04T11:55:00Z")
 d = rg.decide(fresh_high_no_reset, NOW)
 check(d.status == "PAUSE", "high usage, no resets_at -> still PAUSE")
 check(d.wait_seconds == float(rg.DEFAULT_WAIT_SECONDS), "missing resets_at -> fallback wait")

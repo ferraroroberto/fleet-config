@@ -151,7 +151,7 @@ Nothing to scan (`scan=0`) → skip steps 5–6; the digest still posts and list
 **Rate gate first** (every run that dispatches workers):
 
 ```
-<py> C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70
+<py> C:/Users/rober/.claude/skills/_lib/rate_gate.py check
 ```
 
 `DECISION=OK` or `UNKNOWN` (interactive-only: a scheduled run with no fresh signal reads `PAUSE`, fleet-config#825) → dispatch. `PAUSE` → dispatch nothing yet; wait in place against the printed `WAIT_SECONDS` (never `RESETS_AT`: only `WAIT_SECONDS` fits the stall watchdog, fleet-config#891) with a foreground, bounded wait (`Monitor`'s until-loop, never a backgrounded sleep), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → judge nothing: every planned file is `null` in `judgments` (unmeasured, so the digest still posts as `status=partial` and names them), and step 9 prints the failure marker. Record the `DECISION=` / `REASON=` / `MODE=` lines for the report.

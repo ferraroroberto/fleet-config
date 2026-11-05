@@ -3,12 +3,13 @@
 Why this exists
 ----------------
 `/audit-fleet` and `/cleanup-fleet` dispatch many background sub-agents against
-the shared, rolling 5-hour Claude Code session rate limit. `statusline-command.ps1`
-now caches `rate_limits.five_hour`/`seven_day` (`used_percentage` + `resets_at`)
+the shared weekly Claude Code rate limit. `statusline-command.ps1`
+caches `rate_limits.seven_day` (`used_percentage` + `resets_at`)
 plus a `captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on every
 statusline render (fleet-config#259 / app-launcher#326) — so a skill can read the
-live session usage % and pause dispatch *before* hitting the wall, wait until the
-window resets, then resume in the same still-alive process. This replaces the
+live weekly usage % and pause dispatch *before* hitting the wall, wait until the
+window resets, then resume in the same still-alive process. The gate reads no
+five-hour window: the owner's plan reports weekly limits only. This replaces the
 older "dead-man's switch" (`audit_retry.py`, retired in fleet-config#261), which
 armed an OS-level scheduled relaunch because there was no way to read the live %
 from a headless `claude -p` run. See `docs/rate-gate.md` for the full design.
@@ -30,13 +31,13 @@ Unattended mode (fleet-config#825, #891)
 The statusline only renders in an interactive session, so a scheduled
 `claude -p` run with no session open on the machine never has a fresh cache.
 Proceeding on `UNKNOWN` there cost the whole 2026-09-10 weekly chain: the audit
-ran blind into the 5-hour limit. So a run launched by `scheduled_runner.py`
+ran blind into the session limit. So a run launched by `scheduled_runner.py`
 (which exports `FLEET_SCHEDULED_RUN=1` to its child), or one passing
 `--unattended`, turns "no signal" into a bounded `PAUSE` that re-reads the
 cache after `UNKNOWN_WAIT_SECONDS`; the calling skill's pause-cycle cap then
 ends it as skipped rather than proceeding. Every unattended `PAUSE` wait, the
 over-threshold one included, is also capped under the launcher's stall
-watchdog (`STALL_TIMEOUT_ENV`), so waiting out a 5-hour reset re-checks in
+watchdog (`STALL_TIMEOUT_ENV`), so waiting out a reset re-checks in
 cycles instead of being killed as a hung job. Interactive behaviour is unchanged.
 There is deliberately no flag that makes an unattended run *less* cautious.
 
@@ -59,7 +60,7 @@ from typing import NamedTuple, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core.hooks_state import state_dir  # noqa: E402
 
-DEFAULT_THRESHOLD_PCT = 70.0
+DEFAULT_THRESHOLD_PCT = 90.0  # weekly window: a long runway, so pause later than a burst limit would
 DEFAULT_MAX_AGE_SECONDS = 1800  # 30 min — a statusline render is "recent" within this
 DEFAULT_WAIT_SECONDS = 1800  # fallback wait when resets_at is missing but usage is over threshold
 WAIT_BUFFER_SECONDS = 60  # small margin past the reported reset time
@@ -164,15 +165,15 @@ def _decide(
     if (now - captured_at).total_seconds() > max_age_seconds:
         return _no_signal("cache_stale", unattended)
 
-    five_hour = cache.get("five_hour") or {}
-    used_pct = five_hour.get("used_percentage")
+    seven_day = cache.get("seven_day") or {}
+    used_pct = seven_day.get("used_percentage")
     if used_pct is None:
         return _no_signal("usage_missing", unattended)
 
     if used_pct < threshold_pct:
-        return Decision("OK", "below_threshold", used_pct, five_hour.get("resets_at"), None)
+        return Decision("OK", "below_threshold", used_pct, seven_day.get("resets_at"), None)
 
-    resets_at_raw = five_hour.get("resets_at")
+    resets_at_raw = seven_day.get("resets_at")
     resets_at = _parse_iso(resets_at_raw)
     if resets_at is not None:
         wait_seconds = max((resets_at - now).total_seconds(), 0) + WAIT_BUFFER_SECONDS

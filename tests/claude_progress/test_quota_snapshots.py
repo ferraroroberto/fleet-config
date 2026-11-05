@@ -42,8 +42,8 @@ def codex() -> dict:
 def claude() -> dict:
     with patch.object(sources, "utc_now", return_value=NOW):
         return sources.claude_source({"captured_at": "2026-09-05T14:00:00+02:00",
-                                     "five_hour": {"used_percentage": 31, "resets_at": RESET},
-                                     "seven_day": None, "private": "DO-NOT-PUBLISH"})
+                                     "seven_day": {"used_percentage": 31, "resets_at": RESET},
+                                     "private": "DO-NOT-PUBLISH"})
 
 
 class ContractTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class ContractTests(unittest.TestCase):
         c, o = claude(), codex()
         self.assertEqual((c["provider"], o["provider"]), ("anthropic", "openai"))
         cw, ow = c["observations"][0]["windows"][0], o["observations"][0]["windows"][0]
-        self.assertEqual((cw["duration_minutes"], ow["duration_minutes"]), (300, 10080))
+        self.assertEqual((cw["duration_minutes"], ow["duration_minutes"]), (10080, 10080))
         self.assertEqual(ow["id"], "primary")
         self.assertEqual(len(o["observations"][0]["windows"]), 1)
         self.assertTrue(cw["resets_at"].endswith("Z"))
@@ -94,8 +94,8 @@ class ContractTests(unittest.TestCase):
         result = sources.codex_source(raw, "0.153.3", now=NOW)
         self.assertIsNone(result["observations"][0]["windows"][0]["used_percentage"])
         with patch.object(sources, "utc_now", return_value=NOW):
-            for raw in [None, {}, {"captured_at": NOW.isoformat(), "five_hour": []},
-                        {"captured_at": "2026-09-05T12:00:00", "five_hour": {"used_percentage": 0}}]:
+            for raw in [None, {}, {"captured_at": NOW.isoformat(), "seven_day": []},
+                        {"captured_at": "2026-09-05T12:00:00", "seven_day": {"used_percentage": 0}}]:
                 self.assertNotEqual(sources.claude_source(raw)["state"], "available")
 
     def test_bad_numbers_duration_and_reset_are_not_available(self) -> None:
@@ -287,17 +287,16 @@ class NativeTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ, CLAUDE_HOOKS_STATE_DIR=directory)
             raw = {"rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": RESET},
-                                   "seven_day": {"used_percentage": 34, "resets_at": RESET}}}
+                                   "seven_day": {"used_percentage": 34, "resets_at": RESET}}}  # a stray five_hour must be ignored
             result = subprocess.run(["C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
                                      "-NoProfile", "-File", str(REPO / "statusline-command.ps1")],
                                     input=json.dumps(raw), capture_output=True, text=True,
                                     env=env, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("12%s", result.stdout)
             self.assertIn("34%w", result.stdout)
+            self.assertNotIn("%s", result.stdout)
             legacy = json.loads((Path(directory) / "rate-limits.json").read_text(encoding="utf-8"))
-            self.assertEqual(set(legacy), {"five_hour", "seven_day", "captured_at"})
-            self.assertEqual(legacy["five_hour"], raw["rate_limits"]["five_hour"])
+            self.assertEqual(set(legacy), {"seven_day", "captured_at"})
             self.assertEqual(legacy["seven_day"], raw["rate_limits"]["seven_day"])
             shared = json.loads((Path(directory) / "quota-v1" / "claude-statusline.json").read_text(encoding="utf-8"))
             for entry in shared["observations"][0]["windows"]:
@@ -315,8 +314,7 @@ class NativeTransportTests(unittest.TestCase):
             self.skipTest("Native PowerShell integration requires Windows")
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ, CLAUDE_HOOKS_STATE_DIR=directory + "\\")
-            raw = {"rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": RESET},
-                                   "seven_day": {"used_percentage": 34, "resets_at": RESET}}}
+            raw = {"rate_limits": {"seven_day": {"used_percentage": 34, "resets_at": RESET}}}
             result = subprocess.run(["C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
                                      "-NoProfile", "-File", str(REPO / "statusline-command.ps1")],
                                     input=json.dumps(raw), capture_output=True, text=True,

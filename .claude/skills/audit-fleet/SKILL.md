@@ -34,7 +34,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 ## Self-pacing against the live session budget
 
-A full sweep can exhaust the rolling **5-hour session rate limit** mid-run. `statusline-command.ps1` caches live `rate_limits.five_hour` usage % + `resets_at` to `~/.claude/hooks/state/rate-limits.json` on every render (`fleet-config#259`), so this skill pauses dispatch proactively, waits in place, and resumes within the same run — no relaunch, no OS-level scheduling, no `resume` argument; a run always ends by delivering one full digest. Gate/pause/fallback mechanics wired into step 3. Full design: `docs/rate-gate.md`.
+A full sweep can exhaust the **weekly rate limit** mid-run. `statusline-command.ps1` caches live `rate_limits.seven_day` usage % + `resets_at` to `~/.claude/hooks/state/rate-limits.json` on every render (`fleet-config#259`), so this skill pauses dispatch proactively, waits in place, and resumes within the same run — no relaunch, no OS-level scheduling, no `resume` argument; a run always ends by delivering one full digest. Gate/pause/fallback mechanics wired into step 3. Full design: `docs/rate-gate.md`.
 
 ## Steps
 
@@ -124,7 +124,7 @@ If `to_audit` is empty, jump to step 5 with an empty result set (digest still go
 
 Process the to-audit list through a **bounded concurrency window of up to 3 sub-agents** — session-token-budget pacing default and the live Opus burst-limiter cap: audit sub-agents run at **`hard` tier** (`docs/model-tiers.md`), which resolves to `model: "opus"` (Claude Code only, today).
 
-Before each dispatch/refill, call `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70` and branch on `DECISION`:
+Before each dispatch/refill, call `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check` and branch on `DECISION`:
 
 - **`OK` / `UNKNOWN`** (`UNKNOWN` is interactive-only) → dispatch eligible repos through the capability contract, hard tier, up to the smaller of three workers and the available host slots. Collect each terminal result in the same turn before refilling; a timeout is still pending. No-spawn fallback is explicit serial audit execution with the same per-repo issue/report gates. Audit work in different repos does not need worktrees unless the invoked security-heal path writes code; that path retains its own isolation and shipping gates.
 - **`PAUSE`** → stop dispatching new sub-agents (let in-flight ones finish), wait via `Monitor`'s until-loop pattern against the printed `WAIT_SECONDS` (never `RESETS_AT`: only `WAIT_SECONDS` fits the stall watchdog, fleet-config#891), re-check and resume. **Cap: 3 pause cycles per run** — a 4th would-be pause instead marks every remaining repo `SKIPPED (session limit — exceeded pause retries)` and moves to the digest; next week's ledger gate picks these up for free. A scheduled run (`MODE=unattended`) with no fresh statusline signal also gets `PAUSE` (`REASON=cache_missing|cache_stale|usage_missing`, `USED_PCT=null`) — the same path and the same cap, never a blind dispatch (fleet-config#825). Record every gate line's `DECISION`/`REASON`/`MODE` for the digest.
