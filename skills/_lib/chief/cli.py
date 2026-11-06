@@ -68,12 +68,6 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     d.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     d.set_defaults(func=commands.cmd_dispatch)
 
-    we = sub.add_parser("wait-event", help="block until a worker's turn ends (fleet-config#999)")
-    we.add_argument("--timeout", type=float, default=mailbox.DEFAULT_WAIT_EVENT_TIMEOUT)
-    we.add_argument("--interval", type=float, default=mailbox.DEFAULT_WAIT_EVENT_INTERVAL)
-    we.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
-    we.set_defaults(func=commands.cmd_wait_event)
-
     fj = sub.add_parser("fleet-jobs", help="count running fleet-wide jobs (the Stop hook's read)")
     fj.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     fj.set_defaults(func=commands.cmd_fleet_jobs)

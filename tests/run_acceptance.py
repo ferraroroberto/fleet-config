@@ -81,7 +81,7 @@ from acceptance.architecture_guards import (  # noqa: E402
 )
 from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _acceptance_audit_wiring_check,
-    _chief_wait_event_check,
+    _chief_wake_check,
     _gate_evidence_wiring_check,
     _issue_comments_read_check,
     _manual_compact_never_gated_check,
@@ -414,7 +414,7 @@ def _run_repo_guards(tally: _Tally) -> None:
     tally.run_unit(_gate_evidence_wiring_check)
 
     # ---- the chief wakes on worker turn-end events (#999) ----
-    tally.run_unit(_chief_wait_event_check)
+    tally.run_unit(_chief_wake_check)
 
     # ---- an operator-typed /compact is never gated (#1052) ----
     tally.run_unit(_manual_compact_never_gated_check)

@@ -5,8 +5,7 @@ Loaded on demand from the `/chief` skill (`SKILL.md`, same section name).
 When a **chief-dispatched** worker hits a real "blocked, needs input"
 moment (a permission gate or an `AskUserQuestion` — not the routine 💤 idle
 nag, which stays silent), it arrives as a `kind=needs-input` event in your
-mailbox batch (`chief_ops.py inbox`, or the fallback `wait-event` digest),
-never as text typed into your session:
+mailbox batch (`chief_ops.py inbox`), never as text typed into your session:
 
 ```
 - <repo>#<n>: needs input (<agent>) sid=<8> age=<age> kind=needs-input id=<id> dispatch=<id|->

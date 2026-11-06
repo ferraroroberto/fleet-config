@@ -222,17 +222,14 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
             sys.path.remove(str(REPO / "skills" / "_lib"))
         _seed_state(tmp, lane_status="working")
         with mock.patch.dict(os.environ, {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}):
-            with waiter_heartbeat.armed(60, pid=os.getpid()):
-                code, calls = _drive(tmp, CHIEF_PAYLOAD, _launcher())
-                check("waiter_heartbeat: armed() heartbeat satisfies the hook", code == 0 and not _waiter_calls(calls))
-            code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())
-            check("waiter_heartbeat: heartbeat is gone once the waiter exits -> refused", code == 2)
             waiter_id = waiter_heartbeat.start(60)
             code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())
             check("waiter_heartbeat: start() without a pid is live until stop()", code == 0)
             waiter_heartbeat.stop(waiter_id)
             check("waiter_heartbeat: stop() removes the file",
                   not list((tmp / "chief-waiters").glob("*.json")))
+            code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())
+            check("waiter_heartbeat: the heartbeat is gone once stopped -> refused", code == 2)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return check.failures, check.total

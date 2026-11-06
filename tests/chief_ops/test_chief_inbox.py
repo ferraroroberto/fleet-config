@@ -338,8 +338,8 @@ for busy in (True, False):
               f"turn-end with busy={busy}: one event, busy tag matches ({rows})")
         if busy:
             sys.path.insert(0, str(REPO / "skills" / "_lib"))
-            from chief.mailbox import format_inbox_digest  # noqa: E402
-            check("(busy)" in format_inbox_digest(rows), "inbox digest shows (busy)")
+            from chief.mailbox import format_mailbox_batch  # noqa: E402
+            check("(busy)" in format_mailbox_batch([{**rows[0], "id": "x"}], [], 0), "inbox batch shows (busy)")
         rows = record_with(state, busy)
         check(len(rows) == 1, f"second turn-end within 45 s is debounced ({len(rows)} events)")
     finally:

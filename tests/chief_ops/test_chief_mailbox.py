@@ -128,7 +128,7 @@ try:
     (inbox / ".hidden.json").write_text("{}", encoding="utf-8")
     (inbox / "notes.txt").write_text("x", encoding="utf-8")
     (inbox / "dir.json").mkdir()
-    (inbox / ".claim-42-99").mkdir()  # wait-event's private claim folder
+    (inbox / ".claim-42-99").mkdir()  # a claim folder a v1 reader left behind
     (inbox / ".claim-42-99" / "9-held.json").write_text("{}", encoding="utf-8")
     (claimed / f"{T0}-fresh.json").write_text("{}", encoding="utf-8")
     (claimed / f"{T0 - STALE_MS}-stale.json").write_text("{}", encoding="utf-8")
@@ -136,7 +136,7 @@ try:
     (claimed / f".{T0}-x.json.tmp").write_text("{}", encoding="utf-8")
     check(co.count_pending(inbox, T0) == 3,
           "count: one root *.json + one stale claim + one claim with no readable time; "
-          "temps, dot-files, non-.json, directories and wait-event's claim folder never count")
+          "temps, dot-files, non-.json, directories and a leftover claim folder never count")
     code, out = cli(inbox, "inbox", "--count")
     check(code == 0 and out.strip() == "PENDING=3" and (inbox / "123-pub.json").exists(),
           f"inbox --count: prints PENDING=<n> and claims nothing ({out.strip()!r})")
@@ -145,12 +145,12 @@ try:
           and sorted(e["id"] for e in events) == ["no-claim-time", "stale"],
           "inbox: junk is dropped; a stale or unstamped claim is re-offered and read")
     check((inbox / ".event.k3x9.tmp").exists() and (inbox / ".claim-42-99" / "9-held.json").exists(),
-          "inbox: never touches a temp or wait-event's claim folder")
+          "inbox: never touches a temp or a leftover claim folder")
     old = tmp / "d" / "chief-inbox"
     publish(old, f"{T0}-{'0' * 32}.json", ts=iso(T0 - int(co.INBOX_EVENT_TTL_SECONDS * 1000) - 1000))
     check(co.claim_mailbox(old, T0) == ([], [], 1), "inbox: an event past the 24 h TTL is dropped")
 
-    # ---- inbox and wait-event coexist: no event is read twice -------------
+    # ---- two inbox readers race: no event is lost ---------------------------
     inbox = tmp / "e" / "chief-inbox"
     now_ms = co.mailbox._now_ms()
     for n in range(60):
@@ -158,23 +158,20 @@ try:
     seen: "list[list]" = [[], []]
     gate = threading.Barrier(2)
 
-    def v1_reader() -> None:
+    def reader(slot: int) -> None:
         gate.wait()
-        seen[0] = [e["number"] for e in co.claim_batch(inbox)]
+        seen[slot] = [e["number"] for e in co.claim_mailbox(inbox)[0]]
 
-    def v2_reader() -> None:
-        gate.wait()
-        seen[1] = [e["number"] for e in co.claim_mailbox(inbox)[0]]
-
-    threads = [threading.Thread(target=v1_reader), threading.Thread(target=v2_reader)]
+    threads = [threading.Thread(target=reader, args=(slot,)) for slot in (0, 1)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    check(sorted(seen[0] + seen[1]) == list(range(60)),
-          f"coexistence: wait-event and inbox racing split 60 events with none lost or doubled "
+    # At-least-once (docs/chief-mailbox.md): a racing second reader may be handed an
+    # event twice -- the chief dedupes by id -- but must never lose one.
+    check(set(seen[0] + seen[1]) == set(range(60)),
+          f"race: two inbox readers together see all 60 events, none lost "
           f"({len(seen[0])} + {len(seen[1])})")
-    check(co.claim_batch(inbox) == [], "coexistence: wait-event never reads a v2 claim")
 
     # ---- a claimed file that can't be read yet is never dropped (#1465) ----
     # Injected read failures stand in for the Windows race: another claimer's
@@ -209,7 +206,6 @@ try:
 
     def arm(inbox: Path) -> None:
         for n, event_id in ids.items():
-            # Stamped by the real clock: wait-event filters its 24 h TTL by it.
             publish(inbox, f"{T0 + n}-{event_id}.json", number=n, ts=iso(co.mailbox._now_ms()))
         plan.clear()
         plan.update({ids[0]: ["lock", "lock"], ids[1]: ["move"],
@@ -218,24 +214,6 @@ try:
     co.mailbox.CLAIM_READ_BACKOFF_SECONDS = 0.0
     Path.read_text = injected_read
     try:
-        inbox = tmp / "h" / "chief-inbox"
-        arm(inbox)
-        batch = [e["number"] for e in co.claim_batch(inbox)]
-        check(batch == [0, 3], f"read retry: wait-event delivers an event locked twice, then readable (got {batch})")
-        check((elsewhere / f"{T0 + 1}-{ids[1]}.json").exists(),
-              "read retry: wait-event never deletes a claim that moved to a concurrent claimer")
-        check(sorted(p.name for p in inbox.iterdir()) == [f"{T0 + 2}-{ids[2]}.json"],
-              "read retry: wait-event puts a still-locked claim back in the inbox, and leaves no claim folder")
-        Path.read_text = real_read
-        again = [e["number"] for e in co.claim_batch(inbox)]
-        check(again == [2], f"read retry: the put-back event is delivered by the next batch (got {again})")
-        check(any("retrying" in line for line in breadcrumbs)
-              and any("concurrent claimer" in line for line in breadcrumbs)
-              and any("put back in the inbox" in line for line in breadcrumbs),
-              f"read retry: wait-event logs the retry, the skip and the put-back ({breadcrumbs})")
-
-        breadcrumbs.clear()
-        Path.read_text = injected_read
         inbox = tmp / "i" / "chief-inbox"
         arm(inbox)
         events, _, dropped = co.claim_mailbox(inbox, T0)
@@ -268,29 +246,6 @@ try:
     code, out = cli(blocker, "inbox", "--count")
     check(code == 1 and out.startswith("PENDING=unknown"),
           f"inbox --count: an unlistable inbox is unknown, never 0 ({out.strip()!r})")
-
-    # ---- wait-event's digest: v2 adds kind + excerpt, nothing else moves ---
-    now_dt = datetime.fromtimestamp(T0 / 1000, tz=timezone.utc)
-    base = {"launcher_sid": "a1b2c3d4e5f6", "repo": "fleet-config", "number": 1455,
-            "agent": "codex", "ts": iso(T0 - 120_000)}
-    digest = co.format_inbox_digest([
-        {**base, "v": 2, "event": "Stop", "kind": "turn-end", "excerpt": "line one\nline two",
-         "excerpt_source": "payload"},
-        {**base, "v": 2, "event": "Stop", "kind": "needs-input", "excerpt": None,
-         "excerpt_unavailable": "no last-assistant field and no transcript_path"},
-        {**base, "event": "SessionEnd"},
-    ], now=now_dt)
-    check(digest.splitlines() == [
-        "WAIT_EVENT=events n=3",
-        "- fleet-config#1455: turn ended (codex) sid=a1b2c3d4 age=2m kind=turn-end",
-        "  excerpt (payload, 17 chars):",
-        "  | line one",
-        "  | line two",
-        "- fleet-config#1455: needs input (codex) sid=a1b2c3d4 age=2m kind=needs-input",
-        "  excerpt: unavailable (no last-assistant field and no transcript_path)",
-        "- fleet-config#1455: session ended (codex) sid=a1b2c3d4 age=2m",
-        "Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.",
-    ], f"wait-event digest: v2 appends kind and indented excerpt lines; a v1 line is unchanged ({digest!r})")
 
     # ---- dispatch records a dispatch_id ------------------------------------
     registry = tmp / "chief-managed.json"

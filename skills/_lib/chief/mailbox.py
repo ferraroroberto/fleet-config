@@ -1,6 +1,5 @@
-"""The chief mailbox readers (contract: docs/chief-mailbox.md): `wait-event`'s
-one-shot claim, the v2 `inbox`/`ack` pair, and the doorbell-or-waiter decision
-that says which of them wakes the chief.
+"""The chief mailbox readers (contract: docs/chief-mailbox.md): the `inbox`/`ack`
+pair and the doorbell-or-waiter decision that says what wakes the chief.
 """
 
 from __future__ import annotations
@@ -28,16 +27,10 @@ CHIEF_INBOX_DIRNAME = "chief-inbox"
 # Same horizon as the chief-managed registry's TTL: an event older than the
 # dispatch it belongs to describes nothing the chief can still act on.
 INBOX_EVENT_TTL_SECONDS = 24 * 3600
-DEFAULT_WAIT_EVENT_TIMEOUT = 1800.0
-DEFAULT_WAIT_EVENT_INTERVAL = 5.0
-# After the first event lands, wait this long so lanes finishing together
-# arrive as one wake rather than several.
-WAIT_EVENT_SETTLE_SECONDS = 3.0
 
 
-# Mailbox v2 (contract: docs/chief-mailbox.md). A v2 claim
-# lives under `.claimed/`, where `wait-event` never looks, so both readers
-# coexist until the doorbell switch-over.
+# Mailbox claims (contract: docs/chief-mailbox.md) live under `.claimed/`
+# until `ack` retires them.
 CLAIMED_DIRNAME = ".claimed"
 # A claim unacked this long is re-offered: the reader that took it is assumed
 # dead. Longer than any chief turn that handles a batch, so a live chief is
@@ -163,9 +156,8 @@ def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
 
     Stale claims are re-offered first, then each root event file is renamed to
     `.claimed/<now_ms>-<id>.json` before it is read -- the rename is the
-    claim, so a concurrent reader (this one or `wait-event`) that loses the
-    race skips the file. Nothing is deleted here except junk and events past
-    the TTL; a handled event is retired by `ack_events`. Each returned event
+    claim, so a concurrent reader that loses the race skips the file. Nothing is
+    deleted here except junk and events past the TTL; a handled event is retired by `ack_events`. Each returned event
     carries `id` from its file name, the handle `ack` takes.
     """
     moment = _now_ms() if now_ms is None else now_ms
@@ -224,62 +216,6 @@ def _event_age_seconds(event: Dict[str, Any], now: datetime) -> Optional[float]:
     except ValueError:
         return None
     return (now - stamp).total_seconds()
-
-
-def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Claim every published event in ``inbox`` exactly once, oldest first.
-
-    Each ``*.json`` is renamed into a private claim folder before it is read:
-    a concurrent claimer loses the rename race and skips the file, and an
-    event published during the claim is simply not in this listing -- it lands
-    in the next batch. Events past the TTL, or unparseable, are dropped. A
-    claimed file that cannot be read is never deleted (`_read_claimed`): one
-    that moved on belongs to the other claimer, and one still locked is put
-    back in the inbox for the next batch.
-    """
-    if not inbox.is_dir():
-        return []
-    moment = now or datetime.now(timezone.utc)
-    claim = inbox / f".claim-{os.getpid()}-{time.time_ns()}"
-    events: List[Dict[str, Any]] = []
-    try:
-        for path in sorted(inbox.glob("*.json")):
-            claim.mkdir(exist_ok=True)
-            held = claim / path.name
-            try:
-                # must-use-exempt: claims an event by renaming it; nothing is written
-                os.replace(path, held)
-            except OSError:
-                continue  # another claimer took it first
-            outcome, event = _read_claimed(held)
-            if outcome == "gone":
-                continue
-            if outcome == "locked":
-                try:
-                    # must-use-exempt: puts a locked event back by renaming it; nothing is written
-                    os.replace(held, path)
-                    LOGGER.info("ℹ️ claim: %s put back in the inbox for the next batch", path.name)
-                except OSError as exc:
-                    LOGGER.warning("⚠️ claim: %s left unread in %s (%s: %s)",
-                                   path.name, claim, type(exc).__name__, exc)
-                continue
-            try:
-                held.unlink()
-            except OSError:
-                pass
-            if not isinstance(event, dict):
-                LOGGER.info("ℹ️ claim: dropped %s, not a JSON event", path.name)
-                continue
-            age = _event_age_seconds(event, moment)
-            if age is not None and age > INBOX_EVENT_TTL_SECONDS:
-                continue
-            events.append(event)
-    finally:
-        try:
-            claim.rmdir()
-        except OSError:
-            pass
-    return events
 
 
 def _job_failed_lines(event: Dict[str, Any]) -> List[str]:
@@ -354,22 +290,6 @@ def _excerpt_lines(event: Dict[str, Any]) -> List[str]:
         [f"  | {line}" for line in text.splitlines()]
 
 
-def format_inbox_digest(events: List[Dict[str, Any]], now: Optional[datetime] = None) -> str:
-    moment = now or datetime.now(timezone.utc)
-    lines = [f"WAIT_EVENT=events n={len(events)}"]
-    for event in events:
-        kind = f" kind={event['kind']}" if event.get("kind") else ""
-        own = _kind_lines(event)
-        if own is not None:
-            head, *detail = own
-            lines.extend([head + kind, *detail])
-        else:
-            lines.append(_event_line(event, moment) + kind)
-        lines.extend(_excerpt_lines(event))
-    lines.append("Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.")
-    return "\n".join(lines)
-
-
 def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dropped: int,
                          now: Optional[datetime] = None, stale_after: float = CLAIM_STALE_SECONDS) -> str:
     """The `inbox` command's batch: every event with its `id`, then the `ack` line."""
@@ -394,24 +314,6 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
     return "\n".join(lines)
 
 
-def wait_for_events(
-    inbox: Path, timeout: float, interval: float, *,
-    settle: float = WAIT_EVENT_SETTLE_SECONDS, sleep=time.sleep, clock=time.monotonic,
-) -> List[Dict[str, Any]]:
-    """Block until the inbox yields events (plus a settle window) or ``timeout``."""
-    deadline = clock() + timeout
-    while True:
-        events = claim_batch(inbox)
-        if events:
-            sleep(settle)
-            return events + claim_batch(inbox)
-        remaining = deadline - clock()
-        if remaining <= 0:
-            return []
-        sleep(min(interval, remaining))
-
-
-
 # ---- which reader wakes the chief ---------------------------------------------
 
 def resolve_wake_mode(
@@ -419,8 +321,8 @@ def resolve_wake_mode(
 ) -> Tuple[str, bool]:
     """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch (fleet-config#1457).
 
-    Only a confirmed `true` lets the chief drop its `wait-event` waiter: an
-    unread or non-boolean setting is `unknown` and still says arm the waiter,
+    Only a confirmed `true` lets the chief arm no waiter: an
+    unread or non-boolean setting is `unknown` and still says arm one,
     so a chief never ends a turn with no wake path at all.
     """
     if config is None:

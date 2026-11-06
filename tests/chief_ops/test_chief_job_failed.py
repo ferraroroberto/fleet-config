@@ -1,6 +1,6 @@
 """A failed app-launcher Job goes through the chief mailbox as `kind=job-failed` (fleet-config#1539).
 
-Drives the real `chief_ops.py` readers (`inbox`, `wait-event`) against a temp
+Drives the real `chief_ops.py` reader (`inbox`) against a temp
 inbox and pins docs/chief-mailbox.md's "Job events" rules: the head line and
 detail line a Job event renders as, a null `exit_code`/`repo` reading `-`,
 `not-confirmed` never reading as a plain failure, any trigger rendered as-is,
@@ -100,21 +100,6 @@ try:
     check(code == 0 and f"ACKED={len(ids)}" in out, f"ack: a job-failed id retires like any other (exit {code}, {out.strip()!r})")
     check(co.count_pending(inbox) == 0, "count_pending: nothing pending once everything is acked")
 
-    # ---- wait-event: the same events through the v1 reader ----
-    inbox2 = tmp / "inbox2"
-    publish(inbox2, "1700000000000-0a1b2c3d.json", v1)
-    publish(inbox2, f"1700000000003-{JOB_ID}.json", job_event(JOB_ID))
-    code, out = run_cli(inbox2, "wait-event", "--timeout", "10", "--interval", "0.1")
-    lines = out.rstrip("\n").splitlines()
-    check(code == 0 and lines[0] == "WAIT_EVENT=events n=2", f"wait-event: header counts both events (got {lines[:1]})")
-    check(lines[1] == "- fleet-config#999: turn ended (claude) sid=a1b2c3d4 age=2m",
-          f"wait-event: the v1 line is byte-for-byte unchanged (got {lines[1]!r})")
-    check(f"{HEAD} kind=job-failed" in lines and DETAIL in lines,
-          "wait-event: a job-failed event renders the head line tagged with its kind, and the detail line")
-    check("  | ValueError: stale" in lines, "wait-event: the excerpt lines follow")
-    check(lines[-1] == "Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.",
-          "wait-event: the closing Next: line is unchanged")
-    check(not list(inbox2.glob("*.json")), "wait-event: the job event was claimed exactly once")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

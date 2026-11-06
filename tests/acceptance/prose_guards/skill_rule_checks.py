@@ -230,13 +230,13 @@ def _gate_evidence_wiring_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _chief_wait_event_check() -> Tuple[int, int]:
+def _chief_wake_check() -> Tuple[int, int]:
     """The chief wakes on worker events, never a timer (fleet-config#999), and
     on the launcher doorbell once its switch is on (fleet-config#1457).
 
     Pins the doorbell -> `inbox` -> `ack` loop, the `wake` switch read that
-    decides whether a `wait-event` waiter is armed, the waiter kept as the
-    fallback until #1458, and the doorbell line matching the mailbox contract.
+    decides whether a waiter is armed, the hand-built waiter (it polls
+    `inbox --count`) as the fallback, and the doorbell line matching the mailbox contract.
     Keeps the unconditional "re-arm after every wake" rule and the old
     `sleep 600` poll from creeping back. Returns (failures, total)."""
     check = _Checker()
@@ -252,12 +252,12 @@ def _chief_wait_event_check() -> Tuple[int, int]:
           "never" in waking and "authority" in waking)
     check("chief wake: `chief_ops.py wake` decides whether a waiter is armed",
           "chief_ops.py wake" in waking and "WAKE=doorbell" in waking and "WAKE=waiter" in waking)
-    check("chief wake: the wait-event reference waiter stays as the fallback (#1458 retires it)",
-          '"$OPS" wait-event' in waking)
+    check("chief wake: the fallback waiter polls `inbox --count` and holds the heartbeat",
+          '"$OPS" inbox --count' in waking and "waiter_heartbeat.py" in waking)
     check("chief wake: no unconditional re-arm-after-every-wake rule", "Re-arm it after every wake" not in skill)
     compact = skill.partition("## Managing your own context")[2].partition("\n## ")[0]
     check("chief wake: self-compact needs an armed waiter only in waiter mode",
-          "Make sure the `wait-event` waiter is armed." not in compact and "WAKE=waiter" in compact)
+          "Make sure the waiter is armed." not in compact and "WAKE=waiter" in compact)
     check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
     # The section body lives in its on-demand doc; SKILL.md keeps the pointer.
     incoming = (skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]

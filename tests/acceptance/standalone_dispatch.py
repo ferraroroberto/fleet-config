@@ -443,29 +443,24 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a chief-managed worker's needs-input through the mailbox -- Claude's "
      "permission_prompt and Codex's PermissionRequest each write one "
      "needs-input event and type nothing into the chief; no live chief or a "
-     "failed write pings Telegram as before, unretried; the real wait-event "
-     "digest line the chief sees (fleet-config#1456)"),
+     "failed write pings Telegram as before, unretried; the real inbox "
+     "batch line the chief sees (fleet-config#1456)"),
     ("chief_job_failed", "chief_ops/test_chief_job_failed.py",
-     "a failed app-launcher Job through the mailbox -- the real inbox and "
-     "wait-event render a job-failed event (head line, detail line, excerpt, "
+     "a failed app-launcher Job through the mailbox -- the real inbox "
+     "renders a job-failed event (head line, detail line, excerpt, "
      "null exit_code/repo, not-confirmed, any trigger as-is), count and ack it "
      "like every kind, and leave v1, v2 and needs-input lines unchanged "
      "(fleet-config#1539)"),
     ("chief_cap_raised", "chief_ops/test_chief_cap_raised.py",
-     "a raised Settings worker cap through the mailbox -- the real inbox and "
-     "wait-event render a cap-raised event (old/new, a non-integer bound as -), "
+     "a raised Settings worker cap through the mailbox -- the real inbox "
+     "renders a cap-raised event (old/new, a non-integer bound as -), "
      "count and ack it like every kind, and leave worker lines unchanged "
      "(fleet-config#1839)"),
     ("chief_mailbox", "chief_ops/test_chief_mailbox.py",
      "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
      "an unacked claim after the stale window (injected clock), the "
-     "file-name pending count docs/chief-mailbox.md defines, coexistence "
-     "with wait-event, and the dispatch_id row field (fleet-config#1455)"),
-    ("chief_wait_event_compat", "chief_ops/test_chief_wait_event_compat.py",
-     "wait-event's contract across mailbox v2 -- exact v1 output lines, "
-     "claim exactly once (also under two concurrent claimers), old-format "
-     "events still read, .claimed/ and temps untouched; passes unchanged on "
-     "the pre-v2 tree (fleet-config#1455)"),
+     "file-name pending count docs/chief-mailbox.md defines, two racing "
+     "readers, and the dispatch_id row field (fleet-config#1455)"),
     ("chief_ops_board", "chief_ops/test_board_and_delivery.py",
      "the fleet chief's board reading -- repo occupancy, the alive-worker "
      "count, find_chief -- and `steer_delivery.py`, the say --verify "
@@ -478,7 +473,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "chief verify against throwaway git repos, chief-managed marking, the "
      "fail-closed worker cap and say --verify's four distinct verdicts"),
     ("chief_ops_sessions", "chief_ops/test_session_commands.py",
-     "say/stop prefix resolution, the wait-event inbox, the wake doorbell "
+     "say/stop prefix resolution, the wake doorbell "
      "and context + self-compact work with the launcher stubbed"),
     ("chief_drain", "chief_ops/test_drain.py",
      "chief_ops drain -- the auto_drain switch (off, missing and unreadable "
