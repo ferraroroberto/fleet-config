@@ -224,6 +224,13 @@ swap or as both glyphs shipped and CSS-keyed on `[data-theme]` — both
 canonical, as are `dataset.theme` and `setAttribute('data-theme', …)` for the
 stamp. Ship **dual `theme-color` metas**, media-gated on `prefers-color-scheme`:
 light = `canvas` `#ffffff`, dark = the dark theme's `canvas` `#0d1117`.
+The page's **`color-scheme` follows the chosen theme**, not the OS: `:root` is
+`light dark` only as the fallback before `data-theme` is stamped,
+`:root[data-theme="light"]` is `light` and `:root[data-theme="dark"]` is
+`dark`. Native UI (a `<select>` option list, date and time pickers,
+scrollbars) is drawn from `color-scheme`. Key the rules to `:root[data-theme]`
+(specificity 0,2,0) so they beat an app's bare `:root` rule whatever the load
+order; the vendored `base/base.css` ships exactly these three rules.
 Reference impls: home-automation `app/webapp/static/index.html` + `main.js`
 (JS swap); app-launcher `app/webapp/static/index.html` + `main.js` (CSS swap).
 

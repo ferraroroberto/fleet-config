@@ -88,6 +88,8 @@ The row menu, written down after it was built (the contract for the vendored `ro
 
 **Round 16 addendum — a count chip is a disclosure, not a verb (decided 2026-10-14; rubric 1.34.0).** The first sweep with `COMP-14` found a task app's Archive table row ending in a painted "+3 more" pill, which expands the row's file chips in place. The owner ruled it a disclosure: it reveals more of the same row and does not act on the item, so it is not a row verb and the app keeps its pill. The rule skips a button whose whole visible label is a plus and a number, optionally followed by "more"; the test is the label alone, so a painted "Archive" or "+ Add" beside or instead of it still fails and the exemption cannot launder a real verb.
 
+**`color-scheme` follows the chosen theme (decided 2026-11-06).** `color-scheme: light dark` follows the OS, not the theme the user picked, so a dark app theme on a light OS drew native popups (a `<select>` list, pickers) light on iPhone WebKit. The spec's "Theme switching" section now states the rule, and the vendored `base/base.css` enforces it for web apps; `design.web.md` already narrows `color-scheme` by `data-theme` in its theme component.
+
 ## The two borrowed vocabularies — why shadcn, why Lucide
 
 `design.md`'s **Base UI** and **Icons** sections state the rule; the reasoning behind both lives here (they are one decision, not two: the icon set was chosen *because* it is the component reference's native set).
