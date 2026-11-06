@@ -66,6 +66,41 @@ import walk  # noqa: E402
 check(walk.classify_error(TimeoutError("Timeout 15000ms exceeded")) == "TIMEOUT", "timeout classified")
 check(walk.classify_error(RuntimeError("net::ERR_CONNECTION_REFUSED at https://127.0.0.1:8445")) == "NOT_LISTENING", "refused classified")
 check(walk.classify_error(RuntimeError("Element is not visible")) == "RENDER_FAILED", "other -> RENDER_FAILED")
+check(walk.classify_error(walk.TouchLost("fine")) == "TOUCH_LOST", "a touch leg that stays fine -> TOUCH_LOST")
+
+# ---- walk.read_metrics: a touch leg is measured only while it reads (pointer: coarse) (#1895) ----
+
+
+class _PointerPage:
+    """`pointer_coarse` is what the page reads; `evaluate` of anything else is the measurement."""
+
+    def __init__(self, coarse: bool) -> None:
+        self.coarse, self.measured = coarse, 0
+
+    def evaluate(self, js, *_args):
+        if js == walk._POINTER_COARSE_JS:
+            return self.coarse
+        self.measured += 1
+        return {"measured": True}
+
+
+def _read(coarse: bool, restores: bool, touch: bool = True):
+    page, calls = _PointerPage(coarse), []
+
+    def retouch():
+        calls.append(1)
+        page.coarse = restores
+
+    try:
+        return walk.read_metrics(page, "MEASURE", {}, retouch if touch else None), page.measured, len(calls)
+    except walk.TouchLost:
+        return "TouchLost", page.measured, len(calls)
+
+
+check(_read(True, True) == ({"measured": True}, 1, 0), "read_metrics: a coarse page is measured without a re-apply")
+check(_read(False, True) == ({"measured": True}, 1, 1), "read_metrics: a fine page gets one re-apply, then is measured")
+check(_read(False, False) == ("TouchLost", 0, 1), "read_metrics: a page still fine after the re-apply is never measured")
+check(_read(False, False, touch=False) == ({"measured": True}, 1, 0), "read_metrics: no restorer (WebKit, desktop) means no pointer check")
 
 # ---- walk: a full-page capture over the engine's size limit keeps the screen's metrics (#1085) ----
 
@@ -389,6 +424,8 @@ class _TracePage:
             return self.cfg.get("opened", 0)
         if name == "_PAGE_SIZE_JS":
             return {"dpr": 3, "width": 390, "height": 40000}
+        if name == "_POINTER_COARSE_JS":
+            return self.cfg.get("coarse", True)
         if name == "measure.GLANCE_READ_JS":
             return self.cfg.get("glance")
         if name == "measure.RENDERED_THEME_JS":
@@ -475,6 +512,9 @@ _TRACE_SCENARIOS = {
                                  "extra_steps": [{"id": "menu", "tab": "missing", "open": "#det"},
                                                  {"id": "pick", "tab": "board", "clicks": ["#a", ""]},
                                                  "not-a-step", {"click": "#no-id"}]}},
+    # A touch leg that reads (pointer: fine) and stays fine after the re-apply is never measured (#1895).
+    "android-touch-lost": {"device": "android", "theme": "light", "opened": 1, "coarse": False,
+                           "tabs": [{"index": 0, "id": "board"}], "dialogs": ["edit"]},
     # No tablist and no tabs: the root screen; full captures that fail even clipped; an unreadable theme.
     "iphone-root": {"device": "iphone", "theme": "dark", "has_tablist": False, "opened": 1, "full": "raise",
                     "theme_read": "raise"},

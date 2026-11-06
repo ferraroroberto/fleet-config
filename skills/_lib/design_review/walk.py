@@ -45,7 +45,7 @@ Output: `<out>/screens.json` — a list of screen records
 screenshot_full, note, metrics, theme_applied, theme_observed}` — plus `<out>/walk.json` with engine versions and
 timings. A screen that fails to open is recorded with `status: "error"` and a
 distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
-`BROWSER_FAILED`, `NO_GO`); its rules evaluate to `unmeasured`, never pass.
+`BROWSER_FAILED`, `NO_GO`, `TOUCH_LOST`); its rules evaluate to `unmeasured`, never pass.
 A step whose target never attaches (a menu on an empty list) is `status:
 "absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
 this app state, so it leaves unrelated rules alone (#995). The Settings step
@@ -204,6 +204,10 @@ def load_geometry_js(scaffold_root: Optional[str]) -> Optional[str]:
     return str(js) if js else None
 
 
+class TouchLost(Exception):
+    """A touch leg's page reads `(pointer: fine)` and re-applying the emulation did not bring `coarse` back."""
+
+
 def classify_error(exc: BaseException) -> str:
     """Map a Playwright failure to one of the distinct walk reasons."""
     text = f"{type(exc).__name__}: {exc}"
@@ -212,6 +216,8 @@ def classify_error(exc: BaseException) -> str:
         return "TIMEOUT"
     if any(k in lowered for k in ("err_connection_refused", "could not connect", "connection refused", "econnrefused")):
         return "NOT_LISTENING"
+    if isinstance(exc, TouchLost):
+        return "TOUCH_LOST"
     return "RENDER_FAILED"
 
 
@@ -307,6 +313,25 @@ def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[
         return None
     cdp = ctx.new_cdp_session(page)
     return lambda: cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+
+
+_POINTER_COARSE_JS = "() => matchMedia('(pointer: coarse)').matches"
+
+
+def read_metrics(page, script: str, params: dict, retouch: Optional[Callable[[], None]]) -> object:
+    """Run the measurement script, on a touch page only while it reads `(pointer: coarse)`.
+
+    A Chromium touch leg that reads `fine` has lost its emulation (a full-page capture, or any resize, drops
+    it), and the vendored nav's coarse-pointer rules would not apply to what is measured. One re-apply is tried;
+    a page still fine raises `TouchLost`, so the screen is `unmeasured` and never scored on the desktop layout.
+    `retouch` is None for WebKit and for a context without touch: nothing to hold the page to.
+    """
+    if retouch is not None and not page.evaluate(_POINTER_COARSE_JS):
+        log.warning("pointer read fine on a touch leg; re-applying touch emulation before measuring")
+        retouch()
+        if not page.evaluate(_POINTER_COARSE_JS):
+            raise TouchLost("(pointer: coarse) is false after re-applying touch emulation")
+    return page.evaluate(script, params)
 
 
 def _open_scope_details(page, shots: Path, sid: str,
@@ -429,7 +454,7 @@ class _Leg:
         """
         shot = _shot(self.page, self.shots, sid)
         full, note = _open_scope_details(self.page, self.shots, sid, self.retouch)
-        metrics = self.page.evaluate(self.script, self.params)
+        metrics = read_metrics(self.page, self.script, self.params, self.retouch)
         observed = self.theme_fields()
         if before_record:
             before_record()
@@ -483,7 +508,7 @@ def _walk_tabs(leg: _Leg) -> None:
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
             full, note = _full_shot(page, leg.shots, sid, leg.retouch)
-            metrics = page.evaluate(leg.script, leg.params)
+            metrics = read_metrics(page, leg.script, leg.params, leg.retouch)
             if isinstance(metrics, dict):
                 metrics["glance"] = glance
             leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="tab",
@@ -507,7 +532,7 @@ def _walk_dialogs(leg: _Leg) -> None:
             page.wait_for_timeout(DIALOG_SETTLE_MS)
             leg.capture(sid, view, "dialog", lambda: page.evaluate("id => document.getElementById(id).close()", did))
         except Exception as exc:  # noqa: BLE001
-            leg.failed(view, "dialog", "DIALOG_FAILED", exc)
+            leg.failed(view, "dialog", "TOUCH_LOST" if isinstance(exc, TouchLost) else "DIALOG_FAILED", exc)
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
 

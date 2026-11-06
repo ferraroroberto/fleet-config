@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import sys
 
-from _suite import REPO, STATE, check, interp, scaffold
+from _suite import REPO, STATE, _walk_run, check, interp, scaffold
 from design_review import plan
 from design_review_support import FIX, RUBRIC, port_open as _port_open
 
@@ -41,6 +41,16 @@ for _sid, _s in sorted(pgs.items()):
 cal = (pgs.get("android-light-calendar", {}).get("metrics") or {}).get("layout", {})
 check(cal.get("rows_over_limit") == [{"sel": "li.over", "controls": 5}],
       f"LAYOUT-03: the month grid's week rows are skipped; a list row with too many controls still fails (#1017) -- {cal.get('rows_over_limit')}")
+
+# a full-page capture followed by a measure: the measure holds the page to (pointer: coarse) (#1895)
+proc_td = _walk_run([str(interp), str(FIX / "touch_drop_driver.py"), (FIX / "pointer_grid.html").as_uri()],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+try:
+    _td = json.loads(proc_td.stdout)
+except ValueError:
+    _td = {}
+check(_td == {"dropped": False, "restored": True, "unrestorable": "TOUCH_LOST"},
+      f"a Chromium full-page capture drops (pointer: coarse); the next measure re-applies it, or the screen is TOUCH_LOST, never scored (#1895) -- {_td} {proc_td.stderr[-300:]}")
 
 # open disclosures in a row: not the row's controls (LAYOUT-03), and a popup over its row takes the tap (TOUCH-02) (#1029)
 disc_dir = STATE / "fixture-disclosure"
