@@ -11,9 +11,15 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/web_review/test_
 from __future__ import annotations
 
 import contextlib
+import http.server
 import io
+import shutil
+import ssl
+import subprocess
 import sys
 import tempfile
+import threading
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "skills" / "_lib"))
@@ -163,6 +169,73 @@ try:
 finally:
     import shutil
     shutil.rmtree(_repo, ignore_errors=True)
+
+
+# ---- app_reachable: a loopback self-signed HTTPS app is up (fleet-config#1887) ----
+#
+# Fleet apps serve HTTPS on loopback with a self-signed cert. "Something
+# answers = up" must hold there; a remote host keeps full verification.
+
+
+def _openssl() -> str:
+    found = shutil.which("openssl")
+    if found:
+        return found
+    for cand in ("C:/Program Files/Git/usr/bin/openssl.exe", "C:/Program Files/Git/mingw64/bin/openssl.exe"):
+        if Path(cand).is_file():
+            return cand
+    raise SystemExit("❌ browser_verify: openssl not found -- cannot build the self-signed fixture (NOT CONFIRMED)")
+
+
+class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+_tls_dir = Path(tempfile.mkdtemp(prefix="bv-tls-"))
+_httpd = None
+try:
+    _cert, _key = _tls_dir / "cert.pem", _tls_dir / "key.pem"
+    subprocess.run(
+        [_openssl(), "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+         "-subj", "/CN=127.0.0.1", "-keyout", str(_key), "-out", str(_cert)],
+        check=True, capture_output=True, timeout=60,
+    )
+    _httpd = http.server.HTTPServer(("127.0.0.1", 0), _QuietHandler)
+    _sctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    _sctx.load_cert_chain(str(_cert), str(_key))
+    _httpd.socket = _sctx.wrap_socket(_httpd.socket, server_side=True)
+    threading.Thread(target=_httpd.serve_forever, daemon=True).start()
+    _port = _httpd.server_address[1]
+    check(bv.app_reachable(f"https://127.0.0.1:{_port}/"),
+          "loopback self-signed HTTPS app counts as reachable")
+    check(bv.app_reachable(f"https://localhost:{_port}/"),
+          "localhost self-signed HTTPS app counts as reachable")
+finally:
+    if _httpd is not None:
+        _httpd.shutdown()
+        _httpd.server_close()
+    shutil.rmtree(_tls_dir, ignore_errors=True)
+
+# a non-loopback host gets the default (verifying) context: a bad cert stays unreachable
+_seen: list = []
+_real_urlopen = bv.urllib.request.urlopen
+
+
+def _fake_urlopen(req, timeout=None, context=None):
+    _seen.append(context)
+    raise urllib.error.URLError(ssl.SSLCertVerificationError("self-signed certificate"))
+
+
+bv.urllib.request.urlopen = _fake_urlopen
+try:
+    check(bv.app_reachable("https://example.invalid:8445/") is False,
+          "non-loopback host with a bad certificate is unreachable")
+    check(_seen and _seen[-1] is None, "non-loopback host keeps default certificate verification")
+    check(bv.app_reachable("https://192.168.1.20:8445/") is False and _seen[-1] is None,
+          "LAN address is not treated as loopback")
+finally:
+    bv.urllib.request.urlopen = _real_urlopen
 
 
 # ---- scratch dir is outside any repo (never committable) ----
