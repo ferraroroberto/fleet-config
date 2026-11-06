@@ -71,44 +71,33 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 🧰 | `fleet-config-lite` | Lite fleet-config: Copilot CLI hooks, issue-workflow skills and installer. | — |
 | 🧠 | `local-llm-hub-lite` | Single-machine lite fork of local-llm-hub: local models and whisper on :8000. | :8000 |
 
-### Working apps: web (`layer = "working-web"`, 16 repos)
+### Working apps: web (`layer = "working-web"`, 13 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
 | 🛒 | `grocery-shopping-automation` | Inventory + shopping PWA, voice audit, HA voice commands + product search. | :8502 |
 | 💬 | `whatsapp-radar` | Cut attention load from busy chats. | :8455 |
-| 🎲 | `facilitation-shuffle` | 1-2-4-all breakout shuffler for Zoom. | — |
 | 🎤 | `facilitation-suite` | **facilitation-suite** — live workshop app: stage, cockpit, Zoom chat, live copilot. | :8449 |
 | 💶 | `family-accounting` | Shared household-expense tracker. | — |
-| 🧮 | `mathgamesforkids` | Educational games & HTML experiments. | — |
-| 🌐 | `website` | Multi-workshop landing site. | — |
 | 🎓 | `vibe-coding-workshop` | Python workshop + exercises. | — |
 | 🌱 | `life-os` | Personal productivity skills plus a shared document-archive engine and Outlook email tooling | — |
 | 🌡️ | `home-automation` | Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant. | :8447 |
 | 📊 | `github-copilot-usage` | Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs. | :8377 |
-| 🗂️ | `folder-explorer` | Disk-space explorer: folder tree, largest files and file types, cloud files by size or on disk. | :8453 |
+| 🗂️ | `folder-explorer` | Disk-space explorer and search: folder tree, largest files, file types, folder and mail search. | :8453 |
 | 🅿️ | `parking-manager` | Household parking: which days to book, time off and the Thursday release; books them itself. | :8450 |
 | 🪞 | `robertoferraro` | robertoferraro.net off Squarespace: same URLs, own design system and form service. | — |
 | ✅ | `task-os` | One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking. | :8448 |
 | 📈 | `website-analytics` | Local-first GA4, Search Console, crawl, and weekly website-insight dashboard. | — |
 
-### Working apps: pipelines (`layer = "working-pipe"`, 16 repos)
+### Working apps: pipelines (`layer = "working-pipe"`, 8 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
 | 💳 | `accounting-quarterly` | Stripe payments → quarterly reports. | — |
-| 📊 | `social-media-analytics` | Predict content performance. | — |
-| 💡 | `inspiration-system` | Idea → 10 illustration ideas. | — |
 | 📝 | `content-management` | Content surfaces: reporting, planning, newsletter, podcast and video. | — |
-| 📧 | `email-archiver` | Outlook → OneDrive archive with a SQLite index and headless batch CLI. | — |
-| 📄 | `pdf-to-markdown` | PDF → clean Markdown for LLMs. | — |
-| 🧾 | `mass-html-to-markdown` | HTML → SQLite → Markdown. | — |
-| 🎨 | `illustration-color-edit` | SVG pipelines for book art. | — |
-| ☀️ | `pvgis` | Solar-PV output estimate. | — |
+| 📧 | `email-archiver` | Retired: replaced by folder-explorer, kept one release as a fallback. | — |
 | 🗂️ | `copilot-studio-transcripts` | Copilot Studio workbench. | — |
-| 📚 | `closed-company-accounting` | Accounting for a closed company. | — |
 | 🤖 | `automation` | Python automation grab-bag. | — |
-| 📁 | `mcp-personal-onedrive` | Read-only MCP to browse OneDrive. | — |
 | ⛏️ | `minecraft-bedrock-bot` | Headless Bedrock Realm bot driven by an LLM decision loop on the hub. | — |
 | ☁️ | `oracle-to-gcp` | Oracle SQL → BigQuery translator prototype with mock validation. | — |
 | 📈 | `algo-trading` | Rule-based FX trading on major pairs: backtest → paper → live. | — |

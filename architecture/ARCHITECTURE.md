@@ -36,7 +36,7 @@ The system is a **stack of layers**; each layer builds on the ones beneath it.
 
 **Two classes of project:**
 - **Shared (used more than once)** → always carries a real description; these are the load-bearing pieces (the hub, the launcher, whisper, scaffolding). *These are the ones to get right.*
-- **Leaf (self-explanatory)** → name + a short line is enough (e.g. `vibe-coding-workshop`, `grocery-shopping-automation`, `pvgis`).
+- **Leaf (self-explanatory)** → name + a short line is enough (e.g. `vibe-coding-workshop`, `grocery-shopping-automation`).
 
 ---
 
@@ -114,12 +114,9 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🛒 **grocery-shopping-automation** | Household grocery inventory + shopping-list PWA, with a **voice-narrated audit mode**. | `:8502` FastAPI+PWA | hub + whisper (L2) |
 | 💬 **whatsapp-radar** | Local-first spike to cut attention load from high-volume WhatsApp chats (monitor → process only new → deliver). | local app | hub (L2) |
 | 🌡️ **home-automation** | Home automation suite (ac/power). | `:8447` PWA | — (MELCloud Home) |
-| 🎲 **facilitation-shuffle** | Randomises workshop participants into 1-2-4-all breakout groups for Zoom. | Streamlit | — (Zoom) |
 | 🎤 **facilitation-suite** | One local app for live online workshops: a stage OBS captures, a presenter cockpit, Zoom-chat-driven activities read locally (no bot), breakout groups, per-item timers and session results. | `:8449` FastAPI+PWA | — (Zoom, OBS) |
 | 🅿️ **parking-manager** | Household parking app: which days to book, time off, and the Thursday release, on the phone; runs the booking engine (private repo). | `:8450` FastAPI+PWA | — (parking site) |
 | 💶 **family-accounting** | Local shared household-expense tracker (import bank exports → classify). | Streamlit | — |
-| 🧮 **mathgamesforkids** | Educational games + math tools + HTML experiments. | static | — |
-| 🌐 **website** | Multi-workshop landing site (one template, per-workshop config). | static | — |
 | 🪞 **robertoferraro** | Static replica of robertoferraro.net for leaving Squarespace: same URLs, content and look. | static | — |
 | 🎓 **vibe-coding-workshop** | Hands-on Python workshop — slideshow + structured exercises. | static/notebooks | — |
 | 📶 **github-copilot-usage** | Local read-only dashboard over the usage data Copilot writes to this machine — premium requests, tokens, and prompt composition per session/model/project. | `:8377` FastAPI | — (local Copilot logs) |
@@ -132,23 +129,14 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | Project | What it is | Type | Builds on / External |
 |---|---|---|---|
 | 💳 **accounting-quarterly** | Classifies Stripe payments by activity + region → quarterly reports. | pipeline | **Stripe** |
-| 📊 **social-media-analytics** | Analyse + predict social-content performance (2.5y of data). | pipeline | — |
-| 💡 **inspiration-system** | Paste an idea → 10 ranked illustration suggestions from the Notion archive. | pipeline | **Notion**, hub |
 | 📝 **content-management** | Content surfaces: reporting, planning, newsletter, podcast, demo videos and more. | pipeline | **Notion** |
 | 📧 **email-archiver** | Index + archive Outlook emails into a structured OneDrive tree; its index (follow-up flags) and headless batch CLI (plan/apply/revert/renumber over the whole Inbox or targeted mail, plus draft/read/send verbs guarded by a live-fingerprint match, JSON I/O) feed task-os and life-os. | pipeline | **Outlook → OneDrive** |
-| 📄 **pdf-to-markdown** | PDF → clean, token-efficient Markdown for LLM consumption. | pipeline/lib | — |
-| 🧾 **mass-html-to-markdown** | Ingest HTML comparison pages → SQLite → Markdown. | pipeline | — |
 | ☁️ **oracle-to-gcp** | Oracle SQL → BigQuery translator prototype with mock dual-engine validation. | Streamlit/pipeline | hub |
-| 🎨 **illustration-color-edit** | Industrial SVG conversion pipelines for book illustrations. | pipeline | — |
-| ☀️ **pvgis** | Estimate a house's solar-PV output via the EU PVGIS service. | tool | (PVGIS API) |
 | 🗂️ **copilot-studio-transcripts** | Streamlit workbench for Copilot Studio transcripts. | Streamlit | — |
-| 📚 **closed-company-accounting** | Accounting tooling for a closed company. | pipeline | — |
 | 🤖 **automation** | Grab-bag of Python automation tools (audio, image, video, email, Notion, system). | scripts | Notion, etc. |
-| 📁 **mcp-personal-onedrive** | Read-only MCP server for browsing personal OneDrive from a coding agent. | MCP server | **OneDrive** |
 | 🌱 **life-os** | Personal productivity suite as Claude Code skills (diary, meeting prep, sparring, visual muse, …) plus a document-archive engine (health, school) and Outlook email search, drafting and filing shared by the skills. Launched from the app-launcher's Life OS tab. | skills | app-launcher (L2) |
 | ⛏️ **minecraft-bedrock-bot** | Headless Node.js bot that joins a Minecraft Bedrock Realm over NetherNet (BedrockX), with reconnect/supervision. | scripts (Node) | Minecraft Realm |
 | 📈 **algo-trading** | Rule-based automated FX trading on major pairs — backtest → paper → live. | pipeline | **Interactive Brokers** |
-| 🔀 **gitlab-to-github-migrator** | One-way repo migration: history mirror + merge-request-to-issue replay. | pipeline | **GitLab → GitHub** |
 
 ---
 
@@ -176,11 +164,11 @@ External connections come from **two sources**: the **orchestration layer** (app
 |---|---|---|
 | 💬 **Telegram** | **orchestration** (app-launcher + fleet-config hooks) | idle/needs-you pings, job status |
 | 🔔 **Pushover** | orchestration (app-launcher jobs) | job-failure push notifications |
-| 📔 **Notion** | apps: inspiration-system, content-management, automation | content archive, automation |
+| 📔 **Notion** | apps: content-management, automation | content archive, automation |
 | 💳 **Stripe** | app: accounting-quarterly | payment classification |
-| 📁 **OneDrive** | apps: email-archiver, mcp-personal-onedrive | email archive, file browsing |
+| 📁 **OneDrive** | apps: email-archiver | email archive, file browsing |
 | 🐙 **GitHub** | all repos | PRs, CI, issue workflow |
-| 🎥 **Zoom** | apps: facilitation-shuffle, facilitation-suite | session facilitation |
+| 🎥 **Zoom** | apps: facilitation-suite | session facilitation |
 
 ---
 
