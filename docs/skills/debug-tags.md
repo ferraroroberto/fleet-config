@@ -8,4 +8,4 @@ A bug diagnosis in `/issue-start` adds temporary logs while it tests its ranked 
 - `DEBUG_TAGS=FOUND count=<n>` plus one `FOUND=<path>:<line>` per hit (exit 1): delete those lines and re-run.
 - `DEBUG_TAGS=NOT_CONFIRMED reason=<text>` (exit 2): no merge-base, a git failure or an unreadable file. It is never read as clean, and the finish stops.
 
-`/issue-finish` runs it before `gh pr create`, beside the merge-danger check. Only lines the branch adds are scanned, so a tag already on the default branch is not this branch's to remove. The placeholder `[DEBUG-<id>]` never matches, which lets docs and skill text name the convention.
+`/issue-finish` runs it before `gh pr create`, before the PR-body check. Only lines the branch adds are scanned, so a tag already on the default branch is not this branch's to remove. The placeholder `[DEBUG-<id>]` never matches, which lets docs and skill text name the convention.

@@ -562,10 +562,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "only, added and removed lines summed, new untracked files counted, an "
      "unresolvable base reported as a reason rather than +0 -0 -- is testable "
      "on its own, with a throwaway upstream and clone"),
-    ("merge_danger", "repo/test_merge_danger.py",
-     "a finish PR body is accepted only with a well-formed `Merge danger:` "
-     "line (door, one-word blast radius, a reason for a one-way door) and "
-     "refused without it"),
+    ("pr_body", "repo/test_pr_body.py",
+     "a finish PR body is refused rule by rule -- closing refs that are not "
+     "the branch's issue, images, AI attribution or session links, a missing "
+     "`Merge danger:` line, a ticked box with no DONE verdict or FRESH gate "
+     "-- passes when clean, and an unreadable PR is NOT CONFIRMED (exit 3), "
+     "never a pass"),
     ("debug_tags", "repo/test_debug_tags.py",
      "a branch that adds a `[DEBUG-<id>]` tagged line is refused before the "
      "PR, committed, uncommitted or untracked, a clean branch passes, and an "
