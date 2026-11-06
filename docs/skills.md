@@ -62,6 +62,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [Owner checks (work that needs Roberto, marked by code)](owner-check.md) — `owner_check/`: the rule, the `needs-validation` / `needs-owner` labels and comment block, the `/issue-add` · `/issue-start` · `/issue-finish` call points, back-fill
 - [Gate evidence (a green bound to the tree it ran against)](skills/gate-evidence.md) — `gate_evidence.py`: a pass bound to a content hash
 - [Instruction delta (prose growth as a reported fact)](skills/instruction-delta.md) — `instruction_delta/delta.py`: net instruction-line change of a branch, in the gate and the PR body
+- [PR-body check (closing refs, images, attribution, ticked boxes, merge danger)](skills/pr-body-check.md) — `pr_body/check.py`: `/issue-finish` refuses a PR body that breaks a rule, naming the fix
 - [Debug tags (temporary debug output never merges)](skills/debug-tags.md) — `debug_tags/check.py`: a branch that still adds a tagged debug line is refused before the PR
 - [Skip delta (a gate that covered less, saying so)](skills/skip-delta.md) — `skip_delta.py`: merge verification that names what it skipped
 - [Design review core (rendered facts, scored from data)](skills/design-review-core.md) — `design_review/` measure, eval, judgment, ledger, filing, fleet and inventory stages

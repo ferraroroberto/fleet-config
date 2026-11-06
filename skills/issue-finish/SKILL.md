@@ -163,11 +163,16 @@ upkeep) on this branch. Integration rules:
   If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`, a `.gitignore` line over a tracked path), say so in the Summary, naming each path: every checkout that pulls it loses its live copy unless its fast-forward goes through `untrack_guard.py` (fleet-config#1086).
   Paste `skills/_lib/instruction_delta/delta.py`'s `INSTRUCTION_DELTA=` line verbatim into the Summary.
   A `bug` PR names the confirmed cause: `**Cause:** <the hypothesis the repro proved>`.
-  Add `**Merge danger:** two-way door · blast radius: <word>` (one-way appends ` · <reason>`);
-  `skills/_lib/merge_danger/check.py <body-file>` must pass before `gh pr create`, and so must
-  `skills/_lib/debug_tags/check.py .`: each `FOUND=` line is leftover debug output to delete; `NOT_CONFIRMED` stops the finish.
+  Add `**Merge danger:** two-way door · blast radius: <word>` (one-way appends ` · <reason>`).
+  `skills/_lib/debug_tags/check.py .` must pass before `gh pr create`: each `FOUND=` line is leftover debug output to delete; `NOT_CONFIRMED` stops the finish.
   Match the PR-body style of recent merged PRs in the repo.
-  Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
+  No `🤖 Generated with [Claude Code]` line, session link or AI trailer; no image or screenshot in a public repo's PR.
+  Tick a test-plan box only for something observed: the box must match a `DONE` verdict from step 1 or name the gate while `gate_evidence.py check --label gate` is `FRESH`.
+- **PR-body check**, right after `gh pr create`/`gh pr edit`: `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/pr_body/check.py --pr <PR> --issue <N> --verdicts <step-1 verdicts file>`
+  (`--allow-images` only when the project's `CLAUDE.md` declares the repo private). `PR_BODY=pass` → continue.
+  `refused` → each `REFUSED <rule>: <fix>` line names what to change; `gh pr edit` the body and re-run until it passes.
+  `not_confirmed` (exit 3) → the PR, verdicts file or gate record could not be read; stop and say so, never read it as a pass.
+  Rules: [pr-body-check](E:/automation/fleet-config/docs/skills/pr-body-check.md).
 
 ### 5. Merge (CI is advisory — skip the wait when it adds no signal)
 
