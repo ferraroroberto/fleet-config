@@ -40,11 +40,14 @@ stdlib only (matches the _lib module contract).
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import re
+import ssl
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -249,15 +252,40 @@ def playwright_probe_cmd(venv_python: str) -> List[str]:
     ]
 
 
+def _is_loopback_host(host: str) -> bool:
+    """True for `localhost` or any loopback IP literal (127.0.0.0/8, ::1)."""
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _probe_context(base_url: str) -> Optional[ssl.SSLContext]:
+    """Unverified TLS context for loopback HTTPS, else None (default verification).
+
+    Fleet apps serve loopback HTTPS with a self-signed certificate, so a
+    verification failure there still means a server answered. Any other host
+    keeps full certificate verification.
+    """
+    parts = urllib.parse.urlsplit(base_url)
+    if parts.scheme == "https" and _is_loopback_host(parts.hostname or ""):
+        return ssl._create_unverified_context()
+    return None
+
+
 def app_reachable(base_url: str, timeout: float = 5.0) -> bool:
     """True if *something* answers HTTP at `base_url` (any status = server up).
 
     An `HTTPError` still means the server responded (up); only a transport error
     (`URLError`/`OSError`) or a malformed URL counts as unreachable. Used to tell
-    `APP_UNREACHABLE` apart from a render failure.
+    `APP_UNREACHABLE` apart from a render failure. A loopback self-signed
+    certificate is accepted (`_probe_context`); a remote bad certificate is not.
     """
     try:
-        with urllib.request.urlopen(urllib.request.Request(base_url), timeout=timeout):
+        context = _probe_context(base_url)
+        with urllib.request.urlopen(urllib.request.Request(base_url), timeout=timeout, context=context):
             return True
     except urllib.error.HTTPError:
         return True
