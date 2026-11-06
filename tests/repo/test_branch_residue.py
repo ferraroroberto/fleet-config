@@ -37,7 +37,7 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import branch_residue as br  # noqa: E402
-import branch_residue_gh as brg  # noqa: E402
+from residue import gh_lookups as brg  # noqa: E402
 from fleet_core import fleet_repo_scan as fleet_registry  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 
