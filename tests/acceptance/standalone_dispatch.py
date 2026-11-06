@@ -481,6 +481,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "dispatch filling free slots from the top of its own rows, skipping "
      "busy repos and stopping on a refusal or unconfirmed dispatch, against "
      "a fake launcher (fleet-config#1881)"),
+    ("chief_heal", "chief_ops/test_heal.py",
+     "chief_ops heal -- the chief_job_self_heal switch (off, missing and "
+     "unreadable write and fire nothing), the ledger with its repeated-cause "
+     "flag and no job output, and the one re-run: only a literal rerun_safe "
+     "job whose fix PR's merge is in the primary HEAD, once, never retried "
+     "after an unconfirmed POST, against a fake launcher and a temp git "
+     "checkout (fleet-config#1897)"),
     ("chief_sweep", "chief_ops/test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
      "squash-merged branch, in-use, has-work incl. a dirty tree, "

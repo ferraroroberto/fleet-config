@@ -82,6 +82,17 @@ Subcommands
       missing or unreadable switch prints `DRAIN=off reason=...` and does
       nothing; the first refusal or unconfirmed dispatch ends the drain.
 
+  heal record|rerun|outcome|show <job_id> [--run RUN] [--cause C]
+       [--issue R#N] [--pr R#N] [--base-url URL]
+      Job self-heal (fleet-config#1897; `chief/heal.py`). With Settings'
+      `chief_job_self_heal` on, `record` keeps a failed run's cause class and
+      fix in the machine-local ledger (never job output) and prints
+      `HEAL_REPEAT=` for a cause class seen again; `rerun` fires the job once,
+      only when it is `rerun_safe` and the fix PR's merge commit is in the
+      primary checkout's HEAD; `outcome` reads that re-run's result. An off,
+      missing or unreadable switch prints `HEAL=off reason=...` and writes
+      nothing.
+
   context [<sid>] [--base-url URL]
       Context-window use from the launcher (`/api/claude-code/sessions/<sid>/
       context`, the statusline's `NN%c`); default: the live chief. A null
