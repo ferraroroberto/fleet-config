@@ -13,7 +13,7 @@ import chief_plan
 from chief import chief_sweep
 from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 
-from . import commands, compact, launcher, mailbox
+from . import commands, compact, drain, launcher, mailbox
 
 
 def build_parser(description: str) -> argparse.ArgumentParser:
@@ -92,6 +92,12 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     wk = sub.add_parser("wake", help="doorbell or waiter: read the launcher's chief_doorbell switch (fleet-config#1457)")
     wk.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     wk.set_defaults(func=commands.cmd_wake)
+
+    dr = sub.add_parser("drain", help="queue unattended audit issues and fill free worker slots (fleet-config#1881)")
+    dr.add_argument("--dry-run", action="store_true", help="print what it would add and dispatch; write nothing")
+    dr.add_argument("--plan-file", default=None, help="plan to read and write (default: the live chief plan)")
+    dr.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    dr.set_defaults(func=drain.cmd_drain)
 
     ctx = sub.add_parser("context", help="a session's context-window use (default: the chief)")
     ctx.add_argument("sid", nargs="?", default=None)

@@ -43,6 +43,10 @@
 #     This project hosts the standing fleet chief; its run log is handed back
 #     on SessionStart.
 #
+#   auto_ship = false
+#     A merge here publishes (a live website), so `chief_ops.py drain` never
+#     queues or dispatches this repo's audit issues unattended.
+#
 #   telegram_file_guard = true
 #     A Telegram reply carrying files goes only to the private chat of the
 #     person whose message triggered the turn.
@@ -238,6 +242,7 @@ cwd_prefix = "E:/automation/pvgis"
 
 [robertoferraro]
 cwd_prefix = "E:/automation/robertoferraro"
+auto_ship = false
 
 [social-media-analytics]
 cwd_prefix = "E:/automation/social-media-analytics"

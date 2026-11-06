@@ -480,6 +480,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("chief_ops_sessions", "chief_ops/test_session_commands.py",
      "say/stop prefix resolution, the wait-event inbox, the wake doorbell "
      "and context + self-compact work with the launcher stubbed"),
+    ("chief_drain", "chief_ops/test_drain.py",
+     "chief_ops drain -- the auto_drain switch (off, missing and unreadable "
+     "do nothing), every intake exclusion, dry-run writing nothing, and "
+     "dispatch filling free slots from the top of its own rows, skipping "
+     "busy repos and stopping on a refusal or unconfirmed dispatch, against "
+     "a fake launcher (fleet-config#1881)"),
     ("chief_sweep", "chief_ops/test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
      "squash-merged branch, in-use, has-work incl. a dirty tree, "

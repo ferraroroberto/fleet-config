@@ -125,8 +125,13 @@ def has_marker(body: str, kind: str) -> bool:
     documents the ledger format) — that bug once clobbered a planning issue. The
     top-anchored match identifies the managed issue without that collision.
     """
+    return marker_kind(body) == kind
+
+
+def marker_kind(body: str) -> Optional[str]:
+    """The kind named by a body's top-line audit-managed marker, or None (see `has_marker`)."""
     m = _MARKER_RE.match((body or "").lstrip())
-    return bool(m) and m.group(1) == kind
+    return m.group(1) if m else None
 
 
 def ensure_marker(body: str, kind: str) -> str:

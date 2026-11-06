@@ -89,6 +89,13 @@ Subcommands
       Retires handled events: deletes each id's claimed (or re-offered) file.
       `ACKED=<n>`, plus `ACK_MISSING=<id>` and exit 1 for an id with no file.
 
+  drain [--dry-run] [--plan-file PATH] [--base-url URL]
+      Run after `wake` every turn (fleet-config#1881; `chief/drain.py`). With
+      Settings' `auto_drain` on, queues open audit-managed issues that need no
+      owner step and dispatches the rows it queued into free slots. An off,
+      missing or unreadable switch prints `DRAIN=off reason=...` and does
+      nothing; the first refusal or unconfirmed dispatch ends the drain.
+
   context [<sid>] [--base-url URL]
       Context-window use from the launcher (`/api/claude-code/sessions/<sid>/
       context`, the statusline's `NN%c`); default: the live chief. A null
