@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +37,7 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import branch_residue as br  # noqa: E402
+from fleet_core import fleet_repo_scan as fleet_registry  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
@@ -438,6 +440,33 @@ out = run_cli("orphans", str(primary))
 check("BRANCH=" not in out and "ORPHAN=" in out and "VERDICT=" not in out, "cli: orphans prints only the orphan section")
 out = run_cli("branches", str(base / "missing"), "--no-fetch")
 check(out.startswith("VERDICT=unknown") and "REASON=no such path" in out, "cli: a missing repo path is unknown, not clean")
+
+# A bare fleet repo name resolves through the fleet list (fleet-config#1892). The list is a temp file
+# via the env override, so the real machine-local registry is never read.
+fleet_toml = base / "fleet-projects.toml"
+fleet_toml.write_text(f'[Fleet-Name]\ncwd_prefix = "{primary.as_posix()}"\n[gone]\ncwd_prefix = "{(base / "gone").as_posix()}"\n',
+                      encoding="utf-8")
+os.environ[fleet_registry.PROJECTS_TOML_ENV_VAR] = str(fleet_toml)
+br.make_gh_lookups = lambda slug: (issue_state, lambda: set(), closing, own)
+try:
+    by_path = run_cli("branches", str(primary), "--no-fetch")
+    by_name = run_cli("branches", "fleet-name", "--no-fetch")
+    out = run_cli("branches", "not-a-fleet-repo", "--no-fetch")
+    out_gone = run_cli("branches", "gone", "--no-fetch")
+    os.environ[fleet_registry.PROJECTS_TOML_ENV_VAR] = str(base / "no-such-fleet.toml")
+    out_nolist = run_cli("branches", "fleet-name", "--no-fetch")
+finally:
+    br.make_gh_lookups = br_issue_state_real
+    os.environ.pop(fleet_registry.PROJECTS_TOML_ENV_VAR, None)
+check(by_name == by_path and by_name.strip().splitlines()[-1].startswith("VERDICT="),
+      f"cli: a bare fleet repo name gives the same report as its path (got {by_name[:200]!r})")
+check(out.startswith("VERDICT=unknown") and "REASON=no such path: not-a-fleet-repo" in out
+      and "not a fleet repo name either" in out and "repo path" in out,
+      f"cli: an unknown name is unknown and the message names both forms (got {out!r})")
+check(out_gone.startswith("VERDICT=unknown") and "REASON=no such path" in out_gone and "gone" in out_gone,
+      f"cli: a fleet name whose folder is missing is unknown (got {out_gone!r})")
+check(out_nolist.startswith("VERDICT=unknown") and "fleet list unreadable" in out_nolist,
+      f"cli: an unreadable fleet list is its own reason, not 'not a fleet repo' (got {out_nolist!r})")
 
 # ---- --delete (fleet-config#1528) -----------------------------------------------
 # Every scenario gets its own throwaway origin + clone: a delete mutates refs.

@@ -73,6 +73,8 @@ empty-shell removal).
 
 Subcommands
 -----------
+`<repo-path>` below is a path or a bare fleet repo name (`app-launcher`), resolved through the fleet list.
+
   branches <repo-path> [--no-fetch]
         One line per ref:
           BRANCH=<name> WHERE=local|remote SHA=<sha7> ISSUE=<N|-> CLASS=<class> REASON=<why>
@@ -126,6 +128,7 @@ from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Set, Tu
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 import worktree_residue as wr  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 
 DEFAULT = "default"
 CHECKED_OUT = "checked-out"
@@ -837,10 +840,36 @@ def render_outcomes(outcomes: Sequence[Outcome]) -> List[str]:
     return lines
 
 
+def resolve_repo(repo: Path, table: Optional[Dict[str, Path]] = None) -> Tuple[Path, str]:
+    """Resolve the repo argument to a directory: an existing path, else a bare fleet repo name.
+
+    Returns `(path, note)`. `note` is empty on success and otherwise says why
+    the argument did not resolve, so an unreadable fleet list is reported as its
+    own state instead of reading as "not a fleet repo". `table` is injectable
+    (`{name: path}`) so tests never read the real fleet list.
+    """
+    if repo.exists() or len(repo.parts) != 1 or repo.is_absolute():
+        return repo, ""
+    try:
+        repos = table if table is not None else fleet_repo_scan.fleet_repos(include_ignored=True)
+    except (OSError, ValueError) as exc:  # missing or unparseable fleet list
+        return repo, f"fleet list unreadable, so a repo name cannot be resolved: {exc}"
+    wanted = repo.name.lower()
+    for name, path in repos.items():
+        if name.lower() == wanted:
+            return Path(path), ""
+    return repo, f"{repo.name} is not a fleet repo name either; pass a fleet repo name or a repo path"
+
+
+def _unknown_path(repo: Path, note: str) -> None:
+    print("VERDICT=unknown")
+    print(f"REASON=no such path: {repo}" + (f" ({note})" if note else ""))
+
+
 def cmd_report(repo: Path, branches: bool, fetch: bool = True) -> None:
+    repo, note = resolve_repo(repo)
     if not repo.exists():
-        print("VERDICT=unknown")
-        print(f"REASON=no such path: {repo}")
+        _unknown_path(repo, note)
         return
     report = build_report(repo, fetch) if branches else orphans_report(repo)
     for line in render(report, include_branches=branches):
@@ -849,9 +878,9 @@ def cmd_report(repo: Path, branches: bool, fetch: bool = True) -> None:
 
 def cmd_delete(repo: Path, names: Sequence[str], remote: bool, fetch: bool) -> int:
     """Report, then delete; the exit code says whether the request was fully met."""
+    repo, note = resolve_repo(repo)
     if not repo.exists():
-        print("VERDICT=unknown")
-        print(f"REASON=no such path: {repo}")
+        _unknown_path(repo, note)
         return 1
     report = build_report(repo, fetch)
     for line in render(report):
