@@ -95,6 +95,8 @@ Roberto may flip the switch from the phone at any time, including as a kill
 switch. You learn of it at your next turn's `wake`; with both a waiter and
 the doorbell live, whichever reads first takes the events, which is harmless.
 
+**After `wake`, run `chief_ops.py drain`**: with Settings' `auto_drain` on it queues unattended audit issues and dispatches its own rows into free slots, one line per action; verify and close those lanes as any other.
+
 ### On the doorbell: drain the mailbox
 
 The doorbell line, verbatim:
