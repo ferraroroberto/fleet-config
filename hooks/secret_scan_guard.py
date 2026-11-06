@@ -96,8 +96,8 @@ MAX_BODY_BYTES = 1 << 20
 
 # A `\`-newline (Bash) or backtick-newline (PowerShell) continuation keeps one
 # command on one logical line, so `--body-file` on the next line still counts.
-_CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
-_SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
+CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
+SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 
 def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]:
     """``(operand, base)`` for every `--body-file`/`-F` of a `gh` publish segment.
@@ -114,7 +114,7 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
     """
     operands: List[Tuple[str, Optional[Path]]] = []
     current: Optional[Path] = base
-    for segment in _SEGMENT_SPLIT_RE.split(_CONTINUATION_RE.sub(" ", cmd)):
+    for segment in SEGMENT_SPLIT_RE.split(CONTINUATION_RE.sub(" ", cmd)):
         match = GH_PUBLISH_RE.search(segment)
         if not match:
             words = _lib.shell_words(segment)
@@ -152,7 +152,7 @@ def resolve_operand(raw: str, base: Optional[Path]) -> Optional[Path]:
     return path
 
 
-def _read_body(path: Path) -> Optional[str]:
+def read_body(path: Path) -> Optional[str]:
     try:
         with path.open("rb") as fh:
             data = fh.read(MAX_BODY_BYTES)
@@ -170,7 +170,7 @@ def _guard_gh_publish(cmd: str, base: Path) -> None:
     parts = [cmd]
     for raw, raw_base in body_file_operands(cmd, base):
         path = resolve_operand(raw, raw_base)
-        body = _read_body(path) if path is not None else None
+        body = read_body(path) if path is not None else None
         if body:
             parts.append(body)
     hit = _lib.scan_for_secret("\n".join(parts))
