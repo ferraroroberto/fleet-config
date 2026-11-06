@@ -1,10 +1,11 @@
 """Re-classify the open `needs-validation` list under the current rule.
 
 A block records why an issue was put on the owner's list. This module re-runs the
-rule over each such issue and keeps it only while a reason still fires. Three
-kinds of recorded reason are never re-derived, so they keep the item: what the lane
-said about its own verification (history cannot re-establish it), and any text a
-person wrote by hand. Everything else is recomputed from the issue and its PR.
+rule over each such issue and keeps it only while a reason still fires. A lane's
+named gap (a criterion plus an owner-only class) and any text a person wrote by
+hand are never re-derived, so they keep the item. A generic "could not verify" or
+"did not state" names nothing the owner can do, so it drops. Everything else is
+recomputed from the issue and its PR, with no in-session proof assumed.
 """
 
 from __future__ import annotations
@@ -29,15 +30,16 @@ _RULE_PREFIXES: Tuple[Tuple[str, str], ...] = (
     ("adds a new user-facing surface", "surface"),
     ("adds a new page or view", "surface"),
 )
-# What the lane said about verifying: a fact of that run, kept as recorded.
-_LANE_PREFIXES = ("the lane did not state", "the lane could not verify")
+# Generic verification reasons from before a gap had to name its criterion and class.
+_GENERIC_PREFIXES = ("the lane did not state", "the lane could not verify")
 
 # One public-safe phrase per reason that stopped firing.
 DROPPED_WORDS = {
     "own-sign-in": "an app's own sign-in is not a third-party account",
-    "surface": "a vendored file, a helper script or a proofed view is not a new surface",
+    "surface": "a new page or view is browser-provable, so an agent proves it, not the owner",
     "backfill": "back-fill-only entry",
     "device": "no live-input reason any more",
+    "generic": "a generic could-not-verify names no criterion and no owner-only class",
     "explicit": "the issue no longer says Owner validation: required",
     "account": "no third-party account involved",
 }
@@ -64,14 +66,16 @@ def _split(reason: str) -> List[str]:
 
 
 def classify_recorded(part: str) -> str:
-    """`rule:<key>`, `lane`, `backfill` or `hand` for one recorded reason."""
+    """`rule:<key>`, `lane`, `generic`, `backfill` or `hand` for one recorded reason."""
     if part == backfill.BACKFILL_REASON:
         return "backfill"
     for prefix, key in _RULE_PREFIXES:
         if part.startswith(prefix):
             return f"rule:{key}"
-    if part.startswith(_LANE_PREFIXES):
+    if part.startswith(rule.GAP_PREFIX):
         return "lane"
+    if part.startswith(_GENERIC_PREFIXES):
+        return "generic"
     return "hand"
 
 
@@ -93,12 +97,13 @@ def reclassify(
         if any(kind.startswith("rule:") for _part, kind in recorded):
             return Verdict(UNKNOWN, kept, [], "no PR link to re-read the diff")
     else:
+        # No proof is inferred from history, so a recorded device reason never drops here.
         decision = rule.decide(issue["labels"], issue["title"], issue["body"], pr_files(pr),
                                rule.VERIFIED_NA, rule.ux_proven(pr_body(pr)))
         fired = list(decision.reasons)
     now = kept + fired
     still = {classify_recorded(r).split(":", 1)[-1] for r in fired}
     dropped = sorted({kind.split(":", 1)[-1] for _part, kind in recorded
-                      if (kind == "backfill" or kind.startswith("rule:"))
+                      if (kind in ("backfill", "generic") or kind.startswith("rule:"))
                       and kind.split(":", 1)[-1] not in still})
     return Verdict(KEEP if now else CLEAR, now, dropped)

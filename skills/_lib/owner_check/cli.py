@@ -3,7 +3,8 @@
 Each command prints `KEY=value` lines. `classify`/`finish` exit 0 for none, 1 for
 required, 3 for unknown (an input could not be read, or a write did not land),
 2 for a refused call. `gate` exits 0 clear, 1 blocked, 3 unknown. `mark`, `clear`,
-`ensure-labels` and `backfill` exit 0 when every write landed, 3 otherwise.
+`ensure-labels` and `backfill` exit 0 when every write landed, 3 otherwise;
+`mark` exits 2 for a before-start step with no concrete owner action.
 Contract: `docs/owner-check.md`.
 """
 
@@ -53,8 +54,29 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return EXIT_REQUIRED if decision.verdict == rule.REQUIRED else EXIT_NONE
 
 
+def _finish_refusal(args: argparse.Namespace) -> Optional[str]:
+    """Why `finish` writes nothing, or None. Checked before any read or write."""
+    if args.verified is None:
+        return "--verified is required: yes, scheduled, or no with a --gap per unprovable criterion"
+    if args.verified != rule.VERIFIED_NO:
+        return "--gap only goes with --verified no" if args.gap else None
+    if not args.gap:
+        return ("--verified no needs a --gap <class>:<criterion> per criterion the session cannot prove, "
+                f"class one of {', '.join(rule.OWNER_CLASSES)}; prove the rest with the gate, the repro, "
+                "a screenshot, rendered geometry or a probe and pass --verified yes")
+    try:
+        args.gaps = [rule.parse_gap(text) for text in args.gap]
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
 def cmd_finish(args: argparse.Namespace) -> int:
     repo, number = args.ref
+    refusal = _finish_refusal(args)
+    if refusal:
+        print(f"OWNER_CHECK=refused APPLIED=no reason={refusal}")
+        return EXIT_REFUSED
     try:
         issue = github.fetch_issue(repo, number)
         files = github.pr_files(repo, args.pr)
@@ -64,13 +86,19 @@ def cmd_finish(args: argparse.Namespace) -> int:
         return EXIT_UNKNOWN
     if args.verified == rule.VERIFIED_SCHEDULED:
         print("SCHEDULED_READ=chief reason=a criterion only a later scheduled run can show")
-    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified, proven)
-    if decision.verdict == rule.NONE:
-        print("OWNER_CHECK=none")
-        return EXIT_NONE
-    _print_reasons(decision.reasons)
+    surface = rule.unproven_surface(issue["labels"], files, proven)
+    if surface:
+        print(f"OWNER_CHECK=refused APPLIED=no reason=adds a new page or view ({surface}) with no visual proof; "
+              "a browser proves it, not the owner: run it and put VISUAL_PROOF=fresh in the PR body, then re-run")
+        return EXIT_REFUSED
+    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified, proven,
+                           getattr(args, "gaps", ()))
     latest = block.latest_block(issue["comments"]) or {}
     label = block.LABELS[block.VALIDATE_AFTER]
+    if decision.verdict == rule.NONE:
+        print("OWNER_CHECK=none")
+        return _retract_own_mark(repo, number, issue, latest, args.pr)
+    _print_reasons(decision.reasons)
     if label in issue["labels"] and latest.get("kind") == block.VALIDATE_AFTER:
         print(f"OWNER_CHECK=required APPLIED=already label={label}")
         return EXIT_REQUIRED
@@ -87,6 +115,29 @@ def cmd_finish(args: argparse.Namespace) -> int:
         return EXIT_UNKNOWN
     print(f"OWNER_CHECK=required APPLIED=yes label={label}")
     return EXIT_REQUIRED
+
+
+def _retract_own_mark(repo: str, number: int, issue: dict, latest: dict, pr: int) -> int:
+    """A `none` re-run drops the label an earlier `finish` for the same PR put on.
+
+    Only a validate-after block whose proof leads with this PR's url is `finish`'s own;
+    a hand mark or another PR's block is left for the Board.
+    """
+    label = block.LABELS[block.VALIDATE_AFTER]
+    proof = latest.get("proof") or []
+    if (label not in issue["labels"] or latest.get("kind") != block.VALIDATE_AFTER
+            or not proof or proof[0] != github.pr_url(repo, pr)):
+        return EXIT_NONE
+    body = block.format_block(block.CLEARED, "a later finish for the same PR found no owner-check reason", "",
+                              (github.pr_url(repo, pr),), _today(),
+                              answer="re-run of owner_check finish: none; the earlier mark is retracted")
+    try:
+        github.clear(repo, number, [label], body)
+    except github.GhError as exc:
+        print(f"RETRACTED=unknown reason=the earlier mark could not be removed: {exc}")
+        return EXIT_UNKNOWN
+    print(f"RETRACTED=yes label={label}")
+    return EXIT_NONE
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -110,6 +161,12 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_mark(args: argparse.Namespace) -> int:
     repo, number = args.ref
+    if args.kind == block.BEFORE_START:
+        problem = block.vague_action(args.try_text)
+        if problem:
+            print(f"MARKED=refused reason=--try {problem}; name what the owner does, where, "
+                  "and which answer unblocks the work (an agent's own decision goes to the chief)")
+            return EXIT_REFUSED
     body = block.format_block(args.kind, args.reason, args.try_text, args.proof, _today(),
                               related=args.related)
     try:
@@ -276,9 +333,12 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("ref", type=_ref)
     f.add_argument("--pr", type=int, required=True)
     f.add_argument("--verified", choices=(rule.VERIFIED_YES, rule.VERIFIED_SCHEDULED, rule.VERIFIED_NO),
-                   default=rule.VERIFIED_UNSTATED,
+                   default=None,
                    help="yes = the original repro / acceptance re-ran and passed in this session; "
-                        "scheduled = all of it did except a criterion only a later scheduled run shows")
+                        "scheduled = all of it did except a criterion only a later scheduled run shows; "
+                        "no = a --gap names each criterion only the owner can prove")
+    f.add_argument("--gap", action="append", default=[],
+                   help=f"<class>:<criterion>, class one of {', '.join(rule.OWNER_CLASSES)} (with --verified no)")
     f.add_argument("--try", dest="try_text", default="")
     f.add_argument("--proof", action="append", default=[])
     f.set_defaults(func=cmd_finish)

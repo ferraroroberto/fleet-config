@@ -49,28 +49,25 @@ check(rule.decide(ENH, "Sign up for the newsletter provider", "").verdict == rul
 check(rule.decide(["chore"], "Add OAuth for the mail sync", "").verdict == rule.NONE,
       "the account clause is enhancement-only")
 
-d = rule.decide(ENH, "Tidy", "**Owner validation:** none - nothing to try", [("added", "webapp/static/views/new.html")])
-check(d.verdict == rule.REQUIRED and any("new page or view" in r for r in d.reasons),
-      f"an explicit none never suppresses a diff hit, got {d}")
-check(rule.decide(ENH, "Tidy", "", [("added", "content/pages/privacy.html")]).verdict == rule.REQUIRED,
-      "a new page without proof fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/js/views/card.js")]).verdict == rule.REQUIRED,
-      "a new view module without proof fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/conversation-view.js")]).verdict == rule.REQUIRED,
-      "a *-view.js module fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/views/new.html")], ux_proven=True).verdict == rule.NONE,
-      "a proofed new view no longer fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "app/webapp/static/_vendored/sign-in/README.md"),
-                                    ("added", "app/webapp/static/_vendored/modal/modal.html")]).verdict == rule.NONE,
+check(rule.decide(ENH, "Tidy", "", [("added", "content/pages/privacy.html")]).verdict == rule.NONE,
+      "a new page is browser-provable: never an owner reason")
+check(rule.decide(ENH, "Tidy", "Owner validation: required", [("added", "content/pages/privacy.html")]).verdict
+      == rule.REQUIRED, "an explicit required line still fires beside a new page")
+US = rule.unproven_surface
+check(US(ENH, [("added", "content/pages/privacy.html")], False) == "content/pages/privacy.html",
+      "a new page without proof is an unproven surface")
+check(US(ENH, [("added", "webapp/static/js/views/card.js")], False) is not None, "a new view module is one")
+check(US(ENH, [("added", "webapp/static/conversation-view.js")], False) is not None, "a *-view.js module is one")
+check(US(ENH, [("added", "webapp/static/views/new.html")], True) is None, "a proofed new view is not")
+check(US(ENH, [("added", "app/webapp/static/_vendored/sign-in/README.md"),
+               ("added", "app/webapp/static/_vendored/modal/modal.html")], False) is None,
       "a vendored README or file is not a new surface")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/links/links-merge.js")]).verdict == rule.NONE,
-      "a helper script is not a new surface")
-check(rule.decide(ENH, "Tidy", "", [("added", "tests/fixtures/page.html")]).verdict == rule.NONE,
-      "a test fixture page is not a new surface")
-check(rule.decide(["chore"], "Tidy", "", [("added", "webapp/static/views/new.html")]).verdict == rule.NONE,
+check(US(ENH, [("added", "webapp/static/links/links-merge.js")], False) is None, "a helper script is not a new surface")
+check(US(ENH, [("added", "tests/fixtures/page.html")], False) is None, "a test fixture page is not a new surface")
+check(US(["chore"], [("added", "webapp/static/views/new.html")], False) is None,
       "an added UI file only counts for enhancements")
-check(rule.decide(ENH, "Tidy", "", [("modified", "webapp/static/views/app.html")]).verdict == rule.NONE,
-      "a modified UI file is not a new surface")
+check(US(ENH, [("modified", "webapp/static/views/app.html")], False) is None, "a modified UI file is not a new surface")
+check(US(ENH, None, False) is None, "no diff, no surface")
 check(rule.ux_proven("- UX: VISUAL_PROOF=fresh (kept locally)") and not rule.ux_proven("VISUAL_PROOF=stale")
       and not rule.ux_proven(""), "only a fresh VISUAL_PROOF line counts as proof")
 
@@ -82,14 +79,36 @@ check(d.reasons == ("the issue says Owner validation: required",), f"explicit re
 
 check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_YES).verdict == rule.NONE,
       "a bug verified in-session needs nobody")
-d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO)
-check(d.verdict == rule.REQUIRED and "could not verify" in d.reasons[0], "an unverifiable bug needs the owner")
-d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_UNSTATED)
-check(d.verdict == rule.REQUIRED and "did not state" in d.reasons[0], "unstated verification is never assumed")
+try:
+    rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO)
+    check(False, "'no' with no named gap must raise: a generic could-not-verify is no reason")
+except ValueError:
+    pass
+try:
+    rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_YES, gaps=[("device", "x")])
+    check(False, "a gap with 'yes' must raise")
+except ValueError:
+    pass
+for cls, phrase in rule.OWNER_CLASSES.items():
+    d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO, gaps=[(cls, "the overlay opens")])
+    check(d.verdict == rule.REQUIRED and d.reasons == (rule.gap_reason(cls, "the overlay opens"),)
+          and phrase in d.reasons[0] and "the overlay opens" in d.reasons[0],
+          f"owner-only class {cls} is required with its reason text, got {d}")
+check(rule.parse_gap(" Device : the  mic level moves ") == ("device", "the mic level moves"), "a gap parses")
+for bad in ("device", "looks:fine", "taste:", ""):
+    try:
+        rule.parse_gap(bad)
+        check(False, f"gap {bad!r} must be refused")
+    except ValueError:
+        pass
 check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
       "a criterion only a later scheduled run can show is the chief's to read, not the owner's")
-check(rule.decide(["bug"], "Dictation: fix", "", [], rule.VERIFIED_YES).verdict == rule.REQUIRED,
-      "a live-only path still needs the owner even when the lane verified what it could")
+check(rule.decide(["bug"], "Android: nav label contrast", "", [], rule.VERIFIED_YES).verdict == rule.NONE,
+      "a title word alone never asks the owner once the lane recorded in-session proof")
+check(rule.decide(["bug"], "Android: nav label contrast", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
+      "scheduled proof also silences a title word alone")
+check(rule.decide(["chore"], "Dictation: fix", "", [("modified", "src/mic_loop.py")], rule.VERIFIED_YES).verdict
+      == rule.REQUIRED, "a changed live-input path still needs the owner even when the lane verified what it could")
 try:
     rule.decide([], "t", "", None, "maybe")
     check(False, "an unknown verification state must raise")
@@ -183,14 +202,24 @@ v = _re(_item("involves an account only the owner holds (sign-in); adds a new us
         [("added", "app/webapp/static/_vendored/sign-in/README.md")])
 check(v.state == reclassify.CLEAR and v.dropped == ["own-sign-in", "surface"],
       f"own sign-in + vendored README clear, got {v}")
-v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
+v = _re(_item("adds a new page or view no UX proof covered (content/pages/privacy.html)"), _iss(),
         [("added", "content/pages/privacy.html")])
-check(v.state == reclassify.KEEP, f"a new page with no proof stays, got {v}")
+check(v.state == reclassify.CLEAR and v.dropped == ["surface"] and "browser-provable" in reclassify.DROPPED_WORDS["surface"],
+      f"a new page with no proof clears: a browser proves it, not the owner, got {v}")
 v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
         [("added", "content/pages/privacy.html")], "VISUAL_PROOF=fresh")
 check(v.state == reclassify.CLEAR and v.dropped == ["surface"], f"the same page with a fresh proof clears, got {v}")
 v = _re(_item("the lane could not verify the work in its own session"), _iss())
-check(v.state == reclassify.KEEP, "a recorded lane verification gap is kept as recorded")
+check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic could-not-verify clears, got {v}")
+v = _re(_item("the lane did not state that it verified the work in its own session"), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic did-not-state clears, got {v}")
+v = _re(_item(rule.gap_reason("device", "the mic level moves")), _iss())
+check(v.state == reclassify.KEEP, "a named gap with an owner-only class is kept as recorded")
+v = _re(_item("the lane could not verify the work in its own session; needs a real device or live input (mic), "
+              "which a session cannot drive"), _iss("Mic: tune the gain"))
+check(v.state == reclassify.KEEP, f"a recorded device reason keeps the item beside a generic one, got {v}")
+v = _re(_item("needs a real device or live input (android), which a session cannot drive"), _iss("Android: nav"))
+check(v.state == reclassify.KEEP, "history never infers proof: a recorded device reason is never cleared")
 v = _re(_item("a hand-written reason", proof=()), _iss())
 check(v.state == reclassify.KEEP and v.kept == ["a hand-written reason"], "hand-written text is never re-derived")
 v = _re(_item("needs a real device or live input (mic), which a session cannot drive", proof=()), _iss("Mic: tune"))
@@ -263,31 +292,55 @@ check(code == 0 and "SCHEDULED_READ=chief" in out and "OWNER_CHECK=none" in out 
 
 fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes", "--try", "open it"], fake)
-check(code == 1 and "REASON=adds a new page or view no UX proof covered" in out,
-      f"a new view without a visual proof is required ({code}, {out})")
+check(code == 2 and "OWNER_CHECK=refused" in out and "VISUAL_PROOF=fresh" in out and not fake.writes(),
+      f"a new view without a visual proof is refused for the lane to prove, never sent to the owner ({code}, {out})")
 fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
 fake.pr_body = "Test plan\nVISUAL_PROOF=fresh"
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 0 and "OWNER_CHECK=none" in out, f"the same view with VISUAL_PROOF=fresh in the PR is none ({code}, {out})")
 
-fake = FakeGh(issue(), "modified\tsrc/app.py\n")
-code, out = run(["finish", "demo#7", "--pr", "9"], fake)
-check(code == 2 and "APPLIED=no" in out and not fake.writes(),
-      f"unstated verification is required, and without --try nothing is written ({code}, {out})")
+for argv, what in (([], "no --verified"), (["--verified", "no"], "no with no gap"),
+                  (["--verified", "no", "--gap", "looks:fine"], "an unknown class"),
+                  (["--verified", "no", "--gap", "device:"], "a class with no criterion"),
+                  (["--verified", "yes", "--gap", "device:x"], "a gap with yes")):
+    fake = FakeGh(issue(), "modified\tsrc/app.py\n")
+    code, out = run(["finish", "demo#7", "--pr", "9", *argv, "--try", "open it"], fake)
+    check(code == 2 and "OWNER_CHECK=refused APPLIED=no" in out and not fake.calls,
+          f"{what}: refused (exit 2) before any read or write ({code}, {out})")
 
 fake = FakeGh(issue(), "modified\tsrc/app.py\n")
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "open it", "--proof", "https://a"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "device:the mic level moves",
+                 "--try", "open it", "--proof", "https://a"], fake)
 check(code == 1 and "APPLIED=yes label=needs-validation" in out, f"required + try: marked ({code}, {out})")
 check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "edit"], ["issue", "comment"]],
       f"label ensured, applied, then the block posted: {fake.writes()}")
 posted = block.parse_block(fake.comments[0])
 check(posted["proof"] == ["https://github.com/ferraroroberto/demo/pull/9", "https://a"],
       f"the PR url leads the proof list, got {posted['proof']}")
-check("could not verify" in posted["reason"] and posted["try"] == "open it", "reason and try land in the block")
+check(posted["reason"] == rule.gap_reason("device", "the mic level moves") and posted["try"] == "open it",
+      f"the named gap and try land in the block, got {posted}")
+
+own = block.format_block(block.VALIDATE_AFTER, "the lane could not verify the work in its own session", "t",
+                         ["https://github.com/ferraroroberto/demo/pull/9"], "2026-11-06")
+fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=(own,)), "modified\tsrc/app.py\n")
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+edit = next((c for c in fake.calls if c[:2] == ["issue", "edit"]), [])
+check(code == 0 and "OWNER_CHECK=none" in out and "RETRACTED=yes label=needs-validation" in out
+      and "--remove-label" in edit and block.parse_block(fake.comments[0])["kind"] == block.CLEARED,
+      f"a none re-run for the same PR removes the label its earlier finish added ({code}, {out})")
+other = block.format_block(block.VALIDATE_AFTER, "hand", "t", ["https://github.com/ferraroroberto/demo/pull/3"])
+for comments, what in (((other,), "another PR's block"), ((), "a bare label with no block")):
+    fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=comments), "modified\tsrc/app.py\n")
+    code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+    check(code == 0 and "RETRACTED" not in out and not fake.writes(), f"{what} is left for the Board ({code}, {out})")
+fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=(own,)), "modified\tsrc/app.py\n",
+              fail=("issue edit",))
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+check(code == 3 and "RETRACTED=unknown" in out, f"a retract that does not land is unknown ({code}, {out})")
 
 already = block.format_block(block.VALIDATE_AFTER, "r", "t")
 fake = FakeGh(issue(labels=("bug", "needs-validation"), comments=(already,)), "")
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "taste:x", "--try", "x"], fake)
 check(code == 1 and "APPLIED=already" in out and not fake.writes(), "an already-marked issue is not marked twice")
 
 fake = FakeGh(issue(), "", fail=("api --paginate",))
@@ -295,7 +348,7 @@ code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 3 and out.startswith("OWNER_CHECK=unknown"), f"an unreadable PR is unknown, never none ({code}, {out})")
 
 fake = FakeGh(issue(), "", fail=("issue comment",))
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "physical:x", "--try", "x"], fake)
 check(code == 3 and "did not land" in out, f"a write that fails is unknown, not marked ({code}, {out})")
 
 gate_block = block.format_block(block.BEFORE_START, "needs the tower mic plugged in", "plug it in, answer yes")
@@ -316,8 +369,17 @@ check(code == 0 and "removed=needs-owner" in out and "--remove-label" in edit, f
 check(block.parse_block(fake.comments[0])["answer"] == "done, plugged in", "clear posts the answer")
 
 fake = FakeGh()
-code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", "t", "--related", "#8"], fake)
+code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try",
+                 "plug the tower mic in, then answer yes on the Board", "--related", "#8"], fake)
 check(code == 0 and "MARKED=demo#7 label=needs-owner" in out, f"mark applies the kind's label ({out})")
+for vague in ("t", "TBD", "see the issue", "decide which way"):
+    fake = FakeGh()
+    code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", vague], fake)
+    check(code == 2 and out.startswith("MARKED=refused") and not fake.calls,
+          f"a before-start mark with no concrete owner action ({vague!r}) is refused ({code}, {out})")
+fake = FakeGh()
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "t"], fake)
+check(code == 0, "the concrete-action bar is for before-start marks only")
 
 with tempfile.TemporaryDirectory() as tmp:
     draft = Path(tmp) / "draft.md"
