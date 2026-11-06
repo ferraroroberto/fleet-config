@@ -299,6 +299,17 @@ def _full_shot(page, shots: Path, name: str,
             after_full()
 
 
+TRANSITION_SETTLE_MS = 1500   # a restore flips every (pointer: coarse) rule at once; their CSS transitions start from the fine-pointer value
+# Flipping the media query starts every `transition` the coarse rules change (the nav's inactive label colour), and a
+# read in the same tick sees its first frame. `getAnimations()` forces the style update that starts them; infinite
+# animations are not CSSTransitions, so a spinner never holds this up, and the wait is bounded either way.
+_SETTLE_TRANSITIONS_JS = """
+ms => Promise.race([
+  Promise.all(document.getAnimations().filter(a => a instanceof CSSTransition).map(a => a.finished.catch(() => {}))),
+  new Promise(done => setTimeout(done, ms))]).then(() => undefined)
+"""
+
+
 def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[[], None]]:
     """Re-enable touch emulation after a Chromium full-page screenshot (#1017).
 
@@ -306,13 +317,19 @@ def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[
     device descriptor's touch emulation: `(pointer: coarse)` turns into
     `(pointer: fine)` and `maxTouchPoints` into 0 until the page is closed,
     reloads included, so every later screen measures the desktop layout.
-    CDP `Emulation.setTouchEmulationEnabled` puts it back. `None` for WebKit
-    (unaffected) and for a context without touch (desktop).
+    CDP `Emulation.setTouchEmulationEnabled` puts it back, and the transitions that flip starts are let to finish
+    so the next measure reads their end values (#1895). `None` for WebKit (unaffected) and for a context without
+    touch (desktop).
     """
     if engine != "chromium" or not ctx_args.get("has_touch"):
         return None
     cdp = ctx.new_cdp_session(page)
-    return lambda: cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+
+    def restore() -> None:
+        cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+        page.evaluate(_SETTLE_TRANSITIONS_JS, TRANSITION_SETTLE_MS)
+
+    return restore
 
 
 _POINTER_COARSE_JS = "() => matchMedia('(pointer: coarse)').matches"

@@ -4722,6 +4722,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -4825,6 +4832,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -4902,6 +4916,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",
@@ -5024,6 +5045,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -5129,6 +5157,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",
@@ -5253,6 +5288,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",
@@ -5496,6 +5538,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -5506,6 +5555,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",
@@ -5559,6 +5615,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -5569,6 +5632,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",
@@ -5654,6 +5724,13 @@
    ],
    [
     "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
     "_POINTER_COARSE_JS",
     []
    ],
@@ -5664,6 +5741,13 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
    ],
    [
     "evaluate",

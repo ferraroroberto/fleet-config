@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Static fixture for the colour transition a touch restore starts (fleet-config#1895).
+     The inactive label is muted under a fine pointer and full ink under a coarse one, with the vendored
+     nav's `transition: color 0.2s`. A walk that measures right after re-applying touch emulation reads the
+     transition's first frame (the muted colour); one that lets it settle reads the ink. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review touch transition fixture</title>
+<style>
+  html, body { margin: 0; background: #1d2127; color: #e6edf3; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { min-height: 3000px; padding: 16px; }
+  .tab-label { color: #7d8590; transition: color 0.2s ease; }
+  @media (pointer: coarse) { .tab-label { color: #e6edf3; } }
+</style>
+</head>
+<body>
+  <span class="tab-label" id="label">Explore</span>
+</body>
+</html>
