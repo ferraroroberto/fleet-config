@@ -37,6 +37,7 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import branch_residue as br  # noqa: E402
+import branch_residue_gh as brg  # noqa: E402
 from fleet_core import fleet_repo_scan as fleet_registry  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 
@@ -121,14 +122,14 @@ check(cr(issue_state="open", own_pr=False) == br.OPEN_ISSUE and cr(issue_state="
 check(cr(is_default=True, issue_state=None, own_pr=True) == br.DEFAULT and cr(checked_out=True, issue_state=None, own_pr=True) == br.CHECKED_OUT
       and cr(issue=None, issue_state=None, own_pr=True) == br.NO_ISSUE,
       "classify: the own-PR proof never outranks default, checked-out or no-issue")
-check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
-      and br.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
-check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and br.parse_own_prs("9\t\tmain\t2026\n") is None
-      and br.parse_own_prs("x\ty\n") is None,
+check(brg.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
+      and brg.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
+check(brg.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and brg.parse_own_prs("9\t\tmain\t2026\n") is None
+      and brg.parse_own_prs("x\ty\n") is None,
       "parse_own_prs: a row without a merge time or head sha, or with a bad shape, makes the lookup unknown")
-check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
-      and br.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
-check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and br.parse_closing_prs("x\ty\n") is None,
+check(brg.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
+      and brg.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
+check(brg.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and brg.parse_closing_prs("x\ty\n") is None,
       "parse_closing_prs: a row without a merge sha or with a bad shape makes the lookup unknown")
 
 check(wr.classify_orphan(True, True)[0] == "orphan-with-git-file"
