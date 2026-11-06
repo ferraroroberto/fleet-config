@@ -96,7 +96,7 @@ components:
   reference-pill: { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.pill}", padding: "{components.chip.padding}", typography: "{components.chip.typography}" }   # a link to something openable (folder, AI conversation, issue, URL) — the chip geometry, never resized into a control box (fleet-config#1259)
   code-inline:    { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: 6px, padding: "1px 6px", fontFamily: mono, fontSize: 0.875em }   # inline code in rendered prose (a reply, a doc): mono at 0.875em of the text around it, never caption-sized; never canvas-subtle inside a card (the dark black hole)
   file-chip:      { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{components.code-inline.rounded}", padding: "0 5px", fontFamily: mono, fontSize: "{components.code-inline.fontSize}", glyph: file }   # code-inline that opens something (a file's diff): the reference-pill colours on the code chip's geometry; the 1px hairline replaces 1px of padding so both chips sit the same height in a line
-  code-listing:   { backgroundColor: "{colors.card}", borderColor: "{colors.border}", rounded: "{rounded.md}", fontFamily: mono, fontSize: 13px, lineHeight: 1.5, header: "{typography.caption}", headerColor: "{colors.fg-muted}", headerMinHeight: 36px }   # a fenced block or a diff: the card surface on a hairline, a small header (language, copy); 13px is the one sanctioned off-scale size, for mono listings only
+  code-listing:   { backgroundColor: "{colors.card}", borderColor: "{colors.border}", rounded: "{rounded.md}", fontFamily: mono, fontSize: 13px, lineHeight: 1.5, header: "{typography.caption}", headerColor: "{colors.fg-muted}", headerMinHeight: "{components.hit-target.min}" }   # a fenced block or a diff: the card surface on a hairline, a small header (language, copy as an unpainted `icon-button`); 13px is the one sanctioned off-scale size, for mono listings only
   chat-turn:      { promptFill: "{colors.accent-soft}", promptBorder: "{colors.accent-border-soft}", promptText: "{colors.fg}", promptMaxWidth: "min(85%, 560px)", promptRounded: "{rounded.lg} {rounded.lg} 4px {rounded.lg}", headerMinHeight: "{rows.sm}", stepLineMinHeight: "{rows.sm}", stepLine: "{typography.body-sm}", stepLineColor: "{colors.fg-muted}", partsGap: 12px }   # one exchange with an agent: prompt bubble, then the agent's turn as one block on the canvas (no card)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
@@ -787,7 +787,10 @@ hand-picked per app.
   no fill, border or shadow at rest. Hover and press change the glyph colour
   and nothing else; the accessible name and the tooltip carry the verb, never a
   painted label. Stop is no exception: the outlined Stop is retired, and a verb
-  that halts a process is the same unpainted square as one that starts it. One
+  that halts a process is the same unpainted square as one that starts it. The
+  `code-listing` frame is the one other place a copy control lives; a listing
+  inside a list item does not turn its copy control into a row verb that needs
+  a different treatment, it stays the listing's own unpainted `icon-button`. One
   glyph per verb, so a verb looks the same in every app: Live `i-video`, Wake
   `i-power`, Start and Run `i-play`, Stop `i-square`, Find `i-search`, Open the
   arrow-out `i-external-link`, Launch `i-rocket`, Attach `i-paperclip`, About `i-info`, Dictate `i-mic`,
@@ -1181,7 +1184,12 @@ hand-picked per app.
   its name ellipsizes rather than push the text sideways at 390px. Copy and
   read-aloud take the source text, so a chip changes neither. A listing (a
   fenced block, a diff) sits in the `code-listing` frame: the `card` surface
-  on a hairline, a small `caption` header (language, copy). Reference impl:
+  on a hairline, a small `caption` header (language, copy). **The copy control
+  is an unpainted `icon-button`** (a glyph on nothing, named by `aria-label` and
+  a tooltip), never a labelled `button-surface`; its box is the 44px target
+  floor, so the header is at least 44px tall (`headerMinHeight` reads 44px). A
+  listing inside a list item (a numbered setup step) keeps that control: it is
+  the listing's, not a row verb (see `action-row`). Reference impl:
   app-launcher `.tr-md code`, `.tr-file-chip` (app-launcher#1474, #1478).
 - **chat turn** (`chat-turn`) — how an app renders an exchange with an
   agent. **The prompt is a bubble:** right-aligned, `fg` on `accent-soft`
