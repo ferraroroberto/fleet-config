@@ -1,6 +1,6 @@
 ---
 name: Fleet web pages
-version: 1.1.0
+version: 1.2.0
 description: >
   The fleet's design contract for web pages: public, static, content-first
   sites that a stranger reads once, mostly on a phone, served as a static
@@ -80,7 +80,7 @@ A **web page** here is a public, static, content-first site: robertoferraro.net 
 | Reader | the owner, signed in, every day | a stranger, once, mostly on a phone |
 | Goal | get a task done | understand, trust, then act (contact, book, buy, subscribe) |
 | Navigation | the floating bottom-tab pill | a top header: brand, text nav, a phone menu panel |
-| Theme | light and dark | the site's brand, light by default; dark is optional, not a contract |
+| Theme | light and dark | the site's brand, light by default; dark is optional, and its switch has one contract (section 4) |
 | Identity | the fleet's shared look | the owner's own brand |
 | Must not regress | behaviour | the search facts of every URL |
 | Performance | warm, on the LAN | cold first load on a phone over mobile data |
@@ -145,7 +145,23 @@ A site's stylesheet declares these custom properties on `:root`. The names and r
 - **Spacing** comes from a 4 px scale. Between blocks inside a section, `--gap`; between sections, `--section` above and below the section rule.
 - **One radius and one frame.** Every content image, control and framed tile takes `--radius` and `--frame`. No shadows, no gradients.
 - **Colour** comes from the brand tokens only. One accent; no second accent; status colours appear only on a form's own messages.
-- **Light only by default.** A site may add a dark theme; if it does, every token is redefined under `prefers-color-scheme: dark` and every contrast floor holds in both.
+- **Light by default, dark optional.** A site may add a dark theme. If it does, it follows the dark-theme contract below and every contrast floor holds in both themes.
+- **No literal colour in a component.** A component's stylesheet holds tokens, never a hex, `rgb()` or named colour; a colour lives once, as a token value in the site's stylesheet.
+
+### Dark theme (optional)
+
+The project-scaffolding `site-theme` component implements this; a site vendors it verbatim and sets only its dark values.
+
+- **State.** The visitor's saved choice is `data-theme="light"` or `"dark"` on `<html>`, saved in `localStorage` under the key `theme`. Absent means follow the system setting. Nothing else stores a theme.
+- **Tokens.** A token that differs between themes is written `light-dark(<light>, <dark>)`, which follows `color-scheme`. The component sets `color-scheme: light dark` on `:root`, narrowed to the chosen one by `data-theme`, so the system setting decides until the visitor presses the switch. There is no second stylesheet and no per-colour media query. Without JavaScript the system setting still applies.
+- **Footer band.** The band is dark in both themes: `--footer-band` takes a dark value in each, and its text tokens `--band-ink`, `--band-label` and `--band-rule` keep one light value in both, never the page colour.
+- **Drawings.** A token that is a data-URI drawing has its colour baked in and cannot use `light-dark()`. A site that wants it readable on dark points it at a dark version under `[data-theme="dark"]` and again inside `@media (prefers-color-scheme: dark)` on `:root:not([data-theme="light"])`.
+- **Switch.** One `button.theme-toggle`, 44 px square, with `aria-pressed` (true while dark) and a fixed `aria-label` that names the dark theme, because a label that changes with the state is read twice. It shows a Lucide moon in light and a sun in dark.
+- **No flash.** A blocking one-line `<script>` in `<head>`, before the stylesheets, applies a saved choice before the first paint; it is never `defer`, `async` or a module. The switch script is a deferred module that reads the state at load and writes `data-theme` only when the switch is pressed.
+- **Storage blocked** (private mode, site data off): a press still switches the page, for that page only.
+- **Floors.** Every contrast floor of section 8 and the front matter holds for the dark values as for the light ones.
+
+**Why:** [WCAG 2.2 1.4.3 Contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum) applies to a page in whichever theme it renders; [MDN `light-dark()`](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value/light-dark) and [`color-scheme`](https://developer.mozilla.org/en-US/docs/Web/CSS/color-scheme) are the mechanism; a saved choice applied after first paint flashes the other theme, which is why the boot line blocks.
 
 ## 5. Layout
 
@@ -268,7 +284,7 @@ A site sets the **values** of the section 2 tokens in its own stylesheet's `:roo
 - its radius, header height, content width and measure (within the contract's ranges);
 - its accent's uses (which words carry it, whether it is ever text);
 - its hand-drawn or graphic accents (the section rule, a title marker, a quote mark), as SVG tokens, never as content images;
-- optionally a dark theme, holding every floor.
+- optionally a dark theme (section 4): its dark values as `light-dark()` tokens, holding every floor.
 
 The contract never fixes an owner's colours or typeface. A brand change is a change to the site's stylesheet; a contract change is a change to this file.
 
@@ -302,6 +318,7 @@ Its signature is **the pen**: a yellow marker behind one or two words of each pa
 - **The rubric** `design.web.rubric.toml` lists each contract rule as data: a stable id, the metric it reads, the pass rule, a severity (P0 to P3), the standard it cites, a fix template and an owner (`spec`, `scaffold` or `app`). It shares the schema of `design.rubric.toml`, so the rendered review scores it the same way; a rule whose metric is not measured yet reports `unmeasured`, never a pass.
 - **The matrix** is the front matter's `viewports`: 390 px phone, 800 px tablet and 1440 px desktop, full page, scrolled through once so lazy images load. The review starts the site's own static preview on a free loopback port, measures against it and stops it (`design_review measure-web`).
 - **Performance and search facts** are read per URL from a cold phone-profile load and from the built HTML; Core Web Vitals come from a throttled mobile profile, never the LAN.
+- **Theme.** The rendered review measures the light theme only, so the dark values are held to the same floors but not yet measured. The rubric has no rule for a literal colour in a component: a rendered page reports the resolved colour, not whether it came from a token, so only a read of the stylesheet could tell.
 - **The brand** is never graded: a rule reads a token's role and floor, not its value.
 
 ## 15. Sources
