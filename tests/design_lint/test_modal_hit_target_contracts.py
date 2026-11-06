@@ -210,6 +210,30 @@ check(hit_bad["hit-target"]["status"] == "WARN",
 check(".tiny-btn" in hit_bad["hit-target"]["detail"],
       "hit-target WARN names the offending selector")
 
+# a computed inset (the scaffold's action-row avatar) scales with --hit-min, so it is
+# not a literal negative; it is still an outward expansion -> PASS
+HIT_COMPUTED_CSS = """
+.action-row-avatar { width: 36px; height: 36px; position: relative; }
+.action-row-avatar::before {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc((36px - var(--hit-min, 44px)) / 2));
+}
+"""
+hit_computed = run_contracts(HIT_COMPUTED_CSS, '<button class="action-row-avatar"></button>', spec_light=HIT_SPEC)
+check(hit_computed["hit-target"]["status"] == "PASS",
+      "hit-target: computed min(0px, calc(...)) inset on ::before counts as expansion -> PASS")
+
+# a computed inset on a non-pseudo rule, or a positive/zero literal on a pseudo, is no expansion
+HIT_NOT_EXPANSION_CSS = """
+.tiny-btn { width: 30px; height: 30px; }
+.tiny-btn::before { content: ""; position: absolute; inset: 0; }
+.other-btn { width: 30px; height: 30px; inset: calc(1px - 5px); }
+"""
+hit_not_exp = run_contracts(HIT_NOT_EXPANSION_CSS, '<button class="tiny-btn"></button>', spec_light=HIT_SPEC)
+check(hit_not_exp["hit-target"]["status"] == "WARN",
+      "hit-target: inset 0 on ::before, or a computed inset off a pseudo -> still WARN")
+
 # no fixed-size compact pointer targets authored at all -> NA even with the token
 hit_na = run_contracts(GOOD_CSS, spec_light=HIT_SPEC)
 check(hit_na["hit-target"]["status"] == "NA",
