@@ -112,6 +112,7 @@ def reoffer_stale_claims(inbox: Path, now_ms: int, stale_after: float = CLAIM_ST
         if claimed_at is not None and now_ms - claimed_at < stale_after * 1000:
             continue
         try:
+            # must-use-exempt: re-offers a claimed event by renaming it; nothing is written
             os.replace(path, inbox / path.name)
         except OSError:
             continue
@@ -178,6 +179,7 @@ def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
         claimed.mkdir(exist_ok=True)
         held = claimed / f"{moment}-{event_id}.json"
         try:
+            # must-use-exempt: claims an event by renaming it; nothing is written
             os.replace(path, held)
         except OSError:
             continue  # another reader took it first
@@ -245,6 +247,7 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
             claim.mkdir(exist_ok=True)
             held = claim / path.name
             try:
+                # must-use-exempt: claims an event by renaming it; nothing is written
                 os.replace(path, held)
             except OSError:
                 continue  # another claimer took it first
@@ -253,6 +256,7 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
                 continue
             if outcome == "locked":
                 try:
+                    # must-use-exempt: puts a locked event back by renaming it; nothing is written
                     os.replace(held, path)
                     LOGGER.info("ℹ️ claim: %s put back in the inbox for the next batch", path.name)
                 except OSError as exc:

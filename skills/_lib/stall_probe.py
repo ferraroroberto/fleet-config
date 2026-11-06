@@ -66,7 +66,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fleet_core.hooks_state import state_dir  # noqa: E402
+from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 THRESHOLD_S = 1.0
@@ -153,14 +153,13 @@ class Log:
     def append(self, record: Dict[str, Any]) -> None:
         with self._lock:
             if self.stalls.exists() and self.stalls.stat().st_size > MAX_LOG_BYTES:
+                # must-use-exempt: rotates the log aside; nothing is written
                 os.replace(self.stalls, self.stalls.with_suffix(".jsonl.1"))
             with self.stalls.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, sort_keys=True) + "\n")
 
     def beat(self, info: Dict[str, Any]) -> None:
-        tmp = self.status.with_suffix(".tmp")
-        tmp.write_text(json.dumps(info, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, self.status)
+        atomic_write_text(self.status, json.dumps(info, sort_keys=True))
 
 
 # ---- evidence ----------------------------------------------------------------
@@ -348,6 +347,7 @@ def prepare_disk_file(folder: Path, size: int = DISK_FILE_BYTES) -> Path:
             fh.write(os.urandom(1 << 20))
         fh.flush()
         os.fsync(fh.fileno())
+    # must-use-exempt: random binary bytes; the shared writer is text-only
     os.replace(tmp, path)
     return path
 
