@@ -3,7 +3,7 @@
 and the retention/freshness state machine.
 
 Split out of `hooks/backup_private.py` (fleet-config#731). Depends only on
-`config.py` -- nothing here reaches into `select.py` or `snapshot.py`, so
+`config.py` and the hooks' shared `_lib` -- nothing here reaches into `select.py` or `snapshot.py`, so
 `cli.py` (the orchestrator) is the only module that has to know both this
 module's bookkeeping and `snapshot.py`'s file-writing exist.
 """
@@ -15,9 +15,13 @@ import hashlib
 import logging
 import os
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import _lib  # noqa: E402
 
 from .config import (
     BackupConfig,
@@ -227,6 +231,7 @@ def _replace_hardlink(source: Path, target: Path) -> None:
     try:
         temporary.unlink(missing_ok=True)
         os.link(source, temporary)
+        # must-use-exempt: swaps in a hardlink to a finished snapshot; nothing is written
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -363,11 +368,9 @@ def _write_archive_manifest(dest_root: Path, leg: str, files: Dict[str, Any],
     }
     try:
         dest_root.mkdir(parents=True, exist_ok=True)
-        temporary = dest_root / f".{ARCHIVE_MANIFEST_NAME}.{os.getpid()}.tmp"
-        temporary.write_text(
-            json.dumps(archive_manifest, indent=2, ensure_ascii=False), encoding="utf-8",
+        _lib.atomic_write_text(
+            dest_root / ARCHIVE_MANIFEST_NAME, json.dumps(archive_manifest, indent=2, ensure_ascii=False),
         )
-        os.replace(temporary, dest_root / ARCHIVE_MANIFEST_NAME)
     except OSError as exc:
         errors.append(f"archive manifest: {exc}")
 

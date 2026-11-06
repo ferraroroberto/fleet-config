@@ -569,6 +569,7 @@ def e2e_screens(capture_dir: Path, shots: Path) -> Dict[str, List]:
         seen.add(sid)
         png, shot = capture_dir / f"{name}.{theme}.png", None
         if png.is_file():
+            # must-use-exempt: moves a finished screenshot into place; nothing is written
             os.replace(png, shots / f"{sid}.png")
             shot = f"{sid}.png"
         metrics = cap.get("metrics")

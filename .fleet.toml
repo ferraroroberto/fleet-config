@@ -87,13 +87,22 @@ baseline = ".dead-code-ratchet-baseline.json"
 [conventions_ratchet]
 enabled      = true
 baseline     = ".conventions-ratchet-baseline.json"
-rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout"]
+rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use"]
 # tests/ is exempt from the NO_WINDOW rule (CLAUDE.md) and every other rule already
 # skips test modules, so nothing under it is scanned.
 exclude      = ["tests/**"]
 # skills/_lib is library code and logs; hooks print the wire format by design.
 print_paths  = ["skills/_lib/"]
 git_wrappers = ["hooks/_lib.py", "skills/_lib/git_run.py"]
+
+# One atomic-write helper per import world: hooks/_lib.py for hooks, its mirror
+# skills/_lib/fleet_core/hooks_state.py for skills, config_edit.py for the root
+# CLI. A raw os.replace skips the temp sweep and the cleanup on failure. No
+# sqlite3.connect entry: its 4 calls take 3 shapes and share no helper.
+[[conventions_ratchet.must_use]]
+call   = "os.replace"
+helper = ["hooks/_lib.py", "skills/_lib/fleet_core/hooks_state.py", "config_edit.py"]
+why    = "atomic writes go through atomic_write_text (hooks/_lib.py, skills/_lib/fleet_core/hooks_state.py) or config_edit.atomic_write"
 
 [runtime_write_ratchet]
 enabled      = true
