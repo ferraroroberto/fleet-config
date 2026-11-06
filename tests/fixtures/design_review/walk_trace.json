@@ -4722,6 +4722,11 @@
    ],
    [
     "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
     "MEASURE",
     [
      {
@@ -4820,6 +4825,11 @@
    ],
    [
     "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
     "MEASURE",
     [
      {
@@ -4892,6 +4902,11 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
    ],
    [
     "evaluate",
@@ -5009,6 +5024,11 @@
    ],
    [
     "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
     "MEASURE",
     [
      {
@@ -5109,6 +5129,11 @@
      "enabled": true,
      "maxTouchPoints": 1
     }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
    ],
    [
     "evaluate",
@@ -5231,6 +5256,11 @@
    ],
    [
     "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
     "MEASURE",
     [
      {
@@ -5241,6 +5271,403 @@
    [
     "evaluate",
     "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "android-touch-lost": {
+  "screens": [
+   {
+    "id": "android-light-board",
+    "device": "android",
+    "theme": "light",
+    "view": "board",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "android-light-dialog-edit",
+    "device": "android",
+    "theme": "light",
+    "view": "dialog-edit",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "android-light-gear-settings",
+    "device": "android",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-board: (pointer: coarse) is false after re-applying touch emulation",
+   "INFO opened 1 details on android-light-dialog-edit",
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-dialog-edit: (pointer: coarse) is false after re-applying touch emulation",
+   "INFO opened 1 details on android-light-gear-settings",
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-gear-settings: (pointer: coarse) is false after re-applying touch emulation"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 412,
+      "height": 839
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
+   ],
+   [
+    "ctx.new_cdp_session"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-light-board.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-board-full.png",
+    true,
+    null
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "android-light-dialog-edit.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-dialog-edit-full.png",
+    true,
+    null
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-gear-settings-full.png",
+    true,
+    null
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
     []
    ],
    [
