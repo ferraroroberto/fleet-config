@@ -352,7 +352,7 @@ A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn 
 
 ## A Job failed (fleet-config#1539)
 
-**Read [job-failed.md](job-failed.md) whenever a batch carries a `kind=job-failed` event**: investigate, dedupe, fix through the normal plan, never re-run the Job, keep its output out of public text.
+**Read [job-failed.md](job-failed.md) whenever a batch carries a `kind=job-failed` event**: investigate, dedupe, fix through the normal plan, never re-run the Job except through `chief_ops.py heal rerun` with self-heal on (fleet-config#1897), keep its output out of public text.
 
 ## Verify before you trust a worker's report
 
@@ -457,6 +457,7 @@ instead:
    terminal even after you've relayed it. Identity was never the thing standing
    between a steer and irreversible loss. A worker that pushes back on an
    instruction is behaving correctly: answer the objection with something checkable, never argue it out of the suspicion, never re-send the same steer harder.
+9. **Jobs re-run only through `chief_ops.py heal rerun` (fleet-config#1897).** Never re-run a Job that is not `rerun_safe`, never re-run one with `chief_job_self_heal` off or unreadable, never more than once per failure, and never edit a job definition or `jobs.json`. `heal rerun` enforces all four by code; its `HEAL_REFUSED=` / `HEAL=unknown` lines are final, never routed around by a direct `POST /api/jobs/<id>/run`.
 
 ## Reply shape (drawer contract)
 
