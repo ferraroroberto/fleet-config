@@ -93,7 +93,11 @@ def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
     return [_result("desktop-measure", "FAIL", "no desktop content cap found — spec: centered max-width 772px")]
 
 
-_PSEUDO_CLASS_RE = re.compile(r"\.([A-Za-z0-9_-]+)::?(?:before|after)\b")
+# An outward inset is a negative literal, or a computed `min(…)` / `calc(…)` that tracks
+# --hit-min; a computed value's sign is not evaluated here (the rendered leg owns the
+# effective geometry).
+_OUTWARD = r"(?:-|min\(|calc\()"
+_PSEUDO_CLASS_RE =re.compile(r"\.([A-Za-z0-9_-]+)::?(?:before|after)\b")
 _CLASS_ATTR_RE = re.compile(r'class=["\']([^"\']+)["\']')
 _INTERACTIVE_COMPOUND_RE = re.compile(
     r"(^|[.#\[])(button|[\w-]*(?:btn|button|close|toggle|action|step|del)(?:[\w-]*)?)\b", re.I)
@@ -117,14 +121,14 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
         return [_result("hit-target", "NA", "spec declares no components.hit-target token")]
     min_px = int(min_m.group(1))
 
-    # classes that carry a negative-inset ::before/::after hit expansion
+    # classes that carry an outward-inset ::before/::after hit expansion
     expansion_classes: set = set()
     for bm in _BLOCK_RE.finditer(css_own):
         sel_line = _last_selector_line(bm.group(1))
         body = bm.group(2)
-        if not (re.search(r"inset:\s*-", body)
-                or (re.search(r"(?<![-\w])top:\s*-", body)
-                    and re.search(r"(?<![-\w])left:\s*-", body))):
+        if not (re.search(rf"(?<![-\w])inset:\s*{_OUTWARD}", body)
+                or (re.search(rf"(?<![-\w])top:\s*{_OUTWARD}", body)
+                    and re.search(rf"(?<![-\w])left:\s*{_OUTWARD}", body))):
             continue
         expansion_classes.update(_PSEUDO_CLASS_RE.findall(sel_line))
 
