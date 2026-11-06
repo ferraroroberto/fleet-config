@@ -82,14 +82,36 @@ check(d.reasons == ("the issue says Owner validation: required",), f"explicit re
 
 check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_YES).verdict == rule.NONE,
       "a bug verified in-session needs nobody")
-d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO)
-check(d.verdict == rule.REQUIRED and "could not verify" in d.reasons[0], "an unverifiable bug needs the owner")
-d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_UNSTATED)
-check(d.verdict == rule.REQUIRED and "did not state" in d.reasons[0], "unstated verification is never assumed")
+try:
+    rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO)
+    check(False, "'no' with no named gap must raise: a generic could-not-verify is no reason")
+except ValueError:
+    pass
+try:
+    rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_YES, gaps=[("device", "x")])
+    check(False, "a gap with 'yes' must raise")
+except ValueError:
+    pass
+for cls, phrase in rule.OWNER_CLASSES.items():
+    d = rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_NO, gaps=[(cls, "the overlay opens")])
+    check(d.verdict == rule.REQUIRED and d.reasons == (rule.gap_reason(cls, "the overlay opens"),)
+          and phrase in d.reasons[0] and "the overlay opens" in d.reasons[0],
+          f"owner-only class {cls} is required with its reason text, got {d}")
+check(rule.parse_gap(" Device : the  mic level moves ") == ("device", "the mic level moves"), "a gap parses")
+for bad in ("device", "looks:fine", "taste:", ""):
+    try:
+        rule.parse_gap(bad)
+        check(False, f"gap {bad!r} must be refused")
+    except ValueError:
+        pass
 check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
       "a criterion only a later scheduled run can show is the chief's to read, not the owner's")
-check(rule.decide(["bug"], "Dictation: fix", "", [], rule.VERIFIED_YES).verdict == rule.REQUIRED,
-      "a live-only path still needs the owner even when the lane verified what it could")
+check(rule.decide(["bug"], "Android: nav label contrast", "", [], rule.VERIFIED_YES).verdict == rule.NONE,
+      "a title word alone never asks the owner once the lane recorded in-session proof")
+check(rule.decide(["bug"], "Android: nav label contrast", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
+      "scheduled proof also silences a title word alone")
+check(rule.decide(["chore"], "Dictation: fix", "", [("modified", "src/mic_loop.py")], rule.VERIFIED_YES).verdict
+      == rule.REQUIRED, "a changed live-input path still needs the owner even when the lane verified what it could")
 try:
     rule.decide([], "t", "", None, "maybe")
     check(False, "an unknown verification state must raise")
@@ -190,7 +212,16 @@ v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _i
         [("added", "content/pages/privacy.html")], "VISUAL_PROOF=fresh")
 check(v.state == reclassify.CLEAR and v.dropped == ["surface"], f"the same page with a fresh proof clears, got {v}")
 v = _re(_item("the lane could not verify the work in its own session"), _iss())
-check(v.state == reclassify.KEEP, "a recorded lane verification gap is kept as recorded")
+check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic could-not-verify clears, got {v}")
+v = _re(_item("the lane did not state that it verified the work in its own session"), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic did-not-state clears, got {v}")
+v = _re(_item(rule.gap_reason("device", "the mic level moves")), _iss())
+check(v.state == reclassify.KEEP, "a named gap with an owner-only class is kept as recorded")
+v = _re(_item("the lane could not verify the work in its own session; needs a real device or live input (mic), "
+              "which a session cannot drive"), _iss("Mic: tune the gain"))
+check(v.state == reclassify.KEEP, f"a recorded device reason keeps the item beside a generic one, got {v}")
+v = _re(_item("needs a real device or live input (android), which a session cannot drive"), _iss("Android: nav"))
+check(v.state == reclassify.KEEP, "history never infers proof: a recorded device reason is never cleared")
 v = _re(_item("a hand-written reason", proof=()), _iss())
 check(v.state == reclassify.KEEP and v.kept == ["a hand-written reason"], "hand-written text is never re-derived")
 v = _re(_item("needs a real device or live input (mic), which a session cannot drive", proof=()), _iss("Mic: tune"))
@@ -270,24 +301,30 @@ fake.pr_body = "Test plan\nVISUAL_PROOF=fresh"
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 0 and "OWNER_CHECK=none" in out, f"the same view with VISUAL_PROOF=fresh in the PR is none ({code}, {out})")
 
-fake = FakeGh(issue(), "modified\tsrc/app.py\n")
-code, out = run(["finish", "demo#7", "--pr", "9"], fake)
-check(code == 2 and "APPLIED=no" in out and not fake.writes(),
-      f"unstated verification is required, and without --try nothing is written ({code}, {out})")
+for argv, what in (([], "no --verified"), (["--verified", "no"], "no with no gap"),
+                  (["--verified", "no", "--gap", "looks:fine"], "an unknown class"),
+                  (["--verified", "no", "--gap", "device:"], "a class with no criterion"),
+                  (["--verified", "yes", "--gap", "device:x"], "a gap with yes")):
+    fake = FakeGh(issue(), "modified\tsrc/app.py\n")
+    code, out = run(["finish", "demo#7", "--pr", "9", *argv, "--try", "open it"], fake)
+    check(code == 2 and "OWNER_CHECK=refused APPLIED=no" in out and not fake.calls,
+          f"{what}: refused (exit 2) before any read or write ({code}, {out})")
 
 fake = FakeGh(issue(), "modified\tsrc/app.py\n")
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "open it", "--proof", "https://a"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "device:the mic level moves",
+                 "--try", "open it", "--proof", "https://a"], fake)
 check(code == 1 and "APPLIED=yes label=needs-validation" in out, f"required + try: marked ({code}, {out})")
 check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "edit"], ["issue", "comment"]],
       f"label ensured, applied, then the block posted: {fake.writes()}")
 posted = block.parse_block(fake.comments[0])
 check(posted["proof"] == ["https://github.com/ferraroroberto/demo/pull/9", "https://a"],
       f"the PR url leads the proof list, got {posted['proof']}")
-check("could not verify" in posted["reason"] and posted["try"] == "open it", "reason and try land in the block")
+check(posted["reason"] == rule.gap_reason("device", "the mic level moves") and posted["try"] == "open it",
+      f"the named gap and try land in the block, got {posted}")
 
 already = block.format_block(block.VALIDATE_AFTER, "r", "t")
 fake = FakeGh(issue(labels=("bug", "needs-validation"), comments=(already,)), "")
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "taste:x", "--try", "x"], fake)
 check(code == 1 and "APPLIED=already" in out and not fake.writes(), "an already-marked issue is not marked twice")
 
 fake = FakeGh(issue(), "", fail=("api --paginate",))
@@ -295,7 +332,7 @@ code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 3 and out.startswith("OWNER_CHECK=unknown"), f"an unreadable PR is unknown, never none ({code}, {out})")
 
 fake = FakeGh(issue(), "", fail=("issue comment",))
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "physical:x", "--try", "x"], fake)
 check(code == 3 and "did not land" in out, f"a write that fails is unknown, not marked ({code}, {out})")
 
 gate_block = block.format_block(block.BEFORE_START, "needs the tower mic plugged in", "plug it in, answer yes")
@@ -316,8 +353,17 @@ check(code == 0 and "removed=needs-owner" in out and "--remove-label" in edit, f
 check(block.parse_block(fake.comments[0])["answer"] == "done, plugged in", "clear posts the answer")
 
 fake = FakeGh()
-code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", "t", "--related", "#8"], fake)
+code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try",
+                 "plug the tower mic in, then answer yes on the Board", "--related", "#8"], fake)
 check(code == 0 and "MARKED=demo#7 label=needs-owner" in out, f"mark applies the kind's label ({out})")
+for vague in ("t", "TBD", "see the issue", "decide which way"):
+    fake = FakeGh()
+    code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", vague], fake)
+    check(code == 2 and out.startswith("MARKED=refused") and not fake.calls,
+          f"a before-start mark with no concrete owner action ({vague!r}) is refused ({code}, {out})")
+fake = FakeGh()
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "t"], fake)
+check(code == 0, "the concrete-action bar is for before-start marks only")
 
 with tempfile.TemporaryDirectory() as tmp:
     draft = Path(tmp) / "draft.md"

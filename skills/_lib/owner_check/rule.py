@@ -7,8 +7,10 @@ reasons; an explicit `none` in the issue cannot suppress one, so a drafting slip
 never hides real owner work.
 
 Self-verification comes first. Whatever the lane proved in its own session needs
-nobody; what it could not prove (no stated verification, or a live-only path a
-session cannot drive) and a new page or view no UX proof covered need Roberto.
+nobody. What it could not prove needs Roberto only through a named criterion and
+one owner-only class (`OWNER_CLASSES`); a generic "could not verify" is no reason.
+A live-only title word asks him only while no in-session proof exists, and a
+live-input path in the diff or a new page or view no UX proof covered always does.
 An account clause fires only for a third party's account (sign-up, OAuth,
 subscription): the app's own password sign-in is drivable with test credentials. Words are matched in the title only: issue bodies quote viewports
 ("iPhone 390px"), network loopback and "report" so often that body matching
@@ -31,11 +33,23 @@ VERIFIED_NO = "no"
 # Everything verified in-session except a criterion only a later scheduled run can
 # show; reading that run is the chief's job, so it adds no reason.
 VERIFIED_SCHEDULED = "scheduled"
-VERIFIED_UNSTATED = "unstated"
 # Before the work exists (`/issue-add`) and for history (`backfill`) verification
 # is not a fact anyone can state, so the clause does not apply.
 VERIFIED_NA = "n/a"
-VERIFICATION_STATES = (VERIFIED_YES, VERIFIED_SCHEDULED, VERIFIED_NO, VERIFIED_UNSTATED, VERIFIED_NA)
+VERIFICATION_STATES = (VERIFIED_YES, VERIFIED_SCHEDULED, VERIFIED_NO, VERIFIED_NA)
+_PROVEN = (VERIFIED_YES, VERIFIED_SCHEDULED)
+
+# The only reasons a session cannot prove a criterion itself. Anything else is
+# provable with the gate, the repro, a screenshot, rendered geometry or a probe.
+OWNER_CLASSES = {
+    "device": "a real device or live input (mic, camera, phone hardware)",
+    "owner-account": "an account or sign-in only the owner holds",
+    "physical": "a physical action",
+    "third-party": "a third-party system the session cannot reach",
+    "taste": "a taste or judgement call",
+}
+# Recorded lane reasons open with this, so a re-check keeps them as recorded.
+GAP_PREFIX = "the lane could not prove"
 
 _EXPLICIT = re.compile(r"^\W*owner validation\W*\s*(required|none)\b", re.IGNORECASE | re.MULTILINE)
 
@@ -66,6 +80,19 @@ _INLINE_CODE = re.compile(r"`[^`\n]*`")
 class Decision:
     verdict: str
     reasons: Tuple[str, ...]
+
+
+def parse_gap(text: str) -> Tuple[str, str]:
+    """`<class>:<criterion>` -> (class, criterion); ValueError names what is wrong."""
+    cls, sep, criterion = (text or "").partition(":")
+    cls, criterion = cls.strip().lower(), " ".join(criterion.split())
+    if not sep or cls not in OWNER_CLASSES or not criterion:
+        raise ValueError(f"expected <class>:<criterion> with class one of {', '.join(OWNER_CLASSES)}, got {text!r}")
+    return cls, criterion
+
+
+def gap_reason(cls: str, criterion: str) -> str:
+    return f"{GAP_PREFIX} {criterion}, because it needs {OWNER_CLASSES[cls]}"
 
 
 def explicit_line(body: str) -> Optional[str]:
@@ -108,6 +135,7 @@ def decide(
     files: Optional[Sequence[Tuple[str, str]]] = None,
     verification: str = VERIFIED_NA,
     ux_proven: bool = False,
+    gaps: Sequence[Tuple[str, str]] = (),
 ) -> Decision:
     """Required or none, with every reason that fired.
 
@@ -115,9 +143,13 @@ def decide(
     (`added`, `modified`, `removed`, `renamed`); None means no diff is part of
     this decision (an issue draft, a back-fill). `ux_proven` is true when the PR
     carries a fresh visual proof, which already showed the new page or view working.
+    `gaps` are `(class, criterion)` pairs from `parse_gap`; `VERIFIED_NO` needs at
+    least one, since "could not verify" alone names nothing the owner can do.
     """
     if verification not in VERIFICATION_STATES:
         raise ValueError(f"verification must be one of {VERIFICATION_STATES}, got {verification!r}")
+    if (verification == VERIFIED_NO) != bool(gaps):
+        raise ValueError("verification 'no' needs at least one owner-only gap, and only 'no' takes gaps")
     enhancement = "enhancement" in {str(label).lower() for label in labels}
     files = list(files or [])
     title = _INLINE_CODE.sub(" ", title or "")
@@ -125,7 +157,7 @@ def decide(
 
     if explicit_line(body) == REQUIRED:
         reasons.append("the issue says Owner validation: required")
-    word = _first(_LIVE_ONLY_TITLE, title)
+    word = None if verification in _PROVEN else _first(_LIVE_ONLY_TITLE, title)
     if word:
         reasons.append(f"needs a real device or live input ({word}), which a session cannot drive")
     path = _live_only_path(files)
@@ -138,9 +170,6 @@ def decide(
         added = None if ux_proven else _added_surface_path(files)
         if added:
             reasons.append(f"adds a new page or view no UX proof covered ({added})")
-    if verification == VERIFIED_UNSTATED:
-        reasons.append("the lane did not state that it verified the work in its own session")
-    elif verification == VERIFIED_NO:
-        reasons.append("the lane could not verify the work in its own session")
+    reasons.extend(gap_reason(cls, criterion) for cls, criterion in gaps)
 
     return Decision(REQUIRED if reasons else NONE, tuple(reasons))

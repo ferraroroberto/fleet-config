@@ -32,6 +32,22 @@ FIELDS = ("kind", "reason", "try", "proof", "related", "since", "answer")
 _LINE = re.compile(r"^- (" + "|".join(FIELDS) + r"): ?(.*)$")
 
 
+# A before-start step must be answerable cold: what to do, where, which answer unblocks.
+_MIN_ACTION_WORDS = 6
+_PLACEHOLDER = re.compile(r"^\W*(tbd|todo|n/?a|none|see (the )?(issue|above|body)|decide|check|investigate|"
+                          r"look into it|ask roberto|owner decides?)\W*$", re.IGNORECASE)
+
+
+def vague_action(text: str) -> Optional[str]:
+    """Why an owner action is too vague to answer cold, or None when it is concrete."""
+    text = _one_line(text)
+    if not text or _PLACEHOLDER.match(text):
+        return "is empty or a placeholder"
+    if len(text.split()) < _MIN_ACTION_WORDS:
+        return f"names no concrete action (under {_MIN_ACTION_WORDS} words)"
+    return None
+
+
 def _one_line(value: str) -> str:
     return " ".join(str(value or "").split())
 
