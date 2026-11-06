@@ -6,8 +6,9 @@ so no human tap guards a call and everything below is the guard. Two verbs:
     relay.py send <session> --file <path>   deliver the file's text to a live session
     relay.py read <session> [--tail N]      print the session's last reply, credentials redacted
 
-`<session>` is the 8-character id the board prints, or a full id. Every live PTY session is a valid
-target, the `telegram:*` channel sessions and the chief included.
+`<session>` is the 8-character id the board prints, a full id, or the word `chief` for the standing chief
+(whose id `sessions` hides). Every live PTY session is a valid target, the `telegram:*` channel sessions
+and the chief included.
 
 `send` refuses, before anything is sent and with a distinct `REFUSED reason=` line each time:
 the app-launcher Grok Bot switch off (`disabled`) or unreadable (`unknown`), an empty or unreadable file, text that looks like a credential, a destructive steer (discard work,
@@ -34,6 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from chief import launcher, rails  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
+from git_run import run_git  # noqa: E402
 from grokbot import refusals, switch  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
@@ -43,6 +45,7 @@ LOG_NAME = "grokbot-relay.log"
 SENDER_TAG = "[from Grok Bot: relayed from the owner's phone app, not typed at this keyboard]"
 DEFAULT_TAIL_CHARS = 4000
 BOARD_BUCKETS = ("claude_turn", "your_turn", "other")
+CHIEF_ALIAS = "chief"
 
 
 def log_path() -> Path:
@@ -57,10 +60,23 @@ def _inside(path: Path, root: Path) -> bool:
     return True
 
 
+def _in_tracked_tree(path: Path) -> bool:
+    """True when `path` sits inside the repo and git does not ignore it.
+
+    The live state directory is `~/.claude/hooks/state`, and `~/.claude/hooks` is a junction into this
+    repo's `hooks/`, so it resolves inside the repo by design; it is the gitignored folder meant for
+    runtime output. Only a location git would track counts as beside the code. Git failing to answer
+    (exit 128) is not confirmed, so it refuses like a tracked path.
+    """
+    if not _inside(path, REPO):
+        return False
+    return run_git(["-C", str(REPO), "check-ignore", "-q", str(path.resolve())]).returncode != 0
+
+
 def log_problem() -> str:
-    """Why the call log cannot take a line, else an empty string. The log must live outside the code tree."""
+    """Why the call log cannot take a line, else an empty string. The log must not land in a tracked code folder."""
     path = log_path()
-    if _inside(path, REPO):
+    if _in_tracked_tree(path):
         return "the state directory is inside the code tree"
     try:
         # runtime-write-exempt: the call log lives in the hooks state directory, and the check above refuses one inside the code tree
@@ -107,6 +123,12 @@ def resolve_target(base_url: str, session: str) -> Tuple[Optional[str], Dict[str
     except (OSError, ValueError):
         return None, {}, "board-unreadable"
     cards = live_cards(board)
+    if session.lower() == CHIEF_ALIAS:
+        # `sessions` hides the chief and the digest does not mark it, so the Bot has no listed way to learn its id.
+        chief_sid = rails.find_chief_session(board.get("columns") or {})
+        if chief_sid not in cards:
+            return None, {}, "unresolvable-session"
+        return chief_sid, cards[chief_sid], ""
     resolved, ambiguous = rails.resolve_session_id(session, {"claude_turn": list(cards.values())})
     if ambiguous is not None:
         return None, {}, "ambiguous-session"

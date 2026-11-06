@@ -145,6 +145,15 @@ try:
         check(code == 0 and f"target={label}" in out and len(fake.posts) == before + 1,
               f"send reaches the {label} session")
 
+    before = len(fake.posts)
+    code, out = run(fake, "send", "chief", "--file", message("status please"))
+    check(code == 0 and "target=chief" in out and len(fake.posts) == before + 1
+          and fake.posts[-1][0] == f"/api/claude-code/sessions/{CHIEF}/input",
+          "send accepts the word chief and posts to the standing chief's full id")
+    check("verb=send target=chief outcome=sent" in "\n".join(log_lines()), "a send to chief is logged")
+    check(run(fake, "send", "chief", "--file", message("git push --force origin main"))[1]
+          .startswith("REFUSED reason=destructive"), "a destructive steer to chief is still refused")
+
     # --- send: refusals send nothing and say why -------------------------------------------
     def refused(text, reason, label, session=None):
         before = len(fake.posts)
@@ -169,6 +178,10 @@ try:
                         ("git worktree remove ../x", "tear down a worktree")):
         out = refused(steer, "destructive", steer)
         check(kind in out and "owner" in out, f"the destructive refusal names {kind} and the owner terminal")
+    fake.board = {"columns": {"claude_turn": [c for c in BOARD["columns"]["claude_turn"] if c["label"] != "chief"],
+                              "your_turn": BOARD["columns"]["your_turn"]}}
+    refused("hi", "unresolvable-session", "the word chief with no live chief", session="chief")
+    fake.board = BOARD
     out = refused("hi", "unresolvable-session", "an unknown id", session="zzzzzzzz")
     refused("hi", "unresolvable-session", "an external card", session=EXTERNAL[:8])
     refused("hi", "unresolvable-session", "a dead session", session=DEAD[:8])
@@ -221,6 +234,31 @@ try:
     code, out = run(fake, "send", WORKER[:8], "--file", message("hello"))
     check(code == 1 and out.startswith("REFUSED reason=log-unwritable") and len(fake.posts) == before,
           "a state directory inside the code tree refuses the send")
+    # The live state dir is a junction into the repo's gitignored hooks/state: it must be accepted when it
+    # resolves inside a repo, refused when git would track it (the case Grok Bot hit from the primary checkout).
+    fake_repo = tmp / "fake-repo"
+    subprocess.run(["git", "init", "-q", str(fake_repo)], check=True, capture_output=True)
+    (fake_repo / ".gitignore").write_text("hooks/state/\n", encoding="utf-8")
+    (fake_repo / "hooks" / "state").mkdir(parents=True)
+    (fake_repo / "src").mkdir()
+    real_repo = relay.REPO
+    relay.REPO = fake_repo
+    junction = tmp / "dot-claude-hooks-state"
+    if sys.platform == "win32":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(fake_repo / "hooks" / "state")],
+                       check=True, capture_output=True)
+    else:
+        junction.symlink_to(fake_repo / "hooks" / "state", target_is_directory=True)
+    for env_dir, want_ok, label in ((junction, True, "a state dir that resolves into the repo's gitignored hooks/state"),
+                                    (fake_repo / "hooks" / "state", True, "the gitignored hooks/state reached directly"),
+                                    (fake_repo / "src", False, "a tracked code folder inside the repo")):
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(env_dir)
+        problem = relay.log_problem()
+        check((problem == "") == want_ok and (want_ok or "inside the code tree" in problem),
+              f"log_problem {'accepts' if want_ok else 'refuses'} {label}")
+    relay.REPO = real_repo
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(state)
+
     blocker = tmp / "blocker"
     blocker.write_text("not a directory", encoding="utf-8")
     os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(blocker / "sub")
