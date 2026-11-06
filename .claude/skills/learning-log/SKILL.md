@@ -22,7 +22,7 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
 - **Public repos only.** The digest and its stats are published in a public ledger issue, so `gather.py` lists with `--visibility public` — private-repo activity (and even repo names) is never gathered, counted, or narrated. A sub-agent must never cite a `repo#N` outside the public set it was handed.
-- **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Telegram ping. Never edits source, commits, pushes, or restarts.
+- **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Telegram ping. Step 3b adds local writes only: one chief-mailbox event and the machine-local proposals ledger, through `chief_ops.py proposals`. Never edits source, commits, pushes, or restarts.
 - **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. Sub-agents narrate *insight*, not statistics.
 - **Sub-agents are Sonnet, fan out freely** (exempt from the 3-Opus cap). One per non-empty bucket. READ-ONLY analysts — file nothing, change no state.
 - **Degrade gracefully, never block** (unattended). A bucket sub-agent that errors is recorded as such and skipped; the run still produces a log. A quiet week (no PRs/issues) still records the run so the ledger keeps cadence.
@@ -74,6 +74,15 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 - The contents of `STATS_FILE` pasted verbatim (the productivity tables).
 - A one-line cross-link to the current `architecture/system-map.png` (milestones crossed).
 
+### 3b. Propose workflow improvements (gated by `chief_weekly_proposals`)
+
+Run in the foreground, in this turn. `chief_ops.py` below is `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/chief_ops.py`, the entry point the chief uses.
+
+1. `chief_ops.py proposals context`. A first line `PROPOSALS=off reason=...` or `PROPOSALS=unknown reason=...` means the Settings switch is off, missing or unreadable (or the ledger is unreadable): **log that line in the Report (step 6), draft nothing, and skip the rest of this step.** Until app-launcher ships the switch it reads off.
+2. On `PROPOSALS=on`, add the `PROPOSALS_LAST_WEEK=` line (`Last week: N proposed, M filed.`) verbatim to the digest under the TL;DR.
+3. Draft at most **4** candidates from this week's digest, as a JSON list in `<OUT_DIR>/proposals.json`: `{"repo", "title", "type", "reason", "evidence"}`. `type` is one of `bug|enhancement|refactor|docs|chore|test|perf`; `reason` is at most 300 characters stating this week's evidence; `evidence` is a list of `repo#N` taken from the gathered public set. Lean towards the types and repos the `PROPOSALS_RATE=` lines show get accepted, and never re-draft a `PROPOSALS_DECLINED=` item unless this week's evidence cites a `repo#N` its line does not list. Propose workflow and tooling improvements (a recurring failure, a manual step that keeps recurring, a gap two PRs worked around), not product features. **Public repos only: nothing from Life OS or any private or personal source, in a title, a reason or an evidence ref.**
+4. `chief_ops.py proposals publish --file <OUT_DIR>/proposals.json`. It re-checks the switch, drops anything not in a public repo, matching an open issue's title or a prior proposal, and writes one `kind=proposals` event. Copy its `PROPOSALS_PUBLISHED=` and every `PROPOSALS_DROPPED=` line into the Report. `PROPOSALS=unknown` or `PROPOSALS_REFUSED` is reported and not retried; the digest still ships.
+
 ### 4. Assemble the ledger body + upsert
 
 Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. The archive is deduped on content and windowed to the newest `ARCHIVE_CAP` bullets (fleet-config#732) — keeps growing week over week but no longer without bound, so the body stays under GitHub's issue-body ceiling. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
@@ -113,7 +122,7 @@ Keep the summary **pure ASCII**, separating its parts with `|` — the hook rend
 
 ### 6. Report
 
-A few lines: window, grand totals, buckets analysed (+ any agent that errored), ledger + comment URLs, Telegram result.
+A few lines: window, grand totals, buckets analysed (+ any agent that errored), ledger + comment URLs, Telegram result, and the proposals outcome (the `PROPOSALS=` line or the published count).
 
 ## Notes
 

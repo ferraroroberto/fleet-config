@@ -492,6 +492,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "job whose fix PR's merge is in the primary HEAD, once, never retried "
      "after an unconfirmed POST, against a fake launcher and a temp git "
      "checkout (fleet-config#1897)"),
+    ("chief_proposals", "chief_ops/test_proposals.py",
+     "chief_ops proposals -- the chief_weekly_proposals switch (off, missing "
+     "and unreadable write and deliver nothing), at most four screened "
+     "candidates in public repos, one kind=proposals event per week through "
+     "the real inbox, and the answers ledger: a declined idea is not offered "
+     "again without new evidence, against a fake launcher, fake gh reads and "
+     "a temp inbox (fleet-config#1896)"),
     ("chief_sweep", "chief_ops/test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
      "squash-merged branch, in-use, has-work incl. a dirty tree, "

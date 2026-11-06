@@ -49,7 +49,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed` or `cap-raised`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). |
+| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed`, `cap-raised` or `proposals`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). A `proposals` is the weekly learning-log run offering candidate issues, see [Proposal events](#proposal-events-kind-proposals). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so a v1 reader would still name the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
@@ -136,6 +136,43 @@ When the launcher saves Settings > Chief > Worker cap higher than before, or a `
 
 The event `id` is the dedupe key, as for every event. Readers render the event as `worker cap raised old=<n> new=<n>`. The numbers are informational: the chief re-reads the live cap at every `dispatch`.
 
+### Proposal events (`kind: "proposals"`)
+
+The weekly `/learning-log` run offers up to four candidate workflow issues as one `proposals` event, written by `chief_ops.py proposals publish` into the same directory, and only while the launcher's `chief_weekly_proposals` switch (Settings > Chief) reads `true`. Off, missing or unreadable writes nothing. No worker is involved: `launcher_sid`, `repo`, `number`, `agent` and `dispatch_id` are always `null`, and `excerpt` is omitted. The event is public-safe: every candidate names a public fleet repo and cites only public `repo#N` evidence.
+
+```json
+{
+  "v": 2,
+  "id": "4d5e6f708192a3b4c5d6e7f809102132",
+  "kind": "proposals",
+  "event": "WeeklyProposals",
+  "week": "2026-W45",
+  "launcher_sid": null,
+  "repo": null,
+  "number": null,
+  "agent": null,
+  "dispatch_id": null,
+  "ts": "2026-11-06T01:40:00Z",
+  "candidates": [
+    {
+      "pid": "9a8b7c6d5e4f30211203f4e5d6c7b8a9",
+      "repo": "fleet-config",
+      "title": "Retry transient gh reads in the gather step",
+      "type": "enhancement",
+      "reason": "Three PRs this week patched the same transient gh failure.",
+      "evidence": ["fleet-config#1801", "fleet-config#1822"]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `week` | The ISO week the run belongs to. The ledger takes one event per week, so a re-run in the same week publishes nothing. |
+| `candidates` | One to four objects. `pid` is the proposal's id in the machine-local answers ledger (`chief-proposals-ledger.json` in the state dir, never in the repo). `type` is one of `bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`. `reason` is at most 300 characters of this week's evidence; `evidence` lists the `repo#N` it rests on. |
+
+The event `id` is the dedupe key, as for every event. Readers render the event as `weekly proposals n=<k> week=<w>`, then one `[<pid8>] <repo>: <title> (<type>) -- <reason>` line per candidate; `n=-` when `candidates` is not a list. The event is subject to the 24 h TTL like every kind, so a chief that never reads it within a day leaves its ledger rows `pending`, which read `unanswered` after 14 days, never `declined`.
+
 ## Pending: the counting rule
 
 A reader that only needs to know *whether there is work* (the doorbell) counts by **file name alone**. It never opens, parses or locks a file.
@@ -206,3 +243,4 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/chief_ops/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `inbox` batch line for it.
 - `tests/chief_ops/test_chief_job_failed.py`: a synthetic `job-failed` event through the real `inbox` (the head line, the detail line, the excerpt, a null `exit_code` and `repo`, `not-confirmed`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2 and `needs-input` events rendering unchanged beside it.
 - `tests/chief_ops/test_chief_cap_raised.py`: a synthetic `cap-raised` event through the real `inbox` (the one-line render, a non-integer bound reading `-`), the event counted as pending by file name, claimed and acked like any kind, and worker lines rendering unchanged beside it.
+- `tests/chief_ops/test_proposals.py`: the `chief_weekly_proposals` switch (off, missing and unreadable write nothing), screening (at most four candidates, public repos only, open-issue and in-batch duplicates), one `proposals` event per week through the real `inbox` (head and candidate lines), claimed and acked like any kind, and the answers ledger: a declined idea is not published again without new evidence.
