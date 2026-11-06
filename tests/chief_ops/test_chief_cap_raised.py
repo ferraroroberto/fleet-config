@@ -1,6 +1,6 @@
 """A raised Settings worker cap goes through the chief mailbox as `kind=cap-raised`.
 
-Drives the real `chief_ops.py` readers (`inbox`, `wait-event`) against a temp
+Drives the real `chief_ops.py` reader (`inbox`) against a temp
 inbox and pins docs/chief-mailbox.md's "Cap events" rules: the one-line
 `worker cap raised old=<n> new=<n>` render, a non-integer bound reading `-`
 rather than rejecting the event, the event counted as pending by file name and
@@ -70,17 +70,6 @@ try:
     check(code == 0 and f"ACKED={len(ids)}" in out, f"ack: a cap-raised id retires like any other (exit {code}, {out.strip()!r})")
     check(co.count_pending(inbox) == 0, "count_pending: nothing pending once everything is acked")
 
-    inbox2 = tmp / "inbox2"
-    publish(inbox2, "1700000000000-0a1b2c3d.json", v1)
-    publish(inbox2, f"1700000000002-{CAP_ID}.json", cap_event(CAP_ID))
-    code, out = run_cli(inbox2, "wait-event", "--timeout", "10", "--interval", "0.1")
-    lines = out.rstrip("\n").splitlines()
-    check(code == 0 and lines[0] == "WAIT_EVENT=events n=2", f"wait-event: header counts both events (got {lines[:1]})")
-    check(lines[1] == "- fleet-config#999: turn ended (claude) sid=a1b2c3d4 age=2m",
-          f"wait-event: the v1 line is byte-for-byte unchanged (got {lines[1]!r})")
-    check("- worker cap raised old=2 new=3 kind=cap-raised" in lines,
-          "wait-event: a cap-raised event renders its line tagged with its kind")
-    check(not list(inbox2.glob("*.json")), "wait-event: the cap event was claimed exactly once")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -292,7 +292,7 @@ def chief_needs_input(payload: dict, text: str, default_agent: str = "claude") -
     Writes one `needs-input` event (fleet-config#1456) whose excerpt is
     `text`, the classified one-line prompt. Nothing is typed into the chief's
     terminal: that is the human's input channel, and worker-derived text in it
-    was the injection surface #622 is about. The chief's `wait-event` waiter
+    was the injection surface #622 is about. The chief's `inbox` read
     claims it like any other event, so it never interrupts a busy chief turn.
 
     True only when a chief is live and the event file was published. On False

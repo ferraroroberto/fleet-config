@@ -59,20 +59,6 @@ Subcommands
       named, on the human-readable path) so this answers the same question
       `dispatch` asks — see `dispatch` below.
 
-  wait-event [--timeout 1800] [--interval 5] [--base-url URL]
-      Block until a chief-managed worker's turn ends, its session exits or it
-      hits a permission gate (`hooks/chief_inbox.py` publishes one event file
-      per event; a gate is `kind=needs-input`, fleet-config#1456; a failed
-      app-launcher Job is `kind=job-failed`, fleet-config#1539), claim every
-      pending event exactly once, print them (`WAIT_EVENT=events n=N` plus one
-      line each) and exit 0 -- launched as a one-shot background task, its exit
-      is what wakes the chief (fleet-config#999). A burst settles for ~3s into
-      one wake. On timeout: `WAIT_EVENT=timeout` plus the board digest, the
-      safety net for a worker killed too hard to fire a hook. v2 events add
-      ` kind=<kind>` to their line and indented excerpt lines below it; the
-      header, the v1 lines and the closing `Next:` line are unchanged
-      (pinned by tests/chief_ops/test_chief_wait_event_compat.py, fleet-config#1455).
-
   inbox [--count] [--stale-after SECS]
       Mailbox v2 reader (fleet-config#1455; contract: docs/chief-mailbox.md).
       Moves stale claims (unacked for `--stale-after`, default 900 s) back to
@@ -337,18 +323,14 @@ from chief.mailbox import (  # noqa: E402
     CLAIMED_DIRNAME,
     INBOX_EVENT_TTL_SECONDS,
     LOGGER,
-    WAIT_EVENT_SETTLE_SECONDS,
     _now_ms,
     ack_events,
     chief_inbox_dir,
-    claim_batch,
     claim_mailbox,
     count_pending,
-    format_inbox_digest,
     format_mailbox_batch,
     reoffer_stale_claims,
     resolve_wake_mode,
-    wait_for_events,
 )
 from chief.rails import (  # noqa: E402
     LAUNCHER_SESSION_ID_ENV_VAR,
@@ -376,10 +358,10 @@ __all__ = [
     "DEFAULT_BASE_URL", "_request", "assert_loopback", "fetch_exchange_marker",
     "fetch_issue_state", "fetch_session_card", "post_session_input",
     "CLAIM_READ_ATTEMPTS", "CLAIM_READ_BACKOFF_SECONDS", "CLAIM_STALE_SECONDS",
-    "CLAIMED_DIRNAME", "INBOX_EVENT_TTL_SECONDS", "LOGGER", "WAIT_EVENT_SETTLE_SECONDS",
-    "_now_ms", "ack_events", "chief_inbox_dir", "claim_batch", "claim_mailbox",
-    "count_pending", "format_inbox_digest", "format_mailbox_batch", "reoffer_stale_claims",
-    "resolve_wake_mode", "wait_for_events",
+    "CLAIMED_DIRNAME", "INBOX_EVENT_TTL_SECONDS", "LOGGER",
+    "_now_ms", "ack_events", "chief_inbox_dir", "claim_mailbox",
+    "count_pending", "format_mailbox_batch", "reoffer_stale_claims",
+    "resolve_wake_mode",
     "LAUNCHER_SESSION_ID_ENV_VAR", "alive_worker_count", "caller_session_id",
     "find_chief_session", "find_session_status", "is_fleet_wide_brief", "parse_issue_ref",
     "refuse_dispatch", "repo_occupancy", "resolve_repo_path", "resolve_session_id",

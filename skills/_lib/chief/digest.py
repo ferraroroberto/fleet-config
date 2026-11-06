@@ -85,8 +85,7 @@ def format_board_digest(
 ) -> str:
     """The ~12-line phone-readable digest: counts, live sessions, PR/job
     cards, running fleet-wide jobs, one rate-limit line, and the `grokbot=`
-    token when the caller passes one (`board` does; the wait-event fallback
-    does not).
+    token when the caller passes one (`board` does).
 
     A count whose source can't be established renders `?` and the next line
     says why — the token shape stays `key=value` so the chief's poll still

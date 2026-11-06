@@ -13,8 +13,8 @@ wired on its harness, so no hook registration changes. A worker blocked on a
 permission gate writes a ``needs-input`` event the same way, through
 ``notify_on_idle.chief_needs_input`` (fleet-config#1456). It writes one small
 event file per event into ``state_dir()/chief-inbox/``; the chief's
-``chief_ops.py wait-event`` claims them by rename and exits, and that exit is
-what wakes the chief (a background task's exit is the one wake it trusts).
+``chief_ops.py inbox`` claims them by rename, and the doorbell (or a waiter's exit)
+wakes the chief (a background task's exit is the one wake it trusts).
 
 Why a directory of files rather than one ``.jsonl``: on Windows a file another
 process holds open for append cannot be renamed, so a single shared log would

@@ -1,4 +1,4 @@
-"""chief_ops session commands: say/stop prefix resolution, the wait-event inbox, the wake doorbell, and context + self-compact with the launcher stubbed.
+"""chief_ops session commands: say/stop prefix resolution, the wake doorbell, and context + self-compact with the launcher stubbed.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_session_commands.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -8,7 +8,6 @@ import argparse
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 import contextlib
 import io
@@ -86,97 +85,6 @@ finally:
     shutil.rmtree(_prefix_tmp, ignore_errors=True)
 
 
-# ---- wait-event: the chief inbox, claimed exactly once (fleet-config#999) ----
-
-import json  # noqa: E402
-
-_inbox_tmp = Path(tempfile.mkdtemp(prefix="chief_inbox_ops_"))
-try:
-    inbox = _inbox_tmp / "chief-inbox"
-    now = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
-
-    def publish(name: str, **fields) -> None:
-        inbox.mkdir(exist_ok=True)
-        row = {"event": "Stop", "launcher_sid": "a1b2c3d4e5f6", "repo": "fleet-config",
-               "number": 999, "agent": "claude", "ts": "2026-09-27T11:59:30Z", **fields}
-        (inbox / name).write_text(json.dumps(row), encoding="utf-8")
-
-    def real_ts() -> str:
-        # wait_for_events filters with the real clock, so its events must be
-        # stamped with it too -- a fixed date expires 24 h later (fleet-config#1084).
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    check(co.claim_batch(inbox, now=now) == [], "claim_batch: a missing inbox is an empty batch")
-    publish("1-a.json")
-    publish("2-b.json", event="SessionEnd", repo="app-launcher", number=7)
-    (inbox / ".event.x1.tmp").write_text("half-written", encoding="utf-8")
-    (inbox / "3-c.json").write_text("{not json", encoding="utf-8")
-    publish("4-d.json", ts="2026-09-25T11:00:00Z")
-    batch = co.claim_batch(inbox, now=now)
-    check([e["number"] for e in batch] == [999, 7],
-          "claim_batch: claims published events oldest first; skips temps, junk, and events past the TTL")
-    check(co.claim_batch(inbox, now=now) == [], "claim_batch: a second claim re-reports nothing (claimed once)")
-    check(sorted(p.name for p in inbox.iterdir()) == [".event.x1.tmp"],
-          "claim_batch: claimed files and the claim folder are gone; an unpublished temp is untouched")
-
-    digest = co.format_inbox_digest(batch, now=now)
-    check(digest.startswith("WAIT_EVENT=events n=2") and "fleet-config#999: turn ended (claude)" in digest
-          and "app-launcher#7: session ended" in digest and "sid=a1b2c3d4" in digest,
-          "format_inbox_digest: one line per event naming issue, kind, agent and sid")
-
-    # A burst settles into one wake: an event published during the settle window joins the batch.
-    publish("5-e.json", number=1, ts=real_ts())
-    slept = []
-    def settle_sleep(seconds):
-        slept.append(seconds)
-        publish("6-f.json", number=2, ts=real_ts())
-    got = co.wait_for_events(inbox, timeout=10, interval=1, sleep=settle_sleep)
-    check([e["number"] for e in got] == [1, 2] and slept == [co.WAIT_EVENT_SETTLE_SECONDS],
-          "wait_for_events: a burst within the settle window arrives as one wake")
-
-    # Empty inbox: returns [] once the (fake) clock passes the timeout, never loops forever.
-    ticks = iter(range(0, 1000, 5))
-    got = co.wait_for_events(inbox, timeout=12, interval=5, sleep=lambda s: None, clock=lambda: next(ticks))
-    check(got == [], "wait_for_events: an empty inbox returns [] at the timeout")
-
-    # CLI wiring: the event lands during the first interval wait. Sleep is faked, so the
-    # check asserts behaviour (the event is returned after one settle), never a wall-clock
-    # bound a loaded box could overrun.
-    old_dir = co.mailbox.chief_inbox_dir
-    old_wait = co.mailbox.wait_for_events
-    cli_slept = []
-    def cli_sleep(seconds):
-        cli_slept.append(seconds)
-        if len(cli_slept) == 1:
-            publish("7-g.json", number=3, ts=real_ts())
-    co.mailbox.chief_inbox_dir = lambda: inbox
-    co.mailbox.wait_for_events = lambda *a, **k: old_wait(*a, sleep=cli_sleep, **k)
-    try:
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            code = co.main(["wait-event", "--timeout", "30", "--interval", "0.2"])
-        check(code == 0 and "WAIT_EVENT=events n=1" in out.getvalue()
-              and cli_slept == [0.2, co.WAIT_EVENT_SETTLE_SECONDS],
-              f"wait-event CLI: returns the event after one interval wait and one settle (slept {cli_slept})")
-
-        board_calls = []
-        old_request = co.launcher._request
-        co.launcher._request = lambda base, path: board_calls.append(path) or {}
-        try:
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                code = co.main(["wait-event", "--timeout", "0.3", "--interval", "0.1"])
-        finally:
-            co.launcher._request = old_request
-        check(code == 0 and out.getvalue().startswith("WAIT_EVENT=timeout") and board_calls == ["/api/board"],
-              "wait-event CLI: an empty inbox times out with the board digest")
-    finally:
-        co.mailbox.chief_inbox_dir = old_dir
-        co.mailbox.wait_for_events = old_wait
-finally:
-    shutil.rmtree(_inbox_tmp, ignore_errors=True)
-
-
 # ---- wake: doorbell or waiter, from the launcher's switch (fleet-config#1457) ----
 # Only a confirmed `true` drops the waiter; anything unread arms it, never leaving
 # the chief with no wake path. `_request` is stubbed: no real launcher is read.
@@ -186,7 +94,7 @@ import urllib.error as _wake_urlerr  # noqa: E402
 check(co.resolve_wake_mode({"chief_doorbell": True}) == ("WAKE=doorbell doorbell=on", True),
       "resolve_wake_mode: the switch on means the doorbell wakes the chief")
 check(co.resolve_wake_mode({"chief_doorbell": False}) == ("WAKE=waiter doorbell=off", True),
-      "resolve_wake_mode: the switch off means arm the wait-event waiter")
+      "resolve_wake_mode: the switch off means arm a waiter")
 for _bad in ({}, {"chief_doorbell": "true"}, {"chief_doorbell": 1}, {"chief_doorbell": None}):
     _line, _known = co.resolve_wake_mode(_bad)
     check(_line.startswith("WAKE=waiter doorbell=unknown reason=") and _known is False,

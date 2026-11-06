@@ -10,8 +10,8 @@ chief: the stub never executes anything, and Telegram is stubbed too.
 Per harness: chief live -> exactly one `needs-input` event and no `say`, no
 Telegram; no live chief -> the Telegram ping exactly as before and no event;
 mailbox write fails -> the Telegram ping, with no retry. Then the real
-`chief_ops.py wait-event` (a subprocess, as the chief runs it) reads the
-written event, and the digest line it prints is pinned.
+`chief_ops.py inbox` (a subprocess, as the chief runs it) reads the
+written event, and the batch line it prints is pinned.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_chief_needs_input.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -305,33 +305,30 @@ finally:
             os.environ[key] = value
 
 try:
-    # ---- the live chief's waiter reads it: real `chief_ops.py wait-event` ----
-    # A subprocess, exactly as the chief launches it, against the Claude case's
-    # state dir; --base-url points nowhere so the timeout path can never reach
-    # a live launcher.
+    # ---- the chief reads it: real `chief_ops.py inbox` ----
+    # A subprocess, exactly as the chief runs it, against the Claude case's
+    # state dir; --base-url points nowhere so it can never reach a live launcher.
     env = hook_env({"CLAUDE_HOOKS_STATE_DIR": str(claude_state)})
     proc = subprocess.run(
-        [PYTHON, str(REPO / "skills" / "_lib" / "chief_ops.py"), "wait-event",
-         "--timeout", "6", "--interval", "0.5", "--base-url", "http://127.0.0.1:9"],
+        [PYTHON, str(REPO / "skills" / "_lib" / "chief_ops.py"), "inbox", "--base-url", "http://127.0.0.1:9"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=env,
         creationflags=_lib.NO_WINDOW)
     lines = proc.stdout.splitlines()
-    print("wait-event digest:\n" + proc.stdout)
+    print("inbox batch:\n" + proc.stdout)
     check(proc.returncode == 0,
-          "wait-event: exits 0 on the needs-input event")
-    check(lines[:1] == ["WAIT_EVENT=events n=1"],
-          "wait-event: header counts the one event")
+          "inbox: exits 0 on the needs-input event")
+    check(lines[:1] == ["INBOX=events n=1 reoffered=0 dropped=0"],
+          "inbox: header counts the one event")
     check(len(lines) > 1
           and lines[1].startswith(f"- fleet-config#1456: needs input (claude) sid={WORKER_SID[:8]} age=")
-          and lines[1].endswith(" kind=needs-input"),
-          "wait-event: the event line names the issue, says needs input, and tags the kind")
+          and " kind=needs-input id=" in lines[1],
+          "inbox: the event line names the issue, says needs input, and tags the kind")
     check(lines[2:4] == [f"  excerpt (prompt, {len(UNKNOWN_EXCERPT)} chars):", f"  | {UNKNOWN_EXCERPT}"],
-          "wait-event: the pending-call line follows as an indented excerpt")
-    check(lines[-1:] == ["Next: `exchange <sid>` for each, `verify` any completion claim, "
-                         "then absorb or escalate."],
-          "wait-event: the closing Next: line is unchanged")
-    check(events(claude_state) == [],
-          "wait-event: the event was claimed exactly once")
+          "inbox: the pending-call line follows as an indented excerpt")
+    check(lines[-2].startswith("ACK=chief_ops.py ack "),
+          "inbox: the ACK line follows")
+    check(len(events(claude_state)) == 0,
+          "inbox: the event left the inbox root (claimed, awaiting ack)")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

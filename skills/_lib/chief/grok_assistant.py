@@ -59,7 +59,7 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 READ_VERBS = ("board", "sessions", "exchange", "issues")
 WRITE_VERBS = ("dispatch", "say", "stop", "escalate", "plan", "sweep", "self-compact",
                "lane-compact",
-               "inbox", "ack", "verify", "wake", "wait-event")
+               "inbox", "ack", "verify", "wake")
 GH_READS = ("issue view", "issue list", "pr view", "pr list", "pr checks", "run view", "run list")
 GH_WRITES = ("issue create", "issue close", "issue comment", "issue edit", "issue reopen",
              "pr create", "pr merge", "pr close", "pr comment", "pr edit", "pr review",

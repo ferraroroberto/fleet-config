@@ -2,8 +2,8 @@
 
 `hooks/chief_waiter_stop.py` refuses the chief's turn end while lanes run and no
 waiter is armed. A waiter proves it is armed by holding one small file in
-`state_dir()/chief-waiters/` for as long as it runs: `chief_ops.py wait-event`
-does it itself, an ad-hoc shell waiter calls this module at start and exit.
+`state_dir()/chief-waiters/` for as long as it runs: an ad-hoc shell waiter calls this module at start and
+exit.
 
     ID=$(python waiter_heartbeat.py start --seconds 3000)
     trap 'python waiter_heartbeat.py stop "$ID"' EXIT
@@ -23,14 +23,13 @@ on its own because `hooks/` and `skills/_lib/` stay independent trees.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import logging
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
 # A direct run (`python waiter_heartbeat.py ...`) starts without `skills/_lib` on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -77,23 +76,6 @@ def stop(waiter_id: str) -> None:
         pass
     except OSError as exc:
         logger.warning("⚠️ waiter heartbeat %s could not be removed (%s); it expires on its own", waiter_id, exc)
-
-
-@contextlib.contextmanager
-def armed(expected_seconds: float, *, pid: Optional[int] = None) -> Iterator[None]:
-    """Hold a heartbeat for the body of the `with`. A heartbeat that cannot be
-    written is logged and the waiter still runs: the hook then asks for a
-    re-arm, which is the safe direction."""
-    waiter_id: Optional[str] = None
-    try:
-        waiter_id = start(expected_seconds, pid=pid)
-    except OSError as exc:
-        logger.warning("⚠️ waiter heartbeat could not be written (%s); the Stop hook will not see this waiter", exc)
-    try:
-        yield
-    finally:
-        if waiter_id:
-            stop(waiter_id)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
