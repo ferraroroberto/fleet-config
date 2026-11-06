@@ -24,22 +24,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
-import tempfile
 import time
 import urllib.error
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import git_run
-from active_issue import _iso_z, _now, state_lock, write_rows
+from active_issue import _iso_z, _now, write_rows
 from fleet_core.hooks_state import state_dir
 
 from . import launcher, mailbox
+from .heal import load_ledger, update_ledger
 
 LEDGER_FILENAME = "chief-proposals-ledger.json"
 SWITCH_KEY = "chief_weekly_proposals"
@@ -249,18 +248,13 @@ def fetch_open_titles(repo: str) -> Tuple[Optional[List[str]], str]:
 
 
 def write_event(event: Dict[str, Any]) -> Path:
-    """Publish `event` atomically into the chief inbox, as docs/chief-mailbox.md prescribes."""
-    inbox = mailbox.chief_inbox_dir()
-    inbox.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".event.", suffix=".tmp", dir=inbox)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(event, handle)
-        target = inbox / f"{time.time_ns() // 1_000_000}-{event['id']}.json"
-        os.replace(tmp, target)
-    except OSError:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    """Publish `event` into the chief inbox as `<ms>-<id>.json`, atomically (docs/chief-mailbox.md).
+
+    `write_rows` creates the directory and writes through a `.<name>.<random>.tmp` sibling that
+    `os.replace` lands, so a reader never sees a partial file.
+    """
+    target = mailbox.chief_inbox_dir() / f"{time.time_ns() // 1_000_000}-{event['id']}.json"
+    write_rows(target, event)
     return target
 
 
@@ -268,29 +262,6 @@ def write_event(event: Dict[str, Any]) -> Path:
 
 def ledger_file() -> Path:
     return state_dir() / LEDGER_FILENAME
-
-
-def load_ledger(path: Path) -> List[Dict[str, Any]]:
-    """Ledger entries; a missing file is empty, an unparseable one raises ValueError."""
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"{path.name} unreadable: {exc}") from exc
-    entries = doc.get("entries") if isinstance(doc, dict) else None
-    if not isinstance(entries, list):
-        raise ValueError(f"{path.name} has no entries list")
-    return entries
-
-
-def update_ledger(path: Path, change: Callable[[List[Dict[str, Any]]], Any]) -> Any:
-    """Apply `change` to the entries under the state lock; an exception from it writes nothing."""
-    with state_lock(path):
-        entries = load_ledger(path)
-        result = change(entries)
-        write_rows(path, {"version": 1, "entries": entries})
-    return result
 
 
 def _entry_line(entry: Dict[str, Any], now: datetime) -> str:

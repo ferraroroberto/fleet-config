@@ -20,6 +20,11 @@
     "reason": "reads merged history across the owner's repos; it is not a run over repos"
   },
   {
+    "pattern": "gh_repo_list",
+    "files": ["skills/_lib/chief/proposals.py"],
+    "reason": "asks which repos are public so a weekly proposal never names a private one; it is not a run over repos"
+  },
+  {
     "pattern": "gh_search_issues",
     "files": [".claude/skills/audit-fleet/SKILL.md", "skills/_lib/issue_state_gate.py"],
     "reason": "names the Search-API route as the one not to use, in prose"
