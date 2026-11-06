@@ -36,7 +36,7 @@ _GENERIC_PREFIXES = ("the lane did not state", "the lane could not verify")
 # One public-safe phrase per reason that stopped firing.
 DROPPED_WORDS = {
     "own-sign-in": "an app's own sign-in is not a third-party account",
-    "surface": "a vendored file, a helper script or a proofed view is not a new surface",
+    "surface": "a new page or view is browser-provable, so an agent proves it, not the owner",
     "backfill": "back-fill-only entry",
     "device": "no live-input reason any more",
     "generic": "a generic could-not-verify names no criterion and no owner-only class",

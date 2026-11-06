@@ -49,28 +49,25 @@ check(rule.decide(ENH, "Sign up for the newsletter provider", "").verdict == rul
 check(rule.decide(["chore"], "Add OAuth for the mail sync", "").verdict == rule.NONE,
       "the account clause is enhancement-only")
 
-d = rule.decide(ENH, "Tidy", "**Owner validation:** none - nothing to try", [("added", "webapp/static/views/new.html")])
-check(d.verdict == rule.REQUIRED and any("new page or view" in r for r in d.reasons),
-      f"an explicit none never suppresses a diff hit, got {d}")
-check(rule.decide(ENH, "Tidy", "", [("added", "content/pages/privacy.html")]).verdict == rule.REQUIRED,
-      "a new page without proof fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/js/views/card.js")]).verdict == rule.REQUIRED,
-      "a new view module without proof fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/conversation-view.js")]).verdict == rule.REQUIRED,
-      "a *-view.js module fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/views/new.html")], ux_proven=True).verdict == rule.NONE,
-      "a proofed new view no longer fires")
-check(rule.decide(ENH, "Tidy", "", [("added", "app/webapp/static/_vendored/sign-in/README.md"),
-                                    ("added", "app/webapp/static/_vendored/modal/modal.html")]).verdict == rule.NONE,
+check(rule.decide(ENH, "Tidy", "", [("added", "content/pages/privacy.html")]).verdict == rule.NONE,
+      "a new page is browser-provable: never an owner reason")
+check(rule.decide(ENH, "Tidy", "Owner validation: required", [("added", "content/pages/privacy.html")]).verdict
+      == rule.REQUIRED, "an explicit required line still fires beside a new page")
+US = rule.unproven_surface
+check(US(ENH, [("added", "content/pages/privacy.html")], False) == "content/pages/privacy.html",
+      "a new page without proof is an unproven surface")
+check(US(ENH, [("added", "webapp/static/js/views/card.js")], False) is not None, "a new view module is one")
+check(US(ENH, [("added", "webapp/static/conversation-view.js")], False) is not None, "a *-view.js module is one")
+check(US(ENH, [("added", "webapp/static/views/new.html")], True) is None, "a proofed new view is not")
+check(US(ENH, [("added", "app/webapp/static/_vendored/sign-in/README.md"),
+               ("added", "app/webapp/static/_vendored/modal/modal.html")], False) is None,
       "a vendored README or file is not a new surface")
-check(rule.decide(ENH, "Tidy", "", [("added", "webapp/static/links/links-merge.js")]).verdict == rule.NONE,
-      "a helper script is not a new surface")
-check(rule.decide(ENH, "Tidy", "", [("added", "tests/fixtures/page.html")]).verdict == rule.NONE,
-      "a test fixture page is not a new surface")
-check(rule.decide(["chore"], "Tidy", "", [("added", "webapp/static/views/new.html")]).verdict == rule.NONE,
+check(US(ENH, [("added", "webapp/static/links/links-merge.js")], False) is None, "a helper script is not a new surface")
+check(US(ENH, [("added", "tests/fixtures/page.html")], False) is None, "a test fixture page is not a new surface")
+check(US(["chore"], [("added", "webapp/static/views/new.html")], False) is None,
       "an added UI file only counts for enhancements")
-check(rule.decide(ENH, "Tidy", "", [("modified", "webapp/static/views/app.html")]).verdict == rule.NONE,
-      "a modified UI file is not a new surface")
+check(US(ENH, [("modified", "webapp/static/views/app.html")], False) is None, "a modified UI file is not a new surface")
+check(US(ENH, None, False) is None, "no diff, no surface")
 check(rule.ux_proven("- UX: VISUAL_PROOF=fresh (kept locally)") and not rule.ux_proven("VISUAL_PROOF=stale")
       and not rule.ux_proven(""), "only a fresh VISUAL_PROOF line counts as proof")
 
@@ -205,9 +202,10 @@ v = _re(_item("involves an account only the owner holds (sign-in); adds a new us
         [("added", "app/webapp/static/_vendored/sign-in/README.md")])
 check(v.state == reclassify.CLEAR and v.dropped == ["own-sign-in", "surface"],
       f"own sign-in + vendored README clear, got {v}")
-v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
+v = _re(_item("adds a new page or view no UX proof covered (content/pages/privacy.html)"), _iss(),
         [("added", "content/pages/privacy.html")])
-check(v.state == reclassify.KEEP, f"a new page with no proof stays, got {v}")
+check(v.state == reclassify.CLEAR and v.dropped == ["surface"] and "browser-provable" in reclassify.DROPPED_WORDS["surface"],
+      f"a new page with no proof clears: a browser proves it, not the owner, got {v}")
 v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
         [("added", "content/pages/privacy.html")], "VISUAL_PROOF=fresh")
 check(v.state == reclassify.CLEAR and v.dropped == ["surface"], f"the same page with a fresh proof clears, got {v}")
@@ -294,8 +292,8 @@ check(code == 0 and "SCHEDULED_READ=chief" in out and "OWNER_CHECK=none" in out 
 
 fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes", "--try", "open it"], fake)
-check(code == 1 and "REASON=adds a new page or view no UX proof covered" in out,
-      f"a new view without a visual proof is required ({code}, {out})")
+check(code == 2 and "OWNER_CHECK=refused" in out and "VISUAL_PROOF=fresh" in out and not fake.writes(),
+      f"a new view without a visual proof is refused for the lane to prove, never sent to the owner ({code}, {out})")
 fake = FakeGh(issue(labels=("enhancement",)), "added\twebapp/static/views/new.html\n")
 fake.pr_body = "Test plan\nVISUAL_PROOF=fresh"
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
@@ -321,6 +319,24 @@ check(posted["proof"] == ["https://github.com/ferraroroberto/demo/pull/9", "http
       f"the PR url leads the proof list, got {posted['proof']}")
 check(posted["reason"] == rule.gap_reason("device", "the mic level moves") and posted["try"] == "open it",
       f"the named gap and try land in the block, got {posted}")
+
+own = block.format_block(block.VALIDATE_AFTER, "the lane could not verify the work in its own session", "t",
+                         ["https://github.com/ferraroroberto/demo/pull/9"], "2026-11-06")
+fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=(own,)), "modified\tsrc/app.py\n")
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+edit = next((c for c in fake.calls if c[:2] == ["issue", "edit"]), [])
+check(code == 0 and "OWNER_CHECK=none" in out and "RETRACTED=yes label=needs-validation" in out
+      and "--remove-label" in edit and block.parse_block(fake.comments[0])["kind"] == block.CLEARED,
+      f"a none re-run for the same PR removes the label its earlier finish added ({code}, {out})")
+other = block.format_block(block.VALIDATE_AFTER, "hand", "t", ["https://github.com/ferraroroberto/demo/pull/3"])
+for comments, what in (((other,), "another PR's block"), ((), "a bare label with no block")):
+    fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=comments), "modified\tsrc/app.py\n")
+    code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+    check(code == 0 and "RETRACTED" not in out and not fake.writes(), f"{what} is left for the Board ({code}, {out})")
+fake = FakeGh(issue(labels=("chore", "needs-validation"), comments=(own,)), "modified\tsrc/app.py\n",
+              fail=("issue edit",))
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
+check(code == 3 and "RETRACTED=unknown" in out, f"a retract that does not land is unknown ({code}, {out})")
 
 already = block.format_block(block.VALIDATE_AFTER, "r", "t")
 fake = FakeGh(issue(labels=("bug", "needs-validation"), comments=(already,)), "")

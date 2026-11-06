@@ -86,14 +86,19 @@ def cmd_finish(args: argparse.Namespace) -> int:
         return EXIT_UNKNOWN
     if args.verified == rule.VERIFIED_SCHEDULED:
         print("SCHEDULED_READ=chief reason=a criterion only a later scheduled run can show")
+    surface = rule.unproven_surface(issue["labels"], files, proven)
+    if surface:
+        print(f"OWNER_CHECK=refused APPLIED=no reason=adds a new page or view ({surface}) with no visual proof; "
+              "a browser proves it, not the owner: run it and put VISUAL_PROOF=fresh in the PR body, then re-run")
+        return EXIT_REFUSED
     decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified, proven,
                            getattr(args, "gaps", ()))
-    if decision.verdict == rule.NONE:
-        print("OWNER_CHECK=none")
-        return EXIT_NONE
-    _print_reasons(decision.reasons)
     latest = block.latest_block(issue["comments"]) or {}
     label = block.LABELS[block.VALIDATE_AFTER]
+    if decision.verdict == rule.NONE:
+        print("OWNER_CHECK=none")
+        return _retract_own_mark(repo, number, issue, latest, args.pr)
+    _print_reasons(decision.reasons)
     if label in issue["labels"] and latest.get("kind") == block.VALIDATE_AFTER:
         print(f"OWNER_CHECK=required APPLIED=already label={label}")
         return EXIT_REQUIRED
@@ -110,6 +115,29 @@ def cmd_finish(args: argparse.Namespace) -> int:
         return EXIT_UNKNOWN
     print(f"OWNER_CHECK=required APPLIED=yes label={label}")
     return EXIT_REQUIRED
+
+
+def _retract_own_mark(repo: str, number: int, issue: dict, latest: dict, pr: int) -> int:
+    """A `none` re-run drops the label an earlier `finish` for the same PR put on.
+
+    Only a validate-after block whose proof leads with this PR's url is `finish`'s own;
+    a hand mark or another PR's block is left for the Board.
+    """
+    label = block.LABELS[block.VALIDATE_AFTER]
+    proof = latest.get("proof") or []
+    if (label not in issue["labels"] or latest.get("kind") != block.VALIDATE_AFTER
+            or not proof or proof[0] != github.pr_url(repo, pr)):
+        return EXIT_NONE
+    body = block.format_block(block.CLEARED, "a later finish for the same PR found no owner-check reason", "",
+                              (github.pr_url(repo, pr),), _today(),
+                              answer="re-run of owner_check finish: none; the earlier mark is retracted")
+    try:
+        github.clear(repo, number, [label], body)
+    except github.GhError as exc:
+        print(f"RETRACTED=unknown reason=the earlier mark could not be removed: {exc}")
+        return EXIT_UNKNOWN
+    print(f"RETRACTED=yes label={label}")
+    return EXIT_NONE
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
