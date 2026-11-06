@@ -3,7 +3,7 @@
 `contracts()` is a thin orchestrator — it builds the shared `_ContractsCtx`
 once and runs `_CONTRACT_CHECKS` in numbered order. Each check lives in the
 per-concern module its subject belongs to (a11y, controls, modal, nav, icons,
-charts, states, typography, vendored_tokens, page_foot), so adding a design.md rule
+charts, states, typography, vendored_tokens, page_foot, color_scheme), so adding a design.md rule
 means editing one small file and adding one row to the tuple below, not
 growing a single 1200-line section.
 """
@@ -25,6 +25,7 @@ from .a11y import (
     _check_spec_contrast,
 )
 from .charts import _check_chart_noncolor_cue, _check_chart_tick_budget
+from .color_scheme import _check_color_scheme_follows_theme
 from .controls import (
     _check_button_tiers,
     _check_chevron_placement,
@@ -82,6 +83,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_rendered_leg,
     _check_vendored_tokens,
     _check_page_foot,
+    _check_color_scheme_follows_theme,
 )
 
 

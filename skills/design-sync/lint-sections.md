@@ -218,6 +218,17 @@ read.
     for a missing footer follows the other adoption contracts (text-size,
     range-tab): the weekly sweep reports it per app without a FAIL flood while
     each app adopts in its own issue.
+  - **color-scheme-theme** — `color-scheme` resolves from the chosen
+    `data-theme`, not the OS (design.md Colors, theme switching). FAIL when the
+    app declares `color-scheme` but a theme has no rule of its own: each of
+    `light` and `dark` needs a `[data-theme="<theme>"]` rule whose value is
+    exactly that scheme (`:root[data-theme="dark"] { color-scheme: dark; }`,
+    or a per-element rule such as `[data-theme="dark"] select`), or a bare
+    single-scheme `:root { color-scheme: light; }` for the theme it names. A
+    rule inside `@media (prefers-color-scheme)` follows the OS again and never
+    counts. The detail names the missing rules; the vendored `base/base.css`
+    ships all three and passes. NA when no `color-scheme` is declared. Reads
+    app-authored CSS plus inline `<style>` blocks.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original
