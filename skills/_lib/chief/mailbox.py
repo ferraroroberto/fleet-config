@@ -252,6 +252,23 @@ def _cap_raised_lines(event: Dict[str, Any]) -> List[str]:
     return [f"- worker cap raised old={bound('old')} new={bound('new')}"]
 
 
+def _proposals_lines(event: Dict[str, Any]) -> List[str]:
+    """A `proposals` event's head line and one line per candidate (`[pid8] repo: title (type) -- reason`).
+
+    The weekly learning-log run writes it, so there is no repo, issue or sid. A `candidates`
+    that is not a list reads `n=-` and still delivers; an unreadable candidate reads `?` for
+    its fields rather than hiding the rest.
+    """
+    cands = event.get("candidates")
+    count = str(len(cands)) if isinstance(cands, list) else "-"
+    lines = [f"- weekly proposals n={count} week={event.get('week') or '-'}"]
+    for cand in cands if isinstance(cands, list) else []:
+        cand = cand if isinstance(cand, dict) else {}
+        lines.append(f"  [{str(cand.get('pid') or '?')[:8]}] {cand.get('repo') or '?'}: "
+                     f"{cand.get('title') or '?'} ({cand.get('type') or '?'}) -- {cand.get('reason') or '?'}")
+    return lines
+
+
 def _kind_lines(event: Dict[str, Any]) -> Optional[List[str]]:
     """The head (and detail) lines of an event kind that is not a worker's, or None for a worker's."""
     kind = event.get("kind")
@@ -259,6 +276,8 @@ def _kind_lines(event: Dict[str, Any]) -> Optional[List[str]]:
         return _job_failed_lines(event)
     if kind == "cap-raised":
         return _cap_raised_lines(event)
+    if kind == "proposals":
+        return _proposals_lines(event)
     return None
 
 
