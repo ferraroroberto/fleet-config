@@ -20,6 +20,7 @@ import walk  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 POINTER_JS = "() => matchMedia('(pointer: coarse)').matches"
+LABEL_COLOR_JS = "() => getComputedStyle(document.getElementById('label')).color"
 
 
 def main() -> int:
@@ -36,7 +37,8 @@ def main() -> int:
             with tempfile.TemporaryDirectory() as tmp:
                 page.screenshot(path=str(Path(tmp) / "full.png"), full_page=True)
             out["dropped"] = page.evaluate(POINTER_JS)
-            out["restored"] = walk.read_metrics(page, POINTER_JS, {}, retouch)
+            out["label"] = walk.read_metrics(page, LABEL_COLOR_JS, {}, retouch)
+            out["restored"] = page.evaluate(POINTER_JS)
             with tempfile.TemporaryDirectory() as tmp:
                 page.screenshot(path=str(Path(tmp) / "full.png"), full_page=True)
             try:
