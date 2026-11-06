@@ -248,7 +248,7 @@ Decision below is driven by the project's `## CI expectations` block
   from the primary repo path, after the landing above — one call, non-blocking,
   no question to anyone:
   ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches <repo> --delete --remote
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/branch_residue.py branches E:/automation/<repo> --delete --remote
   ```
   **The rule (the same one `/cleanup-fleet-all` states):** a ref classed `landed`
   (no open PR, tip proven merged with a closed issue, or equal to the recorded head of

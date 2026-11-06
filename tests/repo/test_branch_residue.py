@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +37,8 @@ from typing import Optional
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import branch_residue as br  # noqa: E402
+from residue import gh_lookups as brg  # noqa: E402
+from fleet_core import fleet_repo_scan as fleet_registry  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
@@ -119,14 +122,14 @@ check(cr(issue_state="open", own_pr=False) == br.OPEN_ISSUE and cr(issue_state="
 check(cr(is_default=True, issue_state=None, own_pr=True) == br.DEFAULT and cr(checked_out=True, issue_state=None, own_pr=True) == br.CHECKED_OUT
       and cr(issue=None, issue_state=None, own_pr=True) == br.NO_ISSUE,
       "classify: the own-PR proof never outranks default, checked-out or no-issue")
-check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
-      and br.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
-check(br.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and br.parse_own_prs("9\t\tmain\t2026\n") is None
-      and br.parse_own_prs("x\ty\n") is None,
+check(brg.parse_own_prs("9\t" + "a" * 40 + "\tmain\t2026-11-05T10:00:00Z\n") == [br.OwnPr(9, "a" * 40, "main", "2026-11-05T10:00:00Z")]
+      and brg.parse_own_prs("") == [], "parse_own_prs: TSV rows parse, an empty answer is no PRs")
+check(brg.parse_own_prs("9\t" + "a" * 40 + "\tmain\t\n") is None and brg.parse_own_prs("9\t\tmain\t2026\n") is None
+      and brg.parse_own_prs("x\ty\n") is None,
       "parse_own_prs: a row without a merge time or head sha, or with a bad shape, makes the lookup unknown")
-check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
-      and br.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
-check(br.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and br.parse_closing_prs("x\ty\n") is None,
+check(brg.parse_closing_prs("7\tfeat/7-v2\tmain\t" + "a" * 40 + "\n") == [br.ClosingPr(7, "feat/7-v2", "main", "a" * 40)]
+      and brg.parse_closing_prs("") == [], "parse_closing_prs: TSV rows parse, an empty answer is no PRs")
+check(brg.parse_closing_prs("7\tfeat/7-v2\tmain\t\n") is None and brg.parse_closing_prs("x\ty\n") is None,
       "parse_closing_prs: a row without a merge sha or with a bad shape makes the lookup unknown")
 
 check(wr.classify_orphan(True, True)[0] == "orphan-with-git-file"
@@ -438,6 +441,33 @@ out = run_cli("orphans", str(primary))
 check("BRANCH=" not in out and "ORPHAN=" in out and "VERDICT=" not in out, "cli: orphans prints only the orphan section")
 out = run_cli("branches", str(base / "missing"), "--no-fetch")
 check(out.startswith("VERDICT=unknown") and "REASON=no such path" in out, "cli: a missing repo path is unknown, not clean")
+
+# A bare fleet repo name resolves through the fleet list (fleet-config#1892). The list is a temp file
+# via the env override, so the real machine-local registry is never read.
+fleet_toml = base / "fleet-projects.toml"
+fleet_toml.write_text(f'[Fleet-Name]\ncwd_prefix = "{primary.as_posix()}"\n[gone]\ncwd_prefix = "{(base / "gone").as_posix()}"\n',
+                      encoding="utf-8")
+os.environ[fleet_registry.PROJECTS_TOML_ENV_VAR] = str(fleet_toml)
+br.make_gh_lookups = lambda slug: (issue_state, lambda: set(), closing, own)
+try:
+    by_path = run_cli("branches", str(primary), "--no-fetch")
+    by_name = run_cli("branches", "fleet-name", "--no-fetch")
+    out = run_cli("branches", "not-a-fleet-repo", "--no-fetch")
+    out_gone = run_cli("branches", "gone", "--no-fetch")
+    os.environ[fleet_registry.PROJECTS_TOML_ENV_VAR] = str(base / "no-such-fleet.toml")
+    out_nolist = run_cli("branches", "fleet-name", "--no-fetch")
+finally:
+    br.make_gh_lookups = br_issue_state_real
+    os.environ.pop(fleet_registry.PROJECTS_TOML_ENV_VAR, None)
+check(by_name == by_path and by_name.strip().splitlines()[-1].startswith("VERDICT="),
+      f"cli: a bare fleet repo name gives the same report as its path (got {by_name[:200]!r})")
+check(out.startswith("VERDICT=unknown") and "REASON=no such path: not-a-fleet-repo" in out
+      and "not a fleet repo name either" in out and "repo path" in out,
+      f"cli: an unknown name is unknown and the message names both forms (got {out!r})")
+check(out_gone.startswith("VERDICT=unknown") and "REASON=no such path" in out_gone and "gone" in out_gone,
+      f"cli: a fleet name whose folder is missing is unknown (got {out_gone!r})")
+check(out_nolist.startswith("VERDICT=unknown") and "fleet list unreadable" in out_nolist,
+      f"cli: an unreadable fleet list is its own reason, not 'not a fleet repo' (got {out_nolist!r})")
 
 # ---- --delete (fleet-config#1528) -----------------------------------------------
 # Every scenario gets its own throwaway origin + clone: a delete mutates refs.
