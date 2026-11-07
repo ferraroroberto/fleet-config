@@ -48,6 +48,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [`/learning-log`](skills/learning-log.md) — weekly journey and productivity lens over the GitHub work stream
 - [`/fleet-health`](skills/fleet-health.md) — weekly hardware checkup of every fleet machine
 - [`/sota-watch`](skills/sota-watch.md) — recurring state-of-the-art watch over adopted choices
+- [`/inspiration-scan`](skills/inspiration-scan.md) — daily digest of ideas from the sources the owner follows
 - [`/fleet-10x`](skills/fleet-10x.md) — per-repo 10x-better research with an Opus synthesis
 - [`/chief`](skills/chief.md) — brain of the app-launcher Board chat orchestrator
 - [`/context-audit`](skills/context-audit.md) — always-on context surface audit and the context-efficiency standard
