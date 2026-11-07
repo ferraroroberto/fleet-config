@@ -4,7 +4,7 @@ The agent half of app-launcher#1530. Claude has a native `SendUserFile` tool;
 Codex, Grok, Pi and Copilot do not, but every harness can run a shell command.
 This script POSTs the path to the launcher's loopback-only outbox endpoint for
 the caller's own session -- or, inside a scheduled launcher Job (no session),
-for the Job's own running run (app-launcher#2207) -- and prints exactly one
+for the Job's own running run -- and prints exactly one
 result line:
 
     SENT=<entry id>            exit 0 -- the launcher accepted and stored the file
@@ -45,7 +45,7 @@ EXIT_SENT, EXIT_REFUSED, EXIT_UNAVAILABLE = 0, 1, 2
 SEND_TIMEOUT = 30.0
 # 503 from the launcher: the session-host (which knows the live sessions) is down.
 SESSION_HOST_UNREACHABLE = "session_host_unreachable"
-# Stamped by the launcher's Job executor on a running Job's child (app-launcher#2207).
+# The launcher's Job executor stamps these on a running Job's child, so it can address its own run.
 JOB_ID_ENV_VAR = "APP_LAUNCHER_JOB_ID"
 JOB_RUN_ID_ENV_VAR = "APP_LAUNCHER_JOB_RUN_ID"
 
