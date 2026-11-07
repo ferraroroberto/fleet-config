@@ -30,6 +30,10 @@ work in this repo doesn't cost the whole catalogue:
   UX-conformance gate, the deploy-coverage gate, the design-review
   measure/rubric/scoring/judgment/report core with its run ledger, issue
   filing and fleet sweep, and stranded index locks.
+- **[`docs/code-quality.md`](docs/code-quality.md)** — the portable
+  explanation of how code quality is guaranteed: the principles, the life of
+  a check, the hook / gate / audit layers, one section per ratchet, how to
+  add a check and how to port the system to another codebase.
 - **[`docs/ratchets.md`](docs/ratchets.md)** — the nine ratchets that gate
   the acceptance run: what each fails on, its gate, `.fleet.toml` options,
   baseline size and scaffold doc, and how to fix a hit or burn a baseline
