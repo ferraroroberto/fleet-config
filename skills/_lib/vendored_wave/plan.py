@@ -20,6 +20,10 @@ CLI:
       `--claim` asks for the wave claim (wave_claim.py): a real wave passes it, a dry run
       does not. A wave already running refuses with `REFUSED=wave-running ...` (exit 1)
       and an unreadable claim exits 3 as unknown; the plan is printed only when held.
+      Each named component brings the siblings it `requires` in the scaffold's `[components]`
+      catalog (transitively), and a repo holding it without them gets an `add` entry. A
+      requirement the scaffold cannot satisfy exits 3 with `REQUIRES=blocked ...` on stderr
+      and the dependent components held out of the plan, never a partial wave.
 """
 
 from __future__ import annotations
@@ -96,7 +100,9 @@ def pr_body(entries: List[Dict[str, object]], new_sha: str, part_of: Optional[st
         rows = [f"| `{e['component']}` | {e['action']} | {('`' + short(e['old_sha']) + '`') if e['old_sha'] else 'none'} "
                 f"| `{short(e['new_sha'])}` | {len(e['files'])} |" for e in entries]
         listing = "\n\n| Component | Action | Old sha | New sha | Files changed |\n|---|---|---|---|---|\n" + "\n".join(rows)
-    return (f"## Summary\n\n{summary}{listing}\n\nPart of {part_of or ref}\n\n## Test plan\n\n"
+    added = "".join(f"\n\n`{e['component']}` is added because `{'`, `'.join(e['required_by'])}` loads it at runtime."
+                    for e in entries if e["action"] == "add")
+    return (f"## Summary\n\n{summary}{listing}{added}\n\nPart of {part_of or ref}\n\n## Test plan\n\n"
             "- [ ] every copied file's sha256 matches the scaffold source (per component)\n"
             "- [ ] the repo's verification gate passes\n")
 
@@ -118,9 +124,11 @@ def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozen
     """The per-repo plan for a `vendored_drift.scan_fleet` report."""
     per_repo: Dict[str, List[Dict[str, object]]] = {}
     held: List[Dict[str, object]] = []
+    req = report.get("requires") or {}
+    blocked: Dict[str, str] = req.get("blocked") or {}
     for row in report["adopters"]:
         entry = _adopter_entry(row)
-        if entry is None:
+        if entry is None or row["component"] in blocked:
             continue
         removed = row.get("contract", {}).get("removed_selectors") or []
         if row.get("contract", {}).get("breaking") and row["component"] not in allow_breaking:
@@ -130,7 +138,13 @@ def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozen
         per_repo.setdefault(str(row["repo"]), []).append(entry)
 
     held_carriers: List[Dict[str, object]] = []
+    for missing in req.get("missing") or []:
+        entry = _entry(missing, "add", "required by " + ", ".join(missing["required_by"]), [], None)
+        per_repo.setdefault(str(missing["repo"]), []).append({**entry, "required_by": missing["required_by"]})
+
     for carrier in report["undeclared_carriers"]:
+        if carrier["component"] in blocked:
+            continue
         if carrier["matches_head"]:
             row = {**carrier, "head_sha": report["head_sha"]}
             per_repo.setdefault(str(carrier["repo"]), []).append(_entry(row, "adopt", "adopt", [], None))
@@ -160,7 +174,9 @@ def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozen
     return {
         "scaffold_sha": head, "repos": repos, "held_contract": held, "held_carriers": held_carriers,
         "ignore_only": ignore_only, "held_ignore": held_ignore,
-        "prs": len(repos) + len(ignore_only), "component_prs_before": sum(len(r["components"]) for r in repos),
+        "requires": req.get("edges") or [],
+        "held_requires": [{"component": c, "error": e} for c, e in sorted(blocked.items())],
+        "prs":len(repos) + len(ignore_only), "component_prs_before": sum(len(r["components"]) for r in repos),
         "coverage": report["coverage"], "errors": report["errors"],
     }
 
@@ -168,12 +184,18 @@ def plan_wave(report: Dict[str, object], allow_breaking: FrozenSet[str] = frozen
 def render_text(plan: Dict[str, object]) -> str:
     """The dry-run report: per repo, the components it is behind on, then everything held back, then coverage."""
     lines = [f"/propagate-vendored wave plan - scaffold @ {short(str(plan['scaffold_sha']))}", ""]
+    for edge in plan["requires"]:
+        lines.append(f"  REQUIRES={edge['component']} <- {edge['requires']}")
+    if plan["requires"]:
+        lines.append("")
     for r in plan["repos"]:
         n = len(r["components"])
         lines.append(f"  {r['repo']}   {n} component{'s' if n != 1 else ''} -> 1 PR ({r['branch']})")
         for e in r["components"]:
             if e["action"] == "adopt":
                 lines.append(f"    {e['component']}   adopt (identical to HEAD)")
+            elif e["action"] == "add":
+                lines.append(f"    {e['component']}   add ({e['reason']})")
             else:
                 pin = short(e["old_sha"])
                 lines.append(f"    {e['component']}   pinned {pin}   {e['reason']}   ({len(e['files'])} files)")
@@ -184,6 +206,8 @@ def render_text(plan: Dict[str, object]) -> str:
         lines.append(f"  {i['repo']}   .ignore block {i['state']} -> 1 PR ({i['branch']})")
     for h in plan["held_ignore"]:
         lines.append(f"  HUMAN CALL (.ignore block {h['state']}): {h['repo']}")
+    for h in plan["held_requires"]:
+        lines.append(f"  BLOCKED (dependency): {h['component']}: {h['error']}")
     for h in plan["held_contract"]:
         lines.append(f"  HELD (selectors removed): {h['repo']} {h['component']} @ {short(h['pinned_sha'])}: "
                      + ", ".join(h["removed_selectors"]))
@@ -229,6 +253,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     allowed = vd.parse_component_filter(args.allow_breaking) or frozenset()
     plan = plan_wave(report, allowed, args.part_of)
     sys.stdout.write(render_text(plan) if args.format == "text" else json.dumps(plan, indent=2) + "\n")
+    if plan["held_requires"]:
+        # A dependency that cannot be read is not "nothing to add": the plan above holds those components back.
+        sys.stderr.write("REQUIRES=blocked " + "; ".join(f"{h['component']}: {h['error']}" for h in plan["held_requires"]) + "\n")
+        return 3
     return 0
 
 
