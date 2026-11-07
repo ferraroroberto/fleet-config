@@ -117,6 +117,37 @@ try:
     check(code == 2 and line.startswith("UNAVAILABLE=bad-base-url") and len(seen) == n,
           "non-loopback base url: refused before any request")
 
+    # ---- inside a scheduled Job: no session, the run identity addresses the job outbox ----
+    JOB_ENV = {"APP_LAUNCHER_JOB_ID": "job-a", "APP_LAUNCHER_JOB_RUN_ID": "20261107T090000"}
+    answer(200, {"ok": True, "entry": {"id": "j1"}})
+    code, line = run("chart.png", "cap", env=JOB_ENV)
+    check(code == 0 and line == "SENT=j1", "job: exit 0 and SENT=<entry id>")
+    path, body = seen[-1]
+    check(path == "/api/jobs/job-a/runs/20261107T090000/outbox", "job: posts to the run's own job outbox")
+    check(Path(body["path"]).is_absolute() and body["caption"] == "cap", "job: absolute path and caption pass through")
+    code, line = run(env={**JOB_ENV, "APP_LAUNCHER_SESSION_ID": SID})
+    check(code == 0 and seen[-1][0] == f"/api/claude-code/sessions/{SID}/outbox", "session id wins when both are present")
+    n = len(seen)
+    for label, partial in (("job id only", {"APP_LAUNCHER_JOB_ID": "job-a"}),
+                           ("run id only", {"APP_LAUNCHER_JOB_RUN_ID": "r1"}),
+                           ("blank ids", {"APP_LAUNCHER_JOB_ID": " ", "APP_LAUNCHER_JOB_RUN_ID": ""})):
+        code, line = run(env=partial)
+        check(code == 2 and line.startswith("UNAVAILABLE=no-launcher-session"), f"job identity incomplete ({label}): no-launcher-session")
+    check(len(seen) == n, "job identity incomplete: nothing posted")
+    code, line = run(env={"APP_LAUNCHER_JOB_ID": "../x", "APP_LAUNCHER_JOB_RUN_ID": "a/b"})
+    check(seen[-1][0] == "/api/jobs/..%2Fx/runs/a%2Fb/outbox", "job: ids are percent-encoded into the path")
+    answer(404, {"detail": "Not Found"})
+    code, line = run(env=JOB_ENV)
+    check(code == 2 and line.startswith("UNAVAILABLE=job-outbox-missing"), "job: older launcher without the route is job-outbox-missing")
+    for status, reason in ((404, "job_not_found"), (404, "run_not_found"), (409, "run_not_running"),
+                           (403, "out_of_root"), (400, "bad_request"), (403, "loopback_only")):
+        answer(status, {"detail": {"reason": reason, "message": f"msg for {reason}"}})
+        code, line = run(env=JOB_ENV)
+        check(code == 1 and line == f"REFUSED={reason}: msg for {reason}", f"job refused: {reason} relayed with its message (HTTP {status})")
+    answer(503, {"detail": {"reason": "session_host_unreachable", "message": "x"}})
+    code, line = run(env=JOB_ENV)
+    check(code == 2 and line.startswith("UNAVAILABLE=session_host_unreachable"), "job: 503 stays UNAVAILABLE")
+
     # ---- the CLI prints exactly one line and returns the code ----
     answer(200, {"ok": True, "entry": {"id": "cli1"}})
     out = io.StringIO()
