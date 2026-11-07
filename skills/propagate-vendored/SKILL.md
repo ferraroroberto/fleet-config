@@ -33,6 +33,10 @@ scaffold changes, propagate once. Nothing here schedules itself; there is no
   names, comma-separated, make one wave: each repo gets **one PR** carrying every
   named component it is behind on.
 - **`--all-behind`** — every component, instead of a list. Same one-PR-per-repo wave.
+- **Requirements ride along.** A component whose scaffold `[components]` entry has
+  `requires = [...]` (`conventions_ratchet` loads `conventions_readers`) is always
+  planned with those siblings, transitively; name only the first. A repo that holds the
+  component but not a sibling gets an `add` entry for it in the same PR.
 - **`[scaffold-sha]`** — optional. The scaffold commit to propagate to.
   Default: `project-scaffolding`'s current `origin/HEAD` (default branch tip).
 - **`--dry-run`** (or the bare word `check`) — report-only. Runs the drift
@@ -187,8 +191,18 @@ its 8 h TTL) before scanning. Another wave running prints `REFUSED=wave-running 
 1, an unreadable claim exits 3: either way stop and report it, plan nothing. The same
 `<wave-id>` on a later call (the `--allow-breaking` re-run in step 4) renews the claim.
 
+**Requirements.** The scan and the plan expand `--component` with each component's
+`requires` first: the plan's `requires` lists every `component <- dependency` edge it
+followed, and `--format text` prints them as `REQUIRES=<component> <- <dep>` lines. A
+requirement the scaffold cannot satisfy (a dependency missing from `[components]`, or with
+no files at the tip) puts the components that need it in `held_requires`, names the
+dependency in `errors`, prints `REQUIRES=blocked …` on stderr and **exits 3**: that is a
+stop, in a dry run and a real one, never a smaller wave. Say which dependency, stop, and
+release the claim if one was taken.
+
 JSON (default) is one entry per repo: `components` (each with `action`
-`re-vendor`|`adopt`, `old_sha`, `new_sha`, `files`), plus the `branch`,
+`re-vendor`|`adopt`|`add`, `old_sha`, `new_sha`, `files`; an `add` also carries
+`required_by`), plus the `branch`,
 `worktree_key`, `commit_subject`, `commit_body` and `pr_body` that repo's single PR
 uses, and top-level `held_contract` (components stopped for removed selectors) and
 `held_carriers` (carriers that differ from the tip). A one-component plan keeps
@@ -205,6 +219,7 @@ behind on, the PRs the wave would open against one per component), then:
 ```
 /propagate-vendored <component>[,<component>…] --dry-run — scaffold @ <short-sha> (<ref>)
 
+  requires: <REQUIRES= lines from the plan, or "none">; repos that would gain a sibling: <repo: dep, or "none">
   adopters (declared in [vendored]):
     <repo>   pinned <short-sha>   local: OK|DRIFT (<n> files)   vs HEAD: current|BEHIND (<n> files)   [classify_e2e: gate <GATE_ROUTING>]
     …
@@ -265,7 +280,8 @@ above; steps 5-7 run once for the whole repo.
 1. cd to <path>. Confirm you are on the branch (cut it if MODE was primary
    and it doesn't exist yet: `git checkout -b <branch>` off fresh origin/main).
 
-2a. ADOPT (only if <repo> has no [vendored].<component> entry yet): add one
+2a. ADOPT (only if <repo> has no [vendored].<component> entry yet — an `adopt`
+    or `add` action; an `add` is a sibling another component requires): add one
     to .fleet.toml's [vendored] table —
     <component> = { src = "<scaffold-src>", sha = "<scaffold-sha>", dest = "<dest-path>" }
     — dest defaults to the same relative path as src unless the component
@@ -333,7 +349,7 @@ above; steps 5-7 run once for the whole repo.
 
 Report back, in this exact shape:
   - Repo: <repo>
-  - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several)
+  - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several; an `add` counts as ADOPTED)
   - Primary: PRIMARY=live behind=0 [restarted=yes build=<sha>] | PRIMARY=stale reason=<why> | n/a (primary mode)
   - Branch: <branch>
   - Gate: PASS | FAIL (<reason>) | NOT CONFIRMED (<reason>)   (+ the `LEDGER=recorded` line)

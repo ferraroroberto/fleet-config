@@ -142,7 +142,16 @@ one entry per vendor-verbatim component, and **only** that repo carries it.
 [components]
 nav       = { src = "app/webapp/static/_vendored/nav" }
 no_window = { src = "src/no_window.py" }
+conventions_ratchet = { src = "scripts/conventions_ratchet.py", requires = ["conventions_readers"] }
+conventions_readers = { src = "scripts/conventions_readers.py" }
 ```
+
+An optional `requires = ["<manifest key>", …]` names the siblings a component loads at
+runtime. `/propagate-vendored` expands every named component with its requirements,
+transitively, and adds a required component a repo does not hold yet (an `add` entry in
+that repo's single PR); a requirement the catalog does not list, or whose files are
+missing at the scaffold tip, blocks the components that need it and exits 3 rather than
+planning a partial wave (fleet-config#1928).
 
 Without it, `/propagate-vendored`'s adopter list — built from `[vendored]`
 entries — cannot see a repo that carries a component and declared nothing, so a

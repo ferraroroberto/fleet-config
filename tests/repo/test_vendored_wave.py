@@ -31,9 +31,22 @@ _h = CheckHarness()
 check = _h.check
 
 CLOSING = re.compile(r"\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b", re.I)
-SRC = {"nav": "web/nav", "tool": "lib/tool.py", "modal": "web/modal"}
-V1 = {"web/nav/nav.css": ".a{}\n", "lib/tool.py": "v1\n", "web/modal/modal.css": ".m{}\n.m input{}\n"}
-V2 = {"web/nav/nav.css": ".a{}\n.c{}\n", "lib/tool.py": "v2\n", "web/modal/modal.css": ".m{}\n"}
+SRC = {"nav": "web/nav", "tool": "lib/tool.py", "modal": "web/modal",
+       "ratchet": "lib/ratchet.py", "readers": "lib/readers.py", "outer": "lib/outer.py"}
+# `ratchet` loads `readers` at runtime and `outer` loads `ratchet`: the shape of conventions_ratchet.
+REQUIRES = {"ratchet": ["readers"], "outer": ["ratchet"]}
+V1 = {"web/nav/nav.css": ".a{}\n", "lib/tool.py": "v1\n", "web/modal/modal.css": ".m{}\n.m input{}\n",
+      "lib/ratchet.py": "r1\n", "lib/readers.py": "d1\n", "lib/outer.py": "o1\n"}
+V2 = {"web/nav/nav.css": ".a{}\n.c{}\n", "lib/tool.py": "v2\n", "web/modal/modal.css": ".m{}\n",
+      "lib/ratchet.py": "r2\n", "lib/readers.py": "d2\n", "lib/outer.py": "o2\n"}
+
+
+def _catalog(requires: dict) -> str:
+    rows = []
+    for key, src in SRC.items():
+        extra = f', requires = {requires[key]!r}'.replace("'", '"') if key in requires else ""
+        rows.append(f'{key} = {{ src = "{src}"{extra} }}')
+    return "[components]\n" + "\n".join(rows) + "\n"
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -76,8 +89,7 @@ try:
     _git(scaffold, "add", "-A")
     _git(scaffold, "commit", "-q", "-m", "v2")
     v2 = _git(scaffold, "rev-parse", "HEAD")
-    (scaffold / ".fleet.toml").write_text(
-        "[components]\n" + "\n".join(f'{k} = {{ src = "{v}" }}' for k, v in SRC.items()) + "\n", encoding="utf-8")
+    (scaffold / ".fleet.toml").write_text(_catalog(REQUIRES), encoding="utf-8")
 
     repos = {
         "project-scaffolding": scaffold,
@@ -173,6 +185,93 @@ try:
     check("HELD (selectors removed): breaking modal" in text and "HUMAN CALL (differs from HEAD): carrier-fork tool" in text,
           "render_text: held components and carriers are named")
     check("catalog known" in text, "render_text: the coverage line states the catalog state")
+
+    # ---- requires: a component brings the siblings it loads ----
+    parsed, bad = vd.parse_scaffold_requires(_catalog(REQUIRES))
+    check(parsed == REQUIRES and bad == [], "parse_scaffold_requires: reads each component's requires list")
+    _, malformed = vd.parse_scaffold_requires('[components]\nratchet = { src = "a", requires = "readers" }\n')
+    check(len(malformed) == 1 and "ratchet" in malformed[0]["error"],
+          "parse_scaffold_requires: a requires that is not a list is a problem, not 'requires nothing'")
+    closure, edges, problems = vd.expand_requires({"outer"}, REQUIRES, SRC)
+    check(closure == {"outer", "ratchet", "readers"} and ("ratchet", "readers") in edges and problems == [],
+          f"expand_requires: requires are followed transitively ({sorted(closure)})")
+    check(vd.expand_requires({"tool"}, REQUIRES, SRC)[0] == {"tool"}, "expand_requires: a component with no requires expands to itself")
+    cyc = vd.expand_requires({"a"}, {"a": ["b"], "b": ["a"]}, {"a": "x", "b": "y"})
+    check(cyc[0] == {"a", "b"} and cyc[2] == [], "expand_requires: a cycle terminates and is not a problem")
+    _, edges2, problems2 = vd.expand_requires({"outer"}, {"outer": ["ratchet"], "ratchet": ["ghost"]}, SRC)
+    check(len(problems2) == 1 and problems2[0]["requires"] == "ghost" and "'ghost'" in problems2[0]["error"],
+          "expand_requires: a dependency the catalog lacks is a problem that names it")
+    check(set(vd.blocked_components(edges2, problems2)) == {"ratchet", "outer"},
+          "blocked_components: the broken component and everything that requires it are blocked")
+
+    req_repos = dict(repos)
+    req_repos["needs-sibling"] = _adopter(root, "needs-sibling", {"ratchet": (v1, V1)})
+    req_repos["has-both"] = _adopter(root, "has-both", {"ratchet": (v1, V1), "readers": (v1, V1)})
+    req_repos["both-current"] = _adopter(root, "both-current", {"ratchet": (v2, V2), "readers": (v2, V2)})
+    req_repos["current-no-sibling"] = _adopter(root, "current-no-sibling", {"ratchet": (v2, V2)})
+    req_repos["outer-only"] = _adopter(root, "outer-only", {"outer": (v1, V1)})
+    for name, files in (("ratchet-same", {"lib/ratchet.py": V2["lib/ratchet.py"]}),
+                        ("ratchet-fork", {"lib/ratchet.py": "forked\n"})):
+        d = root / name
+        _write(d, files)
+        (d / ".fleet.toml").write_text('layer = "working-web"\nicon = "x"\ndescription = "d"\n', encoding="utf-8")
+        req_repos[name] = d
+
+    rplan = vw.plan_wave(vd.scan_fleet(scaffold, frozenset({"ratchet"}), repos=req_repos))
+    rby = {r["repo"]: {c["component"]: c for c in r["components"]} for r in rplan["repos"]}
+    check(rplan["requires"] == [{"component": "ratchet", "requires": "readers"}] and rplan["held_requires"] == [],
+          f"requires: naming ratchet lists its dependency ({rplan['requires']})")
+    check(set(rby["needs-sibling"]) == {"ratchet", "readers"} and rby["needs-sibling"]["readers"]["action"] == "add"
+          and rby["needs-sibling"]["readers"]["old_sha"] is None and rby["needs-sibling"]["readers"]["required_by"] == ["ratchet"],
+          f"requires: a repo with ratchet and no readers gets readers added ({sorted(rby['needs-sibling'])})")
+    check(set(rby["has-both"]) == {"ratchet", "readers"} and rby["has-both"]["readers"]["action"] == "re-vendor",
+          "requires: a repo that declares both re-vendors both, adding nothing")
+    check("both-current" not in rby, "requires: a repo current on both is not a target")
+    check(set(rby["current-no-sibling"]) == {"readers"} and rby["current-no-sibling"]["readers"]["action"] == "add",
+          "requires: a repo current on ratchet but missing readers still gets readers")
+    check(set(rby["ratchet-same"]) == {"ratchet", "readers"} and rby["ratchet-same"]["ratchet"]["action"] == "adopt"
+          and rby["ratchet-same"]["readers"]["action"] == "add",
+          "requires: a ratchet carrier identical to the tip is adopted and gets readers")
+    check("ratchet-fork" not in rby and any(c["repo"] == "ratchet-fork" for c in rplan["held_carriers"]),
+          "requires: a ratchet carrier that differs pulls nothing in, it stays a human call")
+    check("outer-only" not in rby, "requires: a repo declaring only a component outside the wave is untouched")
+    check("`readers` is added because `ratchet` loads it at runtime." in
+          {r["repo"]: r for r in rplan["repos"]}["current-no-sibling"]["pr_body"],
+          "requires: the PR body says why the sibling is there")
+    rtext = vw.render_text(rplan)
+    check("REQUIRES=ratchet <- readers" in rtext and "readers   add (required by ratchet)" in rtext,
+          "render_text: the dry run prints REQUIRES= lines and the add per repo")
+
+    chain = vw.plan_wave(vd.scan_fleet(scaffold, frozenset({"outer"}), repos=req_repos))
+    cby = {r["repo"]: {c["component"]: c for c in r["components"]} for r in chain["repos"]}
+    check(set(cby["outer-only"]) == {"outer", "ratchet", "readers"}
+          and cby["outer-only"]["readers"]["required_by"] == ["ratchet"],
+          f"requires: a chain lands whole ({sorted(cby['outer-only'])})")
+    check({e["requires"] for e in chain["requires"]} == {"ratchet", "readers"}, "requires: the plan lists every edge of the chain")
+
+    full = vw.plan_wave(vd.scan_fleet(scaffold, repos=req_repos))
+    fby = {r["repo"]: {c["component"]: c for c in r["components"]} for r in full["repos"]}
+    check(fby["needs-sibling"]["readers"]["action"] == "add",
+          "requires: a wave over every component adds a missing sibling too")
+
+    # a dependency the scaffold cannot satisfy holds its dependents out and names the dependency
+    (scaffold / ".fleet.toml").write_text(_catalog({**REQUIRES, "ratchet": ["ghost"]}), encoding="utf-8")
+    broken = vw.plan_wave(vd.scan_fleet(scaffold, frozenset({"outer"}), repos=req_repos))
+    check({h["component"] for h in broken["held_requires"]} == {"ratchet", "outer"}
+          and all("'ghost'" in h["error"] for h in broken["held_requires"]),
+          f"requires: a missing dependency blocks its dependents and names it ({broken['held_requires']})")
+    check(not any(c["component"] in ("ratchet", "outer") for r in broken["repos"] for c in r["components"]),
+          "requires: a blocked component is never half-planned")
+    check(any("'ghost'" in e["error"] and e.get("kind") == "requires" for e in broken["errors"]),
+          "requires: the scan errors carry the missing dependency")
+    check("BLOCKED (dependency): outer" in vw.render_text(broken), "render_text: the blocked components are named")
+    (scaffold / ".fleet.toml").write_text(_catalog({**REQUIRES, "readers": ["tool"]}), encoding="utf-8")
+    _git(scaffold, "mv", "lib/tool.py", "lib/tool_moved.py")
+    _git(scaffold, "commit", "-q", "-m", "move tool")
+    gone = vw.plan_wave(vd.scan_fleet(scaffold, frozenset({"ratchet"}), repos=req_repos))
+    check({h["component"] for h in gone["held_requires"]} == {"tool", "readers", "ratchet"}
+          and any("no files at lib/tool.py" in e["error"] for e in gone["errors"]),
+          f"requires: a dependency with no files at the tip blocks the chain ({gone['held_requires']})")
 finally:
     shutil.rmtree(root, ignore_errors=True)
 

@@ -85,8 +85,9 @@ import json
 import re
 import sys
 import tomllib
+from collections import deque
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
@@ -170,6 +171,85 @@ def scaffold_catalog(scaffold_root: Path) -> tuple[Dict[str, str], Optional[str]
             "(update the project-scaffolding checkout; project-scaffolding#230)"
         )
     return catalog, None
+
+
+def parse_scaffold_requires(toml_text: str) -> tuple[Dict[str, List[str]], List[Dict[str, str]]]:
+    """The scaffold's `requires = [...]` lists -> ``({component: [dep, ...]}, problems)``.
+
+    A component that loads a sibling at runtime (`conventions_ratchet` loads
+    `conventions_readers`) declares it on its `[components]` entry, so a wave that
+    names only the first still carries the second. A `requires` that is not a list
+    of component names is a problem, never silently read as "requires nothing".
+    """
+    table = tomllib.loads(toml_text).get("components")
+    out: Dict[str, List[str]] = {}
+    problems: List[Dict[str, str]] = []
+    if not isinstance(table, dict):
+        return out, problems
+    for name, entry in table.items():
+        if not isinstance(entry, dict) or "requires" not in entry:
+            continue
+        deps = entry["requires"]
+        if isinstance(deps, list) and all(isinstance(d, str) and d for d in deps):
+            out[name] = list(dict.fromkeys(deps))
+        else:
+            problems.append({"component": name, "requires": "",
+                             "error": f"component {name!r} has a malformed requires (want a list of component names): {deps!r}"})
+    return out, problems
+
+
+def scaffold_requires(scaffold_root: Path) -> tuple[Dict[str, List[str]], List[Dict[str, str]]]:
+    """`parse_scaffold_requires` over the scaffold's working-tree `.fleet.toml`.
+
+    An unreadable file yields no requires and no problem of its own: `scaffold_catalog`
+    reports the same file as the catalog error, which already marks the scan unknown."""
+    try:
+        return parse_scaffold_requires((scaffold_root / ".fleet.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}, []
+
+
+def expand_requires(
+    names: Iterable[str], requires: Dict[str, List[str]], catalog: Dict[str, str],
+) -> tuple[frozenset, List[tuple[str, str]], List[Dict[str, str]]]:
+    """`names` plus everything they require, transitively -> ``(closure, edges, problems)``.
+
+    `edges` is every `(component, dep)` met on the way; a cycle terminates because each
+    component is expanded once. A dependency the scaffold does not catalogue is a problem
+    naming it and is left out of the closure: it has nothing to scan or copy."""
+    seen: set = set()
+    edges: List[tuple[str, str]] = []
+    problems: List[Dict[str, str]] = []
+    queue = deque(sorted(names))
+    while queue:
+        component = queue.popleft()
+        if component in seen:
+            continue
+        seen.add(component)
+        for dep in requires.get(component, []):
+            edges.append((component, dep))
+            if dep in catalog:
+                queue.append(dep)
+            else:
+                problems.append({"component": component, "requires": dep, "error":
+                                 f"component {component!r} requires {dep!r}, which is not in the scaffold's [components] catalog"})
+    return frozenset(seen), edges, problems
+
+
+def blocked_components(edges: List[tuple[str, str]], problems: List[Dict[str, str]]) -> Dict[str, str]:
+    """Every component a wave must not land -> the first problem that blocks it.
+
+    A component with a problem of its own is blocked, and so is everything that requires
+    it, transitively: landing the dependent without its sibling is the broken partial wave."""
+    blocked = {p["component"]: p["error"] for p in problems}
+    changed = True
+    while changed:
+        changed = False
+        for component, dep in edges:
+            if dep in blocked and component not in blocked:
+                blocked[component] = blocked[dep]
+                changed = True
+    return blocked
 
 
 def diff_hashes(a: Dict[str, str], b: Dict[str, str]) -> List[str]:
@@ -454,6 +534,19 @@ def scan_fleet(
     head_texts: Dict[str, Dict[str, str]] = {}
     contract_cache: Dict[tuple, Dict[str, object]] = {}
 
+    catalog, catalog_error = scaffold_catalog(scaffold_root)
+    requires, requires_problems = scaffold_requires(scaffold_root)
+    wanted = frozenset((component_filter,) if isinstance(component_filter, str) else component_filter or ())
+    closure, edges, problems = expand_requires(wanted or catalog, requires, catalog)
+    problems = [*problems, *(p for p in requires_problems if p["component"] in closure)]
+    for _, dep in edges:
+        if dep in catalog and not _head_files(scaffold_root, head_ref, catalog[dep], head_cache):
+            problems.append({"component": dep, "requires": "", "error":
+                             f"required component {dep!r} has no files at {catalog[dep]} in the scaffold at {head_ref}"})
+    blocked = blocked_components(edges, problems)
+    if wanted:
+        component_filter = closure
+
     adopters: List[Dict[str, object]] = []
     no_manifest: List[str] = []
     errors: List[Dict[str, str]] = []
@@ -494,10 +587,9 @@ def scan_fleet(
                 })
                 continue
 
-            if src not in head_cache:
-                head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
             result = classify_adopter(hash_component_local(repo_dir, dest),
-                                      hash_dir_at_ref(scaffold_root, sha, src), head_cache[src])
+                                      hash_dir_at_ref(scaffold_root, sha, src),
+                                      _head_files(scaffold_root, head_ref, src, head_cache))
             row: Dict[str, object] = {
                 "repo": repo_name, "component": component, "src": src, "dest": dest,
                 "pinned_sha": sha, "head_sha": head_sha, **result,
@@ -507,16 +599,67 @@ def scan_fleet(
                                                 head_texts, contract_cache)
             adopters.append(row)
 
-    catalog, catalog_error = scaffold_catalog(scaffold_root)
     if catalog_error:
         errors.append({"repo": "project-scaffolding", "error": catalog_error})
+    errors.extend({"repo": "project-scaffolding", "kind": "requires", **p} for p in problems)
     carriers = scan_undeclared_carriers(
         scaffold_root, repos, manifests, catalog, head_ref, head_cache,
         component_filter=component_filter, scaffold_resolved=scaffold_resolved,
     )
+    report = _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
+                          catalog, catalog_error, carriers, unreadable, ignore_blocks)
+    report["requires"] = {
+        "edges": [{"component": c, "requires": d} for c, d in edges],
+        "blocked": blocked,
+        "missing": _missing_requires(edges, catalog, manifests, carriers, blocked, scaffold_resolved, repos, head_sha),
+    }
+    return report
 
-    return _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
-                        catalog, catalog_error, carriers, unreadable, ignore_blocks)
+
+def _head_files(scaffold_root: Path, head_ref: str, src: str, head_cache: Dict[str, Dict[str, str]]) -> Dict[str, str]:
+    """The scaffold tip's hashes for `src`, read once per scan."""
+    if src not in head_cache:
+        head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
+    return head_cache[src]
+
+
+def _missing_requires(
+    edges: List[tuple[str, str]], catalog: Dict[str, str], manifests: Dict[str, Dict[str, Dict[str, str]]],
+    carriers: List[Dict[str, object]], blocked: Dict[str, str], scaffold_resolved: Path,
+    repos: Dict[str, Path], head_sha: str,
+) -> List[Dict[str, object]]:
+    """Repos that hold (or will hold) a component but neither declare nor carry what it requires.
+
+    A repo counts as holding the requester when it declares it, or carries it byte-identical to
+    the tip (the wave adopts that). A carrier that differs is a human call and pulls nothing in.
+    A dependency the repo already declares or carries is left to the ordinary re-vendor or
+    carrier path, so a row here means the repo has no copy at all: one row per repo and
+    dependency, naming every requester. A dependency that is added pulls in its own
+    requirements the same way, so a chain lands whole.
+    """
+    carried = {(str(c["repo"]), str(c["component"])): c for c in carriers}
+    rows: Dict[tuple, Dict[str, object]] = {}
+    for repo_name, repo_dir in sorted(repos.items()):
+        declared = manifests.get(repo_name)
+        if declared is None or repo_dir.resolve() == scaffold_resolved:
+            continue
+        holds = set(declared) | {c for (r, c), car in carried.items() if r == repo_name and car["matches_head"]}
+        changed = True
+        while changed:
+            changed = False
+            for component, dep in edges:
+                if component not in holds or component in blocked or dep in blocked:
+                    continue
+                row = rows.get((repo_name, dep))
+                if row is not None:
+                    row["required_by"].append(component)
+                elif dep not in holds and (repo_name, dep) not in carried:
+                    rows[(repo_name, dep)] = {
+                        "repo": repo_name, "component": dep, "src": catalog[dep], "dest": catalog[dep],
+                        "head_sha": head_sha, "required_by": [component]}
+                    holds.add(dep)
+                    changed = True
+    return [{**r, "required_by": sorted(set(r["required_by"]))} for r in rows.values()]
 
 
 def _contract_for(scaffold_root: Path, head_ref: str, sha: str, src: str,
