@@ -22,7 +22,7 @@ It assigns no status of its own.
 - The page load navigates and waits. It never clicks or types.
 - It never starts, restarts or kills the app. A dead port is reported as
   `unmeasured`, never fixed.
-- Run output stays local, under `~/.claude/hooks/state/perf-review/<repo>/`.
+- Run output stays local, under `~/.claude/hooks/state/perf-review/<repo>/`; the results ledger is `~/.claude/hooks/state/perf-review/ledger.jsonl`.
 - An issue gets numbers and URL paths only. Never a hostname, an IP,
   captured page text or a screenshot.
 
@@ -31,9 +31,9 @@ It assigns no status of its own.
 - A repo name (a `hooks/projects.toml` table) or a path → the target. Its port is the table's `webapp_port` and
   `browser_scheme`, else the `port` its own `.fleet.toml` declares with the scheme probed on that loopback port
   (facilitation-suite declares only the latter). No argument → the current repo.
-- `file` → after measuring, upsert the repo's one managed `perf-review`
-  issue (step 4, `--apply`). Without it, run step 4's dry run: it prints the
-  plan and the issue body and writes nothing.
+- `file` → after measuring, apply the run to the repo's one managed
+  `perf-review` issue (step 4, `--apply`). Without it, run step 4's dry run: it
+  prints the plan and writes nothing.
 
 The whole fleet, weekly: `/perf-sweep` (fleet-only skill) runs `perf_review sweep`, which does steps 1 and 4 (`--apply`)
 for every non-dormant web app, one at a time under the exclusive box lock, and prints one digest.
@@ -194,17 +194,58 @@ Each fix ships through the target repo's own issue → branch → PR
 ### 4. File (`--apply` only with `file`; otherwise the dry run)
 
 ```
-... perf_review file <repo>            # dry run: prints the plan and the body
-... perf_review file <repo> --apply    # upsert the managed issue
+... perf_review file <repo>            # dry run: prints the plan and, for an update, the body
+... perf_review file <repo> --apply    # open, update or close the managed issue
 ```
+
+The results live in the [ledger](#the-ledger), not in an issue. The managed
+issue exists only while a budget is broken or a fix is open:
+
+| The run | Open fix item? | Issue |
+|---|---|---|
+| a check is over budget | either | opened, or updated |
+| all checks within budget | yes | updated, kept open |
+| all checks within budget | no | closed, with a comment naming the run |
+| some check `unmeasured`, none over budget | either | left exactly as it is |
+
+An `unmeasured` run is neither a breach nor green, so it never opens, closes or
+rewrites an issue. The last output line is `ISSUE=none (<reason>)`,
+`CLOSED=<url>` or the issue URL.
 
 There is one managed issue per repo, titled `perf-review: phone-load findings`
 with label `perf-review`, and its body has three parts:
 
 - **Budget and endpoint tables:** regenerated on every run.
 - **`## Fixes` checklist:** seeded from the failing checks on the first
-  filing, then kept verbatim. Link each per-fix issue there.
+  filing, then kept verbatim. Link each per-fix issue there. An unchecked
+  `- [ ]` item keeps the issue open through a green run.
 - **`## Run log`:** gets one line per run.
+
+## The ledger
+
+Every `measure` appends one JSON line per run to
+`~/.claude/hooks/state/perf-review/ledger.jsonl` (the hooks state dir,
+`CLAUDE_HOOKS_STATE_DIR` overrides it), for every app in one file.
+app-launcher's Apps section reads it (app-launcher#2210). Append-only, never
+rewritten; a reader keeps the last line per `(app, run_id)` and skips a line
+that does not parse. A run that never reached a verdict (dead port, bad target)
+writes no record. Numbers, ids and URL paths only.
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `1`. Additive changes keep it; a rename or removal bumps it. |
+| `run_id` | `YYYYMMDDTHHMMSSZ`, the run's UTC start. |
+| `ts` | The same instant as ISO-8601 (`2026-11-08T04:30:00Z`); `null` if the id is not a timestamp. |
+| `app` | The target name (the `hooks/projects.toml` table). |
+| `commit` | The checkout's HEAD, or `null`. |
+| `build` | The `git_sha` the running app reported, or `null` (no build id). |
+| `budgets_version` | The `budgets.toml` version scored against. |
+| `ready_by` | `fcp`, `selector` or `selector-not-visible`; `null` when the load leg failed. |
+| `overall` | `pass`, `over-budget` or `unmeasured`. |
+| `counts` | `{pass, fail, unmeasured}` over the checks. |
+| `checks` | `{<check id>: {status, budget, measured}}`. `status` is `pass`, `fail` or `unmeasured`; `measured` is `null` when unmeasured; ids as in `CHECK` lines (`cold.ready_ms`, `warm.bytes_kb`, `endpoints.api_p95_ms`, ...). |
+| `endpoints` | `{<url path>: {status, budget, p50, p95}}`, milliseconds. `status` also has `skipped` (an event stream). |
+| `seeded_from` | Only on a record rebuilt from an issue's run-log line: `"issue-run-log"`. Such a record has `overall` and `counts` but empty `checks` and `endpoints`. |
 
 ## Per-app configuration (optional)
 

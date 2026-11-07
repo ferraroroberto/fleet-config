@@ -128,10 +128,10 @@ inventory: newest inventory per app compared across apps → INV-01..04; one div
   PERFREVIEW["perf_review/ — /perf-review deterministic core (#1121)
 load.py: Playwright child under the TARGET .venv — iPhone cold, Android cold + warm (CDP-throttled), no route()
 http_probe.py: GET-only p50/p95 at the app's own poll spacing, / gzip + 304 checks (stdlib)
-report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-review/<target>/ · issue body"]
+report.py: budgets.toml verdict · ledger.jsonl under ~/.claude/hooks/state/perf-review/ (all apps) · issue body + lifecycle"]
   PERFREVIEWSKILL --> PERFREVIEW
   PERFREVIEW -->|"reuses resolve_target / probe_listening / resolve_interpreter"| DESIGNREVIEW
-  PERFREVIEW -->|"file: one perf-review issue per repo via audit_issue.py"| LIB
+  PERFREVIEW -->|"file: open/update/close the one perf-review issue per repo (only while a budget is broken) via audit_issue.py"| LIB
 
   subgraph fskills[".claude/skills/ — FLEET-ONLY tier (cwd-scoped to fleet-config)"]
     SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · render_contracts.py · render_guide.py · whatchanged.py"]
