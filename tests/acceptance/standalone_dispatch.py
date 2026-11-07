@@ -243,6 +243,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "explicit GATE=pass passes, unknown/crash/timeout refuse with their own "
      "message, sample payloads through the hook and hook_dispatch, and the "
      "owner's logged bypass (fleet-config#1768)"),
+    ("main_commit_guard", "hooks/test_main_commit_guard.py",
+     "the default-branch commit hook -- refusal, feature / quick / worktree / detached / first-commit "
+     "passes, repo read from cwd / cd / git -C / nested shell, an unreadable branch NOT CONFIRMED, and "
+     "the map-refresh marker scoped to its repo and paths, expiring, revocable (fleet-config#1916)"),
     ("ui_proof_capture", "web_review/test_ui_proof_capture.py",
      "`ui_proof capture` -- viewport/theme arguments, the distinct "
      "no-interpreter / no-Playwright / app-unreachable / failed-leg "

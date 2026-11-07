@@ -25,9 +25,9 @@ through to :func:`conversation_capture.infer_skill_from_transcript`.
 Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
 not reliably on ``PATH`` here; see ``_lib.find_python_executable``)::
 
-    …/python.exe hooks/conversation_backfill.py --project life-os
-    …/python.exe hooks/conversation_backfill.py --project life-os --harness codex
-    …/python.exe hooks/conversation_backfill.py --project life-os --dry-run
+    …/python.exe hooks/conversation/backfill.py --project life-os
+    …/python.exe hooks/conversation/backfill.py --project life-os --harness codex
+    …/python.exe hooks/conversation/backfill.py --project life-os --dry-run
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 from conversation.transcript_readers import read_transcript  # noqa: E402
 from conversation_capture import (  # noqa: E402

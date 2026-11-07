@@ -143,6 +143,7 @@ fleet-config/
 │   ├── bash_windows_path_guard.py  # PreToolUse on Bash: block unquoted Windows drive-letter backslash paths — Git Bash strips the backslashes
 │   ├── safe_kill_guard.py
 │   ├── ui_proof_merge_guard.py     # PreToolUse on Bash/PowerShell: refuse `gh pr merge` on a UX diff without .proof/<PR>/index.html
+│   ├── main_commit_guard.py        # PreToolUse on Bash/PowerShell: refuse `git commit` on the default branch unless a scheduled map refresh holds its marker
 │   ├── venv_discipline.py
 │   ├── py_syntax_check.py
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
@@ -174,7 +175,7 @@ fleet-config/
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json
 │   ├── conversation_search.py      # CLI: ranked FTS5 search over captures, returns each hit's resume command
 │   ├── conversation_title.py       # CLI: set/clear a conversation's user title (titles.json sidecar, survives re-indexing)
-│   ├── conversation_backfill.py    # CLI: capture a stored transcript a live Stop hook never captured (harness store scan, session-start filename stamping)
+│   ├── conversation/backfill.py    # CLI: capture a stored transcript a live Stop hook never captured (harness store scan, session-start filename stamping)
 │   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program) → hooks/backup/'s `main`
 │   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)

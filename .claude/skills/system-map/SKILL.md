@@ -87,11 +87,14 @@ git status --porcelain architecture/
 If nothing changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did:
 
 ```
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py grant . --reason system-map --path architecture/ --path docs/fleet-guide.md
 git add architecture/ docs/fleet-guide.md
 git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 ```
 
-If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow.
+If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow. Then `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py revoke .` whether or not the commit happened.
+
+The `grant` is what lets this commit land on `main`: `hooks/main_commit_guard.py` refuses a commit on the default branch unless the repo holds a marker covering every staged path (15 minutes, then it lapses). Grant exactly these two paths, never wider.
 
 ### 6. Post the image to Telegram (every run)
 

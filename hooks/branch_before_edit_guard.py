@@ -76,7 +76,7 @@ def _current_branch(target_dir: Path) -> "str | None":
     return branch
 
 
-def _default_branch(target_dir: Path) -> str:
+def default_branch(target_dir: Path) -> str:
     """Bare default-branch name for `target_dir`'s repo.
 
     Uses `_lib.resolve_default_branch_ref`'s default candidate-probing
@@ -130,7 +130,7 @@ def main() -> None:
     # Cheapest *and* most selective gate first. Only a
     # launcher-dispatched session can ever be blocked here, and the vast
     # majority of live sessions are interactive ones that carry no such
-    # variable — so asking this before `_current_branch`/`_default_branch`
+    # variable — so asking this before `_current_branch`/`default_branch`
     # keeps two `git` spawns off every Edit/Write in every ordinary session
     # fleet-wide. `run_git`'s own docstring calls this "by far the
     # highest-frequency git spawn this repo owns"; the whole decision below is
@@ -163,8 +163,8 @@ def main() -> None:
             branch = _current_branch(target_dir)
             if branch is None:
                 continue
-            default_branch = _default_branch(target_dir)
-            if branch != default_branch or _is_ignored(target):
+            default_branch_name = default_branch(target_dir)
+            if branch != default_branch_name or _is_ignored(target):
                 continue
             _lib.block(
                 f"Blocked: editing on '{branch}' from a launcher-dispatched session. "

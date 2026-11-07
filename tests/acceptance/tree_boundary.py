@@ -121,7 +121,7 @@ def _git_helper_parity(check: _Checker) -> None:
               f"hooks={(mine.returncode, mine.stdout)!r} skills={(theirs.returncode, theirs.stdout)!r}")
 
         # a remote-less repo on `master`: the candidate-probing path
-        # branch_before_edit_guard._default_branch depends on.
+        # branch_before_edit_guard.default_branch (both default-branch guards) depends on.
         mine_ref = _lib.resolve_default_branch_ref(repo)
         theirs_ref = git_run.resolve_default_branch_ref(repo)
         check("tree_boundary: hooks/_lib.resolve_default_branch_ref agrees on a "

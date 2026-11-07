@@ -58,11 +58,14 @@ git status --porcelain architecture/
 If nothing under `architecture/` changed, **skip the commit** (idempotent). If it did:
 
 ```
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py grant . --reason config-map --path architecture/
 git add architecture/
 git commit -m "docs: refresh config map (<YYYY-MM-DD>)"
 ```
 
-If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow.
+If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow. Then `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py revoke .` whether or not the commit happened.
+
+The `grant` is what lets this commit land on `main`: `hooks/main_commit_guard.py` refuses a commit on the default branch unless the repo holds a marker covering every staged path (15 minutes, then it lapses). Grant exactly this path, never wider.
 
 ### 5. Post the image to Telegram (every run)
 

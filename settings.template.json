@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer gh_body_file_guard bash_cmdexe_syntax_guard bash_windows_path_guard secret_scan_guard safe_kill_guard venv_discipline ui_proof_merge_guard context_filter_hook"
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer main_commit_guard gh_body_file_guard bash_cmdexe_syntax_guard bash_windows_path_guard secret_scan_guard safe_kill_guard venv_discipline ui_proof_merge_guard context_filter_hook"
           }
         ]
       },
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer secret_scan_guard safe_kill_guard venv_discipline ui_proof_merge_guard context_filter_hook"
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer main_commit_guard secret_scan_guard safe_kill_guard venv_discipline ui_proof_merge_guard context_filter_hook"
           }
         ]
       },
