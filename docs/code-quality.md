@@ -227,7 +227,7 @@ The pattern is a loop. An audit finds a class of problem by judgment; when the c
 
 The system is mostly independent of this repository's agent tooling. A project can adopt it in layers, smallest first.
 
-**The fastest route is the public adoption kit.** The source repository ships [`docs/adopting-ratchets.md`](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/adopting-ratchets.md) as the single entry point for a codebase outside this fleet. It lists the prerequisites (Python 3.11 or newer, `git`, and `ruff` plus Node only for the static ratchet), then two scripts do the work:
+**The fastest route is the public adoption kit.** The source repository ships [adopting-ratchets guide](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/adopting-ratchets.md) as the single entry point for a codebase outside this fleet. It lists the prerequisites (Python 3.11 or newer, `git`, and `ruff` plus Node only for the static ratchet), then two scripts do the work:
 
 ```sh
 python <scaffold>/scripts/adopt_ratchets.py <target> [--ratchets comment,structure,runtime_write]
