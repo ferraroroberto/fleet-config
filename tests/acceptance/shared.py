@@ -153,6 +153,10 @@ def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = N
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        # Hooks write UTF-8; the console code page cannot decode every byte,
+        # and a failed decode leaves stdout/stderr `None` for the caller.
+        encoding="utf-8",
+        errors="replace",
         timeout=HOOK_SPAWN_TIMEOUT_S,
         env=env,
     )
