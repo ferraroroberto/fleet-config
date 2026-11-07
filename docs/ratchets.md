@@ -1,6 +1,6 @@
 # Ratchets
 
-Nine baseline-and-ratchet stages gate `tests/run_acceptance.py`. This page is the index of fleet-config's instances: which ratchets run, what each fails on, its gate, its `.fleet.toml` options, its baseline and how many entries that baseline still holds. The concept is the scaffold's: why ratchets are the default way to enforce a convention, and how every one is built, is the project-scaffolding [architecture decision](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/architecture-decisions.md#ratchets-are-the-default-way-to-enforce-a-convention), and each detector's own page is linked in the table.
+Nine baseline-and-ratchet stages gate `tests/run_acceptance.py`. [`code-quality.md`](code-quality.md) explains the whole system and how to port it; this page is the index of fleet-config's instances: which ratchets run, what each fails on, its gate, its `.fleet.toml` options, its baseline and how many entries that baseline still holds. The concept is the scaffold's: why ratchets are the default way to enforce a convention, and how every one is built, is the project-scaffolding [architecture decision](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/architecture-decisions.md#ratchets-are-the-default-way-to-enforce-a-convention), and each detector's own page is linked in the table.
 
 `tests/acceptance/docs_index/` holds this page to the tree: a ratchet table, gate, option, baseline count or rule added or removed without updating this page fails the acceptance run by name.
 
