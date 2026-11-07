@@ -160,7 +160,8 @@ def _harness_checks(check: _Checker, root: Path) -> None:
     entry = _codex_entry(root)
     for command, refused in (("cat .env", True), ("cat .env.example", False)):
         res = subprocess.run([PYTHON, str(entry)], input=json.dumps(_payload("Bash", command, root)),
-                             capture_output=True, text=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
+                             capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
         check(f"secret_read: Codex `{command}` -> {'deny' if refused else 'allow'}",
               res.returncode == 0 and _is_codex_deny(res.stdout) is refused
               and FAKE_VALUE not in res.stdout + res.stderr, res.stdout + res.stderr)

@@ -30,7 +30,8 @@ def _codex_verdict(entry: Path, tool: str, command: str) -> Tuple[int, str]:
     payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": str(REPO),
                "tool_input": {"command": command}}
     res = subprocess.run([PYTHON, str(entry)], input=json.dumps(payload), capture_output=True,
-                         text=True, timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
+                         text=True, encoding="utf-8", errors="replace",
+                         timeout=HOOK_SPAWN_TIMEOUT_S, env=hook_env())
     return res.returncode, res.stdout
 
 
