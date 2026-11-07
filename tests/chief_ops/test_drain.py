@@ -141,7 +141,8 @@ class FakeLauncher:
         raise AssertionError(f"unexpected path: {path}")
 
 
-def _run(fake, issues, dry_run=False, plan=None):
+def _run(fake, issues, dry_run=False, plan=None, states=None):
+    """`states` maps `(repo, number)` to the issue state `gh` would report; unlisted refs are open."""
     plan_path = _TMP / "plan.json"
     if plan is not None:
         plan_path.write_text(json.dumps({**plan, "updated_at": "2026-11-06T00:00:00Z"}), encoding="utf-8")
@@ -153,7 +154,8 @@ def _run(fake, issues, dry_run=False, plan=None):
 
     prior = (co.launcher._request, co.launcher.fetch_issue_state, co.chief_managed.mark)
     co.launcher._request = fake.request
-    co.launcher.fetch_issue_state = lambda repo, number, owner=None: {"labels": [{"name": "enhancement"}]}
+    co.launcher.fetch_issue_state = lambda repo, number, owner=None: (
+        (states or {}).get((repo, number)) or {"state": "OPEN", "labels": [{"name": "enhancement"}]})
     co.chief_managed.mark = lambda *a, **k: {}
     try:
         args = argparse.Namespace(dry_run=dry_run, plan_file=str(plan_path), base_url=co.DEFAULT_BASE_URL)
@@ -212,7 +214,8 @@ check(posted == [("app-a", 1, "sonnet"), ("app-b", 3, "opus")],
 check("DRAIN_SKIPPED=busy#2 reason=repo-busy" in out, "an occupied repo is skipped")
 check("DRAIN_STOPPED=app-c#4 reason=refused" in out and "DRAIN=done added=4 dispatched=2" in out,
       f"the cap refusal stops the drain, then the summary line (got {out!r})")
-check(all(b["repo"] != "app-z" for b in fake.posted), "a hand-queued row is never auto-dispatched")
+check(all(b["repo"] != "app-z" for b in fake.posted), "a hand-queued row with no brief is not dispatched")
+check("DRAIN_SKIPPED=app-z#9 reason=no-brief" in out, f"a hand-queued row with no brief says why (got {out!r})")
 lanes = {lane["repo"]: lane for lane in doc["lanes"]}
 check(lanes.get("app-a", {}).get("session") == "lane1" and lanes["app-a"].get("item") == "#1"
       and lanes.get("app-b", {}).get("model") == "opus",
@@ -241,6 +244,153 @@ check(len(fake.posted) == 1 and "DRAIN_STOPPED=app-a#1 reason=unconfirmed" in ou
       and "dispatched=0" in out, f"an unconfirmed dispatch stops the drain, no retry (got {out!r})")
 check(all(r["status"] == "queued" for r in chief_plan.load(plan_path)["queue"]),
       "an unconfirmed dispatch records no lane")
+
+# ---- hand-queued rows (fleet-config#1925) ----------------------------------------------
+
+_BRIEF = _TMP / "hand-brief.md"
+_BRIEF.write_text("Issue: the hand-written scope for this lane.\n", encoding="utf-8")
+_EMPTY_BRIEF = _TMP / "empty-brief.md"
+_EMPTY_BRIEF.write_text("  \n", encoding="utf-8")
+
+
+def _hand_plan(*rows, extra=None):
+    """A plan of hand-queued rows: `(ref, fields)` pairs in order."""
+    plan = chief_plan.empty_plan()
+    for ref, fields in rows:
+        chief_plan.add_item(plan, ref, f"title {ref}", **{k: v for k, v in fields.items() if k != "status"})
+        if "status" in fields:
+            plan["queue"][-1]["status"] = fields["status"]
+    for fn in extra or []:
+        fn(plan)
+    return plan
+
+
+def _hand(plan, states=None, cards=(), dry_run=False, settings=None):
+    _reset()
+    fake = FakeLauncher({"auto_drain": True, **(settings or {})}, cards=list(cards))
+    rc, out, plan_path, _ = _run(fake, [], dry_run=dry_run, plan=plan, states=states)
+    return fake, out, chief_plan.load(plan_path)
+
+
+_brief = str(_BRIEF)
+
+# Each skip reason, in one plan: every row is hand-queued and none is dispatched.
+plan = _hand_plan(
+    ("app-a#1", {}),                                                    # no brief
+    ("app-a#2", {"brief": str(_TMP / "gone.md")}),                      # brief file missing
+    ("app-a#3", {"brief": str(_EMPTY_BRIEF)}),                          # brief file empty
+    ("app-a#4", {"brief": _brief, "after": "app-a#40"}),                # blocker still open
+    ("app-a#5", {"brief": _brief, "after": "no-lane:busy"}),            # lane live in the named repo
+    ("busy#6", {"brief": _brief}),                                      # its own repo is busy
+    ("app-a#7", {"brief": _brief}),                                     # needs-owner
+    ("app-a#8", {"brief": _brief}),                                     # needs-validation
+    ("app-a#9", {"brief": _brief}),                                     # audit-meta
+    ("app-a#10", {"brief": _brief}),                                    # closed
+    ("app-a#11", {"brief": _brief}),                                    # gh could not say
+    ("app-a#12", {"brief": _brief, "status": "parked"}),                # not queued: never considered
+    ("app-a#13", {"brief": _brief, "status": "merged"}),
+    ("app-a#14", {"brief": _brief, "status": "waiting-roberto"}),
+    ("app-a#15", {"brief": _brief, "status": "building"}),
+)
+states = {
+    ("app-a", 40): {"state": "OPEN", "labels": []},
+    ("app-a", 7): {"state": "OPEN", "labels": [{"name": "needs-owner"}]},
+    ("app-a", 8): {"state": "OPEN", "labels": [{"name": "needs-validation"}]},
+    ("app-a", 9): {"state": "OPEN", "labels": [{"name": "audit-meta"}]},
+    ("app-a", 10): {"state": "CLOSED", "labels": []},
+    ("app-a", 11): {"error": "gh error"},
+}
+fake, out, doc = _hand(plan, states, cards=[_busy_card])
+reasons = dict(line.split(" reason=", 1) for line in out.splitlines() if line.startswith("DRAIN_SKIPPED="))
+reasons = {key.split("=", 1)[1]: value for key, value in reasons.items()}
+check(not fake.posted and "dispatched=0" in out, f"no ineligible hand row is dispatched (got {out!r})")
+check(reasons.get("app-a#1") == "no-brief", f"no brief is skipped (got {reasons.get('app-a#1')!r})")
+check(reasons.get("app-a#2", "").startswith("brief-unreadable"), f"a missing brief file is skipped (got {reasons.get('app-a#2')!r})")
+check(reasons.get("app-a#3", "").startswith("brief-unreadable"), f"an empty brief file is skipped (got {reasons.get('app-a#3')!r})")
+check(reasons.get("app-a#4") == "after-unmet (app-a#40 (not merged))", f"an open blocker is after-unmet (got {reasons.get('app-a#4')!r})")
+check(reasons.get("app-a#5") == "after-unmet (no-lane:busy (lane live))", f"no-lane with a live lane is after-unmet (got {reasons.get('app-a#5')!r})")
+check(reasons.get("busy#6") == "repo-busy", f"a busy repo is skipped (got {reasons.get('busy#6')!r})")
+check(reasons.get("app-a#7") == "label-needs-owner", f"needs-owner is skipped (got {reasons.get('app-a#7')!r})")
+check(reasons.get("app-a#8") == "label-needs-validation", f"needs-validation is skipped (got {reasons.get('app-a#8')!r})")
+check(reasons.get("app-a#9") == "label-audit-meta", f"audit-meta is skipped (got {reasons.get('app-a#9')!r})")
+check(reasons.get("app-a#10") == "issue-closed", f"a closed issue is skipped (got {reasons.get('app-a#10')!r})")
+check(reasons.get("app-a#11") == "state-unknown", f"an unreadable issue is its own state, never a pass (got {reasons.get('app-a#11')!r})")
+check(not any(f"app-a#{n}" in reasons for n in (12, 13, 14, 15)),
+      "parked, merged, waiting and in-flight rows are never considered or reported")
+check(doc["lanes"] == [], "a run that dispatches nothing records no lane")
+
+# The top eligible hand row goes out with its own brief and model, and its lane is recorded.
+plan = _hand_plan(
+    ("app-a#1", {}),
+    ("app-a#2", {"brief": _brief, "model": "opus"}),
+    ("app-a#3", {"brief": _brief}),
+    ("app-b#4", {"brief": _brief, "after": "app-a#2"}),
+    ("app-c#5", {"brief": _brief, "after": "no-lane:app-a no-lane:app-d"}),
+)
+fake, out, doc = _hand(plan, cards=[_busy_card])
+posted = [(b["repo"], b["number"], b.get("model")) for b in fake.posted]
+check(posted[:1] == [("app-a", 2, "opus")],
+      f"plan order decides: the top eligible hand row goes first, with its model (got {posted})")
+check(fake.posted[0]["brief"] == _BRIEF.read_text(encoding="utf-8"),
+      "the lane is briefed with the row's own brief file, not the generic audit brief")
+check("DRAIN_SKIPPED=app-a#1 reason=no-brief" in out and "DRAIN_SKIPPED=app-a#3 reason=repo-busy" in out,
+      f"a row behind the dispatched one in the same repo is repo-busy this turn (got {out!r})")
+check("DRAIN_SKIPPED=app-b#4 reason=after-unmet (app-a#2 (not merged))" in out,
+      f"an after ref that was only just dispatched is not merged (got {out!r})")
+check("DRAIN_SKIPPED=app-c#5 reason=after-unmet (no-lane:app-a (lane live))" in out,
+      f"no-lane sees the lane dispatched earlier in the same run (got {out!r})")
+check(len(posted) == 1, f"nothing else dispatched (got {posted})")
+lanes = {lane["repo"]: lane for lane in doc["lanes"]}
+status = {f"{r['repo']}{r['ref']}": r["status"] for r in doc["queue"]}
+check(lanes.get("app-a", {}).get("session") == "lane1" and lanes["app-a"].get("item") == "#2"
+      and lanes["app-a"].get("model") == "opus" and status["app-a#2"] == "building",
+      f"the hand lane is recorded as `plan lane` would (got {doc['lanes']}, {status})")
+check(status["app-a#3"] == "queued", "a skipped hand row stays queued")
+
+# `after` met by a merged plan row, a closed issue, or a repo with no lane; the pick still follows plan order.
+plan = _hand_plan(
+    ("app-b#1", {"brief": _brief, "after": "app-x#5"}),                  # x#5 closed on GitHub
+    ("app-c#2", {"brief": _brief, "after": "app-y#6, no-lane:busy2"}),   # y#6 merged in the plan
+    ("app-a#3", {"brief": _brief}),
+    extra=[lambda d: chief_plan.add_item(d, "app-y#6", "done", status="merged")],
+)
+fake, out, doc = _hand(plan, {("app-x", 5): {"state": "CLOSED", "labels": []}}, settings={"worker_cap": 2})
+posted = [(b["repo"], b["number"]) for b in fake.posted]
+check(posted == [("app-b", 1), ("app-c", 2)],
+      f"met after conditions release rows, filling the cap in plan order (got {posted})")
+check("DRAIN_STOPPED=app-a#3 reason=refused" in out,
+      f"the worker cap still ends the drain through dispatch's own refusal (got {out!r})")
+
+# A dispatch refusal on a hand row stops the drain, same as for drain's own rows.
+plan = _hand_plan(("app-a#1", {"brief": _brief}), ("app-b#2", {"brief": _brief}))
+fake, out, doc = _hand(plan, settings={"worker_cap": 0})
+check(not fake.posted and "DRAIN_STOPPED=app-a#1 reason=refused" in out and "DRAIN_SKIPPED=app-b#2" not in out,
+      f"a refused hand row stops the drain (got {out!r})")
+
+# Dry run previews hand rows, honours the free slots and writes nothing.
+plan = _hand_plan(
+    ("app-a#1", {}),
+    ("app-b#2", {"brief": _brief, "model": "sonnet"}),
+    ("app-c#3", {"brief": _brief}),
+)
+before = json.dumps(plan, sort_keys=True)
+fake, out, doc = _hand(plan, dry_run=True, settings={"worker_cap": 1})
+check("DRAIN_WOULD_DISPATCH=app-b#2 model=sonnet" in out and "DRAIN_SKIPPED=app-a#1 reason=no-brief" in out
+      and "app-c#3" not in out and "free_slots=1" in out,
+      f"dry-run previews the top eligible hand row within the free slots (got {out!r})")
+check(not fake.posted and not _ledger.exists() and not _briefs.exists()
+      and json.dumps({k: v for k, v in doc.items() if k != "updated_at"}, sort_keys=True)
+      == json.dumps({k: v for k, v in json.loads(before).items() if k != "updated_at"}, sort_keys=True),
+      "dry-run dispatches nothing and writes no plan, ledger or brief")
+
+# A plan file written before the new fields still loads and drains.
+legacy = {"version": 1, "updated_at": "2026-11-06T00:00:00Z", "lanes": [],
+          "queue": [{"repo": "app-a", "ref": "#1", "title": "old row", "status": "queued", "note": "x"}],
+          "waiting_on_roberto": []}
+_reset()
+fake = FakeLauncher({"auto_drain": True})
+rc, out, plan_path, _ = _run(fake, [], plan=legacy)
+check(rc == 0 and "DRAIN_SKIPPED=app-a#1 reason=no-brief" in out, f"a row without the new fields loads (got {out!r})")
 
 # The subcommand is wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,

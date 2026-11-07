@@ -13,14 +13,18 @@ judgment (verifying each merge, closing each lane) with the chief:
    unchecked `- [ ]` finding, it is not already in
    the plan, drain never added it before, and its repo is not
    `auto_ship = false` in `hooks/projects.toml`.
-3. **Dispatch.** Queued rows that drain added are dispatched top-down through
-   `cmd_dispatch`, with every one of its refusals, skipping a busy repo. The
-   first refusal or unconfirmed dispatch ends the drain for this turn.
+3. **Dispatch.** Queued rows are dispatched top-down through `cmd_dispatch`, with
+   every one of its refusals, skipping a busy repo. A row drain added gets the
+   generic per-kind brief. A hand-queued row is dispatched only when it carries
+   its own `brief` file, every `after` condition holds, its repo has no live
+   session and its issue is open without an owner, validation or ledger label;
+   each hand row left out prints why. The first refusal or unconfirmed dispatch
+   ends the drain for this turn.
 
 Drain's ledger (`chief-drain.json` in the hooks state dir) lists every ref it
-ever queued. That is how it tells its own rows from hand-queued ones, and how
-a row the chief removed stays removed: the ref is in the ledger but no longer
-in the plan.
+ever queued. That is how it tells its own rows from hand-queued ones (which
+only get the extra checks above), and how a row the chief removed stays
+removed: the ref is in the ledger but no longer in the plan.
 
 Every action prints one line (`DRAIN_ADDED=`, `DRAIN_DISPATCHED=`,
 `DRAIN_SKIPPED=<ref> reason=`, `DRAIN_STOPPED=<ref> reason=`), then the
@@ -154,11 +158,62 @@ def apply_adds(doc: Dict[str, Any], adds: List[Dict[str, str]]) -> None:
         chief_plan.add_item(doc, add["ref"], add["title"], model=add["model"], note=f"auto-drain {add['kind']}")
 
 
-def auto_rows(doc: Dict[str, Any], ledger_refs: Set[str]) -> List[Dict[str, Any]]:
-    """Queued rows drain added, in plan order; hand-queued rows stay the chief's."""
-    known = {ref.lower() for ref in ledger_refs}
-    return [row for row in doc["queue"]
-            if row["status"] == "queued" and f"{row['repo']}{row['ref']}".lower() in known]
+def queued_rows(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every `queued` row in plan order; parked, merged, waiting and in-flight rows are never drain's."""
+    return [row for row in doc["queue"] if row["status"] == "queued"]
+
+
+def _issue_closed(doc: Dict[str, Any], repo: str, local: str) -> Tuple[bool, str]:
+    """`(closed, detail)`: the plan says merged, else GitHub says closed; unreadable is not closed."""
+    for row in doc["queue"]:
+        if row["repo"].lower() == repo.lower() and row["ref"] == local and row["status"] == "merged":
+            return True, ""
+    state = launcher.fetch_issue_state(repo, int(local[1:]))
+    if state.get("error"):
+        return False, "unreadable"
+    return str(state.get("state") or "").upper() == "CLOSED", ""
+
+
+def unmet_after(after: str, doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
+    """The first `after` condition that does not hold, as `<token> (<why>)`; None when all do."""
+    for token in after.split():
+        if token.startswith("no-lane:"):
+            if token[len("no-lane:"):].lower() in busy:
+                return f"{token} (lane live)"
+            continue
+        repo, local = chief_plan.split_ref(token)
+        closed, detail = _issue_closed(doc, repo, local)
+        if not closed:
+            return f"{token} ({detail or 'not merged'})"
+    return None
+
+
+def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
+    """Why a hand-queued row is not dispatched this turn (the `reason=` text); None means eligible.
+
+    Cheapest checks first: a row with no brief never costs a `gh` read. A read that
+    cannot say is its own reason, never a pass.
+    """
+    if not row.get("brief"):
+        return "no-brief"
+    try:
+        commands.load_dispatch_brief(row["brief"])
+    except ValueError as exc:
+        return f"brief-unreadable ({exc})"
+    unmet = unmet_after(row["after"], doc, busy) if row.get("after") else None
+    if unmet is not None:
+        return f"after-unmet ({unmet})"
+    if row["repo"].lower() in busy:
+        return "repo-busy"
+    state = launcher.fetch_issue_state(row["repo"], int(row["ref"][1:]))
+    if state.get("error"):
+        return "state-unknown"
+    if str(state.get("state") or "").upper() == "CLOSED":
+        return "issue-closed"
+    labels = {(label.get("name") or "").lower() for label in state.get("labels") or []}
+    if labels & EXCLUDED_LABELS:
+        return "label-" + sorted(labels & EXCLUDED_LABELS)[0]
+    return None
 
 
 def record_lane(doc: Dict[str, Any], repo: str, local_ref: str, sid: str, model: Optional[str]) -> None:
@@ -214,12 +269,11 @@ def fetch_open_issues() -> Tuple[List[Dict[str, Any]], List[Tuple[str, str]]]:
 
 # ---- the command -------------------------------------------------------------
 
-def _dispatch_one(args: argparse.Namespace, row: Dict[str, Any], kind: str) -> Tuple[Optional[str], str]:
+def _dispatch_one(args: argparse.Namespace, row: Dict[str, Any], brief_file: str) -> Tuple[Optional[str], str]:
     """`(sid, output)` from one guard-railed `cmd_dispatch`; `sid` None means it did not dispatch."""
-    ref = f"{row['repo']}{row['ref']}"
     ns = argparse.Namespace(
         repo=row["repo"], number=int(row["ref"][1:]), mode="start", model=row.get("model"),
-        effort=None, brief_file=str(write_brief(ref, kind)), yolo_confirmed=False,
+        effort=None, brief_file=brief_file, yolo_confirmed=False,
         allow_during_fleet_job=False, base_url=args.base_url,
     )
     buf = io.StringIO()
@@ -291,40 +345,40 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
 
     columns = (launcher._request(args.base_url, "/api/board").get("columns") or {})
     busy = set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id()))
-    rows = auto_rows(doc, set(ledger))
-    if args.dry_run:
-        free = _free_slots(args, columns, reply)
-        shown = 0
-        for row in rows:
-            ref = f"{row['repo']}{row['ref']}"
-            if row["repo"].lower() in busy:
-                print(f"DRAIN_SKIPPED={ref} reason=repo-busy")
-                continue
-            if free is not None and shown >= free:
-                break
-            busy.add(row["repo"].lower())
-            shown += 1
-            print(f"DRAIN_WOULD_DISPATCH={ref} model={row.get('model', DEFAULT_MODEL)}")
-        print(f"DRAIN=dry-run added={len(adds)} dispatched={shown} "
-              f"free_slots={'unknown' if free is None else free}")
-        return 0
-
+    known = {ref.lower() for ref in ledger}
+    free = _free_slots(args, columns, reply) if args.dry_run else None
     dispatched = 0
-    for row in rows:
+    for row in queued_rows(doc):
         ref = f"{row['repo']}{row['ref']}"
-        if row["repo"].lower() in busy:
-            print(f"DRAIN_SKIPPED={ref} reason=repo-busy")
+        if args.dry_run and free is not None and dispatched >= free:
+            break
+        owned = ref.lower() in known
+        reason = ("repo-busy" if row["repo"].lower() in busy else None) if owned \
+            else hand_row_skip(row, doc, busy)
+        if reason is not None:
+            print(f"DRAIN_SKIPPED={ref} reason={reason}")
             continue
-        kind = (ledger.get(ref) or {}).get("kind") or "audit"
-        sid, output = _dispatch_one(args, row, kind)
+        model = row.get("model") or "default"
+        if args.dry_run:
+            busy.add(row["repo"].lower())
+            dispatched += 1
+            print(f"DRAIN_WOULD_DISPATCH={ref} model={model}")
+            continue
+        brief_file = (str(write_brief(ref, (ledger.get(ref) or {}).get("kind") or "audit")) if owned
+                      else row["brief"])
+        sid, output = _dispatch_one(args, row, brief_file)
         print(output, end="" if output.endswith("\n") or not output else "\n")
         if sid is None:
             reason = "unconfirmed" if "DISPATCH=unconfirmed" in output else "refused"
             print(f"DRAIN_STOPPED={ref} reason={reason}")
             break
-        chief_plan.update(plan_path, lambda d: record_lane(d, row["repo"], row["ref"], sid, row.get("model")))
+        doc = chief_plan.update(plan_path, lambda d: record_lane(d, row["repo"], row["ref"], sid, row.get("model")))
         busy.add(row["repo"].lower())
         dispatched += 1
-        print(f"DRAIN_DISPATCHED={ref} session={sid} model={row.get('model', DEFAULT_MODEL)}")
-    print(f"DRAIN=done added={len(adds)} dispatched={dispatched}")
+        print(f"DRAIN_DISPATCHED={ref} session={sid} model={model}")
+    if args.dry_run:
+        print(f"DRAIN=dry-run added={len(adds)} dispatched={dispatched} "
+              f"free_slots={'unknown' if free is None else free}")
+    else:
+        print(f"DRAIN=done added={len(adds)} dispatched={dispatched}")
     return 0

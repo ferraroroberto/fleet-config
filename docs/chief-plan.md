@@ -37,10 +37,12 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | `updated_at` | UTC, `YYYY-MM-DDTHH:MM:SSZ`, stamped by the writer on every write. |
 | `lanes[]` | One live worker lane per repo: `repo` and `status` required; `item` (`#N`), `session` and `model` optional. |
 | `lanes[].status` | `building` \| `gate` \| `idle` \| `waiting`. |
-| `queue[]` | The chief's intended order, first to last: `repo`, `ref`, `title` and `status` required; `note` optional. `repo` + `ref` is unique. |
+| `queue[]` | The chief's intended order, first to last: `repo`, `ref`, `title` and `status` required; `note`, `brief` and `after` optional. `repo` + `ref` is unique. |
 | `queue[].ref` | `#N`, local to `repo`. |
 | `queue[].status` | `queued` \| `building` \| `gate` \| `merged` \| `parked` \| `waiting-roberto`. |
 | `queue[].note` | Free text, one short line. |
+| `queue[].brief` | Path to the lane brief file for this issue (the chief writes it before queueing). `chief_ops.py drain` hands it to the lane it starts; a `queued` row without one is never drained. One line, at most 200 characters. |
+| `queue[].after` | Conditions `drain` waits for before starting the row, single-space separated, all must hold: `<repo>#<N>` (that issue is `merged` in the plan, or closed on GitHub) and `no-lane:<repo>` (no live worker session in that repo). The writer normalizes commas to spaces and refuses anything else. |
 | `queue[].kind` | Why a `parked` row is parked: `owner` (Roberto's step; the issue carries `needs-owner`, which is what lists it in the Board's "Waiting for start"), `umbrella` (kept open on purpose) or `blocked-by`. Optional so older files load; the writer sets it and drops it when the row leaves `parked`. |
 | `queue[].blocked_by` | `repo#N` the row waits on; present exactly when `kind` is `blocked-by`. |
 | `lanes[].model` / `queue[].model` | The model the lane or build item runs on: `opus` \| `sonnet`, picked per task by `docs/model-tiers.md`. Optional, so older files stay valid. |
@@ -90,8 +92,8 @@ Each update is one line. Queue items are addressed as `<repo>#<N>`.
 
 ```text
 chief_ops.py plan show
-chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet] [--kind K]
-chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus] [--kind K]   # --note "" / --model "" clear; --status parked needs --kind (owner | umbrella | "blocked-by <repo>#<N>")
+chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet] [--kind K] [--brief PATH] [--after "fleet-config#1911 no-lane:fleet-config"]
+chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus] [--kind K] [--brief PATH] [--after "…"]   # --note "" / --model "" / --brief "" / --after "" clear; --status parked needs --kind (owner | umbrella | "blocked-by <repo>#<N>")
 chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273
 chief_ops.py plan prune [--status merged …]     # drop every queue row with a status (default merged); lanes and waiting items stay

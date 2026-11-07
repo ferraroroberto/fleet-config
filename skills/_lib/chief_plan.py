@@ -57,7 +57,7 @@ MAX_OPTIONS = 4
 
 TOP_FIELDS = {"version", "updated_at", "lanes", "queue", "waiting_on_roberto"}
 LANE_FIELDS = {"repo", "session", "item", "status", "model"}
-QUEUE_FIELDS = {"repo", "ref", "title", "status", "note", "model", "kind", "blocked_by"}
+QUEUE_FIELDS = {"repo", "ref", "title", "status", "note", "model", "kind", "blocked_by", "brief", "after"}
 WAITING_FIELDS = {"text", "ref", "id", "repo", "question", "detail", "recommendation",
                   "options", "multi", "asked_at"}
 OPTION_FIELDS = {"label", "description", "recommended"}
@@ -65,6 +65,7 @@ OPTION_FIELDS = {"label", "description", "recommended"}
 _LOCAL_REF = re.compile(r"#[1-9][0-9]*")
 _REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUALIFIED_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(#[1-9][0-9]*)")
+_NO_LANE = re.compile(r"no-lane:([A-Za-z0-9][A-Za-z0-9._-]*)")
 _ISO_Z = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -176,6 +177,7 @@ def validate(doc: Any) -> List[str]:
             _check_text(errors, f"{where}.note", row["note"], required=False)
         _check_model(errors, where, row)
         _check_kind(errors, where, row)
+        _check_dispatch_fields(errors, where, row)
 
     ids: set = set()
     for i, row in enumerate(doc["waiting_on_roberto"]):
@@ -197,6 +199,22 @@ def _check_kind(errors: List[str], where: str, row: Dict[str, Any]) -> None:
             errors.append(f"{where}.blocked_by: must be repo#N when kind is blocked-by")
     elif "blocked_by" in row:
         errors.append(f"{where}.blocked_by: only allowed when kind is blocked-by")
+
+
+def _check_dispatch_fields(errors: List[str], where: str, row: Dict[str, Any]) -> None:
+    """A row's optional `brief` path and `after` conditions, which `chief_ops.py drain` reads."""
+    if "brief" in row:
+        _check_text(errors, f"{where}.brief", row["brief"], required=True)
+    if "after" in row:
+        _check_text(errors, f"{where}.after", row["after"], required=True)
+        if isinstance(row["after"], str) and row["after"].strip():
+            try:
+                normalized = parse_after(row["after"])
+            except ValueError as exc:
+                errors.append(f"{where}.after: {exc}")
+            else:
+                if normalized != row["after"]:
+                    errors.append(f"{where}.after: must be single-space-separated conditions")
 
 
 def _check_waiting(errors: List[str], where: str, row: Dict[str, Any], ids: set) -> None:
@@ -384,6 +402,35 @@ def _require_question(doc: Dict[str, Any], ref: str) -> None:
             f'[--option "Label::description" ...]` first, then set waiting-roberto')
 
 
+def parse_after(spec: str) -> str:
+    """`"fleet-config#1911 no-lane:fleet-config"` -> the conditions, single-space separated.
+
+    Each condition is `repo#N` (that issue is merged or closed) or `no-lane:<repo>`
+    (no live worker session in that repo). Commas also separate. All must hold.
+    """
+    tokens = spec.replace(",", " ").split()
+    if not tokens:
+        raise ValueError("needs at least one condition")
+    for token in tokens:
+        if not (_QUALIFIED_REF.fullmatch(token) or _NO_LANE.fullmatch(token)):
+            raise ValueError(f"unknown condition {token!r}; use <repo>#<N> or no-lane:<repo>")
+    return " ".join(tokens)
+
+
+def _set_dispatch_fields(row: Dict[str, Any], brief: Optional[str], after: Optional[str]) -> None:
+    """`None` leaves a field alone, `""` clears it; `after` is normalized."""
+    if brief is not None:
+        if brief.strip():
+            row["brief"] = brief.strip()
+        else:
+            row.pop("brief", None)
+    if after is not None:
+        if after.strip():
+            row["after"] = parse_after(after)
+        else:
+            row.pop("after", None)
+
+
 def parse_kind(spec: str) -> Tuple[str, str]:
     """`owner` | `umbrella` | `blocked-by <repo>#<N>` -> (kind, blocked_by or "")."""
     kind, _, rest = spec.strip().partition(" ")
@@ -455,7 +502,8 @@ def _apply_kind(row: Dict[str, Any], status: str, kind: Optional[str]) -> None:
 
 def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
              note: Optional[str] = None, at: Optional[int] = None,
-             model: Optional[str] = None, kind: Optional[str] = None) -> None:
+             model: Optional[str] = None, kind: Optional[str] = None,
+             brief: Optional[str] = None, after: Optional[str] = None) -> None:
     """Queue `ref`; `at` is a 1-based position (default: the end)."""
     repo, local = split_ref(ref)
     if status == "waiting-roberto":
@@ -465,26 +513,29 @@ def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
     if note:
         row["note"] = note
     _set_model(row, model)
+    _set_dispatch_fields(row, brief, after)
     position = len(doc["queue"]) if at is None else _position(at, len(doc["queue"]) + 1)
     doc["queue"].insert(position, row)
 
 
 def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
              note: Optional[str] = None, title: Optional[str] = None,
-             model: Optional[str] = None, kind: Optional[str] = None) -> None:
-    """Change an item in place; an empty `note` or `model` clears it.
+             model: Optional[str] = None, kind: Optional[str] = None,
+             brief: Optional[str] = None, after: Optional[str] = None) -> None:
+    """Change an item in place; an empty `note`, `model`, `brief` or `after` clears it.
 
     Setting `status` to `parked` needs a kind; a row already parked keeps the one
     it has, which lets a pre-kind row be edited until it is migrated.
     """
-    if status is None and note is None and title is None and model is None and kind is None:
-        raise ValueError("nothing to set: pass --status, --note, --title, --model or --kind")
+    if all(value is None for value in (status, note, title, model, kind, brief, after)):
+        raise ValueError("nothing to set: pass --status, --note, --title, --model, --kind, --brief or --after")
     row = doc["queue"][_index(doc, ref)]
     if status == "waiting-roberto":
         _require_question(doc, ref)
     if status == "parked" or kind or (status is not None and row["status"] == "parked"):
         _apply_kind(row, status or row["status"], kind)
     _set_model(row, model)
+    _set_dispatch_fields(row, brief, after)
     if status is not None:
         row["status"] = status
     if title is not None:
@@ -683,8 +734,10 @@ def _run(args: argparse.Namespace) -> int:
     mutations: Dict[str, Callable[[Dict[str, Any]], None]] = {
         "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session, args.model),
         "drop-lane": lambda d: drop_lane(d, args.repo),
-        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model, args.kind),
-        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model, args.kind),
+        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model, args.kind,
+                                     args.brief, args.after),
+        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model, args.kind,
+                                     args.brief, args.after),
         "move": lambda d: move_item(d, args.ref, args.to),
         "remove": lambda d: remove_item(d, args.ref),
         "wait": lambda d: added.append(add_waiting(d, args.text, args.ref)),
@@ -697,6 +750,9 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+_BRIEF_HELP = "path to the lane brief file `drain` hands the lane; \"\" clears it"
+_AFTER_HELP = ("conditions `drain` waits for, space-separated: <repo>#<N> (merged or closed) "
+               "and no-lane:<repo>; \"\" clears it")
 _KIND_HELP = "why it is parked (needed with --status parked): owner | umbrella | 'blocked-by <repo>#<N>'"
 
 
@@ -726,14 +782,18 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--at", type=int, default=None, help="1-based position (default: end)")
     add.add_argument("--model", default=None, help="|".join(MODELS))
     add.add_argument("--kind", default=None, help=_KIND_HELP)
+    add.add_argument("--brief", default=None, help=_BRIEF_HELP)
+    add.add_argument("--after", default=None, help=_AFTER_HELP)
 
-    set_p = acts.add_parser("set", help="change a queued item's status, note, title or model")
+    set_p = acts.add_parser("set", help="change a queued item's status, note, title, model, brief or after")
     set_p.add_argument("ref")
     set_p.add_argument("--status", choices=QUEUE_STATUSES, default=None)
     set_p.add_argument("--note", default=None, help='"" clears it')
     set_p.add_argument("--title", default=None)
     set_p.add_argument("--model", default=None, help=f"{'|'.join(MODELS)}; \"\" clears it")
     set_p.add_argument("--kind", default=None, help=_KIND_HELP)
+    set_p.add_argument("--brief", default=None, help=_BRIEF_HELP)
+    set_p.add_argument("--after", default=None, help=_AFTER_HELP)
 
     move = acts.add_parser("move", help="move a queued item to a 1-based position")
     move.add_argument("ref")

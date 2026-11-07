@@ -51,6 +51,29 @@ def _valid() -> dict:
     return doc
 
 
+# ---- dispatch fields: brief and after (fleet-config#1925) ---------------------
+
+doc = _valid()
+cp.add_item(doc, "life-os#7", "hand row", brief="E:/tmp/F_lifeos7.md", after="app-launcher#1273, no-lane:life-os")
+row = doc["queue"][-1]
+check(cp.validate(doc) == [] and row["brief"] == "E:/tmp/F_lifeos7.md"
+      and row["after"] == "app-launcher#1273 no-lane:life-os", "add_item stores brief and a normalized after")
+cp.set_item(doc, "life-os#7", after="")
+check("after" not in doc["queue"][-1] and "brief" in doc["queue"][-1], "an empty after clears just after")
+cp.set_item(doc, "life-os#7", brief="")
+check("brief" not in doc["queue"][-1], "an empty brief clears it")
+check("unknown condition" in _raises(cp.set_item, doc, "life-os#7", after="when ready"),
+      "an after that is neither repo#N nor no-lane:<repo> is refused")
+check("at least one" in _raises(cp.parse_after, " , "), "an after with no condition is refused")
+bad = _valid()
+bad["queue"][0]["after"] = "app-launcher#1273,no-lane:x"
+check(any("single-space" in e for e in cp.validate(bad)), "validate rejects an un-normalized after")
+bad["queue"][0]["after"] = "later"
+bad["queue"][1]["brief"] = ""
+check(len(cp.validate(bad)) >= 2, "validate rejects a bad after and an empty brief")
+check(cp.validate(_valid()) == [] and "brief" not in _valid()["queue"][0],
+      "a row without the new fields stays valid")
+
 # ---- validation --------------------------------------------------------------
 
 check(cp.validate(_valid()) == [], "the brief's example plan validates")
@@ -397,6 +420,21 @@ try:
     check(r.returncode == 2 and "pick is already used" in r.stderr, "CLI ask refuses a duplicate --id")
     r = plan("unwait", "q2")
     check(r.returncode == 0 and "waiting=2" in r.stdout, "CLI unwait removes an item by id")
+    r = plan("add", "life-os#9", "hand row", "--brief", "E:/tmp/F_lifeos9.md", "--after", "life-os#8,no-lane:fleet-config")
+    row = next((x for x in json.loads(plan("show").stdout)["queue"] if x["ref"] == "#9"), {})
+    check(r.returncode == 0 and row.get("brief") == "E:/tmp/F_lifeos9.md"
+          and row.get("after") == "life-os#8 no-lane:fleet-config",
+          f"CLI add writes brief and a normalized after ({r.stderr.strip()[:120]})")
+    r = plan("set", "life-os#9", "--after", "")
+    row = next((x for x in json.loads(plan("show").stdout)["queue"] if x["ref"] == "#9"), {})
+    check(r.returncode == 0 and "after" not in row and "brief" in row, "CLI set --after '' clears only after")
+    before = (cli_dir / "chief-plan.json").read_bytes()
+    r = plan("set", "life-os#9", "--after", "soon")
+    check(r.returncode == 2 and "unknown condition" in r.stderr and (cli_dir / "chief-plan.json").read_bytes() == before,
+          "CLI set refuses an unparseable after and writes nothing")
+    r = plan("set", "life-os#9", "--brief", "")
+    row = next((x for x in json.loads(plan("show").stdout)["queue"] if x["ref"] == "#9"), {})
+    check(r.returncode == 0 and "brief" not in row, "CLI set --brief '' clears the brief")
     r = plan("clear")
     check(r.returncode == 0 and "queue=0" in r.stdout, "CLI clear resets to an empty plan")
 finally:

@@ -78,8 +78,10 @@ Subcommands
   drain [--dry-run] [--plan-file PATH] [--base-url URL]
       Run after `wake` every turn (fleet-config#1881; `chief/drain.py`). With
       Settings' `auto_drain` on, queues open audit-managed issues that need no
-      owner step and dispatches the rows it queued into free slots. An off,
-      missing or unreadable switch prints `DRAIN=off reason=...` and does
+      owner step and dispatches queued rows into free slots in plan order: its
+      own with the per-kind brief, a hand-queued one only with its `brief` file,
+      its `after` met and a free repo (else `DRAIN_SKIPPED=<ref> reason=...`).
+      An off, missing or unreadable switch prints `DRAIN=off reason=...` and does
       nothing; the first refusal or unconfirmed dispatch ends the drain.
 
   heal record|rerun|outcome|show <job_id> [--run RUN] [--cause C]
