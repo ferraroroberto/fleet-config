@@ -49,7 +49,7 @@ The hooks that protect quality, in plain terms:
 
 - **No attribution trailer** (`hooks/pre_commit_no_ai_trailer.py`): refuses an AI attribution trailer or session link in a commit message, in a `-F` message file, or in a `gh` issue or pull-request body.
 - **Secret scan** (`hooks/secret_scan_guard.py`): refuses a live credential in a commit diff, in a command, in a `gh` body, and a command or tool call that would print a secret-bearing file.
-- **Default-branch guard, edit half and commit half** (`hooks/branch_before_edit_guard.py`, `hooks/main_commit_guard.py`): a dispatched agent may not edit tracked files while its checkout sits on the default branch, and `git commit` on the default branch is refused unless a short-lived, path-scoped marker covers every staged file. See [what is on by default](#what-is-on-by-default) for the commit half's rollout.
+- **Default-branch guard, edit half and commit half** (`hooks/branch_before_edit_guard.py`, `hooks/main_commit_guard.py`): a dispatched agent may not edit tracked files while its checkout sits on the default branch, and `git commit` on the default branch is refused unless a short-lived, path-scoped marker covers every staged file. Both halves are live in Claude Code; see [what is on by default](#what-is-on-by-default).
 - **Dangerous operations** (`hooks/safe_kill_guard.py`): refuses a force-push to the default branch, `--no-verify`, a blanket kill of every Python process, and commands that would power off the host.
 - **Environment discipline** (`hooks/venv_discipline.py`, `hooks/bash_windows_path_guard.py`, `hooks/bash_cmdexe_syntax_guard.py`): wrong-interpreter and wrong-shell mistakes that otherwise fail silently.
 - **Docs hygiene** (`hooks/docs_dated_filename_guard.py`): refuses a new date-prefixed file under `docs/`, because history belongs in git and issues.
@@ -76,7 +76,7 @@ Nine ratchets gate this repository. Each section below says what it catches, why
 
 ### Static analysis
 
-Catches duplicated blocks (via a pinned `jscpd`), unused imports and variables, a curated set of bug-prone and security-sensitive patterns (a mutable default argument, `return` inside `finally`, `eval` of data, an HTTP call with no timeout, `shell=True`) and import order. The curated list is limited to codes whose hits a reviewer would fix rather than argue with. Why: an audit re-finds the same duplication every week while the fix lives in someone's head; a gate stage encodes the lesson in structure. It needs `ruff` and Node in the gate's environment, and a missing tool is exit 3.
+Catches duplicated blocks (via a pinned `jscpd`), unused imports and variables, a curated set of bug-prone and security-sensitive patterns (a mutable default argument, `return` inside `finally`, `eval` of data, an HTTP call with no timeout, `shell=True`) and import order. The curated list is limited to codes whose hits a reviewer would fix rather than argue with. Why: an audit re-finds the same duplication every week while the fix lives in someone's head; a gate stage encodes the lesson in structure. It needs `ruff` and Node in the gate's environment, and a missing tool is exit 3. A repository that cannot install one switches that half off with `duplicates = false` (no Node) or `ruff = false` (no ruff) in its table; the run then prints `OFF ... not checked, not clean` on every pass instead of passing silently, and turning both off is a configuration error.
 
 ```python
 # hit: the default list is created once and shared by every call
@@ -227,6 +227,17 @@ The pattern is a loop. An audit finds a class of problem by judgment; when the c
 
 The system is mostly independent of this repository's agent tooling. A project can adopt it in layers, smallest first.
 
+**The fastest route is the public adoption kit.** The source repository ships [`docs/adopting-ratchets.md`](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/adopting-ratchets.md) as the single entry point for a codebase outside this fleet. It lists the prerequisites (Python 3.11 or newer, `git`, and `ruff` plus Node only for the static ratchet), then two scripts do the work:
+
+```sh
+python <scaffold>/scripts/adopt_ratchets.py <target> [--ratchets comment,structure,runtime_write]
+python scripts/run_ratchets.py --tests python -m pytest -q     # run in the target; wire into its gate or CI
+```
+
+`adopt_ratchets.py` copies each chosen ratchet and its sibling modules into `<target>/scripts/`, records every copy in `.fleet.toml`, appends a minimal `enabled = true` table, and runs `--init` to write the first baseline. `--ratchets` takes a list, `recommended` (the default: the Python-only ratchets that need no choices) or `all`. It is idempotent, and a copy that differs from the source is refused, never overwritten. `run_ratchets.py` is a cross-platform runner: it runs every enabled ratchet in gate order, then takes the runtime-write snapshot, runs the test command and runs the probe, and reports exit 3 as not confirmed rather than skipping it. The kit also ships a CI workflow template and a ready-to-paste prompt for handing the adoption to a coding agent. Nothing in it needs a private repository or tool.
+
+The manual steps below are what those scripts automate.
+
 **The minimum, which gives most of the value:**
 
 1. Copy one or more ratchet scripts from the source repository, unchanged. The standard-library-only ones (structure, docs, comment, instruction, doc references, dead code, conventions, runtime writes) need Python 3.11 or newer and nothing else; the static ratchet also needs `ruff` and Node.
@@ -249,7 +260,7 @@ The system is mostly independent of this repository's agent tooling. A project c
    python scripts/structure_ratchet.py --update-baseline    # after fixing entries: shrink only
    ```
 
-4. Make the rule that exit 3 fails the gate explicit in the gate's code, and keep each ratchet a dedicated stage rather than a generic "run these scripts, skip on 3" loop, where a shared skip code would read a not-confirmed result as a skip.
+4. Make the rule that exit 3 fails the gate explicit in the gate's code, and keep each ratchet a dedicated stage (or use `run_ratchets.py`, which already fails on 3) rather than a generic "run these scripts, skip on 3" loop, where a shared skip code would read a not-confirmed result as a skip. Never route a ratchet by which paths changed: each compares the whole tree with its baseline.
 
 **Worth adding next:**
 
@@ -272,5 +283,6 @@ Not everything described here is switched on everywhere. State as of the current
 - **On in this repository's gate:** all nine ratchets; the hook matrix, spawn scanner, tree boundary, fleet-scope guard, index drift and tool-id leak checks; the debug-tag scan, instruction delta, gate evidence, red-first evidence and PR-body checker in the finish flow.
 - **Off until a repository opts in:** the comment ratchet's docstring and history-phrase rules; the conventions ratchet's `secret-compare`, `password-input-vendored`, `login-lockout` and `no-pwsh-stub` rules (this repository leaves them off, see [`ratchets.md`](ratchets.md) for each reason); the instruction ratchet's file-shape and repeated-text rules, which a repository enables per table; every ratchet in a repository that has not declared its table.
 - **Awaiting adoption in other repositories:** the newest rules, such as the docstring and history-phrase counts, the import-order rule and the instruction-file shape rules, have landed in the source repository as opt-in. Each repository records its existing debt with `--init` or `--update-baseline --allow-additions` in its own pull request, and the per-repository burn-down follows from those baselines.
-- **Merged but needing a settings sync:** the default-branch commit guard is wired in the settings template; a machine takes effect only after its live agent settings are refreshed from the template. It blocks in Claude Code only; the other harnesses do not support the event (see [`cross-agent-parity.md`](cross-agent-parity.md)).
+- **Live but harness-limited:** the default-branch commit guard is wired in the settings template and in the live agent settings, so it blocks `git commit` on the default branch in Claude Code. The other harnesses do not support the event (see [`cross-agent-parity.md`](cross-agent-parity.md)). A new machine takes effect once its live settings are refreshed from the template, and the acceptance run's settings-sync check fails by name until they are.
+- **Available to any repository:** the public adoption kit described under [Porting this elsewhere](#porting-this-elsewhere).
 - **Advisory by design:** the nudge hooks, the structure ratchet's warning band, and CI, which is advisory because the local gate is the contract.
