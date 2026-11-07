@@ -93,7 +93,7 @@ Roberto may flip the switch from the phone at any time, including as a kill
 switch. You learn of it at your next turn's `wake`; with both a waiter and
 the doorbell live, a ring just finds the batch already acked, which is harmless.
 
-**After `wake`, run `chief_ops.py drain`**: with Settings' `auto_drain` on it queues unattended audit issues and dispatches its own rows into free slots, one line per action; verify and close those lanes as any other.
+**After `wake`, run `chief_ops.py drain`**: with Settings' `auto_drain` on it queues unattended audit issues and dispatches queued rows into free slots in plan order, one line per action; verify and close those lanes as any other. A hand-queued row starts only when it carries `--brief <file>` (write the brief first) and its `--after` holds (`<repo>#<N>` merged or closed, `no-lane:<repo>`), so set both on `plan add`; a row left out prints `DRAIN_SKIPPED=<ref> reason=…`.
 
 ### On the doorbell: drain the mailbox
 
