@@ -8,6 +8,7 @@ URL paths only: no host, no IP, no page text, no screenshot.
 from __future__ import annotations
 
 import copy
+import datetime as _dt
 import json
 import re
 import statistics
@@ -23,7 +24,7 @@ from fleet_core import hooks_state  # noqa: E402
 from .http_probe import SKIPPED_STREAM  # noqa: E402
 
 BUDGETS_PATH = Path(__file__).resolve().parent / "budgets.toml"
-LEDGER_KEEP = 20
+LEDGER_SCHEMA_VERSION = 1
 # A cold sample is an outlier when it sits more than twice the median AND at least this far above it:
 # a first load right after a restart read 3072 ms on an app that otherwise loads in ~370 ms.
 OUTLIER_FACTOR = 2.0
@@ -328,29 +329,62 @@ def merge_body(existing: str, v: dict, run_id: str, build: Optional[str], date: 
 
 
 # ---- the local ledger -----------------------------------------------------
+# One append-only JSONL file for every app: the statistics live here, not in GitHub issues.
+# The schema is documented in skills/perf-review/SKILL.md because app-launcher's Apps section reads it.
 
-def ledger_path(target: str) -> Path:
-    return hooks_state.state_dir() / "perf-review" / target / "ledger.json"
+def ledger_path() -> Path:
+    return hooks_state.state_dir() / "perf-review" / "ledger.jsonl"
+
+
+def _run_ts(run_id: str) -> Optional[str]:
+    """The run's UTC start as ISO-8601, read from its `%Y%m%dT%H%M%SZ` id; None when the id is not one."""
+    try:
+        return _dt.datetime.strptime(run_id, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
 
 
 def load_ledger(target: str) -> List[dict]:
+    """`target`'s records, oldest first, the last write winning per run id; a torn or foreign line is skipped.
+
+    An app with no record yet falls back to the per-app `ledger.json` the file replaced, so its first run after the
+    change still diffs against the previous one.
+    """
+    by_run: dict = {}
     try:
-        return json.loads(ledger_path(target).read_text(encoding="utf-8")).get("entries", [])
+        lines = ledger_path().read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("app") == target and row.get("run_id"):
+            by_run.pop(row["run_id"], None)
+            by_run[row["run_id"]] = row
+    if by_run:
+        return list(by_run.values())
+    try:
+        return json.loads((hooks_state.state_dir() / "perf-review" / target / "ledger.json").read_text(encoding="utf-8")).get("entries", [])
     except (OSError, ValueError):
         return []
 
 
 def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Optional[str]) -> dict:
-    """Append this run's few-hundred-byte entry (ids, statuses, numbers — nothing captured); keep the last `LEDGER_KEEP`."""
-    entry = {"run_id": run_id, "commit": commit, "live_build": build, "budgets_version": v.get("budgets_version"),
-             "ready_by": v.get("ready_by"),
-             "checks": {c["id"]: {"status": c["status"], "measured": c["measured"]} for c in v["checks"]},
-             "endpoints": {e["path"]: {"status": e["status"], "p95": e.get("p95")} for e in v["endpoints"]}}
-    entries = [e for e in load_ledger(target) if e.get("run_id") != run_id] + [entry]
-    path = ledger_path(target)
+    """Append this run's record to the ledger (ids, statuses, numbers; nothing captured) and return it."""
+    entry = {"schema_version": LEDGER_SCHEMA_VERSION, "run_id": run_id, "ts": _run_ts(run_id), "app": target,
+             "commit": commit, "build": build, "budgets_version": v.get("budgets_version"), "ready_by": v.get("ready_by"),
+             "overall": v["summary"]["overall"], "counts": {k: v["summary"][k] for k in ("pass", "fail", "unmeasured")},
+             "checks": {c["id"]: {"status": c["status"], "budget": c["budget"], "measured": c["measured"]} for c in v["checks"]},
+             "endpoints": {e["path"]: {"status": e["status"], "budget": e["budget"], "p50": e.get("p50"), "p95": e.get("p95")}
+                           for e in v["endpoints"]}}
+    path = ledger_path()
+    # runtime-write-exempt: the ledger lives in the hooks state directory, never a code folder
     path.parent.mkdir(parents=True, exist_ok=True)
-    hooks_state.atomic_write_text(
-        path, json.dumps({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries[-LEDGER_KEEP:]}, indent=1))
+    # runtime-write-exempt: appended in place so a concurrent run's record is never rewritten away
+    with path.open("a", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
     return entry
 
 
@@ -397,3 +431,36 @@ def _slower(before: Optional[float], now: Optional[float]) -> bool:
 def previous_entry(target: str, run_id: str) -> Optional[dict]:
     earlier = [e for e in load_ledger(target) if e.get("run_id") != run_id]
     return copy.deepcopy(earlier[-1]) if earlier else None
+
+
+# ---- the issue lifecycle ----------------------------------------------------
+
+def open_fix_items(body: str) -> bool:
+    """Whether the issue's hand-curated `## Fixes` checklist still has an unchecked item."""
+    return "- [ ]" in (_section(body, "Fixes") or "")
+
+
+def filing_decision(existing_body: str, existing_number: Optional[int], v: dict) -> dict:
+    """`{"action": "upsert" | "close" | "none", "reason": str}`: what the run does to the managed issue.
+
+    The issue exists only while a budget is broken or a fix item is open. An `unmeasured`
+    run with nothing over budget establishes neither, so it leaves the issue exactly as it is: unknown is never
+    folded into green and never closes anything.
+    """
+    summary = v["summary"]
+    if summary["fail"]:
+        return {"action": "upsert", "reason": f"{summary['fail']} check(s) over budget"}
+    if summary["overall"] != "pass":
+        return {"action": "none", "reason": f"{summary['unmeasured']} check(s) unmeasured, so neither a breach nor green is confirmed; "
+                                            "issue left as it is"}
+    if existing_number is None:
+        return {"action": "none", "reason": "all checks within budget, no issue to keep"}
+    if open_fix_items(existing_body):
+        return {"action": "upsert", "reason": "a Fixes item is still open"}
+    return {"action": "close", "reason": "all checks within budget and no Fixes item open"}
+
+
+def close_comment(v: dict, run_id: str, build: Optional[str]) -> str:
+    """The comment a green run closes the managed issue with: numbers and ids only."""
+    return (f"All checks within budget in run `{run_id}` (build `{build or 'unknown'}`, budgets v{v.get('budgets_version')}), "
+            "and no `## Fixes` item is open. Results stay in the local perf-review ledger; a new issue opens if a budget is next broken.")

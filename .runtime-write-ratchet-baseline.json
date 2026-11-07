@@ -56,7 +56,6 @@
     {"key": "skills/_lib/gate_evidence.py", "counts": {"unresolved": 2}},
     {"key": "skills/_lib/perf_review/cli.py", "counts": {"unresolved": 5}},
     {"key": "skills/_lib/perf_review/load.py", "counts": {"unresolved": 2}},
-    {"key": "skills/_lib/perf_review/report.py", "counts": {"unresolved": 1}},
     {"key": "skills/_lib/perf_review/sweep.py", "counts": {"unresolved": 6}},
     {"key": "skills/_lib/quota_snapshot.py", "counts": {"unresolved": 1}},
     {"key": "skills/_lib/scoped_discovery.py", "counts": {"unresolved": 5}},

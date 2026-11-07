@@ -46,6 +46,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import audit_issue  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 from perf_review import cli, http_probe, report, stamping  # noqa: E402
 
 _h = CheckHarness()
@@ -632,6 +633,182 @@ check("behind HEAD by 2" in report.render_body({**v, "deploy": behind}, "r9", sh
       and "not live" not in report.render_body({**v, "deploy": {"state": "live"}}, "r9", "abc1234"),
       "the issue body warns that a fix merged since is not live when the served build is behind, and only then")
 
+# ---- the ledger and the issue lifecycle (fleet-config#1933) -----------------
+SLUG = "owner/fixture"
+
+
+class FakeGh:
+    """The few `gh` verbs `audit_issue` uses, answered from a dict of issues; every call is recorded."""
+
+    def __init__(self) -> None:
+        self.issues: dict = {}
+        self.calls: list = []
+        self.next = 100
+
+    def run(self, args: list) -> subprocess.CompletedProcess:
+        self.calls.append(list(args))
+        if args[:2] == ["label", "create"]:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess(args, 0, self._answer(args), "")
+
+    def _answer(self, args: list) -> str:
+        verb, rest = args[1], args[2:]
+        opts = {a: rest[i + 1] for i, a in enumerate(rest[:-1]) if a.startswith("-")}
+        if verb == "list":
+            return json.dumps([{"number": n, "title": i["title"], "body": i["body"]}
+                               for n, i in sorted(self.issues.items()) if i["state"] == opts["--state"]])
+        if verb == "view":
+            issue = self.issues[int(rest[0])]
+            return issue["body"] if opts["--json"] == "body" else f"https://example.invalid/{rest[0]}"
+        if verb == "create":
+            self.next += 1
+            self.issues[self.next] = {"title": opts["--title"], "state": "open",
+                                      "body": Path(opts["--body-file"]).read_text(encoding="utf-8")}
+            return f"https://example.invalid/{self.next}"
+        if verb == "edit":
+            issue = self.issues[int(rest[0])]
+            issue["body"] = Path(opts["--body-file"]).read_text(encoding="utf-8")
+            return ""
+        if verb == "close":
+            self.issues[int(rest[0])]["state"] = "closed"
+            self.issues[int(rest[0])]["comment"] = opts["--comment"]
+            return ""
+        raise AssertionError(f"unstubbed gh call: {args}")
+
+    def writes(self) -> list:
+        return [c for c in self.calls if c[:2] in (["issue", "create"], ["issue", "edit"], ["issue", "close"])]
+
+    def open_issues(self) -> list:
+        return [n for n, i in self.issues.items() if i["state"] == "open"]
+
+
+def filing_verdicts() -> tuple:
+    """`(budgets, green, red, unmeasured)`: three verdicts that differ only in the endpoints they time."""
+    budgets = report.load_budgets()
+    modern = {"compressed": True, "etag": True, "revalidates": True, "bytes": 100}
+    leg = lambda **kw: {"status": "ok", "ready_ms": 500, "data_ms": 900, "bytes": 50 * 1024, **kw}  # noqa: E731
+    load = {"legs": {"android_cold": leg(), "android_warm": leg(cache="trusted")}}
+    green_probe = {"index": modern, "endpoints": {"/": {"n": 5, "p50": 8.0, "p95": 12.0, "codes": ["200"]},
+                                                  "/api/fast": {"n": 5, "p50": 15.0, "p95": 20.0, "codes": ["200"]}}}
+    red_probe = {**green_probe, "endpoints": {**green_probe["endpoints"], "/api/slow": {"n": 5, "p50": 300.0, "p95": 400.0, "codes": ["200"]}}}
+    unmeasured_probe = {**green_probe, "endpoints": {"/": {"n": 5, "p50": 8.0, "p95": 12.0, "codes": ["200"]}}}
+    verdicts = [report.verdict(p, load, budgets) for p in (green_probe, red_probe, unmeasured_probe)]
+    check([v_["summary"]["overall"] for v_ in verdicts] == ["pass", "over-budget", "unmeasured"],
+          "fixture verdicts: green, over budget, unmeasured")
+    return (budgets, *verdicts)
+
+
+def ledger_checks(budgets: dict, green: dict, red: dict) -> None:
+    """One record per app per run in one file, readable per app, tolerant of a torn line."""
+    ledger = report.ledger_path()
+    report.record("alpha", "20261101T000000Z", green, "c1", "b1")
+    report.record("beta", "20261101T000500Z", red, "c2", "b2")
+    report.record("alpha", "20261108T000000Z", red, "c3", "b3")
+    rows = [json.loads(ln) for ln in ledger.read_text(encoding="utf-8").splitlines()] if ledger.is_file() else []
+    check(len(rows) == 3 and [r["app"] for r in rows] == ["alpha", "beta", "alpha"],
+          f"every run appends one record to the single ledger file ({len(rows)} rows)")
+    first = rows[0] if rows else {}
+    check({"schema_version", "run_id", "ts", "app", "commit", "build", "budgets_version", "overall", "counts", "checks",
+           "endpoints"} <= set(first), f"a record carries the documented fields ({sorted(first)})")
+    check(first.get("ts") == "2026-11-01T00:00:00Z" and first.get("overall") == "pass", "ts is the run's UTC start, overall its verdict")
+    check(first.get("checks", {}).get("cold.ready_ms") == {"status": "pass", "budget": budgets["cold"]["ready_ms"], "measured": 500},
+          f"each check keeps its verdict, budget and measured value ({first.get('checks', {}).get('cold.ready_ms')})")
+    check(first.get("endpoints", {}).get("/api/fast") == {"status": "pass", "budget": budgets["endpoints"]["api_p95_ms"], "p50": 15.0, "p95": 20.0},
+          f"each endpoint keeps its p50 and p95 ({first.get('endpoints', {}).get('/api/fast')})")
+    check(json.dumps(rows).count("://") == 0, "the ledger stores no URL")
+    check([e["run_id"] for e in report.load_ledger("alpha")] == ["20261101T000000Z", "20261108T000000Z"]
+          and report.previous_entry("alpha", "20261108T000000Z")["run_id"] == "20261101T000000Z",
+          "the diff baseline is read per app from the one ledger")
+    report.record("alpha", "20261108T000000Z", red, "c3", "b3-rerun")
+    check([e["build"] for e in report.load_ledger("alpha") if e["run_id"] == "20261108T000000Z"] == ["b3-rerun"],
+          "re-recording a run id is last-write-wins for readers")
+    ledger.write_text(ledger.read_text(encoding="utf-8") + "{not json\n", encoding="utf-8")
+    check(len(report.load_ledger("alpha")) == 2, "a torn line is skipped, never fatal")
+
+
+def lifecycle_checks(fake: FakeGh, green: dict, red: dict, unknown: dict) -> None:
+    """The managed issue opens on a breach, closes on a recovery, and an unmeasured run never touches it."""
+    def run_file(v: dict, stamp: str, apply: bool = True) -> tuple:
+        """Write `v` as alpha's measured run and `file` it; returns (exit code, stdout)."""
+        run_dir = hooks_state.state_dir() / "perf-review" / "alpha" / stamp
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "verdict.json").write_text(json.dumps({**v, "run_id": stamp, "live_build": "abc1234", "diff": {}}), encoding="utf-8")
+        root = Path(tempfile.mkdtemp(prefix="perf-filing-")) / "alpha"
+        root.mkdir()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli.main(["file", str(root), "--url", "http://127.0.0.1:9", "--slug", SLUG, "--run", str(run_dir)] + (["--apply"] if apply else []))
+        return rc, out.getvalue()
+
+    rc, text = run_file(green, "20261110T000000Z")
+    check(rc == 0 and not fake.writes() and not fake.open_issues(), f"an all-green run opens no issue (writes: {fake.writes()})")
+    check("ISSUE=none" in text.splitlines()[-1], f"and says so on its last line ({text.splitlines()[-1:]})")
+
+    run_file(red, "20261110T010000Z")
+    check(len(fake.open_issues()) == 1, f"an over-budget run opens the managed issue ({fake.open_issues()})")
+    number = fake.open_issues()[0]
+    issue = fake.issues[number]
+    check("<!-- audit-managed: kind=perf-review -->" in issue["body"], "the issue carries the managed marker")
+    run_file(red, "20261111T000000Z")
+    check(len(fake.issues) == 1 and issue["state"] == "open", "a second over-budget run updates the one issue")
+
+    snapshot, fake.calls = (issue["body"], issue["state"]), []
+    rc, text = run_file(unknown, "20261112T000000Z")
+    check((issue["body"], issue["state"]) == snapshot and not fake.writes(),
+          "an unmeasured run neither closes the issue nor overwrites its tables: unknown is not green")
+    check("ISSUE=none" in text.splitlines()[-1] and "unmeasured" in text.splitlines()[-1], "and the last line names why")
+
+    run_file(green, "20261113T000000Z")  # the fix items seeded from the failing checks are still unchecked
+    check(issue["state"] == "open" and "- [ ]" in issue["body"] and "comment" not in issue,
+          "an all-green run with an open fix item keeps the issue open and refreshes it")
+    issue["body"] = issue["body"].replace("- [ ]", "- [x]")
+    rc, text = run_file(green, "20261114T000000Z")
+    check(issue["state"] == "closed" and "20261114T000000Z" in issue.get("comment", "") and "within budget" in issue.get("comment", ""),
+          f"an all-green run with no open fix item closes the issue, naming the run ({issue.get('comment')!r})")
+    check("CLOSED=" in text.splitlines()[-1], f"and reports the close on its last line ({text.splitlines()[-1:]})")
+
+    run_file(red, "20261115T000000Z")
+    check(len(fake.open_issues()) == 1 and fake.open_issues()[0] != number, "a breach after a close opens a new issue")
+    fresh = fake.issues[fake.open_issues()[0]]
+    fresh["body"] = fresh["body"].replace("- [ ]", "- [x]")
+    fake.calls = []
+    rc, text = run_file(green, "20261116T000000Z", apply=False)
+    check(rc == 0 and not fake.writes() and "ACTION=close" in text, f"the dry run names the close and writes nothing ({text[:120]!r})")
+
+    open_fix = "## Fixes\n\n- [ ] x\n"
+    check(report.filing_decision("", None, green)["action"] == "none"
+          and report.filing_decision("", None, red)["action"] == "upsert"
+          and report.filing_decision("", 5, green)["action"] == "close"
+          and report.filing_decision("", 5, unknown)["action"] == "none"
+          and report.filing_decision(open_fix, 5, unknown)["action"] == "none"
+          and report.filing_decision(open_fix, 5, green)["action"] == "upsert",
+          "filing_decision: red upserts, green closes unless a fix is open, unmeasured never touches an issue")
+
+
+def filing_section() -> None:
+    """The ledger and the issue lifecycle on a stubbed `gh` and a private state dir (the module's own ledger holds other sections' runs)."""
+    saved = (os.environ["CLAUDE_HOOKS_STATE_DIR"], os.environ.get("FLEET_PROJECTS_TOML"), audit_issue._run)
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="perf-filing-state-")
+    toml = Path(tempfile.mkdtemp(prefix="perf-filing-fleet-")) / "projects.toml"
+    toml.write_text("[global]\n", encoding="utf-8")  # a path target needs no table; the lookup only has to find a file
+    os.environ["FLEET_PROJECTS_TOML"] = str(toml)
+    fake = FakeGh()
+    audit_issue._run = fake.run
+    try:
+        budgets, green, red, unknown = filing_verdicts()
+        ledger_checks(budgets, green, red)
+        lifecycle_checks(fake, green, red, unknown)
+    finally:
+        os.environ["CLAUDE_HOOKS_STATE_DIR"], audit_issue._run = saved[0], saved[2]
+        if saved[1] is None:
+            os.environ.pop("FLEET_PROJECTS_TOML", None)
+        else:
+            os.environ["FLEET_PROJECTS_TOML"] = saved[1]
+
+
+filing_section()
+
+
 # ---- CLI: dead port, fixture, file dry-run ------------------------------------
 root = Path(tempfile.mkdtemp(prefix="perf-review-target-"))
 out = io.StringIO()
@@ -652,6 +829,9 @@ check(re.search(r"^BUILD state=unknown live=unknown head=\w+ ", text, re.M) is n
 run_dir = Path(re.search(r"RUN_DIR=(.+)", text).group(1).strip())
 check(json.loads((run_dir / "verdict.json").read_text(encoding="utf-8"))["deploy"]["state"] == "unknown", "verdict.json carries the deploy state")
 check(all((run_dir / n).is_file() for n in ("probe.json", "verdict.json", "issue-body.md")), "the run dir holds probe, verdict and body")
+ledgered = [r for r in report.load_ledger(root.name) if r.get("run_id") == run_dir.name]
+check(len(ledgered) == 1 and ledgered[0]["overall"] == "over-budget" and ledgered[0]["endpoints"]["/"]["p50"] is not None,
+      f"measure appends the run to the ledger with endpoint p50 and p95 ({ledgered})")
 audit_issue._list_open = lambda repo: []  # the dry run's one gh read, faked
 audit_issue.get_managed = lambda repo, kind: {"number": None, "body": "", "duplicates": []}
 out = io.StringIO()

@@ -7,7 +7,7 @@ description: Weekly phone-speed check of every fleet web app, one at a time — 
 
 **Capability preflight:** read [workflow-capabilities](E:/automation/fleet-config/docs/workflow-capabilities.md) and bind waits and results to this session's actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation.
 
-**Goal:** the fleet-wide, unattended half of `/perf-review` (`fleet-config#1686`). One deterministic command measures every web app declared in `hooks/projects.toml`, files each app's managed `perf-review` issue and prints one digest. This skill starts it, waits for it and relays the digest. It assigns no status and ranks no fix: the numbers, the budgets and the `DIFF` against the last run all come from `skills/_lib/perf_review/`.
+**Goal:** the fleet-wide, unattended half of `/perf-review` (`fleet-config#1686`). One deterministic command measures every web app declared in `hooks/projects.toml`, records each run in the perf-review ledger, opens or closes each app's managed `perf-review` issue only on a breach or a recovery, and prints one digest. This skill starts it, waits for it and relays the digest. It assigns no status and ranks no fix: the numbers, the budgets and the `DIFF` against the last run all come from `skills/_lib/perf_review/`.
 
 ## Arguments
 
@@ -66,7 +66,7 @@ for step 3.
 ### 3. Relay the digest
 
 `cat` the `digest_file` path from step 2's `SWEEP_RESULT` and print it verbatim. Then one line: `SWEEP=done
-measured=N unmeasured=M` and the issues filed or refreshed (both already on disk at the end of the digest text).
+measured=N unmeasured=M` and the issues opened, updated or closed (all already on disk at the end of the digest text).
 
 Call out, in one sentence each: apps with a regression or a slower p95 since the last run, apps over budget, apps `unmeasured` and why (a restart recipe, if the repo's `CLAUDE.md` has one, goes in the line as a suggestion for the owner), and apps serving an older build than their checkout.
 

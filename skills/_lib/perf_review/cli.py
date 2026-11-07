@@ -3,14 +3,15 @@
 measure  resolve the target's loopback URL, refuse a dead port (never start
          anything), run the Playwright phone-load leg under the target's own
          `.venv`, time the hot endpoints it saw at their own poll spacing,
-         score everything against the budgets, record the local ledger.
+         score everything against the budgets, append the run to the local ledger (`<state>/perf-review/ledger.jsonl`).
          Exit: 0 all within budget, 1 something over budget, 3 unmeasured
          (dead port, no Playwright, an unreadable leg).
 sweep    measure and file every fleet web app one at a time (exclusive box lock per app), print one digest.
          `--detach` spawns it as an independent process and publishes the result to `--out` (or a generated
          path) for a caller to poll instead of waiting on this call (fleet-config#1558; see sweep.py).
-file     merge the latest run into the repo's one managed `perf-review`
-         issue — a dry run unless `--apply`.
+file     apply the latest run to the repo's one managed `perf-review` issue — open or update it while a budget is
+         broken or a Fixes item is open, close it on a green run, leave it alone on an unmeasured one. A dry run
+         unless `--apply`.
 """
 from __future__ import annotations
 
@@ -232,8 +233,20 @@ def cmd_file(a: argparse.Namespace) -> int:
     if not slug:
         print("FILE=refused detail=no origin remote; pass --slug owner/name")
         return 2
-    existing = audit_issue.get_managed(slug, report.KIND)["body"]
-    body = report.merge_body(existing, v, v["run_id"], v.get("live_build"), _dt.date.today().isoformat())
+    managed = audit_issue.get_managed(slug, report.KIND)
+    decision = report.filing_decision(managed["body"], managed["number"], v)
+    action, run_id = decision["action"], v["run_id"]
+    if action == "none":
+        print(f"ISSUE=none ({decision['reason']})")
+        return 0
+    if action == "close":
+        comment = report.close_comment(v, run_id, v.get("live_build"))
+        if not a.apply:
+            print(f"DRY_RUN=1\nACTION=close\nISSUE={managed['number']}\nREASON={decision['reason']}\nCOMMENT={comment}")
+            return 0
+        audit_issue.cmd_close(slug, report.KIND, comment)
+        return 0
+    body = report.merge_body(managed["body"], v, run_id, v.get("live_build"), _dt.date.today().isoformat())
     if not a.apply:
         print("\n".join(audit_issue.dry_run_lines(slug, report.KIND, report.TITLE, body)))
         return 0
@@ -252,7 +265,7 @@ def main(argv: Optional[list] = None) -> int:
     m.add_argument("--min-spacing", type=float, default=MIN_SPACING_S, help="floor between two GETs of one path")
     m.add_argument("--settle", type=int, default=40, help="seconds the cold page is watched to learn poll intervals")
     m.add_argument("--no-load", action="store_true", help="skip the browser leg (endpoint timing of / only)")
-    f = sub.add_parser("file", help="merge the latest run into the managed perf-review issue (dry run unless --apply)")
+    f = sub.add_parser("file", help="open, update or close the managed perf-review issue from the latest run (dry run unless --apply)")
     f.add_argument("repo")
     f.add_argument("--url")
     f.add_argument("--run", help="a run directory (default: the latest)")
