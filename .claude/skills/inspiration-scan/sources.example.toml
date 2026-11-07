@@ -1,0 +1,32 @@
+# /inspiration-scan source list — copy to ~/.claude/inspiration-scan/sources.toml
+# (or $INSPIRATION_SCAN_ROOT/sources.toml) and fill in your own sources.
+# The real file is private and machine-local: it never goes in the repo.
+
+[profile]
+# What you like and want to try. Either the note itself, or a path to a
+# .md/.txt file (relative to this file) that holds it.
+likes = "Agent workflows I can run unattended; small tools that save me a manual step."
+
+[[newsletter]]
+name = "Example Letter"
+feed = "https://example.substack.com/feed"
+
+[[youtube]]
+name = "Example Channel"
+# The channel id (starts with UC), from the channel page's share > copy channel ID.
+channel_id = "UCxxxxxxxxxxxxxxxxxxxxxx"
+
+[[x]]
+handle = "example_handle"
+
+[settings]
+top_n = 8             # ideas kept in the digest
+lookback_days = 7     # ignore items older than this
+max_scored = 120      # most items sent to the hub in one run
+model = "claude-haiku-5-5"
+# Dedicated Chrome profile folder the X reader uses; log into X in it once with
+# `x_reader.py login`. Empty = <state root>/chrome-profile.
+x_profile_dir = ""
+# Python with Playwright for the X reader. Empty = app-launcher's .venv beside this repo.
+x_python = ""
+x_scrolls = 3

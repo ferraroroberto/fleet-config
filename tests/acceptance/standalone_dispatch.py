@@ -19,12 +19,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("pi_policy_coverage", "harness/test_pi_policy_coverage.py",
      "Pi shared decisions and real extension middleware failure/composition boundaries"),
     ("fleet_health", "audit/test_fleet_health.py",
-     "the three defects the weekly /fleet-health run kept surviving on "
-     "hand-applied workarounds -- the cp1252-under-capture crash at both "
-     "entry points, the run date recomputed per invocation across midnight, "
-     "and peer addresses read from a hub config file they had moved out of -- "
-     "are testable on their own against synthetic runs and a temp ledger "
-     "(fleet-config#812)"),
+     "the three defects the weekly /fleet-health run kept surviving on hand-applied workarounds -- the "
+     "cp1252-under-capture crash at both entry points, the run date recomputed per invocation across "
+     "midnight, and peer addresses read from a hub config file they had moved out of -- are testable on "
+     "their own against synthetic runs and a temp ledger (fleet-config#812)"),
+    ("inspiration_scan", "inspiration_scan/test_inspiration_scan.py",
+     "per-source states, cross-day dedupe, the X launch helper and an escaped digest, on recorded feeds"),
     ("retro_digest", "audit/test_retro_digest.py",
      "the /retro digest holds only counts, tool names, error classes and "
      "repo-relative paths: no prompt text, tool output, absolute path or "
