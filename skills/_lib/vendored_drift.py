@@ -535,17 +535,8 @@ def scan_fleet(
     contract_cache: Dict[tuple, Dict[str, object]] = {}
 
     catalog, catalog_error = scaffold_catalog(scaffold_root)
-    requires, requires_problems = scaffold_requires(scaffold_root)
-    wanted = frozenset((component_filter,) if isinstance(component_filter, str) else component_filter or ())
-    closure, edges, problems = expand_requires(wanted or catalog, requires, catalog)
-    problems = [*problems, *(p for p in requires_problems if p["component"] in closure)]
-    for _, dep in edges:
-        if dep in catalog and not _head_files(scaffold_root, head_ref, catalog[dep], head_cache):
-            problems.append({"component": dep, "requires": "", "error":
-                             f"required component {dep!r} has no files at {catalog[dep]} in the scaffold at {head_ref}"})
-    blocked = blocked_components(edges, problems)
-    if wanted:
-        component_filter = closure
+    component_filter, edges, problems, blocked = _resolve_requires(
+        scaffold_root, head_ref, component_filter, catalog, head_cache)
 
     adopters: List[Dict[str, object]] = []
     no_manifest: List[str] = []
@@ -581,10 +572,7 @@ def scan_fleet(
                 continue
             src, sha, dest = entry.get("src"), entry.get("sha"), entry.get("dest")
             if not (src and sha and dest):
-                errors.append({
-                    "repo": repo_name, "component": component,
-                    "error": "manifest entry missing src/sha/dest",
-                })
+                errors.append({"repo": repo_name, "component": component, "error": "manifest entry missing src/sha/dest"})
                 continue
 
             result = classify_adopter(hash_component_local(repo_dir, dest),
@@ -602,18 +590,41 @@ def scan_fleet(
     if catalog_error:
         errors.append({"repo": "project-scaffolding", "error": catalog_error})
     errors.extend({"repo": "project-scaffolding", "kind": "requires", **p} for p in problems)
-    carriers = scan_undeclared_carriers(
-        scaffold_root, repos, manifests, catalog, head_ref, head_cache,
-        component_filter=component_filter, scaffold_resolved=scaffold_resolved,
-    )
+    carriers = scan_undeclared_carriers(scaffold_root, repos, manifests, catalog, head_ref, head_cache,
+                                        component_filter=component_filter, scaffold_resolved=scaffold_resolved)
     report = _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
                           catalog, catalog_error, carriers, unreadable, ignore_blocks)
-    report["requires"] = {
+    report["requires"] = _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos, head_sha)
+    return report
+
+
+def _resolve_requires(
+    scaffold_root: Path, head_ref: str, component_filter: Optional[object], catalog: Dict[str, str],
+    head_cache: Dict[str, Dict[str, str]],
+) -> tuple[Optional[object], List[tuple[str, str]], List[Dict[str, str]], Dict[str, str]]:
+    """The scan filter widened by what its components require -> ``(filter, edges, problems, blocked)``.
+
+    Every component is expanded when no filter is given, so a missing sibling is still found. A
+    requirement the catalog lacks, one with no files at the scaffold tip, or a malformed
+    `requires` is a problem; `blocked` is every component those problems keep out of a wave."""
+    requires, malformed = scaffold_requires(scaffold_root)
+    wanted = frozenset((component_filter,) if isinstance(component_filter, str) else component_filter or ())
+    closure, edges, problems = expand_requires(wanted or catalog, requires, catalog)
+    problems = [*problems, *(p for p in malformed if p["component"] in closure)]
+    for _, dep in edges:
+        if dep in catalog and not _head_files(scaffold_root, head_ref, catalog[dep], head_cache):
+            problems.append({"component": dep, "requires": "", "error":
+                             f"required component {dep!r} has no files at {catalog[dep]} in the scaffold at {head_ref}"})
+    return (closure if wanted else component_filter), edges, problems, blocked_components(edges, problems)
+
+
+def _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos, head_sha) -> Dict[str, object]:
+    """The report's `requires` block: the edges followed, what they block, and the siblings to add."""
+    return {
         "edges": [{"component": c, "requires": d} for c, d in edges],
         "blocked": blocked,
         "missing": _missing_requires(edges, catalog, manifests, carriers, blocked, scaffold_resolved, repos, head_sha),
     }
-    return report
 
 
 def _head_files(scaffold_root: Path, head_ref: str, src: str, head_cache: Dict[str, Dict[str, str]]) -> Dict[str, str]:
