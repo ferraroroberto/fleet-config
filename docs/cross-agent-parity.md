@@ -56,6 +56,7 @@ The table records observed delivery semantics rather than treating a registratio
 | Lane handoff then compact at a per-model threshold (`lane_compact`, via `chief_waiter_stop` + `chief_handover_sessionstart`) | blocks | unsupported | unsupported | unsupported | unsupported | unsupported |
 | Telegram file replies only to the sender's private chat (`telegram_file_reply_guard`) | not verified | not applicable | not applicable | not applicable | not applicable | not applicable |
 | `gh pr merge` on a UX diff needs its proof page (`ui_proof_merge_guard`) | not verified | unsupported | not verified | unsupported | unsupported | unsupported |
+| `git commit` on the default branch (`main_commit_guard`) | blocks | unsupported | not verified | unsupported | unsupported | unsupported |
 
 Pi's `advises` and `blocks` entries are native observations from the [deterministic-provider conformance run](adding-a-coding-harness.md#pi-policy-conformance): it retained the GitHub-body advisory and refused the dated-document write. The branch, hub, and browser adapter paths are wired, but their matching conditions have not been demonstrated in a native Pi run, so they remain `not verified`. This evidence uses simulated model responses; Pi subscription authentication remains unconfirmed and the table does not imply otherwise. Chief-managed question suppression has no Pi adapter mapping and remains unsupported.
 

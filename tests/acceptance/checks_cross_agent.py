@@ -61,6 +61,8 @@ _CODEX_POLICY_COVERAGE = (
      "not applicable"),
     ("UX merge needs its proof page", "ui_proof_merge_guard", None, None,
      "unsupported"),
+    ("No git commit on the default branch", "main_commit_guard", None, None,
+     "unsupported"),
 )
 
 # Every function below inserts its own sys.path entry (HOOKS or skills/_lib)

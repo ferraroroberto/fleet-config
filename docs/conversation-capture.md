@@ -29,17 +29,17 @@ A Codex session with no `.active-skill` marker used to fall straight to `_archiv
 
 `render_markdown`'s preamble-stripping and command-tag-stripping used to apply only when `agent == "claude"`. Both now apply by role regardless of harness, so a Claude and a Codex capture of the same conversation differ only in the `agent` attribute and the speaker label (`**Claude**` / `**Codex**`) — not in whether skill-loading preamble survives into the body. Reader-boundary text extraction (`transcript_readers.text_content`) also normalizes `\r\n`/`\r` to `\n`, so a Windows-stored rollout renders with the same line endings as a Unix one.
 
-**Backfill.** A session lost because its Stop hook never fired — most often because a harness's long-lived hosting process (Codex's `app-server`) had not yet loaded the capture hook when the session ran — used to require hand-rolling a synthetic `Stop` payload. `hooks/conversation_backfill.py` is the supported replacement: it scans a harness's own stored-transcript store for sessions whose recorded `cwd` resolves to a registered `capture = true` project, and runs each uncaptured one through the same `write_capture` the live hook uses.
+**Backfill.** A session lost because its Stop hook never fired — most often because a harness's long-lived hosting process (Codex's `app-server`) had not yet loaded the capture hook when the session ran — used to require hand-rolling a synthetic `Stop` payload. `hooks/conversation/backfill.py` is the supported replacement: it scans a harness's own stored-transcript store for sessions whose recorded `cwd` resolves to a registered `capture = true` project, and runs each uncaptured one through the same `write_capture` the live hook uses.
 
 ```powershell
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_backfill.py --project life-os
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_backfill.py --project life-os --harness codex
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_backfill.py --project life-os --dry-run
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation/backfill.py --project life-os
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation/backfill.py --project life-os --harness codex
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation/backfill.py --project life-os --dry-run
 ```
 
 Unlike a live capture, a backfilled file's name is stamped from the transcript's own recorded start time, not `datetime.now()` — recovering a session from days ago must not file it as though it happened during the recovery run. Skill routing for a backfilled session always falls through to `infer_skill_from_transcript` (there is no live `.active-skill` marker for a session that's already over). Re-running the backfill over an already-captured session is a no-op: `write_capture`'s existing digest/turn-count dedup, shared with the live hook, already makes an unchanged session a no-write. Applying the session-start filename rule to *live* captures too — making every filename session-anchored rather than wall-clock-anchored — was considered and deliberately deferred; this only changes the backfill path.
 
-**Operational trap.** Codex's `app-server` (the desktop app's long-lived host process backing every session) reads `hooks.json` once, at process start. Shipping a hook change to the primary checkout does not reach a session already running under an older server — only a restart of the app (or the hosting `codex app-server` process) picks up the new hook wiring. A session that ran under a stale server is exactly the failure mode `conversation_backfill.py` exists to recover from.
+**Operational trap.** Codex's `app-server` (the desktop app's long-lived host process backing every session) reads `hooks.json` once, at process start. Shipping a hook change to the primary checkout does not reach a session already running under an older server — only a restart of the app (or the hosting `codex app-server` process) picks up the new hook wiring. A session that ran under a stale server is exactly the failure mode `conversation/backfill.py` exists to recover from.
 
 ## Readers and identity
 

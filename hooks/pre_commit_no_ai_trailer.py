@@ -100,14 +100,16 @@ def _gh_inline_text(cmd: str) -> str:
     return _LITERAL_NEWLINE_RE.sub("\n", text)
 
 
-def commit_message_files(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]:
-    """``(operand, base)`` for every `-F`/`--file` of a `git commit` segment.
+def commit_invocations(cmd: str, base: Path) -> List[Tuple[List[str], Optional[Path]]]:
+    """``(words after commit, directory)`` for every `git commit` segment of `cmd`.
 
-    `base` follows a leading `cd`/`Set-Location`/`pushd` and the commit's own
-    `git -C <dir>`, as `secret_scan_guard.body_file_operands` follows them for a
-    `gh` body, so a relative operand resolves where git will read it.
+    The directory follows a leading `cd`/`Set-Location`/`pushd` and the commit's
+    own `git -C <dir>`, as `secret_scan_guard.body_file_operands` follows them for
+    a `gh` body, so a relative operand resolves where git will read it. ``None``
+    means a `cd` whose target could not be read. A commit inside a nested shell's
+    quoted argument is not a segment of its own and is not listed.
     """
-    operands: List[Tuple[str, Optional[Path]]] = []
+    found: List[Tuple[List[str], Optional[Path]]] = []
     current: Optional[Path] = base
     for segment in SEGMENT_SPLIT_RE.split(CONTINUATION_RE.sub(" ", cmd)):
         words = _lib.shell_words(segment)
@@ -124,7 +126,15 @@ def commit_message_files(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]
         if sub >= len(words) or words[sub].lower() != "commit":
             continue
         where = shell_paths.resolve(flags.workdir, current) if flags.workdir else current
-        i = sub + 1
+        found.append((words[sub + 1:], where))
+    return found
+
+
+def commit_message_files(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]:
+    """``(operand, directory)`` for every `-F`/`--file` of a `git commit` segment."""
+    operands: List[Tuple[str, Optional[Path]]] = []
+    for words, where in commit_invocations(cmd, base):
+        i = 0
         while i < len(words):
             word = words[i]
             if word == "--file" or _COMMIT_FLAGS.match(word):
