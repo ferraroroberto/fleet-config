@@ -8,11 +8,13 @@ Rules, each refused with its own message naming the fix:
                 `--allow-images`)
   attribution   no AI attribution line, trailer or session link
   merge-danger  a well-formed `**Merge danger:**` line (docs/skills/merge-danger.md)
+  red-first     a PR whose issue is labelled `bug` needs a `gate_evidence.py check-red` record (the new test
+                failed on a tree other than the fix tree) or a `**Red-first:** exempt · <reason>` line
   ticked-box    a ticked test-plan box needs a `DONE` acceptance verdict (`--verdicts`, the file
                 `acceptance_audit.py` tallied) or, for a gate box, a `FRESH` gate_evidence record
 
-Exit 0 pass, 1 refused, 3 NOT CONFIRMED -- the PR, the verdicts or the gate record could not be
-read, which is never a pass. Forward-only: it reads one PR, there is no baseline. stdlib only.
+Exit 0 pass, 1 refused, 3 NOT CONFIRMED -- the PR, the issue's labels, the verdicts or a gate or red record
+could not be read, which is never a pass. Forward-only: it reads one PR, there is no baseline. stdlib only.
 """
 
 from __future__ import annotations
@@ -38,6 +40,16 @@ _INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 _TICKED_RE = re.compile(r"^\s*[-*+]\s+\[[xX]\]\s+(.*\S)\s*$")
 _PART_OF_RE = re.compile(r"^\s*(?:part of|progresses)\s+#(\d+)\b", re.IGNORECASE | re.MULTILINE)
 _GATE_WORD_RE = re.compile(r"\bgate\b", re.IGNORECASE)
+
+_EXEMPT_RE = re.compile(r"^\*\*Red-first:\*\*\s+exempt\s+·\s+(?P<reason>\S.*)$", re.MULTILINE)
+
+
+def _red_how() -> str:
+    """The exact remedy, with this interpreter and the helper's real path so a lane can paste the command."""
+    run = f"{Path(sys.executable).as_posix()} {Path(gate_evidence.__file__).resolve().as_posix()} run --label red -- <the new test's command>"
+    return (f"to produce it, `git stash` the fix (keep the new test in the tree), run `{run}` and see it exit non-zero, "
+            f"then `git stash pop`; or, for a bug with no automatable test, add `**Red-first:** exempt · <reason>` to the PR body")
+
 
 _IMAGE_RES = (
     re.compile(r"!\[[^\]]*\]\s*[(\[]"),
@@ -67,6 +79,23 @@ def find_danger_line(body: str) -> Optional[str]:
             continue
         return match.group(0).strip()
     return None
+
+
+def find_exempt_line(body: str) -> Optional[str]:
+    """The first `**Red-first:** exempt · <reason>` line outside code, or None. The reason is required."""
+    match = _EXEMPT_RE.search(prose(body))
+    return match.group(0).strip() if match else None
+
+
+def _red_findings(red_state: str) -> Tuple[List[str], List[str]]:
+    if red_state == "RED":
+        return [], []
+    if red_state == "UNKNOWN":
+        return [], ["red-first: the red record could not be read (the tree could not be hashed)"]
+    why = {"NOT_RED": "its recorded run of `red` did not fail (exit 0, or it never started)",
+           "SAME_TREE": "its failing run of `red` was on this very tree; it must be taken on a different tree (the pre-fix one)"}.get(
+        red_state, "no `red` run is recorded")
+    return [f"red-first: this bug PR has no red-first evidence: {why}; {_red_how()}"], []
 
 
 def prose(body: str, *, inline_code: bool = True) -> str:
@@ -138,6 +167,7 @@ def _box_findings(boxes: List[str], verdicts: List[Dict[str, Any]], gate_state: 
 
 def evaluate(
     body: str, *, closing: List[int], issue: int, verdicts: List[Dict[str, Any]], gate_state: str, allow_images: bool,
+    is_bug: bool = False, red_state: str = "MISSING",
 ) -> Tuple[List[str], List[str]]:
     """``(refused, unconfirmed)``: one ``<rule>: <fix>`` line per violation, one line per unestablished fact."""
     refused = _closing_findings(closing, issue, body)
@@ -152,6 +182,9 @@ def evaluate(
         refused.append("merge-danger: add `**Merge danger:** two-way door · blast radius: <word>` "
                        "(one-way appends ` · <reason>`)")
     box_refused, unconfirmed = _box_findings(ticked_boxes(body), verdicts, gate_state)
+    if is_bug and find_exempt_line(body) is None:
+        red_refused, red_unconfirmed = _red_findings(red_state)
+        refused, unconfirmed = refused + red_refused, unconfirmed + red_unconfirmed
     return refused + box_refused, unconfirmed
 
 
@@ -185,6 +218,23 @@ def _read_pr(pr: str, repo: Optional[str]) -> Tuple[str, List[int]]:
         raise ValueError(f"unreadable PR payload: {exc}") from exc
 
 
+def _read_issue_labels(issue: int, repo: Optional[str]) -> List[str]:
+    args = ["issue", "view", str(issue), "--json", "labels"]
+    if repo:
+        args += ["--repo", repo]
+    try:
+        proc = run_gh(args, timeout=GH_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(f"gh failed: {type(exc).__name__}") from exc
+    if proc.returncode != 0:
+        raise ValueError(((proc.stderr or proc.stdout or "gh exited non-zero").strip().splitlines() or ["?"])[0][:200])
+    try:
+        labels = json.loads(proc.stdout or "")["labels"]
+        return [str(label["name"]) for label in labels]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"unreadable issue payload: {exc}") from exc
+
+
 def _read_verdicts(path: Optional[Path]) -> List[Dict[str, Any]]:
     if path is None:
         return []
@@ -208,6 +258,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--verdicts", type=Path, help="the filled acceptance_audit.py verdicts JSON")
     parser.add_argument("--gate-repo", type=Path, default=Path.cwd(), help="checkout whose gate record backs a gate box")
     parser.add_argument("--gate-label", default="gate")
+    parser.add_argument("--red-label", default="red", help="label of the failing pre-fix run a bug PR needs")
     parser.add_argument("--allow-images", action="store_true", help="a private repo opting out of the image rule")
     args = parser.parse_args(argv)
 
@@ -226,8 +277,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if any(_GATE_WORD_RE.search(b) for b in boxes):
         gate_state, _ = gate_evidence.check(args.gate_repo.resolve(), args.gate_label)
 
-    refused, unconfirmed = evaluate(body, closing=closing, issue=args.issue, verdicts=verdicts,
-                                    gate_state=gate_state, allow_images=args.allow_images)
+    is_bug, red_state = False, "MISSING"
+    try:
+        is_bug = "bug" in _read_issue_labels(args.issue, args.repo)
+    except ValueError as exc:
+        return _not_confirmed(f"the issue's labels could not be read: {exc}")
+    if is_bug and find_exempt_line(body) is None:
+        red_state, _ = gate_evidence.check_red(args.gate_repo.resolve(), args.red_label)
+
+    refused, unconfirmed = evaluate(body, closing=closing, issue=args.issue, verdicts=verdicts, gate_state=gate_state,
+                                    allow_images=args.allow_images, is_bug=is_bug, red_state=red_state)
     if refused:
         print("PR_BODY=refused")
         for line in refused:

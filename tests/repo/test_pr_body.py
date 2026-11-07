@@ -104,6 +104,36 @@ check(rules(CLEAN + "\n- [x] Gate green\n- [x] Something never audited\n", verdi
 refused, unconfirmed = rules(CLEAN, gate="UNKNOWN")
 check((refused, unconfirmed) == ([], []), "an unreadable gate record matters only when a box leans on it")
 
+# --- red-first (fleet-config#1915): a bug PR needs a red record on a different tree, or an exempt line with a reason
+def bug_rules(body: str, red: str = "RED"):
+    refused, unconfirmed = pb.evaluate(body, closing=[7], issue=7, verdicts=[], gate_state="FRESH",
+                                       allow_images=False, is_bug=True, red_state=red)
+    return refused, unconfirmed
+
+
+EXEMPT = "**Red-first:** exempt · the symptom is a Windows console flash with no automatable assertion"
+check(bug_rules(CLEAN, "RED") == ([], []), "a bug PR with a red record on a different tree passes")
+for state in ("MISSING", "NOT_RED", "SAME_TREE"):
+    refused, _ = bug_rules(CLEAN, state)
+    check([r.split(":", 1)[0] for r in refused] == ["red-first"], f"a bug PR whose red record is {state} is refused")
+refused, _ = bug_rules(CLEAN, "MISSING")
+check("gate_evidence.py run --label red" in refused[0] and "git stash" in refused[0] and "Red-first:** exempt" in refused[0],
+      "the refusal names the command to run, how to get the pre-fix tree and the exempt line")
+check("different tree" in bug_rules(CLEAN, "SAME_TREE")[0][0], "a same-tree refusal says the red run must be on the pre-fix tree")
+check("exit 0" in bug_rules(CLEAN, "NOT_RED")[0][0], "a not-red refusal says the recorded run passed")
+check(bug_rules(CLEAN + "\n" + EXEMPT + "\n", "MISSING") == ([], []), "an exempt line with a reason passes without a red record")
+check(bug_rules(CLEAN + "\n" + EXEMPT + "\n", "UNKNOWN") == ([], []), "an exempt line passes even when the record cannot be read")
+for label, line in (("no reason", "**Red-first:** exempt"), ("blank reason", "**Red-first:** exempt ·   "),
+                    ("unbolded", "Red-first: exempt · no test possible"), ("other verb", "**Red-first:** skipped · no test possible")):
+    check([r.split(":", 1)[0] for r in bug_rules(CLEAN + "\n" + line + "\n", "MISSING")[0]] == ["red-first"], f"{label} is not an exempt line")
+check(bug_rules(CLEAN + "\n`" + EXEMPT + "`\n", "MISSING")[0] != [] and bug_rules(CLEAN + "\n```\n" + EXEMPT + "\n```\n", "MISSING")[0] != [],
+      "an exempt line quoted as code does not exempt")
+refused, unconfirmed = bug_rules(CLEAN, "UNKNOWN")
+check(refused == [] and len(unconfirmed) == 1, "an unreadable red record on a bug PR is NOT CONFIRMED, neither pass nor refusal")
+check(rules(CLEAN) == ([], []), "a non-bug PR never needs a red record")
+check(pb.find_exempt_line(CLEAN + "\n" + EXEMPT) == EXEMPT, "find_exempt_line returns the exempt line")
+check(pb.find_exempt_line(CLEAN) is None, "find_exempt_line is None without one")
+
 # --- everything wrong at once is reported rule by rule
 multi = "no danger\n![x](y.png)\nCo-Authored-By: Claude <a@b.c>\n- [x] unaudited\n"
 check(sorted(set(rules(multi, refs=(9,))[0])) == ["attribution", "closing-refs", "images", "merge-danger", "ticked-box"],
@@ -124,13 +154,18 @@ for label, raw in (("not json", "oops"), ("no closing key", json.dumps({"body": 
         check(True, label)
 
 
-def run_main(pr_stdout: str, returncode: int = 0, extra=(), gate=("FRESH", "ok")):
+def run_main(pr_stdout: str, returncode: int = 0, extra=(), gate=("FRESH", "ok"), labels=("enhancement",), red=("RED", "ok")):
     done = subprocess.CompletedProcess(["gh"], returncode, stdout=pr_stdout, stderr="HTTP 502 from the API\n")
     out: list = []
+    labels_patch = (mock.patch.object(pb, "_read_issue_labels", side_effect=labels) if isinstance(labels, Exception)
+                    else mock.patch.object(pb, "_read_issue_labels", return_value=list(labels)))
     with mock.patch.object(pb, "run_gh", return_value=done), \
          mock.patch.object(pb.gate_evidence, "check", return_value=gate), \
+         mock.patch.object(pb.gate_evidence, "check_red", return_value=red) as red_mock, \
+         labels_patch, \
          mock.patch("builtins.print", side_effect=lambda *a, **k: out.append(" ".join(map(str, a)))):
         code = pb.main(["--pr", "5", "--issue", "7", *extra])
+    run_main.red_calls = red_mock.call_count
     return code, "\n".join(out)
 
 
@@ -154,5 +189,22 @@ with tempfile.TemporaryDirectory() as tmp:
     verdicts.write_text("not json", encoding="utf-8")
     code, out = run_main(json.dumps({"body": box_done, "closingIssuesReferences": [{"number": 7}]}), extra=["--verdicts", str(verdicts)])
     check(code == 3 and "PR_BODY=not_confirmed" in out, "an unreadable verdicts file is NOT CONFIRMED when a box needs it")
+
+# --- main wires the issue's labels and the red record into the red-first rule
+bug_pr = json.dumps({"body": CLEAN, "closingIssuesReferences": [{"number": 7}]})
+code, out = run_main(bug_pr, labels=("bug", "p1"), red=("MISSING", "no recorded failing run for red"))
+check(code == 1 and "PR_BODY=refused" in out and "REFUSED red-first:" in out, "main refuses a bug PR without a red record")
+code, out = run_main(bug_pr, labels=("bug",), red=("RED", "ok"))
+check(code == 0 and "PR_BODY=pass" in out, "main passes a bug PR with a red record")
+code, out = run_main(json.dumps({"body": CLEAN + "\n" + EXEMPT + "\n", "closingIssuesReferences": [{"number": 7}]}), labels=("bug",), red=("MISSING", "x"))
+check(code == 0 and run_main.red_calls == 0, "main passes an exempt bug PR without reading the red record")
+code, out = run_main(bug_pr, labels=("enhancement",), red=("MISSING", "x"))
+check(code == 0 and run_main.red_calls == 0, "main never reads the red record for a non-bug issue")
+code, out = run_main(bug_pr, labels=("bug",), red=("UNKNOWN", "hash failed"))
+check(code == 3 and "PR_BODY=not_confirmed" in out, "main exits 3 when a bug PR's red record cannot be read")
+code, out = run_main(bug_pr, labels=ValueError("HTTP 502"))
+check(code == 3 and "PR_BODY=not_confirmed" in out and "labels" in out, "main exits 3 when the issue's labels cannot be read")
+code, out = run_main(bug_pr, labels=("bug",), red=("SAME_TREE", "x"), extra=["--red-label", "red-2"])
+check(code == 1 and "REFUSED red-first:" in out, "main refuses a same-tree red record")
 
 _h.report_and_exit("test_pr_body")

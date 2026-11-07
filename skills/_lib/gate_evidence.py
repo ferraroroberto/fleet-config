@@ -29,6 +29,11 @@ Subcommands
           UNKNOWN   the tree hash could not be computed (exit 2)
         STALE names the changed paths on stderr.
 
+  check-red [--label red] [--repo <path>]
+        Did the recorded run of ``L`` FAIL on a tree other than the current one (a bug fix's test seen red
+        before the fix, fleet-config#1915)? Prints exactly one of RED (exit 0), NOT_RED (the record passed or
+        never started), SAME_TREE, MISSING (exit 1) or UNKNOWN (exit 2).
+
 Tree hash = the content of the whole working tree, untracked-but-not-ignored
 files included, without touching the real index: copy the index (resolved via
 ``rev-parse --git-path index``, so a linked worktree works) to a temp file,
@@ -279,7 +284,30 @@ def check(repo: Path, label: str, expect_cmd: Optional[str] = None) -> Tuple[str
     return "FRESH", f"recorded {record.get('utc')}: {record.get('cmd')}"
 
 
+def check_red(repo: Path, label: str = "red") -> Tuple[str, str]:
+    """``(RED|NOT_RED|SAME_TREE|MISSING|UNKNOWN, detail)``: did ``label`` fail on a tree other than this one?
+
+    A bug fix's regression test must be seen failing before the fix. ``run`` records a failing exit too, so the
+    record is the proof, provided it was taken on a different tree (the pre-fix one) than the tree being shipped.
+    Exit 127 means the command never started, which proves nothing about the code.
+    """
+    current, reason = tree_hash(repo)
+    if current is None:
+        return "UNKNOWN", reason
+    evidence_path = git_path(repo, EVIDENCE_NAME)
+    record = _load(evidence_path).get(label) if evidence_path else None
+    if not isinstance(record, dict) or not isinstance(record.get("wtree"), str):
+        return "MISSING", f"no recorded run for {label}"
+    code = record.get("exit")
+    if not isinstance(code, int) or isinstance(code, bool) or code in (0, 127):
+        return "NOT_RED", f"the recorded run of {label} did not fail (exit {code!r})"
+    if record.get("wtree") == current:
+        return "SAME_TREE", f"the failing run of {label} was on this very tree; it must be a different tree (the pre-fix one)"
+    return "RED", f"recorded {record.get('utc')}: exit {code} on {str(record['wtree'])[:12]}, fix tree {current[:12]}"
+
+
 _CHECK_EXIT = {"FRESH": 0, "STALE": 1, "MISSING": 1, "UNKNOWN": 2}
+_CHECK_RED_EXIT = {"RED": 0, "NOT_RED": 1, "SAME_TREE": 1, "MISSING": 1, "UNKNOWN": 2}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -298,6 +326,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     chk.add_argument("--label", required=True)
     chk.add_argument("--repo", type=Path, default=Path.cwd())
     chk.add_argument("--expect-cmd")
+    red = sub.add_parser("check-red")
+    red.add_argument("--label", default="red")
+    red.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args(raw)
     repo = args.repo.resolve()
 
@@ -308,6 +339,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         sys.stdout.flush()
         print(line, flush=True)
         return code
+    if args.cmd == "check-red":
+        state, detail = check_red(repo, args.label)
+        print(state)
+        print(detail, file=sys.stderr)
+        return _CHECK_RED_EXIT[state]
     state, detail = check(repo, args.label, args.expect_cmd)
     print(state)
     print(detail, file=sys.stderr)
