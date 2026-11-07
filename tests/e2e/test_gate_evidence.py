@@ -157,6 +157,41 @@ try:
     check(cli.stdout.strip().splitlines()[-1].startswith("EVIDENCE=recorded label=cli"),
           "run CLI: the EVIDENCE line comes last, after the command's output")
 
+    # fleet-config#1915: a red record is a failing run on a tree that is NOT the current (fix) tree.
+    red_repo = init_repo(empty_commit=False)
+    try:
+        (red_repo / "t.txt").write_text("with the test, without the fix\n", encoding="utf-8")
+        git(red_repo, "add", "-A")
+        git(red_repo, "commit", "-q", "-m", "init")
+        check(ge.check_red(red_repo, "red")[0] == "MISSING", "red: no record -> MISSING")
+        code, line = quiet_run(red_repo, "red", [PY, "-c", "import sys; sys.exit(1)"])
+        check(code == 1 and line.startswith("EVIDENCE=recorded label=red exit=1"), f"a failing run is recorded too ({line})")
+        state, detail = ge.check_red(red_repo, "red")
+        check(state == "SAME_TREE" and "different tree" in detail, f"red: a failing run on the current tree -> SAME_TREE ({detail})")
+        check(ge.check(red_repo, "red")[0] == "MISSING", "a red record is never a FRESH pass")
+        (red_repo / "t.txt").write_text("with the fix\n", encoding="utf-8")
+        check(ge.check_red(red_repo, "red")[0] == "RED", "red: the same record after the fix changed the tree -> RED")
+        quiet_run(red_repo, "ok", OK_CMD)
+        (red_repo / "t.txt").write_text("fixed again\n", encoding="utf-8")
+        state, detail = ge.check_red(red_repo, "ok")
+        check(state == "NOT_RED" and "exit 0" in detail, f"red: a passing record is not red ({detail})")
+        quiet_run(red_repo, "nostart", [str(red_repo / "no-such-binary")])
+        (red_repo / "t.txt").write_text("fixed a third time\n", encoding="utf-8")
+        check(ge.check_red(red_repo, "nostart")[0] == "NOT_RED", "red: a command that never started (127) is not red")
+        evidence = ge.git_path(red_repo, ge.EVIDENCE_NAME)
+        evidence.write_text("{not json", encoding="utf-8")
+        check(ge.check_red(red_repo, "red")[0] == "MISSING", "red: an unparseable evidence file reads as no record, never RED")
+        evidence.write_text('{"red": {"exit": "1", "wtree": "abc"}}', encoding="utf-8")
+        check(ge.check_red(red_repo, "red")[0] == "NOT_RED", "red: a non-integer exit is not red")
+        not_a_repo = tmp / "not-a-repo-2"
+        not_a_repo.mkdir()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = ge.main(["check-red", "--label", "red", "--repo", str(not_a_repo)])
+        check(code == 2 and out.getvalue().strip() == "UNKNOWN", "check-red CLI: UNKNOWN exits 2")
+    finally:
+        shutil.rmtree(red_repo, ignore_errors=True)
+
     plain = tmp / "not-a-repo"
     plain.mkdir()
     state, detail = ge.check(plain, "gate")

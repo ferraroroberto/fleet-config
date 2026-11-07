@@ -8,6 +8,7 @@
 | `images` | image markdown, `<img>`, or a GitHub attachment URL. A private repo passes `--allow-images` |
 | `attribution` | a claude.ai session link or id, a `Generated with Claude Code` line, a `Co-Authored-By` or `Claude-Session` trailer naming an AI |
 | `merge-danger` | no well-formed `**Merge danger:**` line ([merge-danger](merge-danger.md)) |
+| `red-first` | the issue is labelled `bug` and `gate_evidence.py check-red` is not `RED` (no failing `red` run recorded, one that passed or never started, or one taken on this very tree) and the body has no `**Red-first:** exempt · <reason>` line. The refusal prints the command to run and how to get the pre-fix tree. The exempt line needs a reason and shows in the PR |
 | `ticked-box` | a ticked box matches no `DONE` verdict in the `acceptance_audit.py` verdicts file and, if it names the gate, `gate_evidence.py check` is not `FRESH` |
 
-Code fences and inline code are not scanned, so a rule can be quoted. Exit 0 passes, 1 refuses, 3 is NOT CONFIRMED: the PR, the verdicts file or a gate record a box leans on could not be read, which is never a pass. The check is forward-only; it reads one PR and keeps no baseline.
+Code fences and inline code are not scanned, so a rule can be quoted. Exit 0 passes, 1 refuses, 3 is NOT CONFIRMED: the PR, the verdicts file or a gate record a box leans on could not be read (including the issue's labels, or the red record of a bug PR), which is never a pass. The check is forward-only; it reads one PR and keeps no baseline.

@@ -107,6 +107,15 @@ the gate once through the helper; a last line `EVIDENCE=not_recorded` means
 the gate itself changed the tree (the paths are named) — watch CI rather than
 loop.
 
+**Bug issues (`bug` label) need red-first evidence** (fleet-config#1915): the new
+regression test must be seen failing on the pre-fix tree, and the helper records
+that failure bound to the tree it ran on. If the branch has no such record yet,
+`git stash` the fix (leave the new test in the tree), run
+`gate_evidence.py run --label red -- <the new test's command>`, see it exit
+non-zero, then `git stash pop`; `gate_evidence.py check-red` prints `RED` once the
+record is on a different tree than the fix. A bug with no automatable test skips
+this with a PR-body line `**Red-first:** exempt · <reason>` (step 4).
+
 ### 3b. UX-conformance gate (web-app UX diffs only)
 
 When the diff touches the web app's UX, confirm it still conforms to the fleet
@@ -163,6 +172,7 @@ upkeep) on this branch. Integration rules:
   If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`, a `.gitignore` line over a tracked path), say so in the Summary, naming each path: every checkout that pulls it loses its live copy unless its fast-forward goes through `untrack_guard.py` (fleet-config#1086).
   Paste `skills/_lib/instruction_delta/delta.py`'s `INSTRUCTION_DELTA=` line verbatim into the Summary.
   A `bug` PR names the confirmed cause: `**Cause:** <the hypothesis the repro proved>`.
+  A `bug` PR carries the step-3 red-first record, or `**Red-first:** exempt · <reason>` for a bug with no automatable test.
   Add `**Merge danger:** two-way door · blast radius: <word>` (one-way appends ` · <reason>`).
   `skills/_lib/debug_tags/check.py .` must pass before `gh pr create`: each `FOUND=` line is leftover debug output to delete; `NOT_CONFIRMED` stops the finish.
   Match the PR-body style of recent merged PRs in the repo.
