@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import urllib.error
 from pathlib import Path
 
@@ -392,9 +393,142 @@ fake = FakeLauncher({"auto_drain": True})
 rc, out, plan_path, _ = _run(fake, [], plan=legacy)
 check(rc == 0 and "DRAIN_SKIPPED=app-a#1 reason=no-brief" in out, f"a row without the new fields loads (got {out!r})")
 
-# The subcommand is wired into chief_ops.
+# ---- idle slots (fleet-config#1941) -------------------------------------------------------
+
+_last = _TMP / "state" / drain.LAST_FILENAME
+
+
+def _idle_lines(out):
+    return [line for line in out.splitlines() if line.startswith("SLOTS_IDLE=")]
+
+
+# Free slots and nothing eligible: the line names the count and why, and comes after the summary.
+fake, out, doc = _hand(chief_plan.empty_plan(), cards=[_busy_card])
+check(_idle_lines(out) == ["SLOTS_IDLE=2 reason=no-eligible-rows"] and out.splitlines()[-1] == _idle_lines(out)[0],
+      f"free slots with an empty queue print SLOTS_IDLE=2 reason=no-eligible-rows, last (got {out!r})")
+check(json.loads(_last.read_text(encoding="utf-8"))["line"] == "SLOTS_IDLE=2 reason=no-eligible-rows",
+      "a real drain records its idle-slot line for the Stop hook")
+
+# Rows blocked only by a live lane in another repo: all-after-unmet, with the repos listed.
+plan = _hand_plan(
+    ("app-a#5", {"brief": _brief, "after": "no-lane:busy"}),
+    ("app-b#6", {"brief": _brief, "after": "no-lane:busy app-x#40"}),   # also waits on an open issue
+    ("app-c#7", {"brief": _brief, "after": "no-lane:busy2"}),
+)
+fake, out, doc = _hand(plan, cards=[_busy_card, _session_card(project="busy2", session_id="busy2000")],
+                       settings={"worker_cap": 5})
+check(_idle_lines(out) == ["SLOTS_IDLE=3 reason=all-after-unmet no_lane_blocked=busy,busy2"],
+      f"rows blocked by no-lane alone are listed; a row that also waits on an issue is not (got {_idle_lines(out)})")
+
+# A row that is not after-unmet makes the reason the general one.
+plan = _hand_plan(("app-a#5", {"brief": _brief, "after": "no-lane:busy"}), ("busy#6", {"brief": _brief}))
+fake, out, doc = _hand(plan, cards=[_busy_card])
+check(_idle_lines(out) == ["SLOTS_IDLE=2 reason=no-eligible-rows no_lane_blocked=busy"],
+      f"a repo-busy row is not all-after-unmet (got {_idle_lines(out)})")
+
+# Cap unreadable: its own state, never silence.
+fake, out, doc = _hand(chief_plan.empty_plan(), settings={"worker_cap_scope": "bogus"})
+check(_idle_lines(out) == ["SLOTS_IDLE=unknown reason=cap-unreadable"],
+      f"an unreadable cap prints SLOTS_IDLE=unknown (got {_idle_lines(out)})")
+
+# Cap full, or every slot filled by this drain: no line, and the recorded result says 0.
+fake, out, doc = _hand(chief_plan.empty_plan(), cards=[_busy_card], settings={"worker_cap": 1})
+check(not _idle_lines(out) and json.loads(_last.read_text(encoding="utf-8"))["line"] == "SLOTS_IDLE=0",
+      f"a full cap prints no SLOTS_IDLE line (got {out!r})")
+fake, out, doc = _hand(_hand_plan(("app-a#1", {"brief": _brief})), settings={"worker_cap": 1})
+check(len(fake.posted) == 1 and not _idle_lines(out), f"a drain that fills the last slot prints none (got {out!r})")
+
+# A stopped dispatch leaves the slots idle and says so.
+_reset()
+fake = FakeLauncher({"auto_drain": True}, start_exc=urllib.error.HTTPError("u", 503, "unavailable", {}, None))
+rc, out, plan_path, _ = _run(fake, [], plan=_hand_plan(("app-a#1", {"brief": _brief})))
+check(_idle_lines(out) == ["SLOTS_IDLE=3 reason=dispatch-stopped"], f"a stopped dispatch is its own reason (got {out!r})")
+
+# Dry run prints the line too, but records nothing.
+_reset()
+fake = FakeLauncher({"auto_drain": True}, cards=[_busy_card])
+rc, out, plan_path, _ = _run(fake, [], dry_run=True)
+check(_idle_lines(out) == ["SLOTS_IDLE=2 reason=no-eligible-rows"] and not _last.exists(),
+      f"dry-run reports idle slots and writes no result (got {out!r})")
+
+# Switch off: drain does nothing, so there is nothing to report.
+fake, out, doc = _hand(chief_plan.empty_plan(), settings={"auto_drain": False})
+check(not _idle_lines(out), "a drain that is switched off reports no idle slots")
+
+
+# ---- slots-idle: the Stop hook's read ------------------------------------------------
+
+class _NoLauncher(FakeLauncher):
+    def request(self, base_url, path, method="GET", body=None, timeout=10.0):
+        raise AssertionError(f"slots-idle read the launcher ({path}) although a fresh result exists")
+
+
+def _slots(fake, plan=None, last=None, states=None):
+    """Run `slots-idle` against `fake`; `last` is a recorded drain result as `(age_seconds, line)`."""
+    _reset()
+    plan_path = _TMP / "plan.json"
+    if plan is not None:
+        plan_path.write_text(json.dumps({**plan, "updated_at": "2026-11-06T00:00:00Z"}), encoding="utf-8")
+    if last is not None:
+        _last.parent.mkdir(parents=True, exist_ok=True)
+        _last.write_text(json.dumps({"at": time.time() - last[0], "line": last[1]}), encoding="utf-8")
+    prior = (co.launcher._request, co.launcher.fetch_issue_state, co.chief_managed.mark)
+    co.launcher._request = fake.request
+    co.launcher.fetch_issue_state = lambda repo, number, owner=None: (
+        (states or {}).get((repo, number)) or {"state": "OPEN", "labels": [{"name": "enhancement"}]})
+    co.chief_managed.mark = lambda *a, **k: {}
+    try:
+        args = argparse.Namespace(plan_file=str(plan_path), base_url=co.DEFAULT_BASE_URL)
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            rc = drain.cmd_slots_idle(args)
+    finally:
+        co.launcher._request, co.launcher.fetch_issue_state, co.chief_managed.mark = prior
+    return rc, buf.getvalue().splitlines(), plan_path
+
+
+def _ask_plan(ask_id):
+    plan = chief_plan.empty_plan()
+    chief_plan.add_question(plan, "Which items fill the slots?", item_id=ask_id)
+    return plan
+
+
+rc, lines, _ = _slots(_NoLauncher({}), last=(30, "SLOTS_IDLE=2 reason=no-eligible-rows"))
+check(rc == 0 and lines == ["SLOTS_IDLE=2 reason=no-eligible-rows"],
+      f"a drain result under two minutes old is read back without asking the launcher (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card]), last=(300, "SLOTS_IDLE=0"))
+check(lines == ["SLOTS_IDLE=2 reason=no-eligible-rows"], f"a stale result is re-checked live (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card]))
+check(lines == ["SLOTS_IDLE=2 reason=no-eligible-rows"], f"no recorded result is checked live (got {lines})")
+
+fake = FakeLauncher({"auto_drain": True})
+rc, lines, plan_path = _slots(fake, plan=_hand_plan(("app-a#1", {"brief": _brief})))
+check(lines == ["SLOTS_IDLE=3 reason=dispatchable-rows"] and not fake.posted
+      and not _ledger.exists() and chief_plan.load(plan_path)["lanes"] == [],
+      f"a row drain has not started counts as idle, and the check dispatches nothing (got {lines})")
+
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card], cap=1))
+check(lines == ["SLOTS_IDLE=0"], f"a full cap is SLOTS_IDLE=0 (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True, "worker_cap_scope": "bogus"}))
+check(lines == ["SLOTS_IDLE=unknown reason=cap-unreadable"], f"an unreadable cap is unknown (got {lines})")
+rc, lines, _ = _slots(FakeLauncher(urllib.error.URLError("refused")))
+check(lines == ["SLOTS_IDLE=unknown reason=settings-unreadable"], f"an unreachable launcher is unknown (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": False}))
+check(lines == ["SLOTS_IDLE=off reason=switch-off"], f"auto_drain off is not a hold (got {lines})")
+
+# An open ask named slots-idle covers the idle slots; any other ask does not.
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card]), plan=_ask_plan("slots-idle"))
+check(lines == ["SLOTS_IDLE=2 reason=no-eligible-rows", "SLOTS_COVERED=slots-idle"],
+      f"an open slots-idle ask covers the idle slots (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card]), plan=_ask_plan("q1"))
+check(lines == ["SLOTS_IDLE=2 reason=no-eligible-rows"], f"another open ask does not cover them (got {lines})")
+rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card], cap=1), plan=_ask_plan("slots-idle"))
+check(lines == ["SLOTS_IDLE=0"], "a full cap prints no cover line")
+
+# The subcommands are wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,
       "`chief_ops.py drain` reaches cmd_drain")
+check(co.cli.build_parser("x").parse_args(["slots-idle"]).func is drain.cmd_slots_idle,
+      "`chief_ops.py slots-idle` reaches cmd_slots_idle")
 
 shutil.rmtree(_TMP, ignore_errors=True)
 _h.report_and_exit("test_drain")

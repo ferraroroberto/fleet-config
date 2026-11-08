@@ -37,6 +37,13 @@ the hooks state dir debounce it to one hold per window so it can never loop:
 `chief_ops.py self-compact`; the compaction runs when the turn ends, while the
 percentage is still over the threshold).
 
+The idle-slot gate (fleet-config#1941) comes right after it: `chief_ops.py slots-idle` prints
+`SLOTS_IDLE=<n|unknown|0|off>` (the last drain's line when under two minutes old, else a live
+count) and `SLOTS_COVERED=<id>` when an open `plan ask --id slots-idle` answers for it. A count
+above zero, or `unknown`, with no cover holds the turn end once per ten minutes
+(`chief-slots-nudge`), so the chief can only end the turn by filling the slot or asking Roberto.
+It runs before the waiter check because an armed waiter says nothing about idle slots.
+
 It fails open everywhere it cannot establish a fact -- an unreadable session
 state, an unreachable launcher -- and says so in the log; the launcher's
 doorbell mode (`wake` -> `WAKE=doorbell`) needs no waiter, so it is allowed too.
@@ -76,6 +83,9 @@ COMPACT_NUDGE_MARKER = "chief-compact-nudge"
 COMPACT_QUEUED_MARKER = "chief-compact-queued"
 # Equals skills/_lib/chief/compact.py COMPACT_NUDGE_SECONDS (hooks do not import skills).
 COMPACT_DEBOUNCE_S = 600
+SLOTS_NUDGE_MARKER = "chief-slots-nudge"
+# Equals the compact window: one idle-slot hold per ten minutes, so a chief that answers it never loops.
+SLOTS_DEBOUNCE_S = COMPACT_DEBOUNCE_S
 _COMPACT_DUE = re.compile(r"^COMPACT_DUE percent=(\d+) threshold=(\d+)\s*$")
 _PROBE_TIMEOUT_S = 25.0
 
@@ -173,11 +183,26 @@ def doorbell_on() -> bool:
     return any(l.startswith("WAKE=doorbell") for l in out.splitlines())
 
 
-def _marker_recent(path: Path, now: float) -> bool:
+def _marker_recent(path: Path, now: float, window: float = COMPACT_DEBOUNCE_S) -> bool:
     try:
-        return now - path.stat().st_mtime < COMPACT_DEBOUNCE_S
+        return now - path.stat().st_mtime < window
     except OSError:
         return False
+
+
+def _write_marker(name: str, clock: float) -> bool:
+    """Stamp a hold's debounce marker; False (logged) when it cannot be written.
+
+    Without the marker every turn end would hold again, so the caller skips the hold rather than risk a loop.
+    """
+    state = _lib.state_dir()
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+        (state / name).write_text(str(int(clock)), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("chief_waiter_stop: cannot write %s (%s) -- allowing the turn end", name, exc)
+        return False
+    return True
 
 
 def compact_refusal(now: Optional[float] = None) -> Optional[str]:
@@ -192,17 +217,44 @@ def compact_refusal(now: Optional[float] = None) -> Optional[str]:
         if not line.startswith(("COMPACT_NOT_DUE", "COMPACT_OFF")):
             logger.warning("chief_waiter_stop: context use unknown (%s) -- allowing the turn end", line or "no answer")
         return None
-    try:
-        state.mkdir(parents=True, exist_ok=True)
-        (state / COMPACT_NUDGE_MARKER).write_text(str(int(clock)), encoding="utf-8")
-    except OSError as exc:
-        # Without the marker every turn end would hold again: skip the hold rather than risk a loop.
-        logger.warning("chief_waiter_stop: cannot write %s (%s) -- allowing the turn end", COMPACT_NUDGE_MARKER, exc)
+    if not _write_marker(COMPACT_NUDGE_MARKER, clock):
         return None
     percent, threshold = match.groups()
     return (f"Context is at {percent}% (compact threshold {threshold}%). At this quiet point refresh the "
             "handover log and the plan, then run `chief_ops.py wake` and `chief_ops.py self-compact`, and end "
             "the turn on COMPACT_QUEUED. If a steer or decision is mid-flight, finish it first.")
+
+
+def slots_refusal(now: Optional[float] = None) -> Optional[str]:
+    """The message that holds the chief's turn end while worker slots sit idle, or None.
+
+    Reads `chief_ops.py slots-idle`: `SLOTS_IDLE=<n>` above zero, or `unknown`, holds unless
+    `SLOTS_COVERED=` says an open `plan ask` answers for it. `0` (cap full) and `off` allow. No
+    answer at all allows, logged: this hook cannot hold on a fact it never established.
+    """
+    clock = time.time() if now is None else now
+    state = _lib.state_dir()
+    if _marker_recent(state / SLOTS_NUDGE_MARKER, clock, SLOTS_DEBOUNCE_S):
+        return None
+    lines = (_chief_ops("slots-idle") or "").splitlines()
+    idle = next((l for l in lines if l.startswith("SLOTS_IDLE=")), "")
+    words = idle[len("SLOTS_IDLE="):].split()
+    value = words[0] if words else ""
+    if value == "off" or (value.isdigit() and int(value) == 0):
+        return None
+    if value != "unknown" and not value.isdigit():
+        logger.warning("chief_waiter_stop: idle slots not established (%s) -- allowing the turn end", idle or "no answer")
+        return None
+    if any(l.startswith("SLOTS_COVERED=") for l in lines):
+        return None
+    if not _write_marker(SLOTS_NUDGE_MARKER, clock):
+        return None
+    what = "An idle-slot count that cannot be read is not fine" if value == "unknown" else f"{value} worker slot(s) idle"
+    return (f"{what} ({idle.strip()}) and no open `plan ask --id slots-idle` covers it. Fill the slot before "
+            "ending the turn: take the next agreed item (an umbrella's open rows, a pending wave), file any "
+            "missing per-repo issue with a brief, `plan add` it (`--children` expands an umbrella), then run "
+            "`chief_ops.py drain` again. Only when no agreed work is left, file `plan ask --id slots-idle` "
+            "with candidates for Roberto.")
 
 
 def lane_hold(payload: Dict[str, Any]) -> None:
@@ -237,6 +289,10 @@ def main() -> None:
     compact_message = compact_refusal()
     if compact_message:
         _lib.block(compact_message)
+
+    slots_message = slots_refusal()
+    if slots_message:
+        _lib.block(slots_message)
 
     now = datetime.now(timezone.utc)
     if live_waiter(now):

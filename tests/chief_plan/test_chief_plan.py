@@ -65,6 +65,42 @@ check("brief" not in doc["queue"][-1], "an empty brief clears it")
 check("unknown condition" in _raises(cp.set_item, doc, "life-os#7", after="when ready"),
       "an after that is neither repo#N nor no-lane:<repo> is refused")
 check("at least one" in _raises(cp.parse_after, " , "), "an after with no condition is refused")
+
+# ---- umbrella expansion: --children (fleet-config#1941) ---------------------------
+
+doc = cp.empty_plan()
+doc["updated_at"] = "2026-09-26T14:40:00Z"
+cp.add_item(doc, "project-scaffolding#630", "baseline burn-down", status="parked", kind="umbrella",
+            model="sonnet", brief="E:/tmp/F_burn.md", note="agreed 11-08",
+            children="workflow-audit#540, video-tools#407,app-launcher#2218")
+rows = {f"{r['repo']}{r['ref']}": r for r in doc["queue"]}
+kids = [r for r in doc["queue"] if r["status"] == "queued"]
+check(cp.validate(doc) == [] and [f"{r['repo']}{r['ref']}" for r in doc["queue"]]
+      == ["project-scaffolding#630", "workflow-audit#540", "video-tools#407", "app-launcher#2218"],
+      "children expand to one row each, straight after the parent, in the order given")
+check(rows["project-scaffolding#630"]["status"] == "parked" and rows["project-scaffolding#630"]["kind"] == "umbrella"
+      and "after" not in rows["project-scaffolding#630"],
+      "the parent row stays as written")
+check(all(r["after"] == f"no-lane:{r['repo']}" and r["brief"] == "E:/tmp/F_burn.md" and r["model"] == "sonnet"
+          and r["note"] == "child of project-scaffolding#630"
+          and r["title"] == f"baseline burn-down: {r['repo']}{r['ref']}"
+          for r in kids) and len(kids) == 3,
+      f"each child is queued after its own repo's lane, with the parent's brief and model (got {kids})")
+doc = cp.empty_plan()
+cp.add_item(doc, "a#1", "wave", status="parked", kind="umbrella", at=1, children="b#2")
+cp.add_item(doc, "c#3", "wave two", status="parked", kind="umbrella", at=1, children="d#4,e#5")
+check([f"{r['repo']}{r['ref']}" for r in doc["queue"]] == ["c#3", "d#4", "e#5", "a#1", "b#2"],
+      "with --at the children follow their parent, not the end of the queue")
+before = json.dumps(doc, sort_keys=True)
+check("<repo>#<number>" in _raises(cp.add_item, doc, "f#6", "t", children="g#7, 8"),
+      "a child that is not repo#N is refused")
+check("already" in _raises(cp.add_item, doc, "f#6", "t", children="b#2"),
+      "a child already in the queue is refused")
+check("itself" in _raises(cp.add_item, doc, "f#6", "t", children="f#6"), "a parent cannot be its own child")
+check("twice" in _raises(cp.add_item, doc, "f#6", "t", children="g#7,g#7"), "a child named twice is refused")
+check("at least one" in _raises(cp.add_item, doc, "f#6", "t", children=" , "), "an empty children list is refused")
+check(json.dumps(doc, sort_keys=True) == before, "a refused expansion changes nothing")
+
 bad = _valid()
 bad["queue"][0]["after"] = "app-launcher#1273,no-lane:x"
 check(any("single-space" in e for e in cp.validate(bad)), "validate rejects an un-normalized after")
@@ -435,6 +471,18 @@ try:
     r = plan("set", "life-os#9", "--brief", "")
     row = next((x for x in json.loads(plan("show").stdout)["queue"] if x["ref"] == "#9"), {})
     check(r.returncode == 0 and "brief" not in row, "CLI set --brief '' clears the brief")
+    r = plan("add", "project-scaffolding#630", "burn", "--status", "parked", "--kind", "umbrella",
+             "--brief", "E:/tmp/F_burn.md", "--children", "workflow-audit#540,video-tools#407")
+    queue = json.loads(plan("show").stdout)["queue"]
+    check(r.returncode == 0 and [f"{x['repo']}{x['ref']}" for x in queue[-3:]]
+          == ["project-scaffolding#630", "workflow-audit#540", "video-tools#407"]
+          and queue[-1]["after"] == "no-lane:video-tools" and queue[-1]["status"] == "queued",
+          f"CLI add --children writes the parent and one queued row per child ({r.stderr.strip()[:120]})")
+    before = (cli_dir / "chief-plan.json").read_bytes()
+    r = plan("add", "project-scaffolding#631", "burn two", "--status", "parked", "--kind", "umbrella",
+             "--children", "workflow-audit#540")
+    check(r.returncode == 2 and "already" in r.stderr and (cli_dir / "chief-plan.json").read_bytes() == before,
+          "CLI add --children refuses a duplicate child and writes nothing")
     r = plan("clear")
     check(r.returncode == 0 and "queue=0" in r.stdout, "CLI clear resets to an empty plan")
 finally:

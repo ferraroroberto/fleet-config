@@ -488,7 +488,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "do nothing), every intake exclusion, dry-run writing nothing, and "
      "dispatch filling free slots from the top of its own rows, skipping "
      "busy repos and stopping on a refusal or unconfirmed dispatch, against "
-     "a fake launcher (fleet-config#1881)"),
+     "a fake launcher (fleet-config#1881), and the SLOTS_IDLE line and the slots-idle read behind the chief's Stop-hook hold (fleet-config#1941)"),
     ("chief_heal", "chief_ops/test_heal.py",
      "chief_ops heal -- the chief_job_self_heal switch (off, missing and "
      "unreadable write and fire nothing), the ledger with its repeated-cause "

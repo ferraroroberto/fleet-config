@@ -30,6 +30,13 @@ Every action prints one line (`DRAIN_ADDED=`, `DRAIN_DISPATCHED=`,
 `DRAIN_SKIPPED=<ref> reason=`, `DRAIN_STOPPED=<ref> reason=`), then the
 summary `DRAIN=done added=N dispatched=M`. `--dry-run` prints `DRAIN_WOULD_*`
 lines and writes nothing: no plan, no ledger, no brief, no dispatch.
+
+**Idle slots.** When worker slots are still free after the last dispatch, the
+summary is followed by `SLOTS_IDLE=<n> reason=<no-eligible-rows|all-after-unmet|
+dispatch-stopped>` (plus `no_lane_blocked=<repos>` for rows only a live lane holds
+back); an unreadable cap prints `SLOTS_IDLE=unknown`, and a full cap prints
+nothing. A real run records the line, and `slots-idle` (the chief's Stop hook)
+reads it back while it is under two minutes old, else counts the slots itself.
 """
 
 from __future__ import annotations
@@ -38,10 +45,12 @@ import argparse
 import contextlib
 import io
 import json
+import logging
 import re
+import time
 import urllib.error
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import chief_plan
 import gh_issue_fetch
@@ -52,7 +61,14 @@ from fleet_core.hooks_state import state_dir
 
 from . import commands, launcher, rails
 
+logger = logging.getLogger(__name__)
+
 LEDGER_FILENAME = "chief-drain.json"
+# The last real drain's idle-slot line; the Stop hook reads it through `slots-idle` while it is this fresh.
+LAST_FILENAME = "chief-drain-last.json"
+LAST_FRESH_SECONDS = 120
+# The `plan ask --id` that answers for idle slots when no agreed work is left to queue.
+IDLE_ASK_ID = "slots-idle"
 BRIEF_DIRNAME = "chief-drain-briefs"
 BRIEF_TEMPLATE = Path(__file__).with_name("drain_brief.md")
 
@@ -174,18 +190,30 @@ def _issue_closed(doc: Dict[str, Any], repo: str, local: str) -> Tuple[bool, str
     return str(state.get("state") or "").upper() == "CLOSED", ""
 
 
-def unmet_after(after: str, doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
-    """The first `after` condition that does not hold, as `<token> (<why>)`; None when all do."""
+def _unmet_iter(after: str, doc: Dict[str, Any], busy: Set[str]) -> Iterator[str]:
+    """Each `after` condition that does not hold, as `<token> (<why>)`, in order and lazily."""
     for token in after.split():
         if token.startswith("no-lane:"):
             if token[len("no-lane:"):].lower() in busy:
-                return f"{token} (lane live)"
+                yield f"{token} (lane live)"
             continue
         repo, local = chief_plan.split_ref(token)
         closed, detail = _issue_closed(doc, repo, local)
         if not closed:
-            return f"{token} ({detail or 'not merged'})"
-    return None
+            yield f"{token} ({detail or 'not merged'})"
+
+
+def unmet_after(after: str, doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
+    """The first `after` condition that does not hold, as `<token> (<why>)`; None when all do."""
+    return next(_unmet_iter(after, doc, busy), None)
+
+
+def no_lane_blockers(after: str, doc: Dict[str, Any], busy: Set[str]) -> Set[str]:
+    """The repos whose live lane holds a row back, when that is all holding it back; else empty."""
+    unmet = list(_unmet_iter(after, doc, busy))
+    if not unmet or not all(item.startswith("no-lane:") for item in unmet):
+        return set()
+    return {item.split(" ", 1)[0][len("no-lane:"):].lower() for item in unmet}
 
 
 def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
@@ -216,6 +244,47 @@ def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> O
     return None
 
 
+def row_skip(row: Dict[str, Any], doc: Dict[str, Any], known: Set[str], busy: Set[str]) -> Optional[str]:
+    """Why a queued row is not dispatched this turn; None means eligible.
+
+    `known` is drain's own refs (lowercased): those only need a free repo, hand rows all of `hand_row_skip`.
+    """
+    if f"{row['repo']}{row['ref']}".lower() in known:
+        return "repo-busy" if row["repo"].lower() in busy else None
+    return hand_row_skip(row, doc, busy)
+
+
+def note_skip(reason: str, row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str],
+              reasons: List[str], blockers: Set[str]) -> None:
+    """Collect a skipped row's reason, and the repos whose live lane alone holds it back."""
+    reasons.append(reason)
+    if reason.startswith("after-unmet (no-lane:"):
+        blockers.update(no_lane_blockers(row["after"], doc, busy))
+
+
+def idle_line(free: Optional[int], reasons: List[str], blockers: Set[str],
+              stopped: bool = False, dispatchable: bool = False) -> Optional[str]:
+    """The `SLOTS_IDLE=` line for `free` slots nothing filled; None when no slot is idle.
+
+    `free` None is an unreadable cap or occupancy: its own state, never silence. `reasons` holds
+    every skipped row's `reason=` text.
+    """
+    if free is None:
+        return "SLOTS_IDLE=unknown reason=cap-unreadable"
+    if free <= 0:
+        return None
+    if stopped:
+        reason = "dispatch-stopped"
+    elif dispatchable:
+        reason = "dispatchable-rows"
+    elif reasons and all(item.startswith("after-unmet") for item in reasons):
+        reason = "all-after-unmet"
+    else:
+        reason = "no-eligible-rows"
+    suffix = f" no_lane_blocked={','.join(sorted(blockers))}" if blockers else ""
+    return f"SLOTS_IDLE={free} reason={reason}{suffix}"
+
+
 def record_lane(doc: Dict[str, Any], repo: str, local_ref: str, sid: str, model: Optional[str]) -> None:
     """The lane exactly as `plan lane <repo> building --item #N --session <sid>` writes it."""
     chief_plan.set_lane(doc, repo, "building", item=local_ref, session=sid, model=model)
@@ -240,6 +309,31 @@ def load_ledger(path: Path) -> Dict[str, Any]:
     if not isinstance(refs, dict):
         raise ValueError(f"{path.name} has no refs mapping")
     return refs
+
+
+def last_file() -> Path:
+    return state_dir() / LAST_FILENAME
+
+
+def record_last(line: str) -> None:
+    """Keep the last real drain's idle-slot line for the Stop hook; a failed write only costs a re-check."""
+    path = last_file()
+    try:
+        with state_lock(path):
+            write_rows(path, {"at": time.time(), "line": line})
+    except OSError as exc:
+        logger.warning("⚠️ chief drain: could not record %s (%s); the Stop hook re-checks live", LAST_FILENAME, exc)
+
+
+def read_last(now: float) -> Optional[str]:
+    """The recorded idle-slot line when it is under `LAST_FRESH_SECONDS` old; else None."""
+    try:
+        doc = json.loads(last_file().read_text(encoding="utf-8"))
+        age = now - float(doc["at"])
+        line = doc["line"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return line if isinstance(line, str) and line.startswith("SLOTS_IDLE=") and 0 <= age < LAST_FRESH_SECONDS else None
 
 
 def remember(path: Path, adds: List[Dict[str, str]]) -> None:
@@ -346,18 +440,21 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
     columns = (launcher._request(args.base_url, "/api/board").get("columns") or {})
     busy = set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id()))
     known = {ref.lower() for ref in ledger}
-    free = _free_slots(args, columns, reply) if args.dry_run else None
+    free = _free_slots(args, columns, reply)
     dispatched = 0
+    reasons: List[str] = []
+    blockers: Set[str] = set()
+    stopped = False
     for row in queued_rows(doc):
         ref = f"{row['repo']}{row['ref']}"
         if args.dry_run and free is not None and dispatched >= free:
             break
-        owned = ref.lower() in known
-        reason = ("repo-busy" if row["repo"].lower() in busy else None) if owned \
-            else hand_row_skip(row, doc, busy)
+        reason = row_skip(row, doc, known, busy)
         if reason is not None:
             print(f"DRAIN_SKIPPED={ref} reason={reason}")
+            note_skip(reason, row, doc, busy, reasons, blockers)
             continue
+        owned = ref.lower() in known
         model = row.get("model") or "default"
         if args.dry_run:
             busy.add(row["repo"].lower())
@@ -371,6 +468,7 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
         if sid is None:
             reason = "unconfirmed" if "DISPATCH=unconfirmed" in output else "refused"
             print(f"DRAIN_STOPPED={ref} reason={reason}")
+            stopped = True
             break
         doc = chief_plan.update(plan_path, lambda d: record_lane(d, row["repo"], row["ref"], sid, row.get("model")))
         busy.add(row["repo"].lower())
@@ -381,4 +479,79 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
               f"free_slots={'unknown' if free is None else free}")
     else:
         print(f"DRAIN=done added={len(adds)} dispatched={dispatched}")
+    line = idle_line(None if free is None else free - dispatched, reasons, blockers, stopped=stopped)
+    if line:
+        print(line)
+    if not args.dry_run:
+        record_last(line or "SLOTS_IDLE=0")
+    return 0
+
+
+# ---- the Stop hook's read -----------------------------------------------------------
+
+def covering_ask(doc: Dict[str, Any]) -> Optional[str]:
+    """The id of the open `plan ask` that answers for idle slots (`--id slots-idle`), else None."""
+    for row in doc["waiting_on_roberto"]:
+        if row.get("question") and row.get("id") == IDLE_ASK_ID:
+            return IDLE_ASK_ID
+    return None
+
+
+def _switch_off_line(off: str) -> str:
+    """`DRAIN=off reason=..` as the idle-slot line: an unreadable switch is unknown, a set one is off."""
+    reason = off.partition("reason=")[2].split()[0]
+    if reason == "settings-unreadable":
+        return "SLOTS_IDLE=unknown reason=settings-unreadable"
+    return f"SLOTS_IDLE=off reason={reason}"
+
+
+def live_idle_line(args: argparse.Namespace, plan_path: Path) -> str:
+    """Count the idle slots now, dispatching and writing nothing. A row drain has not started yet
+    counts as idle (`dispatchable-rows`): the chief ended its turn without draining."""
+    try:
+        reply = launcher._request(args.base_url, "/api/board/chief/settings")
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return "SLOTS_IDLE=unknown reason=settings-unreadable"
+    off = drain_switch(reply)
+    if off is not None:
+        return _switch_off_line(off)
+    try:
+        columns = launcher._request(args.base_url, "/api/board").get("columns") or {}
+        doc = chief_plan.load(plan_path)
+        known = {ref.lower() for ref in load_ledger(ledger_file())}
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return "SLOTS_IDLE=unknown reason=state-unreadable"
+    free = _free_slots(args, columns, reply)
+    if free is None or free <= 0:
+        return idle_line(free, [], set()) or "SLOTS_IDLE=0"
+    busy = set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id()))
+    reasons: List[str] = []
+    blockers: Set[str] = set()
+    dispatchable = False
+    for row in queued_rows(doc):
+        reason = row_skip(row, doc, known, busy)
+        if reason is None:
+            dispatchable = True
+            busy.add(row["repo"].lower())
+        else:
+            note_skip(reason, row, doc, busy, reasons, blockers)
+    return idle_line(free, reasons, blockers, dispatchable=dispatchable) or "SLOTS_IDLE=0"
+
+
+def cmd_slots_idle(args: argparse.Namespace) -> int:
+    """`chief_ops.py slots-idle`: the idle-slot line, from the last drain when it is under two
+    minutes old, else counted now; plus `SLOTS_COVERED=<id>` when an open ask answers for it.
+    The chief's Stop hook holds the turn end on it."""
+    plan_path = Path(args.plan_file) if args.plan_file else chief_plan.plan_file()
+    line = read_last(time.time()) or live_idle_line(args, plan_path)
+    print(line)
+    value = line[len("SLOTS_IDLE="):].split()[0]
+    if value not in ("0", "off"):
+        try:
+            covered = covering_ask(chief_plan.load(plan_path))
+        except ValueError as exc:
+            logger.warning("⚠️ chief slots-idle: plan unreadable (%s); treating the slots as uncovered", exc)
+            covered = None
+        if covered:
+            print(f"SLOTS_COVERED={covered}")
     return 0
