@@ -146,6 +146,39 @@ try:
           "inbox: junk is dropped; a stale or unstamped claim is re-offered and read")
     check((inbox / ".event.k3x9.tmp").exists() and (inbox / ".claim-42-99" / "9-held.json").exists(),
           "inbox: never touches a temp or a leftover claim folder")
+    # ---- --older-than: the doorbell fallback waiter's count (#1938) -----------
+    inbox = tmp / "older" / "chief-inbox"
+    claimed = inbox / ".claimed"
+    claimed.mkdir(parents=True)
+    ring_ms, wait_s = 600_000, 600
+    publish(inbox, f"{T0 - 5_000}-{'1' * 32}.json")                # a ring's few seconds old
+    publish(inbox, f"{T0 - ring_ms + 1}-{'2' * 32}.json")          # one ms short of 10 minutes
+    check(co.count_pending(inbox, T0, older_than=wait_s) == 0 and co.count_pending(inbox, T0) == 2,
+          "count --older-than: events younger than the threshold are not counted; the default counts all")
+    publish(inbox, f"{T0 - ring_ms}-{'3' * 32}.json")              # exactly 10 minutes
+    check(co.count_pending(inbox, T0, older_than=wait_s) == 1,
+          "count --older-than: an event exactly at the threshold counts")
+    (inbox / "no-time.json").write_text("{}", encoding="utf-8")
+    check(co.count_pending(inbox, T0, older_than=wait_s) == 2,
+          "count --older-than: a root event with no readable time is never hidden")
+    (claimed / f"{T0 - 700_000}-{'4' * 32}.json").write_text("{}", encoding="utf-8")  # claimed 11 min ago, not yet stale
+    check(co.count_pending(inbox, T0, older_than=wait_s) == 2,
+          "count --older-than: a fresh claim stays out until the stale window, whatever the threshold")
+    (claimed / f"{T0 - STALE_MS - 1}-{'5' * 32}.json").write_text("{}", encoding="utf-8")
+    check(co.count_pending(inbox, T0, older_than=wait_s) == 3
+          and co.count_pending(inbox, T0, older_than=2 * wait_s) == 1
+          and co.count_pending(inbox, T0, stale_after=60, older_than=wait_s) == 4,
+          "count --older-than: a stale claim counts; the claim threshold is the larger of stale and older-than")
+    code, out = cli(inbox, "inbox", "--count", "--older-than", str(wait_s))
+    check(code == 0 and out.strip() == "PENDING=3" and len(list(inbox.glob("*.json"))) == 4,
+          f"inbox --count --older-than: prints PENDING=<n> and claims nothing ({out.strip()!r})")
+    blocker = tmp / "older-blocked" / "chief-inbox"
+    blocker.parent.mkdir(parents=True)
+    blocker.write_text("a file where the directory should be", encoding="utf-8")
+    code, out = cli(blocker, "inbox", "--count", "--older-than", str(wait_s))
+    check(code == 1 and out.startswith("PENDING=unknown"),
+          f"inbox --count --older-than: an unlistable inbox is still unknown, never 0 ({out.strip()!r})")
+
     old = tmp / "d" / "chief-inbox"
     publish(old, f"{T0}-{'0' * 32}.json", ts=iso(T0 - int(co.INBOX_EVENT_TTL_SECONDS * 1000) - 1000))
     check(co.claim_mailbox(old, T0) == ([], [], 1), "inbox: an event past the 24 h TTL is dropped")

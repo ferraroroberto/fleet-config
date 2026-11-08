@@ -91,8 +91,11 @@ finally:
 
 import urllib.error as _wake_urlerr  # noqa: E402
 
-check(co.resolve_wake_mode({"chief_doorbell": True}) == ("WAKE=doorbell doorbell=on", True),
-      "resolve_wake_mode: the switch on means the doorbell wakes the chief")
+_FALLBACK_LINE = "WAKE=doorbell doorbell=on fallback=waiter seconds=1800"
+check(co.resolve_wake_mode({"chief_doorbell": True}) == (_FALLBACK_LINE, True),
+      "resolve_wake_mode: the switch on means the doorbell wakes the chief, with a long fallback waiter (#1938)")
+check(co.mailbox.FALLBACK_WAITER_SECONDS == 1800 and co.mailbox.FALLBACK_OLDER_THAN_SECONDS == 600,
+      "resolve_wake_mode: the fallback is a 30-minute poll for events older than 10 minutes")
 check(co.resolve_wake_mode({"chief_doorbell": False}) == ("WAKE=waiter doorbell=off", True),
       "resolve_wake_mode: the switch off means arm a waiter")
 for _bad in ({}, {"chief_doorbell": "true"}, {"chief_doorbell": 1}, {"chief_doorbell": None}):
@@ -125,7 +128,7 @@ def _run_wake(reply):
 
 
 _code, _out, _calls = _run_wake({"chief_doorbell": True, "port": 8445})
-check(_code == 0 and _out == "WAKE=doorbell doorbell=on" and _calls == ["/api/config"],
+check(_code == 0 and _out == _FALLBACK_LINE and _calls == ["/api/config"],
       "wake CLI: reads the launcher's /api/config and reports the doorbell")
 _code, _out, _calls = _run_wake({"chief_doorbell": False})
 check(_code == 0 and _out == "WAKE=waiter doorbell=off", "wake CLI: switch off -> waiter, exit 0")

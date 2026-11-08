@@ -166,7 +166,7 @@ def cmd_inbox(args: argparse.Namespace) -> int:
     inbox = mailbox.chief_inbox_dir()
     if args.count:
         try:
-            print(f"PENDING={mailbox.count_pending(inbox, stale_after=args.stale_after)}")
+            print(f"PENDING={mailbox.count_pending(inbox, stale_after=args.stale_after, older_than=args.older_than)}")
         except OSError as exc:
             print(f"PENDING=unknown reason={type(exc).__name__}: {exc}")
             return 1
