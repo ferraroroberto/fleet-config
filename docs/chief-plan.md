@@ -92,7 +92,7 @@ Each update is one line. Queue items are addressed as `<repo>#<N>`.
 
 ```text
 chief_ops.py plan show
-chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet] [--kind K] [--brief PATH] [--after "fleet-config#1911 no-lane:fleet-config"]
+chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet] [--kind K] [--brief PATH] [--after "fleet-config#1911 no-lane:fleet-config"] [--children repo#N,repo#N]   # --children: also queue each child straight after this row, after no-lane:<its repo>, with this row's --brief and --model (all-or-nothing; a child already queued is refused)
 chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus] [--kind K] [--brief PATH] [--after "…"]   # --note "" / --model "" / --brief "" / --after "" clear; --status parked needs --kind (owner | umbrella | "blocked-by <repo>#<N>")
 chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273

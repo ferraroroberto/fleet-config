@@ -95,6 +95,11 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     dr.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     dr.set_defaults(func=drain.cmd_drain)
 
+    si = sub.add_parser("slots-idle", help="idle worker slots: the line the Stop hook holds the turn end on (fleet-config#1941)")
+    si.add_argument("--plan-file", default=None, help="plan to read (default: the live chief plan)")
+    si.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    si.set_defaults(func=drain.cmd_slots_idle)
+
     heal.add_parser(sub)
     proposals.add_parser(sub)
 

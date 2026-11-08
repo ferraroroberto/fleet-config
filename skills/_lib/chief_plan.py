@@ -30,7 +30,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from active_issue import _iso_z, _now, state_lock, write_rows  # noqa: E402
@@ -500,14 +500,42 @@ def _apply_kind(row: Dict[str, Any], status: str, kind: Optional[str]) -> None:
         row.pop("blocked_by", None)
 
 
+def _child_refs(doc: Dict[str, Any], parent: str, children: str) -> List[str]:
+    """The qualified refs in `--children`, each checked so the expansion is all-or-nothing."""
+    refs: List[str] = []
+    for token in children.replace(",", " ").split():
+        repo, local = split_ref(token)
+        refs.append(f"{repo}{local}")
+    if not refs:
+        raise ValueError("--children needs at least one <repo>#<N>")
+    queued = {f"{row['repo']}{row['ref']}".lower() for row in doc["queue"]}
+    seen: Set[str] = set()
+    for child in refs:
+        if child.lower() == parent.lower():
+            raise ValueError(f"{child} cannot be a child of itself")
+        if child.lower() in seen:
+            raise ValueError(f"{child} is named twice in --children")
+        if child.lower() in queued:
+            raise ValueError(f"{child} is already in the queue")
+        seen.add(child.lower())
+    return refs
+
+
 def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
              note: Optional[str] = None, at: Optional[int] = None,
              model: Optional[str] = None, kind: Optional[str] = None,
-             brief: Optional[str] = None, after: Optional[str] = None) -> None:
-    """Queue `ref`; `at` is a 1-based position (default: the end)."""
+             brief: Optional[str] = None, after: Optional[str] = None,
+             children: Optional[str] = None) -> None:
+    """Queue `ref`; `at` is a 1-based position (default: the end).
+
+    `children` (`<repo>#<N>,...`) is an umbrella or wave expansion: each child is also queued, in
+    order straight after `ref`, as `queued` with `after no-lane:<its repo>` and the parent's brief
+    and model. Then `chief_ops.py drain` finds the next item with no judgment of its own.
+    """
     repo, local = split_ref(ref)
     if status == "waiting-roberto":
         _require_question(doc, ref)
+    child_refs = _child_refs(doc, f"{repo}{local}", children) if children is not None else []
     row: Dict[str, Any] = {"repo": repo, "ref": local, "title": title, "status": status}
     _apply_kind(row, status, kind)
     if note:
@@ -516,6 +544,15 @@ def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
     _set_dispatch_fields(row, brief, after)
     position = len(doc["queue"]) if at is None else _position(at, len(doc["queue"]) + 1)
     doc["queue"].insert(position, row)
+    for offset, child in enumerate(child_refs, start=1):
+        child_repo, child_local = split_ref(child)
+        entry: Dict[str, Any] = {
+            "repo": child_repo, "ref": child_local, "title": short_text(f"{title}: {child}"),
+            "status": "queued", "note": f"child of {repo}{local}",
+        }
+        _set_model(entry, model)
+        _set_dispatch_fields(entry, brief, f"no-lane:{child_repo}")
+        doc["queue"].insert(position + offset, entry)
 
 
 def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
@@ -735,7 +772,7 @@ def _run(args: argparse.Namespace) -> int:
         "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session, args.model),
         "drop-lane": lambda d: drop_lane(d, args.repo),
         "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model, args.kind,
-                                     args.brief, args.after),
+                                     args.brief, args.after, args.children),
         "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model, args.kind,
                                      args.brief, args.after),
         "move": lambda d: move_item(d, args.ref, args.to),
@@ -784,6 +821,9 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--kind", default=None, help=_KIND_HELP)
     add.add_argument("--brief", default=None, help=_BRIEF_HELP)
     add.add_argument("--after", default=None, help=_AFTER_HELP)
+    add.add_argument("--children", default=None,
+                     help="umbrella/wave expansion: <repo>#<N>,... each queued after no-lane:<its repo>, "
+                          "with this row's --brief and --model")
 
     set_p = acts.add_parser("set", help="change a queued item's status, note, title, model, brief or after")
     set_p.add_argument("ref")

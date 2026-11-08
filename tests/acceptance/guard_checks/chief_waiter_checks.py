@@ -85,14 +85,61 @@ NOT_DUE = "COMPACT_NOT_DUE percent=12 threshold=30"
 
 
 def _launcher(wake: str = "WAKE=waiter doorbell=off", jobs: str = "FLEET_JOBS=0",
-              compact: str = NOT_DUE) -> Callable[..., Optional[str]]:
-    answers = {"fleet-jobs": jobs, "compact-due": compact}
+              compact: str = NOT_DUE, slots: str = "SLOTS_IDLE=0") -> Callable[..., Optional[str]]:
+    answers = {"fleet-jobs": jobs, "compact-due": compact, "slots-idle": slots}
     return lambda *args: answers.get(args[0], wake)
 
 
 def _waiter_calls(calls: List[Tuple[str, ...]]) -> List[Tuple[str, ...]]:
-    """The launcher reads other than the context gate's own `compact-due`."""
-    return [c for c in calls if c[0] != "compact-due"]
+    """The launcher reads other than the context and idle-slot gates' own."""
+    return [c for c in calls if c[0] not in ("compact-due", "slots-idle")]
+
+
+def _slots_gate_checks(check: _Checker, tmp: Path) -> None:
+    """The idle-slot hold: idle / unknown / covered / full cap / debounce / headless / non-chief."""
+    nudge = tmp / "chief-slots-nudge"
+    _seed_state(tmp, lane_status=None)  # no lane working: only the idle-slot gate can hold the turn
+    idle = "SLOTS_IDLE=2 reason=no-eligible-rows"
+
+    def asked(calls: List[Tuple[str, ...]]) -> List[Tuple[str, ...]]:
+        return [c for c in calls if c[0] == "slots-idle"]
+
+    def drive(slots: str, payload: Dict[str, object] = CHIEF_PAYLOAD, env: Optional[Dict[str, str]] = None):
+        return _drive(tmp, payload, _launcher(slots=slots), env)
+
+    code, _ = drive("SLOTS_IDLE=0")
+    check("chief_slots_gate: full cap -> turn end allowed, no marker", code == 0 and not nudge.exists())
+    code, _ = drive("SLOTS_IDLE=off reason=switch-off")
+    check("chief_slots_gate: auto_drain off -> allowed", code == 0 and not nudge.exists())
+    code, _ = drive("")
+    check("chief_slots_gate: no answer from chief_ops -> allowed (cannot establish it)", code == 0 and not nudge.exists())
+    code, _ = drive(idle + "\nSLOTS_COVERED=slots-idle")
+    check("chief_slots_gate: an open plan ask covers the idle slots -> allowed", code == 0 and not nudge.exists())
+
+    code, _ = drive(idle)
+    check("chief_slots_gate: idle slots and no ask -> turn end held (exit 2), marker written",
+          code == 2 and nudge.exists())
+    code, calls = drive(idle)
+    check("chief_slots_gate: debounced -- a second turn end inside the window is allowed without asking",
+          code == 0 and not asked(calls), str(calls))
+    old = time.time() - 3600
+    os.utime(nudge, (old, old))
+    code, _ = drive("SLOTS_IDLE=unknown reason=cap-unreadable")
+    check("chief_slots_gate: unknown idle count holds too, once the window is over", code == 2)
+    os.utime(nudge, (old, old))
+    code, _ = drive("SLOTS_IDLE=2 reason=x\nSLOTS_COVERED=slots-idle")
+    check("chief_slots_gate: a covering ask releases a hold that would otherwise fire", code == 0)
+    nudge.unlink()
+
+    code, calls = drive(idle, {**CHIEF_PAYLOAD, "stop_hook_active": True})
+    check("chief_slots_gate: turn already continuing after a refusal -> never held again",
+          code == 0 and not calls and not nudge.exists())
+    code, calls = drive(idle, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+    check("chief_slots_gate: headless child of the chief is never held", code == 0 and not calls)
+    code, calls = drive(idle, {**CHIEF_PAYLOAD, "session_id": "worker-transcript-uuid"}, {"APP_LAUNCHER_SESSION_ID": ""})
+    check("chief_slots_gate: non-chief session is untouched (no launcher read, no marker)",
+          code == 0 and not calls and not nudge.exists(), str(calls))
+    _seed_state(tmp, lane_status="working")
 
 
 def _compact_gate_checks(check: _Checker, tmp: Path) -> None:
@@ -198,6 +245,7 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
         check("chief_waiter_stop: turn already continuing after a refusal -> allowed", code == 0)
 
         _compact_gate_checks(check, tmp)
+        _slots_gate_checks(check, tmp)
 
         # Subprocess cases: these must exit before any launcher read, so no stub is possible.
         env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "APP_LAUNCHER_SESSION_ID": CHIEF_LAUNCHER_SID}
