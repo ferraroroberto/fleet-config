@@ -176,7 +176,7 @@ def cmd_run(today: _dt.date) -> int:
             seen[entry.item.id] = today.isoformat()
 
     digest_dir = root / "digests"
-    digest_dir.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: digests live in the machine-local state root
+    digest_dir.mkdir(parents=True, exist_ok=True)
     digest = digest_dir / f"{today.isoformat()}.html"
     atomic_write_text(digest, render.render(today.isoformat(), results, top, unscored, dropped, errors))
     atomic_write_text(root / "seen.json", json.dumps(seen, indent=0, sort_keys=True))
@@ -198,7 +198,7 @@ def cmd_init() -> int:
     if target.exists():
         print(f"SOURCES_FILE={target} (exists, left unchanged)")
         return 0
-    target.parent.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: the machine-local state root
+    target.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(target, (SKILL_DIR / "sources.example.toml").read_text(encoding="utf-8"))
     print(f"SOURCES_FILE={target} (created from the example; edit it)")
     return 0

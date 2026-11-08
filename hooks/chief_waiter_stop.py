@@ -197,9 +197,7 @@ def _write_marker(name: str, clock: float) -> bool:
     """
     state = _lib.state_dir()
     try:
-        # runtime-write-exempt: marker under the hooks state dir
         state.mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: marker under the hooks state dir
         (state / name).write_text(str(int(clock)), encoding="utf-8")
     except OSError as exc:
         logger.warning("chief_waiter_stop: cannot write %s (%s) -- allowing the turn end", name, exc)

@@ -233,9 +233,7 @@ def stop_refusal(payload: Dict[str, Any], now: Optional[float] = None) -> Option
                     sid[:8], "running" if running else "in an unknown state")
         return None
     try:
-        # runtime-write-exempt: nudge marker under the hooks state dir
         (state / NUDGE_DIRNAME).mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: nudge marker under the hooks state dir
         (state / NUDGE_DIRNAME / sid).write_text(str(int(clock)), encoding="utf-8")
     except OSError as exc:
         # Without the marker every turn end would hold again: skip the hold rather than risk a loop.

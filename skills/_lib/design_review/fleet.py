@@ -141,7 +141,6 @@ def dormant_targets(projects_toml: Optional[Path] = None) -> List[str]:
 def fleet_dir(now: Optional[_dt.datetime] = None) -> Path:
     stamp = (now or capture.utc_now()).astimezone(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = hooks_state.state_dir() / "design-review" / "_fleet" / stamp
-    # runtime-write-exempt: fleet folder under the hooks state dir
     path.mkdir(parents=True, exist_ok=True)
     return path
 

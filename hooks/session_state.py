@@ -239,7 +239,6 @@ def upsert(
     rather than unknowable.
     """
     path = state_file()
-    # runtime-write-exempt: state file under the hooks state dir
     path.parent.mkdir(parents=True, exist_ok=True)
 
     tombstone_path = ended_file()
@@ -334,7 +333,6 @@ def remove(session_id: str) -> bool:
     contract as :func:`upsert` (fleet-config#816).
     """
     path = state_file()
-    # runtime-write-exempt: state file under the hooks state dir
     path.parent.mkdir(parents=True, exist_ok=True)
     tombstone_path = ended_file()
     tombstones = _live_tombstones(tombstone_path)

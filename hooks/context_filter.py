@@ -222,10 +222,8 @@ def cache_raw_output(command: str, raw: str) -> str:
     digest = hashlib.sha256((command + "\0" + stamp + "\0" + raw).encode("utf-8", "replace")).hexdigest()
     key = digest[:16]
     target_dir = data_dir() / "blobs"
-    # runtime-write-exempt: blob cache in the per-user context-filter data dir
     target_dir.mkdir(parents=True, exist_ok=True)
     _prune_old_blobs(target_dir)
-    # runtime-write-exempt: blob cache in the per-user context-filter data dir
     (target_dir / f"{key}.txt").write_text(raw, encoding="utf-8", errors="replace")
     return key
 

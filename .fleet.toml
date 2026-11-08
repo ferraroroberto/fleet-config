@@ -111,3 +111,6 @@ enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"
 # The repo-scope skills' Python lives under .claude/skills/, beside hooks/ and skills/.
 code_folders = ["hooks", "skills", "scripts", ".claude"]
+# Helpers whose every definition returns a home-, state- or temp-rooted path (checked against each return
+# expression), so a write through them lands outside the checkout and needs no marker.
+safe_calls   = ["_dedup_file", "_marker_path", "audit_record_path", "data_dir", "inbox_dir", "log_path", "run_dir", "run_dir_for", "sources_path", "state_dir", "state_file", "state_root", "waiters_dir"]

@@ -182,7 +182,6 @@ def cmd_sweep(a: argparse.Namespace) -> int:
         print(f"[{i}/{len(apps)}] {repo} -- {row['state']}" + (f" ({row['reason']})" if row["reason"] else ""))
     digest = render_digest(rows, dormant, _dt.date.today().isoformat(), left_out(only=a.only))
     out = hooks_state.state_dir() / "perf-review" / f"sweep-{_dt.datetime.now(_dt.timezone.utc):%Y%m%dT%H%M%SZ}.md"
-    # runtime-write-exempt: result file under the hooks state dir
     out.parent.mkdir(parents=True, exist_ok=True)
     hooks_state.atomic_write_text(out, digest)
     print(digest)
@@ -200,7 +199,6 @@ def default_out_path() -> Path:
     `fleet_audit_scan.default_out_path`.
     """
     base = hooks_state.state_dir() / "perf-review"
-    # runtime-write-exempt: sentinel folder under the hooks state dir
     base.mkdir(parents=True, exist_ok=True)
     return base / f"sweep-result-{os.getpid()}-{time.time_ns()}.json"
 

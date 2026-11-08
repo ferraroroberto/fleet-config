@@ -49,7 +49,6 @@ EXIT = {"pass": 0, "over-budget": 1, "unmeasured": 3}
 def run_dir_for(target: str) -> Path:
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = hooks_state.state_dir() / "perf-review" / target / stamp
-    # runtime-write-exempt: run folder under the hooks state dir
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -192,9 +191,7 @@ def cmd_measure(a: argparse.Namespace) -> int:
     entry = report.record(target.name, run_id, v, target_commit(target), build)
     d = report.diff(entry, report.previous_entry(target.name, run_id))
     for name, doc in (("probe.json", probe), ("verdict.json", {**v, "run_id": run_id, "live_build": build, "diff": d})):
-        # runtime-write-exempt: artefacts in the run folder under the hooks state dir
         (run_dir / name).write_text(json.dumps(doc, indent=1), encoding="utf-8")
-    # runtime-write-exempt: artefacts in the run folder under the hooks state dir
     (run_dir / "issue-body.md").write_text(report.merge_body("", {**v, "diff": d}, run_id, build, _dt.date.today().isoformat()), encoding="utf-8")
     for c in v["checks"]:
         sampled = f" samples={','.join(report._fmt(x) for x in c['samples'])} outliers={','.join(map(str, c['outliers'])) or 'none'}" if c.get("samples") else ""

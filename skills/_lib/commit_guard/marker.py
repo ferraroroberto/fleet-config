@@ -59,7 +59,7 @@ def _marker_path(top: str) -> Path:
 
 def grant(top: str, reason: str, paths: List[str], minutes: int) -> Path:
     path = _marker_path(top)
-    path.parent.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: the hooks state dir is the shared runtime root
+    path.parent.mkdir(parents=True, exist_ok=True)
     row = {
         "repo_key": repo_key(top),
         "repo": top,
