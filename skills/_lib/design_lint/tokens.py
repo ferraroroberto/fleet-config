@@ -11,7 +11,6 @@ from typing import Dict, List, Tuple
 
 from .css import normalize_value
 
-
 # spec role → candidate app custom-property names (without the -- prefix).
 ALIASES: Dict[str, List[str]] = {
     "colors.canvas": ["bg", "canvas", "background"],

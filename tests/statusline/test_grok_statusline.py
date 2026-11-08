@@ -12,7 +12,6 @@ import tomllib
 import unittest
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("grok_statusline", REPO / "grok_statusline.py")
 assert SPEC and SPEC.loader

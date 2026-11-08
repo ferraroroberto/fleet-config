@@ -11,10 +11,10 @@ import json
 import struct
 
 from _suite import REPO, _h, check  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
-
-from design_review import evaluate, report, rubric as rubric_mod  # noqa: E402
+from design_review import evaluate, report  # noqa: E402
+from design_review import rubric as rubric_mod
 from design_review.web import checks, measure_web, preview, seo  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 WEB_RUBRIC = REPO / "design.web.rubric.toml"
 WEB_SPEC = REPO / "design.web.md"
@@ -267,6 +267,7 @@ check("WEB-TOUCH-03" in html, "the report renders the web-page findings")
 run = throwaway_dir("web-eval-")
 (run / "metrics.json").write_text(json.dumps({**metrics_doc, "rubric_path": str(WEB_RUBRIC), "spec_path": str(WEB_SPEC)}), encoding="utf-8")
 from design_review import cli  # noqa: E402
+
 rc = cli.main(["evaluate", str(run / "metrics.json"), "--out", str(run / "evaluate.json")])
 out = json.loads((run / "evaluate.json").read_text(encoding="utf-8"))
 check(rc == 0 and out["rubric_version"] == rb.version and any(r["id"] == "WEB-TOUCH-03" for r in out["rules"]),

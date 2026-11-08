@@ -23,15 +23,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import active_issue
 import chief_managed
 import chief_plan
-from chief import chief_sweep
 import dirty_tree_check
 import gate_evidence
 import owner_check
-from grokbot import status as grokbot_status
+import worktree_claim
 from fleet_core import hooks_state
+from grokbot import status as grokbot_status
 from no_window import NO_WINDOW
 from vendored_wave import primaries
-import worktree_claim
+
+from chief import chief_sweep
+
 # `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
 from chief.steer_delivery import (

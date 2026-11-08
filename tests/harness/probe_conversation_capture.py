@@ -10,17 +10,17 @@ import argparse
 import io
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(ROOT / 'hooks'))
 import conversation_capture as cc
-from conversation import transcript_readers as tr
 from _lib import NO_WINDOW, run_git
+from conversation import transcript_readers as tr
 
 
 def main() -> int:

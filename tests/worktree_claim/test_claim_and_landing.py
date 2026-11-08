@@ -14,7 +14,6 @@ from pathlib import Path
 
 from _suite import _h, check, sp, wc, wclaim, wgit  # noqa: E402
 
-
 # ---- worktree_path: sibling convention, prefix-matches cwd_prefix ----
 
 repo = Path("E:/automation/fleet-config")

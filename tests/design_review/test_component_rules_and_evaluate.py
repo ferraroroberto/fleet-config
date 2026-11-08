@@ -8,12 +8,33 @@ import re
 from pathlib import Path
 
 from _suite import STATE, _h, check  # noqa: E402
-
-from design_review import capture, evaluate as ev, measure, plan  # noqa: E402
-from design_review import mockups as mockups_mod, report as report_mod  # noqa: E402
+from design_review import capture, measure, plan  # noqa: E402
+from design_review import evaluate as ev
+from design_review import mockups as mockups_mod  # noqa: E402
+from design_review import report as report_mod
 from design_review_support import (  # noqa: E402
-    L10_MISSING as _L10_MISSING, MISSING as _MISSING, rubric,
-    c18_of as _c18_of, comp as _comp, doc as _doc, out_c, specs as _specs, src_specs, statuses_c,
+    L10_MISSING as _L10_MISSING,
+)
+from design_review_support import (
+    MISSING as _MISSING,
+)
+from design_review_support import (
+    c18_of as _c18_of,
+)
+from design_review_support import (
+    comp as _comp,
+)
+from design_review_support import (
+    doc as _doc,
+)
+from design_review_support import (
+    out_c,
+    rubric,
+    src_specs,
+    statuses_c,
+)
+from design_review_support import (
+    specs as _specs,
 )
 
 

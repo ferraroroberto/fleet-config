@@ -8,14 +8,13 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from _suite import _h, check  # noqa: E402
 import design_lint as dl  # noqa: E402
-
+from _suite import _h, check  # noqa: E402
 from design_lint_support import (  # noqa: E402
-    GOOD_CSS, run_contracts,
+    GOOD_CSS,
+    run_contracts,
 )
 from throwaway_dir import throwaway_dir  # noqa: E402
-
 
 # ---- nav-nesting: nav.tabs must be a <body> sibling of main.app, never
 #      nested inside it (_vendored/nav/README.md; app-launcher#369, #284) ----

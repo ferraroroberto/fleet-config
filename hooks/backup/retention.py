@@ -10,8 +10,8 @@ module's bookkeeping and `snapshot.py`'s file-writing exist.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -24,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 
 from .config import (
-    BackupConfig,
     ARCHIVE_MANIFEST_NAME,
     CLAUDE_SESSIONS_LEG,
     CODEX_SESSIONS_LEG,
@@ -34,10 +33,11 @@ from .config import (
     FRESHNESS_UNKNOWN,
     LATEST_DIR,
     MANIFEST_NAME,
-    RUNTIME_DATA_LEG,
-    RUNTIME_DATA_GROUP,
     RUN_MARKER_NAME,
+    RUNTIME_DATA_GROUP,
+    RUNTIME_DATA_LEG,
     SESSION_ARCHIVE_DIR,
+    BackupConfig,
 )
 
 logger = logging.getLogger("backup_private")

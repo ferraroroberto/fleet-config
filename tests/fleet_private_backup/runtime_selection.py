@@ -3,10 +3,20 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from _suite import _cfg, _write, check, tmp
-from runtime_data import _snapshot_bounded, churn_db, churn_stop, churn_thread, churner, corrupt_dir, live_db, rd_src, saved_pages, snapshot_mod
 import backup as bp
-
+from _suite import _cfg, _write, check, tmp
+from runtime_data import (
+    _snapshot_bounded,
+    churn_db,
+    churn_stop,
+    churn_thread,
+    churner,
+    corrupt_dir,
+    live_db,
+    rd_src,
+    saved_pages,
+    snapshot_mod,
+)
 
 try:
     churn_out = _snapshot_bounded(churn_db, tmp / "snap-out" / "churn.sqlite3", 2.0, 20.0)

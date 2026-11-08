@@ -21,17 +21,20 @@ import shutil
 import subprocess
 import tempfile
 import threading
-import uuid
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
 
 import scoped_discovery as discovery
-from scheduled.codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from git_run import run_git
 from no_window import NO_WINDOW
-
+from scheduled.codex_app_server import (
+    AppServerExited,
+    AppServerSession,
+    AppServerTimeout,
+)
 
 PROBE_PREFIX = "fleet-probe-748"
 GLOBAL_SKILL = f"{PROBE_PREFIX}-global"

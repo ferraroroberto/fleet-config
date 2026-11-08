@@ -59,39 +59,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 
 import box_lock  # noqa: E402
-
-from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
-from acceptance.checks_dispatch import _hook_dispatch_checks  # noqa: E402
+from acceptance import gate_routing  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
     _advisory_semantics_check,
     _config_map_check,
     _description_cap_check,
+    _docs_links_check,
     _fleet_gate_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
     _fleet_toml_layout_check,
-    _mermaid_check,
     _installer_symmetry_check,
+    _mermaid_check,
     _projects_toml_contract_check,
     _readme_layout_check,
-    _docs_links_check,
     _settings_sync_split_check,
     _settings_template_sync_check,
     _system_map_whatchanged_check,
 )
-from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
-    _acceptance_audit_wiring_check,
-    _chief_wake_check,
-    _gate_evidence_wiring_check,
-    _issue_comments_read_check,
-    _manual_compact_never_gated_check,
-    _skill_doc_links_check,
-    _skill_git_rules_check,
-    _unattended_worktree_mandate_check,
-)
-from acceptance.system_map_coverage import _system_map_coverage_check  # noqa: E402
-from acceptance.fleet_map.fleet_contracts_checks import _fleet_contracts_check  # noqa: E402
-from acceptance.fleet_map.fleet_guide_checks import _fleet_guide_check  # noqa: E402
 from acceptance.checks_capture import (  # noqa: E402
     _conversation_capture_unit_checks,
     _conversation_index_unit_checks,
@@ -104,8 +89,7 @@ from acceptance.checks_cross_agent import (  # noqa: E402
     _hook_transport_utf8_check,
     _session_state_agent_adapter_unit_checks,
 )
-from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
-from acceptance.guard_checks.lane_compact_checks import _lane_compact_unit_checks  # noqa: E402
+from acceptance.checks_dispatch import _hook_dispatch_checks  # noqa: E402
 from acceptance.checks_git_globals import _git_globals_unit_checks  # noqa: E402
 from acceptance.checks_guards import (  # noqa: E402
     _bash_cmdexe_syntax_guard_unit_checks,
@@ -117,37 +101,16 @@ from acceptance.checks_guards import (  # noqa: E402
     _tier23_hooks_unit_checks,
     _warn_channel_unit_checks,
 )
-from acceptance.guard_checks.attribution_scan_checks import _attribution_scan_unit_checks  # noqa: E402
-from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
-from acceptance.guard_checks.secret_read_checks import _secret_read_unit_checks  # noqa: E402
-from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
-    _safe_kill_force_push_unit_checks,
-    _safe_kill_git_bypass_unit_checks,
-)
-from acceptance.guard_checks.venv_guard_checks import (  # noqa: E402
-    _venv_cd_prefix_guard_unit_checks,
-    _venv_git_clean_guard_unit_checks,
-    _venv_junction_guard_unit_checks,
-    _venv_primary_guard_unit_checks,
-)
-from acceptance.notify_checks.codex_attention_checks import (  # noqa: E402
-    _codex_attention_chief_unit_checks,
-    _codex_attention_unit_checks,
-    _codex_native_probe_unit_checks,
-)
-from acceptance.notify_checks.network_isolation_checks import (  # noqa: E402
-    _notify_network_isolation_unit_checks,
-)
 from acceptance.checks_notify import (  # noqa: E402
     _notify_board_link_unit_checks,
     _notify_chief_routing_unit_checks,
+    _notify_chunking_unit_checks,
     _notify_classify_unit_checks,
     _notify_complete_unit_checks,
-    _notify_chunking_unit_checks,
     _notify_media_group_unit_checks,
     _notify_message_ids_unit_checks,
-    _notify_send_unit_checks,
     _notify_routing_unit_checks,
+    _notify_send_unit_checks,
 )
 from acceptance.checks_session_state import (  # noqa: E402
     _chief_handover_sessionstart_unit_checks,
@@ -161,16 +124,56 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
     _restart_webapp_unit_checks,
     _scheduled_skill_timeouts_named_check,
 )
-from acceptance import gate_routing  # noqa: E402
-from acceptance.dead_function_gate import _dead_function_unit_check  # noqa: E402
 from acceptance.comment_ratchet_gate import _comment_ratchet_check  # noqa: E402
 from acceptance.conventions_ratchet_gate import _conventions_ratchet_check  # noqa: E402
 from acceptance.dead_code_ratchet_gate import _dead_code_ratchet_check  # noqa: E402
-from acceptance.docs_index.index_drift_checks import _docs_index_check  # noqa: E402
+from acceptance.dead_function_gate import _dead_function_unit_check  # noqa: E402
 from acceptance.doc_refs_ratchet_gate import _doc_refs_ratchet_check  # noqa: E402
+from acceptance.docs_index.index_drift_checks import _docs_index_check  # noqa: E402
 from acceptance.docs_ratchet_gate import _docs_ratchet_check  # noqa: E402
+from acceptance.fleet_map.fleet_contracts_checks import _fleet_contracts_check  # noqa: E402
+from acceptance.fleet_map.fleet_guide_checks import _fleet_guide_check  # noqa: E402
 from acceptance.fleet_scope_guard import _fleet_scope_guard_check  # noqa: E402
-from acceptance.instruction_ratchet_gate import _instruction_delta_check, _instruction_ratchet_check  # noqa: E402
+from acceptance.guard_checks.attribution_scan_checks import (
+    _attribution_scan_unit_checks,  # noqa: E402
+)
+from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
+from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
+from acceptance.guard_checks.lane_compact_checks import _lane_compact_unit_checks  # noqa: E402
+from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
+    _safe_kill_force_push_unit_checks,
+    _safe_kill_git_bypass_unit_checks,
+)
+from acceptance.guard_checks.secret_read_checks import _secret_read_unit_checks  # noqa: E402
+from acceptance.guard_checks.venv_guard_checks import (  # noqa: E402
+    _venv_cd_prefix_guard_unit_checks,
+    _venv_git_clean_guard_unit_checks,
+    _venv_junction_guard_unit_checks,
+    _venv_primary_guard_unit_checks,
+)
+from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
+from acceptance.instruction_ratchet_gate import (  # noqa: E402
+    _instruction_delta_check,
+    _instruction_ratchet_check,
+)
+from acceptance.notify_checks.codex_attention_checks import (  # noqa: E402
+    _codex_attention_chief_unit_checks,
+    _codex_attention_unit_checks,
+    _codex_native_probe_unit_checks,
+)
+from acceptance.notify_checks.network_isolation_checks import (  # noqa: E402
+    _notify_network_isolation_unit_checks,
+)
+from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
+    _acceptance_audit_wiring_check,
+    _chief_wake_check,
+    _gate_evidence_wiring_check,
+    _issue_comments_read_check,
+    _manual_compact_never_gated_check,
+    _skill_doc_links_check,
+    _skill_git_rules_check,
+    _unattended_worktree_mandate_check,
+)
 from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
     _runtime_write_probe_check,
     _runtime_write_ratchet_check,
@@ -186,8 +189,9 @@ from acceptance.spawn_scanner import (  # noqa: E402
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
 from acceptance.structure_ratchet_gate import _structure_ratchet_check  # noqa: E402
-from acceptance.wire_checks.tool_id_leak_scanner import _tool_id_leak_unit_check  # noqa: E402
+from acceptance.system_map_coverage import _system_map_coverage_check  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
+from acceptance.wire_checks.tool_id_leak_scanner import _tool_id_leak_unit_check  # noqa: E402
 
 _RATCHET_CHECKS = (
     _static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check, _comment_ratchet_check,

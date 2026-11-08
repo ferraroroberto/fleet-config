@@ -12,12 +12,9 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from _suite import AUD, CFG, REPO, RULES, SKILL, SKILL_GOOD, _h, check, pa, write  # noqa: E402
-
-
 # ---- skill evals (#1130): argv, verdict tiers, honest errors, wrapper, the 9 pilot cases ----
-
 import eval_rotation as er  # noqa: E402
+from _suite import AUD, CFG, REPO, RULES, SKILL, SKILL_GOOD, _h, check, pa, write  # noqa: E402
 
 ev_argv = er.eval_argv("claude", Path("w"), "m", "j", Path("o"), "none", runs=2)
 check("--no-publish" in ev_argv and ev_argv[ev_argv.index("--max-cost-usd") + 1] == "10",

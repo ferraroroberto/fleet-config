@@ -17,8 +17,8 @@ import json
 import re
 import struct
 import uuid
-from fnmatch import fnmatch
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple

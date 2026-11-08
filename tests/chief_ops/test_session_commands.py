@@ -5,16 +5,15 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_s
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import os
 import shutil
 import tempfile
-from pathlib import Path
-import contextlib
-import io
 import time
+from pathlib import Path
 
 from _suite import _exchange_columns, _h, check, co  # noqa: E402
-
 
 # ---- say/stop resolve the prefix too (fleet-config#681) ----------------------
 # `board`/`sessions` only ever print the 8-char prefix, so that is the only
@@ -328,6 +327,7 @@ finally:
 
 def _run_escalate_with_hung_send():
     import subprocess
+
     from chief import commands as chief_commands
 
     seen = {}

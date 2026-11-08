@@ -5,9 +5,10 @@ import sys
 from pathlib import Path
 
 from _suite import REPO, STATE, _h, _walk_failure, _walk_run, check, interp, scaffold
-from design_review import capture, evaluate as ev, measure, rubric as rb
+from design_review import capture, measure
+from design_review import evaluate as ev
+from design_review import rubric as rb
 from design_review_support import FIX, RUBRIC, rubric
-
 
 run_dir = STATE / "fixture-run"
 proc = subprocess.run(

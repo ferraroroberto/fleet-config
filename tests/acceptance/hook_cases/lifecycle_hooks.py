@@ -8,7 +8,6 @@ from typing import List
 from acceptance.hook_cases import Case
 from acceptance.shared import REPO
 
-
 # notify_on_idle
 NOTIFY_ON_IDLE_CASES: List[Case] = [
     # fleet-config itself has no per-project telegram_chat in projects.toml, but

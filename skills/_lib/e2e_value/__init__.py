@@ -105,12 +105,12 @@ from pathlib import Path
 # `fleet_toml` and `git_run` are top-level modules beside this package in skills/_lib.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from .sources import *  # noqa: E402,F401,F403
-from .measures import *  # noqa: E402,F401,F403
+from .budget import *  # noqa: E402,F401,F403
 from .fit import *  # noqa: E402,F401,F403
-from .waits import *  # noqa: E402,F401,F403
+from .measures import *  # noqa: E402,F401,F403
+from .parallel import *  # noqa: E402,F401,F403
 from .report import *  # noqa: E402,F401,F403
 from .routing import *  # noqa: E402,F401,F403
-from .parallel import *  # noqa: E402,F401,F403
-from .budget import *  # noqa: E402,F401,F403
+from .sources import *  # noqa: E402,F401,F403
 from .sources import _wall_s  # noqa: E402,F401  (tests/e2e_value/test_e2e_value.py calls it)
+from .waits import *  # noqa: E402,F401,F403

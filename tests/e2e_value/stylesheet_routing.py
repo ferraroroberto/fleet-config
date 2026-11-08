@@ -1,7 +1,6 @@
 from _suite import check, v
 from routing_report import rr
 
-
 # ---- stylesheet-aware routing (fleet-config#1033) ------------------------------------------------------
 # A sheet-aware classifier (project-scaffolding#289's shape, reduced): `changed_selectors` diffs two
 # texts line by line, any line holding `UNSAFE` poisons the sheet, and `classify` narrows a diff to the

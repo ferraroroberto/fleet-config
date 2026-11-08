@@ -17,7 +17,6 @@ from .css import strip_comments
 from .files import is_third_party, read_text, rel
 from .rules import GLYPH_ICON_CLASS
 
-
 _STANDALONE_MEDIA_RE = re.compile(r"@media[^{]*display-mode:\s*standalone[^{]*\{")
 
 

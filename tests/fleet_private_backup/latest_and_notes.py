@@ -3,10 +3,9 @@ import shutil
 import sys
 from pathlib import Path
 
+import backup as bp
 from _suite import _write, check, tmp
 from selection_rules import fleet, repo
-import backup as bp
-
 
 # ---- cross-volume preflight -------------------------------------------
 check(bp._same_volume(tmp, tmp / "child"), "volume: two temp paths share a volume")

@@ -57,9 +57,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from git_run import run_git  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
+from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+
 from dead_code import start_beacon  # noqa: E402
 
 SCHEMA = 1

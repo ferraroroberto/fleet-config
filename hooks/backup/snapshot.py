@@ -11,8 +11,8 @@ leg, not the other way round.
 from __future__ import annotations
 
 import contextlib
-import logging
 import hashlib
+import logging
 import os
 import random
 import shutil

@@ -9,11 +9,11 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from fleet_core import fleet_toml
 import git_run
+from fleet_core import fleet_toml
 
-from .sources import e2e_table, GIT_TIMEOUT_S, load_state, repo_slug, _gather
 from .measures import is_e2e
+from .sources import GIT_TIMEOUT_S, _gather, e2e_table, load_state, repo_slug
 
 __all__ = [
     "GROWTH_THRESHOLD",

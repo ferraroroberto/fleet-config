@@ -10,7 +10,6 @@ from typing import Dict, Optional
 
 from .common import ALWAYS_ON_KINDS, NEUTRAL
 
-
 # ---- rules ----------------------------------------------------------------------
 
 _RULE_HEAD = re.compile(r"^### (R-\d{2}) (.+?)\s+tags:\s*(.+)$")

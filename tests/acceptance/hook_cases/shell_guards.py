@@ -7,7 +7,6 @@ from typing import List
 from acceptance.hook_cases import Case
 from acceptance.shared import REPO
 
-
 # venv_discipline
 VENV_CASES: List[Case] = [
     ("venv: python -m venv venv -> block",

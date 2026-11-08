@@ -22,9 +22,10 @@ os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="wc-state-")
 os.environ.pop("FLEET_PROJECTS_TOML", None)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "skills" / "_lib"))
-from worktree import service_probe as sp  # noqa: E402
 import worktree_claim as wc  # noqa: E402
-from worktree import claim as wclaim, gitops as wgit  # noqa: E402
+from worktree import claim as wclaim  # noqa: E402
+from worktree import gitops as wgit
+from worktree import service_probe as sp  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402

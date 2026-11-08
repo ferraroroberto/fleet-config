@@ -9,7 +9,6 @@ import tomllib
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = importlib.util.spec_from_file_location("session_retention", ROOT / "session_retention.py")
 assert SPEC and SPEC.loader

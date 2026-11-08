@@ -30,12 +30,12 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import git_run  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
-from worktree import service_probe  # noqa: E402
 from design_review.capture import probe_listening, resolve_interpreter, target_commit  # noqa: E402
 from design_review.filing import repo_slug  # noqa: E402
 from design_review.plan import BadFleetToml, PlanError, resolve_target  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from worktree import service_probe  # noqa: E402
 
 from . import http_probe, report, stamping  # noqa: E402
 
@@ -288,6 +288,8 @@ def main(argv: Optional[list] = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if a.cmd == "sweep":
-        from .sweep import dispatch_sweep  # sweep imports this module, so it loads on use
+        from .sweep import (
+            dispatch_sweep,  # sweep imports this module, so it loads on use
+        )
         return dispatch_sweep(a)
     return cmd_measure(a) if a.cmd == "measure" else cmd_file(a)

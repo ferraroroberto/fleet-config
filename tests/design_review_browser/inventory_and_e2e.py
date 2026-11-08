@@ -5,9 +5,10 @@ import sys
 from pathlib import Path
 
 from _suite import REPO, STATE, _h, _walk_run, check, interp, scaffold
-from design_review import capture, evaluate as ev, measure
-from design_review_support import FIX, RUBRIC, rubric, specs as _specs
-
+from design_review import capture, measure
+from design_review import evaluate as ev
+from design_review_support import FIX, RUBRIC, rubric
+from design_review_support import specs as _specs
 
 # inventory over the scaffold's own component gallery, served read-only from its checkout (#1497)
 _demo_dir = scaffold / "app" / "webapp" / "static" / "_vendored"
@@ -15,7 +16,9 @@ _inv_cat = capture.vendored_components(str(scaffold))
 if not (_demo_dir / "demo.html").is_file() or _inv_cat["components"] is None:
     _h.skip(f"browser leg: no project-scaffolding demo.html or component catalog ({_inv_cat['error']}) -- inventory NOT verified")
 else:
-    import functools, http.server, threading
+    import functools
+    import http.server
+    import threading
     class _InvQuiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a):  # noqa: D401 -- keep the test output clean
             pass

@@ -26,9 +26,9 @@ from config_edit import (  # noqa: E402
     default_codex_config_path,
     inline_comment,
 )
+
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
-
 
 MAIN_MODEL = "gpt-5.6-sol"
 MAIN_EFFORT = "medium"

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from _suite import _log, check, v
 
-
 # ---- parallelisability (step 2) ---------------------------------------------------------------------
 
 check(v.lpt([5, 4, 3, 3], 2) == 8 and v.lpt([5, 4, 3, 3], 4) == 5 and v.lpt([], 3) == 0, "LPT makespans")
@@ -93,6 +92,7 @@ check(ts["verdict"] == "unknown" and "full-tier" in ts["reason"], f"a run routed
 check(v.time_budget(tb, ["tests/e2e"])["verdict"] == "undeclared", "no time_budget_s -> undeclared, not a trigger")
 
 import os  # noqa: E402
+
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tb / "state")
 check(v.read_audit_record(tb) is None, "no record before the first audit")
 rec_path = v.write_audit_record(tb, 40, 120)

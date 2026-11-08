@@ -22,7 +22,6 @@ from typing import List, Tuple
 from acceptance.shared import REPO, _Checker, gate_projects_toml
 from acceptance.system_map_coverage import _repo_tables
 
-
 # A tree-entry line names exactly one path token right after its box-drawing
 # prefix (`├── `, `└── `, or a `│   ` continuation for a nested entry) --
 # everything past the run of whitespace that follows is a trailing comment,

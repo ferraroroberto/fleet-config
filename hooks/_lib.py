@@ -324,16 +324,31 @@ def repair_mojibake(text: Optional[str]) -> Optional[str]:
 
 from hook_wire.harness_wire import (  # noqa: E402
     AGENT_HINT_KEY as AGENT_HINT_KEY,
+)
+from hook_wire.harness_wire import (
     allow as allow,
+)
+from hook_wire.harness_wire import (
     block as block,
+)
+from hook_wire.harness_wire import (
     normalize_payload as normalize_payload,
+)
+from hook_wire.harness_wire import (
     payload_agent as payload_agent,
+)
+from hook_wire.harness_wire import (
     read_stdin_json as read_stdin_json,
+)
+from hook_wire.harness_wire import (
     rewrite_command as rewrite_command,
+)
+from hook_wire.harness_wire import (
     shell_is_ambiguous as shell_is_ambiguous,
+)
+from hook_wire.harness_wire import (
     warn as warn,
 )
-
 
 # ------------------------------------------------------------ JSONL records
 
@@ -826,10 +841,13 @@ def command_string(payload: Dict[str, Any]) -> str:
 
 from hook_wire.edit_events import (  # noqa: E402
     EditEvent as EditEvent,
+)
+from hook_wire.edit_events import (
     EditTarget as EditTarget,
+)
+from hook_wire.edit_events import (
     edit_event as edit_event,
 )
-
 
 # ----------------------------------------------------------- projects.toml
 #
@@ -839,23 +857,45 @@ from hook_wire.edit_events import (  # noqa: E402
 # `_lib.detect_project`, etc. keep working unchanged for every existing hook
 # import. registry.py has no dependency on `_lib`, so this import carries no
 # ordering hazard.
-
 from hook_wire.registry import (  # noqa: E402
     BOARD_URL_ENV_VAR as BOARD_URL_ENV_VAR,
+)
+from hook_wire.registry import (
     DOTENV_PATH_ENV_VAR as DOTENV_PATH_ENV_VAR,
+)
+from hook_wire.registry import (
     PROJECTS_TOML as PROJECTS_TOML,
+)
+from hook_wire.registry import (
     PROJECTS_TOML_ENV_VAR as PROJECTS_TOML_ENV_VAR,
+)
+from hook_wire.registry import (
     PROJECTS_TOML_EXAMPLE as PROJECTS_TOML_EXAMPLE,
+)
+from hook_wire.registry import (
     GlobalConfig as GlobalConfig,
+)
+from hook_wire.registry import (
     ProjectConfig as ProjectConfig,
+)
+from hook_wire.registry import (
     Registry as Registry,
+)
+from hook_wire.registry import (
     detect_project as detect_project,
+)
+from hook_wire.registry import (
     load_registry as load_registry,
+)
+from hook_wire.registry import (
     projects_toml_path as projects_toml_path,
+)
+from hook_wire.registry import (
     resolve_board_url as resolve_board_url,
+)
+from hook_wire.registry import (
     resolve_notify_target as resolve_notify_target,
 )
-
 
 # ------------------------------------------------------------------- .venv
 

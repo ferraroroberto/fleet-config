@@ -28,6 +28,7 @@ The names below are the public surface the `tests/prompt_audit/` suites drive.
 
 from __future__ import annotations
 
+from .cli import main
 from .common import (
     NEUTRAL,
     RULES_MD,
@@ -36,17 +37,6 @@ from .common import (
     rules_rubric,
     sha12,
 )
-from .sources import diff_source, extract_marker
-from .inventory import (
-    Entry,
-    inventory,
-    references,
-    sections,
-)
-from .rules import parse_rules, verdict_cap
-from .leads import LeadsError, claim_id, load_leads, resolve as resolve_leads, suggestions_comment
-from .leads import mark as mark_lead, digest_lines as lead_digest_lines
-from .evals import digest_lines as eval_digest_lines, fold as fold_evals, latest_two
 from .coverage import (
     cache_page,
     cited_sections,
@@ -58,22 +48,7 @@ from .coverage import (
     page_sections,
     pages_dir,
 )
-from .lint import (
-    ASSIST_RULES,
-    LINT_RULES,
-    LintResult,
-    mcp_vocabulary,
-    hits_line,
-    lint_entry,
-)
 from .dedup import dedup
-from .state import load_state, source_due
-from .ledger import (
-    merge_ledger,
-    parse_ledger,
-    plan_scan,
-    render_ledger_body,
-)
 from .digest import (
     partition_run,
     provisional_rules,
@@ -88,7 +63,36 @@ from .drift import (
     parse_drift_body,
     render_drift_item,
 )
-from .cli import main
+from .evals import digest_lines as eval_digest_lines
+from .evals import fold as fold_evals
+from .evals import latest_two
+from .inventory import (
+    Entry,
+    inventory,
+    references,
+    sections,
+)
+from .leads import LeadsError, claim_id, load_leads, suggestions_comment
+from .leads import digest_lines as lead_digest_lines
+from .leads import mark as mark_lead
+from .leads import resolve as resolve_leads
+from .ledger import (
+    merge_ledger,
+    parse_ledger,
+    plan_scan,
+    render_ledger_body,
+)
+from .lint import (
+    ASSIST_RULES,
+    LINT_RULES,
+    LintResult,
+    hits_line,
+    lint_entry,
+    mcp_vocabulary,
+)
+from .rules import parse_rules, verdict_cap
+from .sources import diff_source, extract_marker
+from .state import load_state, source_due
 
 __all__ = [
     "ASSIST_RULES",

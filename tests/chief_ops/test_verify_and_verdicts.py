@@ -5,6 +5,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_v
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -12,11 +14,17 @@ import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import contextlib
-import io
 
-from _suite import REPO, _h, check, co, make_upstream_and_clone, notify_on_idle, run_git, sd  # noqa: E402
-
+from _suite import (  # noqa: E402
+    REPO,
+    _h,
+    check,
+    co,
+    make_upstream_and_clone,
+    notify_on_idle,
+    run_git,
+    sd,
+)
 
 # ---- verify: end-to-end against a throwaway git repo (mirrors test_dirty_tree_check) --
 

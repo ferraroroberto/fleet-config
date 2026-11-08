@@ -111,6 +111,7 @@ for label, no_signal, reason in (
     check(d.used_pct is None and d.resets_at is None, f"unattended + {label} invents no usage or reset")
     check(d.wait_seconds == float(rg.UNKNOWN_WAIT_SECONDS), f"unattended + {label} waits UNKNOWN_WAIT_SECONDS")
 import scheduled_runner  # noqa: E402
+
 check(
     rg.UNKNOWN_WAIT_SECONDS < scheduled_runner.DEFAULT_STALL_TIMEOUT_SECONDS,
     "a silent no-signal pause wait stays under scheduled_runner's stall watchdog",

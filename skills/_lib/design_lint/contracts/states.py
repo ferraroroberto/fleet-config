@@ -12,7 +12,6 @@ from typing import Dict, List
 
 from ._ctx import _ContractsCtx, _loc_at, _result
 
-
 _LIFECYCLE_VOCAB = {"loading", "ready", "empty", "stale", "error"}
 # shadcn-convention interaction states ride the same data-state attribute but
 # are a different channel from the async lifecycle — never lifecycle strays.

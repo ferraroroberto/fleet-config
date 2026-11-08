@@ -107,12 +107,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import git_run  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 import e2e_value  # noqa: E402
+import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
-from ux_surface import fenced_mask, parse_ux_surface_block  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
+from ux_surface import fenced_mask, parse_ux_surface_block  # noqa: E402
 
 ensure_utf8_stdio()
 

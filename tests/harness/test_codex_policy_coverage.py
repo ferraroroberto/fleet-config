@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 HOOKS = REPO / "hooks"
@@ -19,7 +19,6 @@ from probe_codex_policies import (  # noqa: E402
     project_control_observed,
     successful_file_change_observed,
 )
-
 
 failures = 0
 

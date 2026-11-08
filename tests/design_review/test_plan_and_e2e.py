@@ -10,16 +10,25 @@ import sys
 from pathlib import Path
 
 from _suite import STATE, _h, check  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
-
-from design_review import capture, evaluate as ev, measure, plan  # noqa: E402
+from design_review import capture, measure, plan  # noqa: E402
+from design_review import evaluate as ev
 from design_review import report as report_mod  # noqa: E402
 from design_review_support import (  # noqa: E402
-    FIX, rubric,
-    doc as _doc, out_c, port_open as _port_open,
-    specs as _specs, statuses_c,
+    FIX,
+    out_c,
+    rubric,
+    statuses_c,
 )
-
+from design_review_support import (
+    doc as _doc,
+)
+from design_review_support import (
+    port_open as _port_open,
+)
+from design_review_support import (
+    specs as _specs,
+)
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 # ---- plan: target resolution from projects.toml + .fleet.toml ----------------
 
@@ -82,6 +91,7 @@ except plan.PlanError as exc:
     check("no `port` in its .fleet.toml" in str(exc), f"the refusal names both places it looked -- {exc}")
 import socket as _socket  # noqa: E402
 import threading as _threading  # noqa: E402
+
 _srv = _socket.socket()
 _srv.bind(("127.0.0.1", 0))
 _srv.listen(1)
@@ -480,6 +490,7 @@ check((_e_ok["tree"] or {}).get("state") == "unchecked" and "not read" in _e_ok[
 
 import contextlib  # noqa: E402
 import io  # noqa: E402
+
 from design_review import cli as _cli  # noqa: E402
 
 

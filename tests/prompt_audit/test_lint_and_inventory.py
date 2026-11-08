@@ -13,8 +13,25 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from _suite import AUD, CFG, CLEAN, GLOBAL, PLANTED, REPO, RULES, SKILL_BAD, SKILL_GOOD, _h, by_rule, check, entry_for, pa, rub, run, write  # noqa: E402
-
+from _suite import (  # noqa: E402
+    AUD,
+    CFG,
+    CLEAN,
+    GLOBAL,
+    PLANTED,
+    REPO,
+    RULES,
+    SKILL_BAD,
+    SKILL_GOOD,
+    _h,
+    by_rule,
+    check,
+    entry_for,
+    pa,
+    rub,
+    run,
+    write,
+)
 
 # ---- lint: planted counts are exact, clean yields nothing ----
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-
 SHAPE_WEIGHT = {"large": 3, "medium": 2, "small": 1}
 
 

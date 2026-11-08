@@ -14,7 +14,6 @@ from typing import Any, Collection, Dict, List, Mapping, Optional, Tuple
 from fleet_core import fleet_repo_scan
 from owner_check import block as owner_block
 
-
 # Worker cap used when the launcher's /api/board/chief/settings carries no
 # `worker_cap`. The 3 is the default the /chief SKILL.md documents ("default
 # cap 3") and has been in this helper since it was extracted. An

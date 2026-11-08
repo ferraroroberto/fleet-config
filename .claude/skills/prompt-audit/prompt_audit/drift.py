@@ -9,9 +9,8 @@ import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from .common import HOME_REPO, LEDGER_REPO, MASTER_REPO, clean, sha12
-from .lint import body_start
 from .dedup import dedup, norm_line
-
+from .lint import body_start
 
 # ---- prompt-drift cleanup issues ------------------------------------------------
 

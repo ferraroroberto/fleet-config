@@ -5,16 +5,15 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_d
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import json
 import os
 import shutil
 import tempfile
 from pathlib import Path
-import contextlib
-import io
-import json
 
 from _suite import _CHIEF_SID, _WORKER_SID, _h, _session_card, check, co  # noqa: E402
-
 
 # ---- refuse_dispatch: the three acceptance-criteria refusals -----------------
 

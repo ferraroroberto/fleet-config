@@ -42,7 +42,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
-
 # ---- live-service vocabulary for the fourth land-primary guard -----
 #
 # What a liveness probe established, kept as three states rather than a

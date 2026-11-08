@@ -10,6 +10,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
 from ui_proof import capture_run, merge_gate, proof, store, walkthrough  # noqa: E402
 
 

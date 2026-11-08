@@ -282,6 +282,7 @@ def _manual_compact_never_gated_check() -> Tuple[int, int]:
     on the prompt path lets a bare `/compact` through untouched. Returns
     (failures, total)."""
     import tempfile as _tempfile
+
     from acceptance.shared import run
 
     check = _Checker()

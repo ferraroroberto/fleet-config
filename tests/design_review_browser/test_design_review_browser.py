@@ -22,11 +22,11 @@ from acceptance.shared import SKIP_EXIT
 if interp is None:
     _h.skip("browser leg: no sibling .venv with Playwright (project-scaffolding, app-launcher) -- fixture walk NOT verified")
 else:
-    import measure_fixture  # noqa: F401
+    import inventory_and_e2e  # noqa: F401
     import layout_rules  # noqa: F401
+    import measure_fixture  # noqa: F401
+    import popovers_and_walks  # noqa: F401
     import text_rules  # noqa: F401
     import type_and_overlay_rules  # noqa: F401
-    import popovers_and_walks  # noqa: F401
-    import inventory_and_e2e  # noqa: F401
 
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)

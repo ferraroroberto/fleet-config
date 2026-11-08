@@ -16,9 +16,8 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
-
 from design_review import capture, plan  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 sys.path.insert(0, str(REPO / "skills" / "_lib" / "design_review"))
 

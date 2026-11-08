@@ -392,6 +392,7 @@ def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
     check = _Checker()
     sys.path.insert(0, str(HOOKS))
     import _lib  # noqa: E402
+
     from acceptance.hook_matrix import FAKE_AKIA, FAKE_GHP, FAKE_SK, FAKE_XOXB
 
     # Assembled from fragments, like hook_matrix's fakes: `<bot_id>:<35 chars>`.

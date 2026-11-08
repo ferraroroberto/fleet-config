@@ -53,7 +53,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bootstrap_loads  # noqa: E402
 from fleet_core.fleet_repo_scan import fleet_repos, ignored_repos, is_linked_worktree  # noqa: E402
 from fleet_core.frontmatter import frontmatter_error  # noqa: E402
-from fleet_core.skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
+from fleet_core.skill_description import (  # noqa: E402
+    frontmatter_description,
+    prose_words,
+    word_count,
+)
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # The repo whose `skills/` tier is junctioned into every agent home — its

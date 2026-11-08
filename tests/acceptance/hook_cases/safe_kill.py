@@ -6,7 +6,6 @@ from typing import List
 from acceptance.hook_cases import Case
 from acceptance.shared import REPO
 
-
 # safe_kill_guard
 SAFE_KILL_CASES: List[Case] = [
     ("safe_kill: Stop-Process -Name python -> block",

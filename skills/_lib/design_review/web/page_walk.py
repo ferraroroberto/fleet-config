@@ -31,7 +31,6 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import page_js  # noqa: E402
-
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
 DEVICES: Dict[str, Dict[str, Any]] = {

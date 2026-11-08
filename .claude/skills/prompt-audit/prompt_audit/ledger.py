@@ -9,8 +9,15 @@ import json
 import re
 from typing import Dict, Tuple
 
-from .common import AUDIT_ISSUE, BLOCK_MARKER, KIND, LEDGER_CAP, LEDGER_REPO, clean, run_audit_issue
-
+from .common import (
+    AUDIT_ISSUE,
+    BLOCK_MARKER,
+    KIND,
+    LEDGER_CAP,
+    LEDGER_REPO,
+    clean,
+    run_audit_issue,
+)
 
 # ---- ledger ---------------------------------------------------------------------
 

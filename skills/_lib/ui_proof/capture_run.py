@@ -19,6 +19,7 @@ from typing import List, Optional, Tuple
 
 import browser_verify
 from no_window import NO_WINDOW
+
 from ui_proof import store
 
 VIEWPORTS = {"phone": "390x844", "desktop": "1280x900"}

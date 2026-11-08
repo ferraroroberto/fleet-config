@@ -31,9 +31,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+import ux_surface  # noqa: E402
 from design_lint.spec import parse_spec  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-import ux_surface  # noqa: E402
 
 from .. import capture, measure, plan  # noqa: E402
 from ..rubric import Rubric, resolve_params  # noqa: E402

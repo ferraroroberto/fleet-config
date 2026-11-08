@@ -45,8 +45,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
-from grokbot import switch as grok_switch  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+
+from grokbot import switch as grok_switch  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
 

@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import git_run  # noqa: E402
 import structure_ratchet  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
+
 from structure_census import measure, repo_read  # noqa: E402
 
 

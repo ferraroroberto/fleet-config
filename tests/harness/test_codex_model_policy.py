@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = importlib.util.spec_from_file_location("codex_model_policy", ROOT / "codex_model_policy.py")
 assert SPEC and SPEC.loader

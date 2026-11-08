@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .sources import _gather, _test_tree_files
 from .measures import executed_e2e
+from .sources import _gather, _test_tree_files
 
 __all__ = [
     "INFLATION",

@@ -13,15 +13,16 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from _suite import _h, check  # noqa: E402
 import design_lint as dl  # noqa: E402
-
-from throwaway_dir import remove_dir, throwaway_dir  # noqa: E402
+from _suite import _h, check  # noqa: E402
 from design_lint_support import (  # noqa: E402
-    APP_ICON_INDEX, GOOD_CSS, HIT_SPEC_940, PRE_MODAL_HTML,
+    APP_ICON_INDEX,
+    GOOD_CSS,
+    HIT_SPEC_940,
+    PRE_MODAL_HTML,
     legacy_files,
 )
-
+from throwaway_dir import remove_dir, throwaway_dir  # noqa: E402
 
 # ---- vendored byte-compare ----
 

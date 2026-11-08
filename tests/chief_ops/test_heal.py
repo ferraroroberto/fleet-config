@@ -21,7 +21,6 @@ from datetime import timedelta
 from pathlib import Path
 
 from _suite import _h, check, co  # noqa: E402
-
 from chief import heal  # noqa: E402
 from git_fixtures import init_repo  # noqa: E402
 

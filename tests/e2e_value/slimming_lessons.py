@@ -3,7 +3,6 @@ from pathlib import Path
 
 from _suite import _log, check, v
 
-
 # ---- learnings from two slimming lanes (fleet-config#1134) ---------------------------------------------
 
 # A skipped node pays no browser time: home-automation's progress log writes `SKIPPED (setup)` and then

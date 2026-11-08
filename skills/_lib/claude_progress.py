@@ -10,6 +10,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scheduled_runner
 
+
 def __getattr__(name: str) -> Any:
     """Also support import-by-path callers retaining their original module."""
     return getattr(scheduled_runner, name)

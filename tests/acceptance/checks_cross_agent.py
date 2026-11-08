@@ -37,7 +37,6 @@ from acceptance.shared import (
     run,
 )
 
-
 _CODEX_POLICY_COVERAGE = (
     # policy, module, event, matcher, observed Codex status
     ("GitHub body quoting", "gh_body_file_guard", "PreToolUse", "Bash", "advises"),

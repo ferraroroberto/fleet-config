@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
@@ -25,7 +25,12 @@ def main() -> int:
         if args.harness or args.model:
             parser.error("--ownership-only cannot select a provider/model")
         import unittest
-        from test_scheduled_runner import PosixScopeTests, ScheduledRunnerTests, WindowsScopeTests
+
+        from test_scheduled_runner import (
+            PosixScopeTests,
+            ScheduledRunnerTests,
+            WindowsScopeTests,
+        )
         if sys.platform != "win32":
             parser.error("the native ownership probe requires Windows and its real venv")
         loader = unittest.TestLoader()

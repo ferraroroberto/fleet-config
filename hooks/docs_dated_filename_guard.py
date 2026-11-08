@@ -30,7 +30,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # A leading `YYYY-MM-DD-` on the basename (the dated-retrospective shape).
 DATED_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 

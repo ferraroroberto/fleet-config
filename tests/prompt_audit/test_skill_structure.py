@@ -14,7 +14,6 @@ from pathlib import Path
 
 from _suite import AUD, CFG, CLEAN, RULES, _h, by_rule, check, entry_for, pa, write  # noqa: E402
 
-
 # ---- skill structure (#1126): fence length, R-15 frontmatter, R-34..R-37, skill-ref inventory ----
 
 # A four-backtick fence holds three-backtick lines; a toggle-on-every-fence parser lints its middle.

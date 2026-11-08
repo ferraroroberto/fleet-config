@@ -24,6 +24,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
 from structure_census import repo_read  # noqa: E402
 
 log = logging.getLogger("structure_census")

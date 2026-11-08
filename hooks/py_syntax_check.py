@@ -7,9 +7,9 @@ produce explicit unverified feedback instead of silently implying a pass.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402

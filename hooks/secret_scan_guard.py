@@ -59,7 +59,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 from secret_scan import read_sink, shell_paths, tool_sink  # noqa: E402
 
-
 # Staged-diff timeout, a stated bound rather than a measured one: this runs on every commit in every
 # repo, so a hung `git diff --cached` may stall the commit by at most this long, after which `_staged_diff`
 # degrades to scanning just the command string.

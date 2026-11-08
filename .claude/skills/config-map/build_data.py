@@ -51,8 +51,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.frontmatter import frontmatter_field  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

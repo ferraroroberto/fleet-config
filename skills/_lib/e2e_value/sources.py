@@ -11,8 +11,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from fleet_core import fleet_toml
 import git_run
+from fleet_core import fleet_toml
 
 __all__ = [
     "KNOWN_PROJECTIONS",

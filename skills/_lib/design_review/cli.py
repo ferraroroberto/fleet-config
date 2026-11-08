@@ -85,7 +85,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from . import capture, evaluate, filing, fleet, inventory, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
+from . import (  # noqa: E402
+    capture,
+    evaluate,
+    filing,
+    fleet,
+    inventory,
+    judgment,
+    ledger,
+    measure,
+    plan,
+    report,
+)
+from . import rubric as rubric_mod
 from .web import measure_web  # noqa: E402
 
 ensure_utf8_stdio()

@@ -27,15 +27,18 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
+from acceptance.shared import SKIP_EXIT  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
-from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 STATE = Path(throwaway_dir("design-inventory-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 WORK = Path(throwaway_dir("design-inventory-test-work-"))
 
-from design_review import capture, evaluate as ev, filing, fleet, inventory as inv, rubric as rb  # noqa: E402
+from design_review import capture, filing, fleet  # noqa: E402
+from design_review import evaluate as ev
+from design_review import inventory as inv
+from design_review import rubric as rb
 
 _h = CheckHarness()
 check = _h.check

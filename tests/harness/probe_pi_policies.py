@@ -10,9 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0

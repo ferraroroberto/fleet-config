@@ -33,8 +33,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(ROOT / "hooks"))
-from _lib import AGENT_HINT_KEY, NO_WINDOW  # noqa: E402
 import conversation_capture as cc  # noqa: E402 -- for the real _INDEX_DELAY_SECONDS constant
+from _lib import AGENT_HINT_KEY, NO_WINDOW  # noqa: E402
 
 CAPTURE_PY = ROOT / "hooks" / "conversation_capture.py"
 SID = "77777777-7777-4777-8777-777777777777"

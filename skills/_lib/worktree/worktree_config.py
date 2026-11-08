@@ -113,9 +113,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
-from fleet_core.hooks_state import state_dir  # noqa: E402
+
 # The read-modify-write transaction primitives for a shared `hooks/state/`
 # JSON file are `active_issue.py`'s -- the lock,
 # the target-named atomic temp and the tolerant read. Reused rather than
@@ -124,6 +123,8 @@ from fleet_core.hooks_state import state_dir  # noqa: E402
 # `worktree_claim`, so the one-way DAG this module's docstring describes is
 # unaffected.
 from active_issue import read_rows, state_lock, write_rows  # noqa: E402
+from fleet_core import fleet_toml  # noqa: E402
+from fleet_core.hooks_state import state_dir  # noqa: E402
 
 # worktree_residue is a leaf (git_run only), so this module stays import-free
 # of worktree_claim.py, per the module docstring above.

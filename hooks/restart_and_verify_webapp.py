@@ -57,7 +57,6 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 KILL_TIMEOUT_S       = 8
 START_TIMEOUT_S      = 25
 VERIFY_TIMEOUT_S     = 25

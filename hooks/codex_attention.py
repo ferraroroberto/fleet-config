@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import _lib
-from conversation import hub_client
 import notify_on_idle
 import notify_send
+from conversation import hub_client
 
 logger = logging.getLogger("codex_attention")
 

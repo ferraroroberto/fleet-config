@@ -19,12 +19,12 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/design_checks/te
 from __future__ import annotations
 
 import json
-import tomllib
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -32,13 +32,14 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
-from check_harness import CheckHarness  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
-from acceptance.shared import SKIP_EXIT  # noqa: E402
-
 import audit_issue as ai  # noqa: E402
+from acceptance.shared import SKIP_EXIT  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
 from design_lint import accepted as lint_accepted  # noqa: E402
-from design_review import evaluate as ev, filing, fleet, ledger, plan, report, rubric as rb  # noqa: E402
+from design_review import evaluate as ev  # noqa: E402
+from design_review import filing, fleet, ledger, plan, report
+from design_review import rubric as rb
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

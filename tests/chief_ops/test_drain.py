@@ -19,9 +19,8 @@ import time
 import urllib.error
 from pathlib import Path
 
-from _suite import _h, _session_card, check, co  # noqa: E402
-
 import chief_plan  # noqa: E402
+from _suite import _h, _session_card, check, co  # noqa: E402
 from chief import drain  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_drain_"))

@@ -50,8 +50,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(ROOT / "hooks"))
-from _lib import NO_WINDOW  # noqa: E402
 import conversation_capture as cc  # noqa: E402
+from _lib import NO_WINDOW  # noqa: E402
 
 PS = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 DISALLOWED_NAMES = {"node.exe", "node_repl.exe"}

@@ -30,9 +30,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO / "tests"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
-from acceptance import shared  # noqa: E402
 from _lib import NO_WINDOW  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
+
+from acceptance import shared  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

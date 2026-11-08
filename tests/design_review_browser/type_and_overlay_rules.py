@@ -2,8 +2,11 @@ import json
 import subprocess
 
 from _suite import REPO, STATE, _walk_failure, _walk_run, check, interp, scaffold
-from design_review import evaluate as ev, plan
-from design_review_support import FIX, doc as _doc, rubric, specs as _specs
+from design_review import evaluate as ev
+from design_review import plan
+from design_review_support import FIX, rubric
+from design_review_support import doc as _doc
+from design_review_support import specs as _specs
 
 
 # TYPE-07: a heading rendered smaller than the body text under it (#1341)

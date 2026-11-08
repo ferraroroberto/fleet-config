@@ -10,7 +10,6 @@ from typing import Optional
 
 from .common import clean, sha12
 
-
 # ---- freshness gate -------------------------------------------------------------
 
 _DEFAULT_MODEL_LIST = r"including ((?:[^.]|\.\d)+)\."

@@ -5,9 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from _suite import _write, check, tmp
 import backup as bp
-
+from _suite import _write, check, tmp
 
 # =======================================================================
 # The runtime-data leg (fleet-config#724)

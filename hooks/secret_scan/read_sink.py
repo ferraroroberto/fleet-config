@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Optional, Sequence, Tuple
 
 import _lib
+
 from secret_scan import shell_paths
 
 # One `git ls-files` per pattern-matched existing file, on a command the

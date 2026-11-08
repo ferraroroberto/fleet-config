@@ -32,8 +32,8 @@ sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 sys.path.insert(0, str(ROOT / "hooks"))
 
 import _lib as hooks_lib  # noqa: E402
-import codex_attention  # noqa: E402
 import active_issue  # noqa: E402
+import codex_attention  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location(

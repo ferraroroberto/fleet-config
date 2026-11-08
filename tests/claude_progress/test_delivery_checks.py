@@ -12,7 +12,6 @@ from pathlib import Path
 
 from _suite import INIT_LINE, ROOT, TOOL_LINE, _h, check, cp, zero_work_script  # noqa: E402
 
-
 # ---- self-reported zero-work run: ends normally, delivers nothing (fleet-config#519) ----
 
 zero_lines: list[str] = []

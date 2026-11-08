@@ -14,12 +14,18 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from fleet_core import fleet_toml
 import git_run
+from fleet_core import fleet_toml
 from no_window import NO_WINDOW
-from worktree.claim import LOCK_NAME, worktree_path
-from worktree.worktree_config import copy_env_file, copy_root_config, copy_runtime_config, release_ports
 from worktree_residue import WT_SEP
+
+from worktree.claim import LOCK_NAME, worktree_path
+from worktree.worktree_config import (
+    copy_env_file,
+    copy_root_config,
+    copy_runtime_config,
+    release_ports,
+)
 
 # The CLI a stale-worktree hint tells the reader to run.
 _CLI = Path(__file__).resolve().parent.parent / "worktree_claim.py"

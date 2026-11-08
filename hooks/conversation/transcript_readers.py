@@ -6,10 +6,10 @@ See docs/conversation-capture.md for the versioned reader/lineage contract.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from _lib import split_jsonl

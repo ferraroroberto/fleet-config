@@ -20,8 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
 from gate_coverage import reader as ratchet_reader  # noqa: E402
-from structure_census import measure  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
+
+from structure_census import measure  # noqa: E402
 
 REFS = ("origin/main", "origin/master", "HEAD")
 GIT_TIMEOUT_S = 300

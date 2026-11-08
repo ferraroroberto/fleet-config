@@ -142,6 +142,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib as _lib  # noqa: E402  # tests read `backup._lib.NO_WINDOW`
 
+from .cli import (  # noqa: E402
+    _preflight,
+    _same_volume,
+    _worst,
+    collect_repos,
+    main,
+    run,
+    run_leg,
+)
 from .config import (  # noqa: E402
     ARCHIVE_MANIFEST_NAME,
     CLAUDE_SESSIONS_LEG,
@@ -163,15 +172,35 @@ from .config import (  # noqa: E402
     FRESHNESS_UNKNOWN,
     LATEST_DIR,
     MANIFEST_NAME,
+    RUN_MARKER_NAME,
     RUNTIME_DATA_GROUP,
     RUNTIME_DATA_LEG,
-    RUN_MARKER_NAME,
     SESSION_ARCHIVE_DIR,
     BackupConfig,
     RepoOverrides,
     _read_toml,
     load_backup_config,
     load_repo_overrides,
+)
+from .report import _notify_summary, report  # noqa: E402
+from .retention import (  # noqa: E402
+    RESTORE_NOTE_NAME,
+    _index_manifest,
+    _previous_snapshot,
+    audit_session_archive,
+    clear_run_marker,
+    dated_snapshots,
+    freshness,
+    has_run_marker,
+    plan_retention,
+    prune,
+    read_manifest,
+    read_run_marker,
+    rebuild_latest,
+    reconcile_latest,
+    reconcile_session_archive,
+    write_restore_note,
+    write_run_marker,
 )
 from .select import (  # noqa: E402
     Selection,
@@ -196,35 +225,6 @@ from .snapshot import (  # noqa: E402
     snapshot_sqlite,
     verify_sample,
     write_group,
-)
-from .retention import (  # noqa: E402
-    RESTORE_NOTE_NAME,
-    _index_manifest,
-    _previous_snapshot,
-    audit_session_archive,
-    clear_run_marker,
-    dated_snapshots,
-    freshness,
-    has_run_marker,
-    plan_retention,
-    prune,
-    read_manifest,
-    read_run_marker,
-    rebuild_latest,
-    reconcile_latest,
-    reconcile_session_archive,
-    write_restore_note,
-    write_run_marker,
-)
-from .report import _notify_summary, report  # noqa: E402
-from .cli import (  # noqa: E402
-    _preflight,
-    _same_volume,
-    _worst,
-    collect_repos,
-    main,
-    run,
-    run_leg,
 )
 
 logger = logging.getLogger("backup_private")

@@ -6,8 +6,8 @@ import sys
 
 from _suite import REPO, STATE, _walk_run, check, interp, scaffold
 from design_review import plan
-from design_review_support import FIX, RUBRIC, port_open as _port_open
-
+from design_review_support import FIX, RUBRIC
+from design_review_support import port_open as _port_open
 
 # popovers: the walk opens the first popover of each family, every inline disclosure (#1155).
 # 11 targets = 4 menu summaries + Export + row one's 2 items + 2 accordion summaries + their 2 fields;

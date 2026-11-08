@@ -4,22 +4,19 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/worktree_claim/t
 """
 from __future__ import annotations
 
-import shutil
-import subprocess
-import tempfile
-from pathlib import Path
-
-from _suite import _h, check, wc, wgit  # noqa: E402
-
-
 # ---- copy_runtime_config: the worktree gets its OWN port, not the primary's (#537) ----
 #
 # Carrying the primary's port across is what made every worktree lane's e2e
 # suite report a collision with the live tray and refuse to run. Secrets and
 # every other field must still copy verbatim -- the worktree is a faithful
 # runtime twin, differing only where sharing is the bug.
-
 import json as _json
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from _suite import _h, check, wc, wgit  # noqa: E402
 
 port_base = Path(tempfile.mkdtemp(prefix="wc-port-"))
 try:

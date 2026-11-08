@@ -23,7 +23,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 
-from .config import BackupConfig, DB_SUFFIXES, RepoOverrides
+from .config import DB_SUFFIXES, BackupConfig, RepoOverrides
 from .snapshot import is_sqlite_sidecar, snapshot_sqlite
 
 logger = logging.getLogger("backup_private")

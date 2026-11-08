@@ -53,7 +53,8 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from design_lint.spec import parse_spec  # noqa: E402
 
-from .mockups import MOCKUP_IDS, NONE as NO_MOCKUP  # noqa: E402
+from .mockups import MOCKUP_IDS  # noqa: E402
+from .mockups import NONE as NO_MOCKUP
 
 DEFAULT_RUBRIC = Path(__file__).resolve().parent.parent.parent.parent / "design.rubric.toml"
 

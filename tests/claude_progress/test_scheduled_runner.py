@@ -2,11 +2,8 @@
 from __future__ import annotations
 
 import ctypes
-from ctypes import wintypes
-from contextlib import nullcontext
 import json
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -14,13 +11,17 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import nullcontext
+from ctypes import wintypes
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parent.parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import scheduled_runner as runner
-from scheduled.runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
 from scheduled import process_scope
+from scheduled.runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
+
 sys.path.insert(0, str(ROOT / "tests" / "_lib"))
 from orphan_fixtures import held_provider_script, kernel32_handles
 from readiness_clock import ReadinessClock

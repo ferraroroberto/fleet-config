@@ -10,7 +10,6 @@ import tomllib
 import unittest
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parent.parents[1]
 SPEC = importlib.util.spec_from_file_location("codex_statusline", REPO / "codex_statusline.py")
 assert SPEC and SPEC.loader

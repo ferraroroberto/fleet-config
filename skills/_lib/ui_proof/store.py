@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Tuple
 
 import git_run
 from fleet_core import hooks_state
+
 from ui_proof import proof
 
 DIR_NAME = ".proof"

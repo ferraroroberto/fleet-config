@@ -16,7 +16,6 @@ from typing import List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 
-
 SKIP_DIR_PARTS = {".git", ".venv", "node_modules", "__pycache__", "spike", "spikes"}
 
 # A genuinely third-party library vendored for offline use (Leaflet, xterm.js)

@@ -5,14 +5,13 @@ Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
-import datetime as dt
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .common import atomic_write_text
-
 
 # ---- state ----------------------------------------------------------------------
 

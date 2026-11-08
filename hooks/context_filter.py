@@ -19,7 +19,6 @@ from typing import Any, Iterable, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 TOKEN_DIVISOR = 4
 DEFAULT_MAX_LINES = 80
 DEFAULT_MAX_CHARS = 12_000

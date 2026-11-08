@@ -73,13 +73,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
-from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 import index_lock  # noqa: E402
 import untrack_guard  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 from gate_coverage import reader as gate_reader  # noqa: E402
 from gate_coverage import section as gate_section  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 from structure_census import near_limit  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402

@@ -14,7 +14,6 @@ from pathlib import Path
 
 from _suite import CFG, RULES, SKILL, _h, check, pa, rub, run, write  # noqa: E402
 
-
 # ---- scan anyway: a changed guide files the update issue and the scan still runs (#1132) ----
 
 SKILL_CHANGED = "VERDICT=changed|id=anthropic-skill-authoring|sha=y|marker=none|reason=sha x -> y"
