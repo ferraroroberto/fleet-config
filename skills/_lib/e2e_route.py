@@ -213,7 +213,7 @@ GATE_GLOBS = ("scripts/*.ps1", "scripts/*.sh", "scripts/*.bat", "*.ps1", "*.bat"
               ".github/workflows/*.yml", ".github/workflows/*.yaml")
 _SPLIT_RE = re.compile(r"-split\b|\.Split\(|\.split\(|\bread\s+-r?a\b|\bshlex\.split\(", re.IGNORECASE)
 _ASSIGN_RES = (
-    re.compile(r"^\s*\$(\w+)\s*=", re.MULTILINE),          # PowerShell: $e2eTarget = $kv["E2E_PYTEST_TARGET"]
+    re.compile(r"^\s*\$(\w+(?:\.\w+)*)\s*=", re.MULTILINE),  # PowerShell: $e2eTarget = ... or $route.Target = $kv["E2E_PYTEST_TARGET"]
     re.compile(r"^\s*(?:export\s+)?(\w+)=", re.MULTILINE),  # sh: TARGET=${E2E_PYTEST_TARGET}
     re.compile(r"^\s*(\w+)\s*=", re.MULTILINE),             # Python: target = kv["E2E_PYTEST_TARGET"]
 )
@@ -247,9 +247,15 @@ def target_split(text: str) -> Optional[str]:
     if not names:
         return "unknown"
     for name in names:
-        n = re.escape(name)
-        if re.search(rf"\${n}\s+-split\b|\${n}\.Split\(|\b{n}\.split\(|read\s+-r?a\s+\w+\s*<<<\s*\"?\$\{{?{n}\b",
-                     text, re.IGNORECASE):
+        if "." in name:
+            # The object is usually returned from a function and rebound (`$route` -> `$e2e`), so a
+            # property is followed by its name under any variable.
+            n = r"\$\w+\." + re.escape(name.rsplit(".", 1)[1])
+            use = rf"{n}\s+-split\b|{n}\.Split\("
+        else:
+            n = re.escape(name)
+            use = rf"\${n}\s+-split\b|\${n}\.Split\(|\b{n}\.split\(|read\s+-r?a\s+\w+\s*<<<\s*\"?\$\{{?{n}\b"
+        if re.search(use, text, re.IGNORECASE):
             return "yes"
     return "no"
 

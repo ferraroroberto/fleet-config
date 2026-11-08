@@ -233,6 +233,22 @@ check(er.target_split("pytest tests/e2e -q\n") is None, "a gate that never reads
 check(er.target_split("# reads E2E_PYTEST_TARGET\n& $py -m pytest @args\n") is None, "a comment is not a read")
 check(er.target_split('Run-Gate (Get-E2E "E2E_PYTEST_TARGET")\n') == "unknown", "a read this check cannot follow is unknown")
 
+# fleet-config#1943: a gate that parks the target on an object property and splits that property later.
+PROP_BEFORE = (
+    '$route = @{ Tier = "full"; Target = "tests/e2e" }\n'
+    '    $route.Target = $kv["E2E_PYTEST_TARGET"]\n'
+    '$e2eArgs = @($route.Target, "-p", "tests._progress_log")\n'
+)
+PROP_AFTER = PROP_BEFORE.replace('@($route.Target, "-p"', '@($route.Target -split \'\\s+\' | Where-Object { $_ }) + @("-p"')
+PROP_METHOD = PROP_BEFORE.replace('@($route.Target, "-p"', '@($route.Target.Split(" ")) + @("-p"')
+PROP_REBOUND = PROP_AFTER.replace('$route.Target -split', '$e2e.Target -split')  # object returned from a function, rebound
+PROP_OTHER = PROP_AFTER.replace('$route.Target -split', '$route.Reason -split')
+check(er.target_split(PROP_AFTER) == "yes", "a property assignment split later via -split is followed")
+check(er.target_split(PROP_METHOD) == "yes", "a property assignment split later via .Split( is followed")
+check(er.target_split(PROP_BEFORE) == "no", "a property assignment never split is the #784 failure, not ok")
+check(er.target_split(PROP_REBOUND) == "yes", "the property split under a rebound variable (the real gates' shape) is followed")
+check(er.target_split(PROP_OTHER) == "no", "splitting a different property does not count")
+
 SURFACE_CLASSIFIER = 'def route():\n    return Routing("surface", [], " ".join(targets), [], "self")\n'
 with tempfile.TemporaryDirectory() as gd:
     g = Path(gd)
