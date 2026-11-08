@@ -414,7 +414,6 @@ def record(payload: Dict[str, Any], event: str, default_agent: str = "claude", *
            {"excerpt": prompt[:NEEDS_INPUT_EXCERPT_CHARS], "excerpt_source": "prompt"}),
     }
     directory = inbox_dir()
-    # runtime-write-exempt: inbox folder under the hooks state dir
     directory.mkdir(parents=True, exist_ok=True)
     if event == TURN_END and kind is None:
         if _debounced(directory, sid, time.time()):

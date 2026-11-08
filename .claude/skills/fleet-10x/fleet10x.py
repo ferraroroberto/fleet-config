@@ -301,11 +301,9 @@ def _cmd_select(a: argparse.Namespace) -> int:
 
 def _cmd_rundir(a: argparse.Namespace) -> int:
     d = run_dir(dt.date.fromisoformat(a.date) if a.date else dt.date.today())
-    # runtime-write-exempt: run folder under the hooks state dir (run_dir())
     (d / "repos").mkdir(parents=True, exist_ok=True)
     stamp = d / "run.json"
     if not stamp.is_file():
-        # runtime-write-exempt: run folder under the hooks state dir (run_dir())
         stamp.write_text(json.dumps({"started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                                      "quota_start": quota_reading()}), encoding="utf-8")
     print(f"RUN_DIR={d}")

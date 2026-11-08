@@ -110,7 +110,6 @@ def run_dir_for(target_name: str, now: Optional[_dt.datetime] = None) -> Path:
     """`<state>/design-review/<target>/<YYYYMMDDTHHMMSSZ>` — created, outside every tree."""
     stamp = (now or utc_now()).astimezone(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = hooks_state.state_dir() / "design-review" / target_name / stamp
-    # runtime-write-exempt: run folder under the hooks state dir
     path.mkdir(parents=True, exist_ok=True)
     return path
 

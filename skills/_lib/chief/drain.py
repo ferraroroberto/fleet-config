@@ -348,9 +348,7 @@ def remember(path: Path, adds: List[Dict[str, str]]) -> None:
 def write_brief(ref: str, kind: str) -> Path:
     text = BRIEF_TEMPLATE.read_text(encoding="utf-8").replace("__REF__", ref).replace("__KIND__", kind)
     path = state_dir() / BRIEF_DIRNAME / (ref.replace("#", "-") + ".md")
-    # runtime-write-exempt: the lane brief lives in the hooks state directory, never a code folder
     path.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: same hooks-state brief file, read back by the launcher at dispatch
     path.write_text(text, encoding="utf-8")
     return path
 

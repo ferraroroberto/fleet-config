@@ -58,7 +58,6 @@ def start(
     moment = now or datetime.now(timezone.utc)
     waiter_id = waiter_id or uuid.uuid4().hex[:12]
     target = waiters_dir()
-    # runtime-write-exempt: waiters folder under the hooks state dir
     target.mkdir(parents=True, exist_ok=True)
     row = {
         "pid": pid,
