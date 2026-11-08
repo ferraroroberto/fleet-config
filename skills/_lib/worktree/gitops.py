@@ -305,6 +305,7 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     the combined stderr/stdout on failure, empty on success. Pure OS wrapper --
     the caller decides whether a failure is fatal.
     """
+    # runtime-write-exempt: creates the junction at the caller's link path
     link.parent.mkdir(parents=True, exist_ok=True)
     # encoding pinned to the OEM code page: `mklink` is a native console tool
     # and emits cp850 here, which is not valid UTF-8. Under bare text=True the

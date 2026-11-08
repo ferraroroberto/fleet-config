@@ -147,7 +147,9 @@ def _schema_current(conn: sqlite3.Connection) -> bool:
 
 
 def connect(path: Path) -> sqlite3.Connection:
+    # runtime-write-exempt: the caller supplies the search database path
     path.parent.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: the caller supplies the search database path
     conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     if not _schema_current(conn):

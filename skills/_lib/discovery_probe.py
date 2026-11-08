@@ -61,7 +61,9 @@ def _run(args: list[str], cwd: Path, env: Optional[dict[str, str]] = None,
 
 def _skill(scope: Path, name: str) -> None:
     path = scope / ".claude" / "skills" / name
+    # runtime-write-exempt: probe tree built inside the temporary base folder
     path.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: probe tree built inside the temporary base folder
     (path / "SKILL.md").write_text(
         "---\n"
         f"name: {name}\n"
@@ -83,6 +85,7 @@ def _instruction(path: Path, marker: str, minimum_bytes: int = 0,
         lines.append(f"Synthetic padding {index:05d}: harmless instruction-loading fixture only.")
         index += 1
     lines.append(f"EOF_MARKER={marker}")
+    # runtime-write-exempt: probe tree built inside the temporary base folder
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -92,6 +95,7 @@ def _setup(base: Path) -> dict[str, Path]:
     package = repo / "packages" / "api"
     sibling = repo / "packages" / "other"
     for path in (home, repo, package, sibling):
+        # runtime-write-exempt: probe tree built inside the temporary base folder
         path.mkdir(parents=True, exist_ok=True)
     for checkout in (home, repo):
         result = run_git(["-C", str(checkout), "init", "--quiet"], timeout=10)
@@ -291,6 +295,7 @@ def _pi(paths: dict[str, Path]) -> dict[str, Any]:
         return {"client": "pi", "status": "unsupported", "version": version,
                 "scopes": {}, "errors": ["installed DefaultResourceLoader modules not found"]}
     script = paths["home"] / "pi_probe.mjs"
+    # runtime-write-exempt: probe script written inside the temporary home
     script.write_text(
         "import {pathToFileURL} from 'node:url';\n"
         "const [loaderPath, settingsPath, agentDir, ...cwds] = process.argv.slice(2);\n"

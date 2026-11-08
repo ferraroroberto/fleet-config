@@ -404,6 +404,7 @@ def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
         return None
     port = _allocate_port(wt.name.rpartition(WT_SEP)[2], taken, wt, dst.name)
     raw["port"] = port
+    # runtime-write-exempt: edits the config just copied into the worktree
     dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return port
 
@@ -640,6 +641,7 @@ def blank_machine_bound_config(dst: Path, declared_keys: Optional[list],
     else:
         blanked = _blank_default_heuristic(raw, read_safe=frozenset(read_safe_keys or ()))
     if blanked:
+        # runtime-write-exempt: edits the config just copied into the worktree
         dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return blanked
 
@@ -671,6 +673,7 @@ def remove_secret_config(dst: Path, secret_keys: list) -> list:
         del node[last]
         removed.append(dotted)
     if removed:
+        # runtime-write-exempt: edits the config just copied into the worktree
         dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return removed
 
@@ -890,7 +893,9 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
         dst = dst_dir / src.name
         if dst.exists():
             continue
+        # runtime-write-exempt: copies the primary's config into the fresh worktree
         dst_dir.mkdir(exist_ok=True)
+        # runtime-write-exempt: copies the primary's config into the fresh worktree
         shutil.copy2(src, dst)
         copied.append(dst)
         _provision_copied_config(dst, wt, assigned, declared_keys, secret_keys,
@@ -919,6 +924,7 @@ def copy_env_file(repo: Path, wt: Path) -> Optional[Path]:
     dst = wt / ".env"
     if dst.exists():
         return None
+    # runtime-write-exempt: copies the primary's .env into the fresh worktree
     shutil.copy2(src, dst)
     return dst
 
@@ -969,6 +975,7 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
         dst = wt / src.name
         if dst.exists():
             continue
+        # runtime-write-exempt: copies the primary's root config into the fresh worktree
         shutil.copy2(src, dst)
         copied.append(dst)
         _provision_copied_config(dst, wt, assigned, declared_keys, secret_keys,

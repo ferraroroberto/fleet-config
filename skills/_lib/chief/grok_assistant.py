@@ -199,6 +199,7 @@ def guard(home: Path, python: str) -> int:
     """PreToolUse hook body: refuse through the fleet wire so Grok gets its own dialect."""
     sys.path.insert(0, str(REPO / "hooks"))
     import _lib
+    # runtime-write-exempt: log in the assistant home (GROK_ASSISTANT_HOME or ~/.grok-assistant)
     logging.basicConfig(filename=home / "guard.log", level=logging.INFO, format="%(asctime)s %(message)s")
     payload = _lib.read_stdin_json()
     tool, tool_input = _lib.tool_name(payload), _lib.tool_input(payload)
@@ -212,13 +213,17 @@ def guard(home: Path, python: str) -> int:
 
 def lay_out(home: Path, python: str) -> None:
     session = home / "session"
+    # runtime-write-exempt: session folder inside the assistant home
     (session / ".claude").mkdir(parents=True, exist_ok=True)
     commands = "\n".join(f"- `{line}`" for line in read_commands(python))
+    # runtime-write-exempt: session folder inside the assistant home
     (session / "BRIEF.md").write_text(
         BRIEF.format(reply=_posix(session / "reply.md"), commands=commands), encoding="utf-8")
+    # runtime-write-exempt: session folder inside the assistant home
     (session / "reply.md").touch()
     hook = {"type": "command", "command": f"{python} {_posix(Path(__file__))} guard"}
     settings = {"hooks": {"PreToolUse": [{"hooks": [hook]}]}}
+    # runtime-write-exempt: session folder inside the assistant home
     (session / ".claude" / "settings.json").write_text(json.dumps(settings, indent=1), encoding="utf-8")
 
 
@@ -296,6 +301,7 @@ def poll_once(home: Path, state: dict, telegram: Optional[Tuple[Transport, int]]
 
 def poll(home: Path) -> int:
     """The monitor loop: never exits on a transient failure, prints only message lines."""
+    # runtime-write-exempt: poll log and state in the assistant home
     logging.basicConfig(filename=home / "poll.log", level=logging.INFO, format="%(asctime)s %(message)s")
     secret = _load_json(home / "telegram.json", {})
     telegram = None
@@ -309,6 +315,7 @@ def poll(home: Path) -> int:
         try:
             for line in poll_once(home, state, telegram):
                 print(line, flush=True)  # logging-not-print-exempt: the monitor reads stdout lines
+            # runtime-write-exempt: poll log and state in the assistant home
             state_path.write_text(json.dumps(state), encoding="utf-8")
         except (OSError, ValueError) as exc:
             logger.warning("⚠️ poll pass failed: %s", exc)
@@ -317,9 +324,11 @@ def poll(home: Path) -> int:
 
 def ask(home: Path, text: str) -> str:
     inbox = home / "inbox.jsonl"
+    # runtime-write-exempt: inbox in the assistant home
     home.mkdir(parents=True, exist_ok=True)
     count = len(inbox.read_text(encoding="utf-8").splitlines()) if inbox.exists() else 0
     task_id = f"task-{count + 1}"
+    # runtime-write-exempt: inbox in the assistant home
     with inbox.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"id": task_id, "text": text}) + "\n")
     return task_id
@@ -346,6 +355,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps(argv_, indent=1))  # logging-not-print-exempt: CLI output
             return 0
         env = dict(os.environ, GROK_FOLDER_TRUST="0", GROK_ASSISTANT_HOME=str(home))
+        # runtime-write-exempt: session log in the assistant home
         with (home / "session.log").open("a", encoding="utf-8") as log:
             # subprocess-timeout-exempt: foreground runner for the Grok session, which serves until the owner stops it
             return subprocess.run(argv_, cwd=home / "session", env=env, stdout=log,

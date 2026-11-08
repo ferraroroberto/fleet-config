@@ -182,6 +182,7 @@ def cmd_sweep(a: argparse.Namespace) -> int:
         print(f"[{i}/{len(apps)}] {repo} -- {row['state']}" + (f" ({row['reason']})" if row["reason"] else ""))
     digest = render_digest(rows, dormant, _dt.date.today().isoformat(), left_out(only=a.only))
     out = hooks_state.state_dir() / "perf-review" / f"sweep-{_dt.datetime.now(_dt.timezone.utc):%Y%m%dT%H%M%SZ}.md"
+    # runtime-write-exempt: result file under the hooks state dir
     out.parent.mkdir(parents=True, exist_ok=True)
     hooks_state.atomic_write_text(out, digest)
     print(digest)
@@ -199,6 +200,7 @@ def default_out_path() -> Path:
     `fleet_audit_scan.default_out_path`.
     """
     base = hooks_state.state_dir() / "perf-review"
+    # runtime-write-exempt: sentinel folder under the hooks state dir
     base.mkdir(parents=True, exist_ok=True)
     return base / f"sweep-result-{os.getpid()}-{time.time_ns()}.json"
 
@@ -207,8 +209,10 @@ def write_result(out_path: Path, payload: dict) -> None:
     """Atomically publish `payload` as JSON to `out_path` — the same temp-then-rename discipline
     `fleet_audit_scan.write_result` uses, so a poller can never observe a partially written file.
     """
+    # runtime-write-exempt: result file is the caller's out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    # runtime-write-exempt: result file is the caller's out_path
     tmp.write_text(json.dumps(payload), encoding="utf-8")
     tmp.replace(out_path)
 
@@ -235,8 +239,10 @@ def launch_detached(child_argv: List[str], log_path: Path) -> int:
     independent, console-less process that outlives this call — the `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` pattern
     `fleet_audit_scan.launch_detached` already uses for the same reason. Does not wait for the child; returns its pid.
     """
+    # runtime-write-exempt: detached run's log is the caller's log_path
     log_path.parent.mkdir(parents=True, exist_ok=True)
     pkg_dir = Path(__file__).resolve().parent
+    # runtime-write-exempt: detached run's log is the caller's log_path
     with open(log_path, "wb") as log_file:
         proc = subprocess.Popen(
             [sys.executable, str(pkg_dir), *child_argv],

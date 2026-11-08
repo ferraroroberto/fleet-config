@@ -150,6 +150,7 @@ def try_acquire(mode: str, repo: str, folder: Optional[Path] = None,
     name = f"{mode}.{os.getpid()}.{uuid.uuid4().hex}.json"
     marker = folder / name
     try:
+        # runtime-write-exempt: marker folder is the caller's folder, default lock_dir()
         folder.mkdir(parents=True, exist_ok=True)
         atomic_write_text(marker, json.dumps({
             "pid": os.getpid(), "repo": repo, "mode": mode,

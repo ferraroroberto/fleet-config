@@ -314,7 +314,9 @@ def cmd_capture(source: str, label: str, out: Optional[Path]) -> None:
     if out is None:
         print(payload)
     else:
+        # runtime-write-exempt: capture file named by the --out argument
         out.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: capture file named by the --out argument
         out.write_text(payload + "\n", encoding="utf-8")
     # Status goes to stderr so `capture` can pipe its JSON straight to a file.
     print(f"STATUS={'CAPTURED' if run.total is not None else 'UNKNOWN'}", file=sys.stderr)

@@ -276,6 +276,7 @@ def fetch_artefacts(base: str, run_id: str, out_dir: Path, mid: str) -> dict[str
                         timeout=REPORT_TIMEOUT_S)
     if status == 200:
         path = out_dir / f"{mid}.md"
+        # runtime-write-exempt: artefacts go in the caller's out_dir (the run folder)
         path.write_bytes(body)
         files["report"] = str(path)
 
@@ -283,6 +284,7 @@ def fetch_artefacts(base: str, run_id: str, out_dir: Path, mid: str) -> dict[str
                         timeout=REPORT_TIMEOUT_S)
     if status == 200:
         path = out_dir / f"{mid}.json"
+        # runtime-write-exempt: artefacts go in the caller's out_dir (the run folder)
         path.write_bytes(body)
         files["export"] = str(path)
 
@@ -290,6 +292,7 @@ def fetch_artefacts(base: str, run_id: str, out_dir: Path, mid: str) -> dict[str
                         timeout=REPORT_TIMEOUT_S)
     if status == 200:
         path = out_dir / f"{mid}.drift.json"
+        # runtime-write-exempt: artefacts go in the caller's out_dir (the run folder)
         path.write_bytes(body)
         files["drift"] = str(path)
 
@@ -350,7 +353,9 @@ def active_path(root: Path) -> Path:
 
 def mark_active_run(root: Path, run_date: str, out_dir: Path) -> None:
     """Persist the run date `start` resolved, so nothing recomputes it."""
+    # runtime-write-exempt: the marker sits at the caller's ledger root by design
     root.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: the marker sits at the caller's ledger root by design
     active_path(root).write_text(
         json.dumps({"run_date": run_date, "out_dir": str(out_dir)}, indent=2),
         encoding="utf-8")
@@ -395,7 +400,9 @@ def load_state(out_dir: Path) -> dict:
 
 
 def save_state(out_dir: Path, state: dict) -> None:
+    # runtime-write-exempt: the state file sits in the caller's out_dir (the run folder)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: the state file sits in the caller's out_dir (the run folder)
     state_path(out_dir).write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 

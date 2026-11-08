@@ -533,8 +533,10 @@ def table(doc: Dict[str, Any]) -> str:
 
 def _write_output(folder: Path, name: str, doc: Dict[str, Any]) -> Path:
     """The tool's only write: machine-local state, never the target repo."""
+    # runtime-write-exempt: machine-local state folder the caller passes, never the target repo
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name
+    # runtime-write-exempt: machine-local state folder the caller passes, never the target repo
     path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return path
 

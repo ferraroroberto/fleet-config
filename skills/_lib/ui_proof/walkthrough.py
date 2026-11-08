@@ -127,6 +127,7 @@ def build(repo: Path, repo_name: str, pr: int, criteria: Dict[str, List[str]], n
     data["utc"] = store.utc_now()
     store.save_data(folder, data)
     page = folder / store.PAGE_NAME
+    # runtime-write-exempt: index page in the PR folder inside .proof/
     page.write_text(render(repo_name, pr, data, folder), encoding="utf-8")
     store.update_index(folder.parent, pr, {"title": data.get("title"), "issue": data.get("issue"),
                                            "merge_sha": data.get("merge_sha"), "utc": data["utc"],

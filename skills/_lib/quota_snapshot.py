@@ -200,6 +200,7 @@ def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:
     """
     source = validate_source(raw)
     folder = (directory or state_dir()) / "quota-v1"
+    # runtime-write-exempt: shard folder under the hooks state dir or the caller's directory
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / (source["producer"] + ".json")
     text = json.dumps(source, ensure_ascii=True, allow_nan=False, separators=(",", ":"))

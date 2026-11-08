@@ -138,10 +138,12 @@ def atomic_write_text(
 def append_jsonl_rotating(
     path: Path, record: dict, max_bytes: int, *, ensure_ascii: bool = True, sort_keys: bool = False) -> None:
     """Best-effort append to ``path`` as JSONL, rotating it past ``max_bytes`` to ``<path>.1``."""
+    # runtime-write-exempt: the caller names the JSONL log
     path.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(OSError):
         if path.stat().st_size > max_bytes:
             os.replace(path, path.with_suffix(path.suffix + ".1"))
+    # runtime-write-exempt: the caller names the JSONL log
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=ensure_ascii, sort_keys=sort_keys) + "\n")
 

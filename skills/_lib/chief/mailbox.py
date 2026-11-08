@@ -184,6 +184,7 @@ def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
     dropped = 0
     for path in _event_files(inbox):
         _, event_id = _split_event_name(path.name)
+        # runtime-write-exempt: claimed/ folder inside the chief inbox the caller passes
         claimed.mkdir(exist_ok=True)
         held = claimed / f"{moment}-{event_id}.json"
         try:

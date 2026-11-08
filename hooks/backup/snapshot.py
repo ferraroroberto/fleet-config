@@ -98,6 +98,7 @@ def snapshot_sqlite(src: Path, dst: Path,
     its own failure state; a database that could not be snapshotted must never
     look like one that simply was not there.
     """
+    # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
     dst.parent.mkdir(parents=True, exist_ok=True)
     base = src.resolve().as_uri()
     busy = min(timeout, _BACKUP_BUSY_SLICE_SECONDS)
@@ -120,11 +121,13 @@ def snapshot_sqlite(src: Path, dst: Path,
         with contextlib.suppress(OSError):
             dst.unlink()
         try:
+            # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
             source = sqlite3.connect(uri, uri=True, timeout=busy)
         except sqlite3.Error as exc:
             last = exc
             continue
         try:
+            # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
             target = sqlite3.connect(str(dst), timeout=busy)
             try:
                 source.backup(target, pages=_BACKUP_PAGES_PER_STEP, progress=on_step)
@@ -189,6 +192,7 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
         target = snapshot_dir / group / rel
         try:
             digest = sha256_file(abs_path)
+            # runtime-write-exempt: files go into the backup snapshot folder
             target.parent.mkdir(parents=True, exist_ok=True)
             # Idempotent per target: a re-run on the same date, or a retry after a
             # partial run, must overwrite rather than fail. `os.link` refuses an
@@ -202,6 +206,7 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
                 os.link(prev_file, target)
                 linked += 1
             else:
+                # runtime-write-exempt: files go into the backup snapshot folder
                 shutil.copy2(abs_path, target)
                 # Native JSONL histories are append-only but live. They can
                 # change after the source hash and before/during copy, so the

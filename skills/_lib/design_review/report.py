@@ -660,6 +660,8 @@ def render_report(doc: dict) -> str:
 
 def write_report(doc: dict, out: Path) -> Path:
     out = Path(out)
+    # runtime-write-exempt: report goes to the caller's out path
     out.parent.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: report goes to the caller's out path
     out.write_text(render_report(doc), encoding="utf-8")
     return out

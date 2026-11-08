@@ -378,6 +378,7 @@ def select_codex_sessions(cfg: BackupConfig, staging: Path) -> Selection:
             snapshot_sqlite(source_db, target)
             sel.files.append((target, source_db.name, target.stat().st_size))
             if source_db.name.startswith("state_"):
+                # runtime-write-exempt: staging folder inside the backup snapshot
                 connection = sqlite3.connect(f"file:{target.as_posix()}?mode=ro", uri=True)
                 try:
                     rows = connection.execute(

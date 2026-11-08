@@ -111,7 +111,9 @@ FAKE_INBOX = 'Start-Sleep -Seconds 15\nWrite-Output "INBOX owner: status please"
 def _write_probe_folder(folder: Path) -> None:
     """Lay down the probe hook, its settings and the fake inbox script."""
     hook = folder / "probe_hook.py"
+    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
     hook.write_text(HOOK_SOURCE, encoding="utf-8")
+    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
     (folder / "fake_inbox.ps1").write_text(FAKE_INBOX, encoding="utf-8")
     base = f"{Path(sys.executable).as_posix()} {hook.as_posix()}"
     settings = {"hooks": {
@@ -120,7 +122,9 @@ def _write_probe_folder(folder: Path) -> None:
         "PreToolUse": [{"matcher": "AskUserQuestion",
                         "hooks": [{"type": "command", "command": f"{base} Ask"}]}],
     }}
+    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
     (folder / ".claude").mkdir()
+    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
     (folder / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
 
 

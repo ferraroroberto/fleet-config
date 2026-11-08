@@ -313,8 +313,10 @@ def write_result(out_path: Path, payload: dict) -> None:
     already exists — so this is safe even against a stale sentinel left by a
     prior crashed run at the same path.
     """
+    # runtime-write-exempt: result file is the caller's out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    # runtime-write-exempt: result file is the caller's out_path
     tmp.write_text(json.dumps(payload), encoding="utf-8")
     tmp.replace(out_path)
 
@@ -344,7 +346,9 @@ def launch_detached(child_argv: list[str], log_path: Path) -> int:
     hook's own exit (`hooks/restart_and_verify_webapp.py`'s `_start_tray`).
     Does not wait for the child; returns its pid.
     """
+    # runtime-write-exempt: detached run's log is the caller's log_path
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: detached run's log is the caller's log_path
     with open(log_path, "wb") as log_file:
         proc = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), *child_argv],

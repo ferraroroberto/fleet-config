@@ -49,6 +49,7 @@ EXIT = {"pass": 0, "over-budget": 1, "unmeasured": 3}
 def run_dir_for(target: str) -> Path:
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = hooks_state.state_dir() / "perf-review" / target / stamp
+    # runtime-write-exempt: run folder under the hooks state dir
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -71,6 +72,7 @@ def tls_name(base_url: str) -> str:
             der = tls.getpeercert(binary_form=True)
         with tempfile.TemporaryDirectory() as tmp:
             pem = Path(tmp) / "peer.pem"
+            # runtime-write-exempt: certificate copy in a temporary folder
             pem.write_text(ssl.DER_cert_to_PEM_cert(der), encoding="ascii")
             decoded = ssl._ssl._test_decode_cert(str(pem))  # type: ignore[attr-defined]  # stdlib, no third-party parser
     except (OSError, ssl.SSLError, ValueError, AttributeError):
@@ -89,6 +91,7 @@ def run_load(python: str, base_url: str, run_dir: Path, block: dict, budgets: di
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=LOAD_TIMEOUT_S, creationflags=NO_WINDOW)
+        # runtime-write-exempt: load log in the run folder
         (run_dir / "load.log").write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
         return json.loads((run_dir / "load.json").read_text(encoding="utf-8"))
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
@@ -189,7 +192,9 @@ def cmd_measure(a: argparse.Namespace) -> int:
     entry = report.record(target.name, run_id, v, target_commit(target), build)
     d = report.diff(entry, report.previous_entry(target.name, run_id))
     for name, doc in (("probe.json", probe), ("verdict.json", {**v, "run_id": run_id, "live_build": build, "diff": d})):
+        # runtime-write-exempt: artefacts in the run folder under the hooks state dir
         (run_dir / name).write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    # runtime-write-exempt: artefacts in the run folder under the hooks state dir
     (run_dir / "issue-body.md").write_text(report.merge_body("", {**v, "diff": d}, run_id, build, _dt.date.today().isoformat()), encoding="utf-8")
     for c in v["checks"]:
         sampled = f" samples={','.join(report._fmt(x) for x in c['samples'])} outliers={','.join(map(str, c['outliers'])) or 'none'}" if c.get("samples") else ""

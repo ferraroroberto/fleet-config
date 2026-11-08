@@ -155,6 +155,7 @@ class Log:
             if self.stalls.exists() and self.stalls.stat().st_size > MAX_LOG_BYTES:
                 # must-use-exempt: rotates the log aside; nothing is written
                 os.replace(self.stalls, self.stalls.with_suffix(".jsonl.1"))
+            # runtime-write-exempt: probe log file the instance owns
             with self.stalls.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, sort_keys=True) + "\n")
 
@@ -340,8 +341,10 @@ def prepare_disk_file(folder: Path, size: int = DISK_FILE_BYTES) -> Path:
     path = folder / DISK_FILE_NAME
     if path.is_file() and path.stat().st_size == size:
         return path
+    # runtime-write-exempt: probe file in the caller's probe folder
     folder.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
+    # runtime-write-exempt: probe file in the caller's probe folder
     with tmp.open("wb") as fh:
         for _ in range(size // (1 << 20)):
             fh.write(os.urandom(1 << 20))
@@ -611,6 +614,7 @@ class Probe:
 def single_instance(folder: Path):
     """An exclusive byte lock held for the process's life, or None when another probe holds it."""
     import msvcrt  # Windows-only; imported here so the module still loads elsewhere
+    # runtime-write-exempt: lock file in the caller's probe folder
     handle = (folder / "probe.lock").open("a+b")
     try:
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -662,7 +666,9 @@ def install_logon(folder: Path, target_dir: Optional[Path] = None, python: Path 
         if existing == data:
             print(f"ALREADY_INSTALLED {path}")
             return 0
+        # runtime-write-exempt: Startup wrapper in the user Startup folder, or the caller's target_dir
         path.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: Startup wrapper in the user Startup folder, or the caller's target_dir
         path.write_bytes(data)  # bytes: text mode would turn our CRLF into CRCRLF
         if path.read_bytes() != data:
             raise OSError("read-back differs from what was written")
@@ -698,6 +704,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     startup = Path(args.startup_dir) if args.startup_dir else None
     if args.command == "uninstall-logon":
         return uninstall_logon(startup)
+    # runtime-write-exempt: probe folder under the hooks state dir or --state-dir
     folder.mkdir(parents=True, exist_ok=True)
     if args.command == "install-logon":
         return install_logon(folder, startup)

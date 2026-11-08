@@ -72,6 +72,7 @@ def run(out: Path, as_of: Optional[str], projects_toml: Optional[Path]) -> int:
         "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "repos": records,
     }
+    # runtime-write-exempt: output file is the caller's out path
     out.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     log.info("✅ %d repos, %d unknown -> %s", len(records), sum(r["status"] != "ok" for r in records), out)
     return 0
@@ -186,6 +187,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         log.error("%s", exc)
         return 2
     if args.json:
+        # runtime-write-exempt: output file named by the --json argument
         args.json.write_text(json.dumps(result, indent=1), encoding="utf-8")
     sys.stdout.write(render(result))
     return 0

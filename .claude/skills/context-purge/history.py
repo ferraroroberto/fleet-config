@@ -340,6 +340,7 @@ def cmd_relocate(path: Path, issue: str, span: str, pointer: str) -> int:
     if not is_relocated(span, relocated_quotes(fetch_comment_bodies(key))):
         print(f"FAIL  comment on {key} not found after posting; {path.as_posix()} left unchanged")
         return 2
+    # runtime-write-exempt: rewrites the context file the caller names
     path.write_bytes(raw.replace(span, pointer).encode("utf-8"))
     print(f"RELOCATED {path.as_posix()} -> {key}")
     return 0

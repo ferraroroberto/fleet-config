@@ -269,6 +269,7 @@ def _script_params(rubric: Rubric, tokens: Dict[str, str]) -> Dict[str, object]:
 
 
 def _write(doc: Dict[str, object], run_dir: Path) -> Dict[str, object]:
+    # runtime-write-exempt: metrics.json in the run folder
     (run_dir / "metrics.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return doc
 
@@ -297,6 +298,7 @@ def measure_web(target: plan.Target, rubric: Rubric, tokens: Dict[str, str], dev
         return _write(doc, run_dir)
     doc["preview"] = {"source": preview_plan.source, "site_dir": str(preview_plan.site_dir) if preview_plan.site_dir else None}
     params = _script_params(rubric, tokens)
+    # runtime-write-exempt: params.json in the run folder
     (run_dir / "params.json").write_text(json.dumps(params), encoding="utf-8")
     try:
         with preview.PreviewServer(str(interp["python"]), preview_plan, run_dir / "preview.log") as server:
@@ -341,6 +343,7 @@ def _spawn_walk(python: str, base_url: str, pages: List[str], devices: List[str]
                               timeout=timeout, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return {"returncode": None, "timed_out": True, "stderr_tail": f"walk exceeded {timeout:g}s"}
+    # runtime-write-exempt: walk log in the run folder
     (run_dir / "walk.log").write_text(proc.stderr or "", encoding="utf-8")
     return {"returncode": proc.returncode, "timed_out": False, "stderr_tail": (proc.stderr or "")[-600:]}
 

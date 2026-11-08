@@ -115,6 +115,7 @@ def tree_hash(repo: Path) -> Tuple[Optional[str], str]:
             # cannot be trusted) by comparing the entry's mtime to the INDEX FILE's mtime, at one-second
             # resolution on Git for Windows. A copy stamped "now" erases that, so a same-size rewrite in the
             # same second as the last index write read as unchanged and FRESH.
+            # runtime-write-exempt: temporary index copy in a temp folder
             shutil.copy2(index, tmp)
         else:
             tmp.unlink()  # a fresh repo has no index yet; git creates the temp one
@@ -180,6 +181,7 @@ def inflight_marker(repo: Path, label: str) -> Iterator[None]:
     body = {"pid": os.getpid(), "repo": str(repo), "label": label,
             "started": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     try:
+        # runtime-write-exempt: marker in the gate-inflight state folder
         path.parent.mkdir(parents=True, exist_ok=True)
         # A hard-killed gate never reaches its `finally`; reap markers whose pid
         # is confirmed gone so a reused pid cannot revive one.

@@ -322,7 +322,9 @@ def main(argv=None) -> int:
             else:
                 doc["legs"].update(got["legs"])
                 doc["api"] = got["api"]
+    # runtime-write-exempt: load.json under the --out argument
     Path(a.out).mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: load.json under the --out argument
     (Path(a.out) / "load.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return 0
 

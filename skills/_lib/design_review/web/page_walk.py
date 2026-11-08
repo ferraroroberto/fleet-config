@@ -159,6 +159,7 @@ def measure_page(page: Page, url: str, device: str, params: Dict[str, Any], shot
     rec["fold_eager"] = guarded(page.evaluate, page_js.FOLD_JS)
     scroll_through(page)
     rec["measure"] = guarded(page.evaluate, page_js.MEASURE_JS, params)
+    # runtime-write-exempt: screenshot goes to the caller's shot path
     shot.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(shot), full_page=True, scale="css")
     rec["screenshot"] = str(shot)
@@ -241,6 +242,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 raw["pages"][path] = entry
         finally:
             browser.close()
+    # runtime-write-exempt: raw.json under the --out argument
     (out / "raw.json").write_text(json.dumps(raw, indent=1), encoding="utf-8")
     return 0
 

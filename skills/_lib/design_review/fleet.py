@@ -141,6 +141,7 @@ def dormant_targets(projects_toml: Optional[Path] = None) -> List[str]:
 def fleet_dir(now: Optional[_dt.datetime] = None) -> Path:
     stamp = (now or capture.utc_now()).astimezone(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = hooks_state.state_dir() / "design-review" / "_fleet" / stamp
+    # runtime-write-exempt: fleet folder under the hooks state dir
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -160,6 +161,7 @@ def review_app(name: str, table: dict, rb: Rubric, specs: Dict[str, Dict[str, st
     run_id = ledger.run_id_of(run_dir, doc)
     prev = ledger.previous(target.name, run_id)
     doc["diff"] = ledger.diff(doc, prev)
+    # runtime-write-exempt: evaluate.json in the app's run folder
     (run_dir / "evaluate.json").write_text(json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
     live = ledger.live_build(target.base_url, table.get("api_version_path")) if probe["status"] == "listening" else None
     entry = ledger.record(run_dir, doc, live)
@@ -371,6 +373,7 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
 
     def land(repo: Optional[str], key: str, body: str) -> None:
         path = out_dir / f"issue-{key}.md"
+        # runtime-write-exempt: issue body in the fleet output folder
         path.write_text(body, encoding="utf-8")
         if not repo:
             dig["filing"]["issues"][key] = f"no GitHub remote resolved — body at {path}"
@@ -408,7 +411,9 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
             home_statuses = {**statuses, **inventory.carry_statuses(body, inv)}
         land(repo, home, digest_body(body, findings, home, dig, home_statuses, today))
 
+    # runtime-write-exempt: digest files in the fleet output folder
     (out_dir / DIGEST_JSON).write_text(json.dumps(dig, indent=2, ensure_ascii=True), encoding="utf-8")
+    # runtime-write-exempt: digest files in the fleet output folder
     (out_dir / DIGEST_HTML).write_text(render_digest(dig), encoding="utf-8")
     dig["out_dir"] = str(out_dir)
     return dig

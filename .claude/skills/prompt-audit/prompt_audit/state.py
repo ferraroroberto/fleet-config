@@ -32,6 +32,7 @@ def load_state(path: Optional[Path] = None) -> dict:
 
 def save_state(state: dict, path: Optional[Path] = None) -> None:
     p = path or state_path()
+    # runtime-write-exempt: state file under the prompt-audit state dir or the caller's path
     p.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(p, json.dumps(state, indent=2, sort_keys=True) + "\n")
 

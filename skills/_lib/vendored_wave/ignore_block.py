@@ -131,6 +131,7 @@ def write_repo(repo: Path, dests: Iterable[str]) -> str:
     if not new.strip():
         path.unlink()
         return "removed"
+    # runtime-write-exempt: regenerates .ignore in the repo the caller names
     with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(new)
     return "written"
