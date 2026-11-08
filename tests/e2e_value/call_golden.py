@@ -2,8 +2,10 @@ import inspect
 import json
 import os
 
-import e2e_value as _e2e_value
 from _suite import CALL_GOLDEN, SURFACE_GOLDEN, check, v
+
+# isort: split
+import e2e_value as _e2e_value
 
 # ---- characterization pin: the calls above, and the module's public surface (fleet-config#1247) ---------
 

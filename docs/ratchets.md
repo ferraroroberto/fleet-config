@@ -52,7 +52,7 @@ The rule titles, vendor tags and fix shapes live in [`.claude/skills/prompt-audi
 
 ## Notes per ratchet
 
-- **Static:** needs ruff (`requirements.txt`) in the gate's venv and Node for `npx jscpd`; a missing detector exits 3 and fails.
+- **Static:** needs ruff (`requirements.txt`) in the gate's venv and Node for `npx jscpd`; a missing detector exits 3 and fails. An import that must run before the next one (a helper that puts a folder on `sys.path`) is kept first with a `# isort: split` line between the two, because ruff would otherwise sort the dependent import above it.
 - **Docs:** no `exclude` is set because `docs/` holds no generated or dated report folders. Docs state the present-tense why; history belongs to git, PRs and issues.
 - **Structure:** the baseline is empty and stays recorded at real size, never excluded, so nothing may grow past a limit. A new module goes in a subject subfolder (`tests/<subject>/`, a `skills/_lib/<domain>/` package), not a flat directory, and a suite past 1,000 lines splits into a `_suite.py` plus ordered parts. The root folders are `shape = "skills-governance"` plus `extra_roots`, both top-level `.fleet.toml` keys; a new root folder is declared in `extra_roots`, never allowed by default.
 - **Comment:** scans Python, JS, CSS and PowerShell comments; docstrings and strings are not scanned. A comment states the present-tense why; the history lives in the issue and `git log`.

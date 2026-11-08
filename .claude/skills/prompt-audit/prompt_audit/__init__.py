@@ -28,7 +28,6 @@ The names below are the public surface the `tests/prompt_audit/` suites drive.
 
 from __future__ import annotations
 
-from .cli import main
 from .common import (
     NEUTRAL,
     RULES_MD,
@@ -93,6 +92,9 @@ from .lint import (
 from .rules import parse_rules, verdict_cap
 from .sources import diff_source, extract_marker
 from .state import load_state, source_due
+
+# isort: split
+from .cli import main
 
 __all__ = [
     "ASSIST_RULES",

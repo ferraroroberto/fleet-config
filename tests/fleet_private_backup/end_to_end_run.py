@@ -1,10 +1,12 @@
 import json
 import sqlite3
 
-import backup as bp
 from _suite import _cfg, _git, _write, check, tmp
 from latest_and_notes import toml_path
 from runtime_data import live_db, rd_src, writer
+
+# isort: split
+import backup as bp
 
 # ---- end-to-end run ----------------------------------------------------
 e2e_cfg = _cfg(tmp, dest=tmp / "e2e-dest", transcripts_src=tmp / "e2e-transcripts",

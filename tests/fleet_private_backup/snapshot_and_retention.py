@@ -2,8 +2,10 @@ import json
 import os
 from datetime import datetime, timedelta
 
-import backup as bp
 from _suite import NOW, _write, cfg, check, tmp
+
+# isort: split
+import backup as bp
 
 # ---- hardlink dedup ----------------------------------------------------
 link_root = tmp / "linktest"

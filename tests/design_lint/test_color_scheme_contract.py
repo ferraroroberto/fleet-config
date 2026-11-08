@@ -8,8 +8,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import design_lint as dl  # noqa: E402
 from _suite import _h, check  # noqa: E402
+
+# isort: split
+import design_lint as dl  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
 
 _STATIC = "app/webapp/static"

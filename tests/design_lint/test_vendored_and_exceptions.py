@@ -13,8 +13,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import design_lint as dl  # noqa: E402
 from _suite import _h, check  # noqa: E402
+
+# isort: split
+import design_lint as dl  # noqa: E402
 from design_lint_support import (  # noqa: E402
     APP_ICON_INDEX,
     GOOD_CSS,

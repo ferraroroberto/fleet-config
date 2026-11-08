@@ -5,8 +5,10 @@ import threading
 import time
 from pathlib import Path
 
-import backup as bp
 from _suite import _write, check, tmp
+
+# isort: split
+import backup as bp
 
 # =======================================================================
 # The runtime-data leg (fleet-config#724)

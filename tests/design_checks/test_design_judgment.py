@@ -27,12 +27,14 @@ sys.path.insert(0, str(REPO / "tests"))
 
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
+from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
+
+# isort: split
 from design_review import evaluate as ev  # noqa: E402
 from design_review import judgment as jm
 from design_review import report
 from design_review import rubric as rb
-from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

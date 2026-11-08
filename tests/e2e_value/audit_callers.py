@@ -4,11 +4,13 @@
 import contextlib  # noqa: E402
 import io  # noqa: E402
 
-import e2e_test_audit  # noqa: E402
 from _suite import _norm, v
 from parallel_and_budget import pt, tb
 from parsing_and_measures import tmp
 from slimming_lessons import sf, tt, wr
+
+# isort: split
+import e2e_test_audit  # noqa: E402
 
 v.parallel(pt, ["tests/e2e"])
 for _argv in (["timing", str(tmp), "--suite-nodes", "3"], ["timing", str(tt), "--suite-nodes", "5"],

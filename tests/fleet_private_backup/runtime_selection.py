@@ -3,7 +3,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import backup as bp
 from _suite import _cfg, _write, check, tmp
 from runtime_data import (
     _snapshot_bounded,
@@ -17,6 +16,9 @@ from runtime_data import (
     saved_pages,
     snapshot_mod,
 )
+
+# isort: split
+import backup as bp
 
 try:
     churn_out = _snapshot_bounded(churn_db, tmp / "snap-out" / "churn.sqlite3", 2.0, 20.0)

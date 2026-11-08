@@ -10,9 +10,11 @@ import threading
 import time
 from pathlib import Path
 
-import backup as bp
 from _suite import DB_LOCK_WAIT_LIMIT, NOW, ROOT, _cfg, _write, check, tmp
 from latest_and_notes import toml_path
+
+# isort: split
+import backup as bp
 
 # ---- an interrupted run: marker left behind, recovered, and reported ---
 # A real death mid-write, simulated by making write_group raise after the

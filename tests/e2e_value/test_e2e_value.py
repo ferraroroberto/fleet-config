@@ -9,13 +9,27 @@ proxy (`v`) whose record the last part compares with the golden, so the order is
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/e2e_value/test_e2e_value.py`  (also invoked by tests/run_acceptance.py)
 """
 
-import audit_callers  # noqa: F401
-import call_golden  # noqa: F401
-import parallel_and_budget  # noqa: F401
-import parsing_and_measures  # noqa: F401
-import routing_report  # noqa: F401
-import slimming_lessons  # noqa: F401
-import stylesheet_routing  # noqa: F401
 from _suite import _h
+
+# isort: split
+import parsing_and_measures  # noqa: F401
+
+# isort: split
+import routing_report  # noqa: F401
+
+# isort: split
+import stylesheet_routing  # noqa: F401
+
+# isort: split
+import parallel_and_budget  # noqa: F401
+
+# isort: split
+import slimming_lessons  # noqa: F401
+
+# isort: split
+import audit_callers  # noqa: F401
+
+# isort: split
+import call_golden  # noqa: F401
 
 _h.report_and_exit("test_e2e_value")

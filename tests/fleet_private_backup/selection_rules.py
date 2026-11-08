@@ -2,8 +2,10 @@ import shutil
 import sys
 from pathlib import Path
 
-import backup as bp
 from _suite import _git, _make_junction, _write, cfg, check, skip, tmp
+
+# isort: split
+import backup as bp
 
 # ---- deny-list ---------------------------------------------------------
 check(bp._denied(".venv/lib/x.py", cfg), "deny: a .venv segment anywhere is denied")

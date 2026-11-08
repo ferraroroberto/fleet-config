@@ -17,8 +17,10 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-import design_lint as dl  # noqa: E402
 from _suite import REPO, _h, check
+
+# isort: split
+import design_lint as dl  # noqa: E402
 from design_lint.web_page import (  # noqa: E402
     adopted_only,
     contract_token_names,

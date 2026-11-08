@@ -17,13 +17,19 @@ import shutil
 from _suite import _h, tmp
 
 try:
-    import end_to_end_run  # noqa: F401
-    import interrupted_and_exit_codes  # noqa: F401
-    import latest_and_notes  # noqa: F401
-    import runtime_data  # noqa: F401
-    import runtime_selection  # noqa: F401
     import selection_rules  # noqa: F401
+    # isort: split
     import snapshot_and_retention  # noqa: F401
+    # isort: split
+    import latest_and_notes  # noqa: F401
+    # isort: split
+    import runtime_data  # noqa: F401
+    # isort: split
+    import runtime_selection  # noqa: F401
+    # isort: split
+    import end_to_end_run  # noqa: F401
+    # isort: split
+    import interrupted_and_exit_codes  # noqa: F401
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

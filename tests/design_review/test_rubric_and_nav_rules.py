@@ -8,8 +8,11 @@ import json
 import re
 from pathlib import Path
 
-import design_review as dr  # noqa: E402
 from _suite import REPO, _h, check  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
+
+# isort: split
+import design_review as dr  # noqa: E402
 from design_lint.colormath import composite, contrast  # noqa: E402
 from design_review import capture, measure, plan  # noqa: E402
 from design_review import evaluate as ev
@@ -30,7 +33,6 @@ from design_review_support import (  # noqa: E402
 from design_review_support import (
     specs as _specs,
 )
-from throwaway_dir import throwaway_dir  # noqa: E402
 
 check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the evaluate module; the function is evaluate.evaluate (#972)")
 
