@@ -73,13 +73,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
-from fleet_core import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 import index_lock  # noqa: E402
 import untrack_guard  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from fleet_core import fleet_repo_scan  # noqa: E402
 from gate_coverage import reader as gate_reader  # noqa: E402
 from gate_coverage import section as gate_section  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 from structure_census import near_limit  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
@@ -313,8 +313,10 @@ def write_result(out_path: Path, payload: dict) -> None:
     already exists — so this is safe even against a stale sentinel left by a
     prior crashed run at the same path.
     """
+    # runtime-write-exempt: result file is the caller's out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    # runtime-write-exempt: result file is the caller's out_path
     tmp.write_text(json.dumps(payload), encoding="utf-8")
     tmp.replace(out_path)
 
@@ -344,7 +346,9 @@ def launch_detached(child_argv: list[str], log_path: Path) -> int:
     hook's own exit (`hooks/restart_and_verify_webapp.py`'s `_start_tray`).
     Does not wait for the child; returns its pid.
     """
+    # runtime-write-exempt: detached run's log is the caller's log_path
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: detached run's log is the caller's log_path
     with open(log_path, "wb") as log_file:
         proc = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), *child_argv],

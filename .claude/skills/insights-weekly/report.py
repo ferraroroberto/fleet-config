@@ -154,6 +154,7 @@ def main() -> int:
         return 3
 
     out_dir = USAGE_DIR / "weekly"
+    # runtime-write-exempt: report folder is INSIGHTS_USAGE_DIR or ~/.claude/usage-data
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"insights-diff-{today}.md"
     front = (
@@ -161,6 +162,7 @@ def main() -> int:
         f"# Claude Code Insights — weekly {('diff' if mode == 'diff' else 'baseline')} ({today})\n\n"
         f"_{header}_\n\n"
     )
+    # runtime-write-exempt: report folder is INSIGHTS_USAGE_DIR or ~/.claude/usage-data
     out_file.write_text(front + body + "\n", encoding="utf-8")
 
     # stdout: machine-friendly first line (path) + the Telegram digest after a blank line.

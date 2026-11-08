@@ -21,7 +21,14 @@ from typing import Callable, Dict, Optional, Tuple
 
 from acceptance.checks_dispatch import BASH_HOOKS, POWERSHELL_HOOKS, dispatch
 from acceptance.hook_matrix import FAKE_GHP
-from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, HOOKS, PYTHON, _Checker, hook_env, run
+from acceptance.shared import (
+    HOOK_SPAWN_TIMEOUT_S,
+    HOOKS,
+    PYTHON,
+    _Checker,
+    hook_env,
+    run,
+)
 
 FAKE_VALUE = "FAKE-VALUE-NOT-A-SECRET-0000"
 

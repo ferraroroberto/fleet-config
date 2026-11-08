@@ -11,8 +11,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .sources import test_of, _test_tree_files, _wall_s
 from .fit import _test_texts
+from .sources import _test_tree_files, _wall_s, test_of
 
 __all__ = [
     "DRIFT_TOLERANCE",

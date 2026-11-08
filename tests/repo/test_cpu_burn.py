@@ -21,8 +21,8 @@ import box_lock  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
-from check_harness import CheckHarness  # noqa: E402
 import cpu_burn  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

@@ -145,6 +145,7 @@ def _persist(repo: Path, manifest: dict) -> None:
     temporary = path.with_suffix(".json.tmp")
     if present(temporary):
         raise ValueError(f"manifest temporary path occupied: {temporary}")
+    # runtime-write-exempt: manifest beside the caller's path
     with temporary.open("x", encoding="utf-8") as stream:
         stream.write(json.dumps(manifest, indent=2) + "\n")
     temporary.replace(path)
@@ -160,10 +161,12 @@ def _save(repo: Path, manifest: dict) -> None:
     exclude = Path(result.stdout.strip())
     if is_link(exclude):
         raise ValueError(f"Git exclude file is a link; preserve and inspect: {exclude}")
+    # runtime-write-exempt: git's own exclude file, as reported by git
     exclude.parent.mkdir(parents=True, exist_ok=True)
     lock = exclude.with_name(".fleet-discovery-exclude.lock")
     # Shared info/exclude is edited under a short exclusive lock. A simultaneous
     # reconciliation reports unknown/retry, never loses a sibling's block.
+    # runtime-write-exempt: git's own exclude file, as reported by git
     with lock.open("x") as guard:
         try:
             content = exclude.read_bytes() if exclude.exists() else b""
@@ -186,6 +189,7 @@ def _save(repo: Path, manifest: dict) -> None:
             _persist(repo, manifest)
             if updated != content:
                 temporary = exclude.with_name(".fleet-discovery-exclude.tmp")
+                # runtime-write-exempt: git's own exclude file, as reported by git
                 with temporary.open("xb") as stream:
                     stream.write(updated)
                 temporary.replace(exclude)
@@ -204,6 +208,7 @@ def _unlink(path: Path) -> None:
 
 
 def _link(source: Path, target: Path) -> None:
+    # runtime-write-exempt: link created at the caller's target
     target.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
         # PowerShell reads paths from env, never interpolated as executable code.

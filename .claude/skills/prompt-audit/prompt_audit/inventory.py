@@ -11,8 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .common import HOME_REPO, MASTER_REPO, NEUTRAL, is_linked_worktree, sha12, unfenced_lines
-
+from .common import (
+    HOME_REPO,
+    MASTER_REPO,
+    NEUTRAL,
+    is_linked_worktree,
+    sha12,
+    unfenced_lines,
+)
 
 # ---- audiences + inventory ------------------------------------------------------
 

@@ -70,8 +70,8 @@ from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core import fleet_toml  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -373,7 +373,9 @@ def cmd_bootstrap(repo: Path, scaffold: Path, force: bool) -> int:
             print("BOOTSTRAP=refused REASON=existing classifier differs from scaffold "
                   "(custom implementation - migrate deliberately with --force)")
             return 1
+    # runtime-write-exempt: installs the classifier into the target repo, as bootstrap is for
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # runtime-write-exempt: installs the classifier into the target repo, as bootstrap is for
     dest.write_bytes(src.read_bytes())
     if not files_identical(src, dest):
         print("BOOTSTRAP=error REASON=post-copy verification failed (bytes differ)")

@@ -23,9 +23,8 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 _STATE = tempfile.mkdtemp(prefix="perf-sweep-state-")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = _STATE
 
-from check_harness import CheckHarness  # noqa: E402
-
 import box_lock  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
 from perf_review import cli, sweep  # noqa: E402
 
 _h = CheckHarness()

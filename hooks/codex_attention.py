@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import _lib
-from conversation import hub_client
 import notify_on_idle
 import notify_send
+from conversation import hub_client
 
 logger = logging.getLogger("codex_attention")
 
@@ -135,6 +135,7 @@ def _record_once(payload: dict[str, Any]) -> bool:
         logger.info("Codex attention delivery not confirmed: missing session_id or turn_id")
         return False
     path = _dedup_file()
+    # runtime-write-exempt: dedup file under the hooks state dir
     path.parent.mkdir(parents=True, exist_ok=True)
     keys = _read_dedup(path)
     if key in keys:

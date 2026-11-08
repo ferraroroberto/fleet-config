@@ -10,7 +10,6 @@ from pathlib import Path
 
 from _suite import INIT_LINE, RESULT_LINE, TOOL_LINE, _h, check, cp, zero_work_script  # noqa: E402
 
-
 # ---- transient upstream 5xx: retried, not lost (fleet-config#700) ----
 
 # The exact wording the CLI printed at 01:03 on 2026-08-22, when a 529 three

@@ -91,7 +91,6 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # 1) `python -m venv <name>` where name is NOT `.venv`.
 #
 # `venv`'s own flags (`--clear`, `--upgrade`, `--system-site-packages`, …) sit

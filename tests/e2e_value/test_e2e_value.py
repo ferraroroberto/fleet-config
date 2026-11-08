@@ -11,12 +11,25 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/e2e_value/test_e
 
 from _suite import _h
 
+# isort: split
 import parsing_and_measures  # noqa: F401
+
+# isort: split
 import routing_report  # noqa: F401
+
+# isort: split
 import stylesheet_routing  # noqa: F401
+
+# isort: split
 import parallel_and_budget  # noqa: F401
+
+# isort: split
 import slimming_lessons  # noqa: F401
+
+# isort: split
 import audit_callers  # noqa: F401
+
+# isort: split
 import call_golden  # noqa: F401
 
 _h.report_and_exit("test_e2e_value")

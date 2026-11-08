@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-
 # Fallback when app-launcher's Settings value can't be read.
 DEFAULT_COMPACT_THRESHOLD = 30
 # The pre-compact refresh must have just run: handover log and plan both

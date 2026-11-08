@@ -12,9 +12,9 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
-from check_harness import CheckHarness  # noqa: E402
 from acceptance import gate_routing as gr  # noqa: E402
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

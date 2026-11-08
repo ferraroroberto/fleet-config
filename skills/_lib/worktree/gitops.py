@@ -14,12 +14,18 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from fleet_core import fleet_toml
 import git_run
+from fleet_core import fleet_toml
 from no_window import NO_WINDOW
-from worktree.claim import LOCK_NAME, worktree_path
-from worktree.worktree_config import copy_env_file, copy_root_config, copy_runtime_config, release_ports
 from worktree_residue import WT_SEP
+
+from worktree.claim import LOCK_NAME, worktree_path
+from worktree.worktree_config import (
+    copy_env_file,
+    copy_root_config,
+    copy_runtime_config,
+    release_ports,
+)
 
 # The CLI a stale-worktree hint tells the reader to run.
 _CLI = Path(__file__).resolve().parent.parent / "worktree_claim.py"
@@ -299,6 +305,7 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     the combined stderr/stdout on failure, empty on success. Pure OS wrapper --
     the caller decides whether a failure is fatal.
     """
+    # runtime-write-exempt: creates the junction at the caller's link path
     link.parent.mkdir(parents=True, exist_ok=True)
     # encoding pinned to the OEM code page: `mklink` is a native console tool
     # and emits cp850 here, which is not valid UTF-8. Under bare text=True the

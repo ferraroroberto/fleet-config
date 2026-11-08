@@ -94,6 +94,7 @@ def atomic_write(path: Path, text: str) -> None:
     """Write `text` to `path` via a sibling temp file and `os.replace`, so a
     reader never sees a half-written config; the temp file is removed on any
     failure. Newlines are written exactly as given."""
+    # runtime-write-exempt: writes the config file the caller names
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:

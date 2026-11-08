@@ -130,7 +130,15 @@ import git_run  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
 from residue.gh_lookups import (  # noqa: E402
-    ClosingPr, ClosingPrsFn, IssueStateFn, Lookups, OpenPrHeadsFn, OwnPr, OwnPrsFn, make_gh_lookups, repo_slug,
+    ClosingPr,
+    ClosingPrsFn,
+    IssueStateFn,
+    Lookups,
+    OpenPrHeadsFn,
+    OwnPr,
+    OwnPrsFn,
+    make_gh_lookups,
+    repo_slug,
 )
 
 DEFAULT = "default"

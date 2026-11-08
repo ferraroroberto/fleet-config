@@ -559,6 +559,7 @@ def write_capture(
                             format=transcript.source_format, version=transcript.source_version)
     content = render_markdown(make_description(transcript.messages), transcript.messages,
                               header=header, agent=transcript.harness)
+    # runtime-write-exempt: capture file goes in the caller's out_dir (a conversations folder)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # The shared atomic writer, rather than a hand-rolled tempfile +
     # os.replace: it also sweeps this target's own orphaned temps, which

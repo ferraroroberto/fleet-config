@@ -399,6 +399,7 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
     json_path = conv_dir / INDEX_JSON_NAME
     if changed or (entries and not json_path.exists()):
         try:
+            # runtime-write-exempt: index.md inside the conversations folder the caller names
             index_path.write_text(
                 render_index(label, entries, decay_tail(index_path)), encoding="utf-8"
             )

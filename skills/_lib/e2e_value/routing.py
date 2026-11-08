@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import git_run
 
-from .sources import GH_FILES_TIMEOUT_S, GIT_TIMEOUT_S, repo_slug, _test_tree_files
+from .sources import GH_FILES_TIMEOUT_S, GIT_TIMEOUT_S, _test_tree_files, repo_slug
 
 __all__ = [
     "load_classifier",

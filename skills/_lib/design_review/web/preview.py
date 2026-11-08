@@ -142,6 +142,7 @@ class PreviewServer:
 
     def __enter__(self) -> "PreviewServer":
         argv = [self.python] + [a.replace("{port}", str(self.port)) for a in self.plan.argv]
+        # runtime-write-exempt: server output goes to the log_path the caller passed
         log = self.log_path.open("w", encoding="utf-8")
         try:
             self.proc = subprocess.Popen(argv, cwd=str(self.plan.cwd), stdin=subprocess.DEVNULL, stdout=log,

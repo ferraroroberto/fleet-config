@@ -111,7 +111,9 @@ def cmd_append(args) -> int:
         parts += ["\n", tail, "\n"]
 
     try:
+        # runtime-write-exempt: ledger under --root, FLEET_HEALTH_ROOT or ~/.claude/fleet-health
         path.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: ledger under --root, FLEET_HEALTH_ROOT or ~/.claude/fleet-health
         path.write_text("".join(parts), encoding="utf-8")
     except OSError as exc:
         print(f"ledger unwritable: {exc}", file=sys.stderr)

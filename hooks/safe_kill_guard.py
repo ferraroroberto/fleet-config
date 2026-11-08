@@ -46,7 +46,6 @@ from typing import Callable, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # Blanket-python-kill patterns, split by which shell can actually execute them.
 # A `Stop-Process` literal inside a Bash `echo '...'` is a string, not a kill -
 # only flag PowerShell patterns when the tool is PowerShell, and vice-versa for

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Iterator, List, Mapping, Optional
 
 import _lib
+
 from secret_scan import read_sink
 
 _BRACE_RE = re.compile(r"\{([^{}]*)\}")

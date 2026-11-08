@@ -21,7 +21,6 @@ from pathlib import Path
 
 from _mailbox_support import run_cli  # noqa: E402
 from _suite import _h, check, co  # noqa: E402
-
 from chief import proposals  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_proposals_"))

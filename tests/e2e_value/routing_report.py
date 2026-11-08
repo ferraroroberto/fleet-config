@@ -3,7 +3,6 @@ from pathlib import Path
 
 from _suite import check, v
 
-
 # ---- routing report (step 2): the repo's own classifier, imported ------------------------------
 
 FAKE_CLASSIFIER = '''
@@ -207,6 +206,7 @@ check(v.routing_report(rt, pr_list=prs)["counterfactual"] is None, "no --propose
 # A gitignored local file the suite reads (facilitation-suite's `sessions.local.yaml`) can never be in a PR diff: not a hole.
 # A tree with no git answer keeps every existing file, never a guess.
 import git_run  # noqa: E402
+
 rg = Path(tempfile.mkdtemp(prefix="e2e-value-tracked-"))
 (rg / "scripts").mkdir()
 (rg / "scripts" / "classify_e2e.py").write_text(FAKE_CLASSIFIER, encoding="utf-8")

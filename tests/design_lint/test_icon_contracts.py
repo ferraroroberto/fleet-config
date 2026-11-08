@@ -9,13 +9,20 @@ import shutil
 from pathlib import Path
 
 from _suite import _h, check  # noqa: E402
-import design_lint as dl  # noqa: E402
 
+# isort: split
+import design_lint as dl  # noqa: E402
 from design_lint_support import (  # noqa: E402
-    APP_ICON_FILES, APP_ICON_INDEX, APP_ICON_MANIFEST, APP_ICON_SPEC, GOOD_CSS, HIT_SPEC_940, legacy_files, run_contracts,
+    APP_ICON_FILES,
+    APP_ICON_INDEX,
+    APP_ICON_MANIFEST,
+    APP_ICON_SPEC,
+    GOOD_CSS,
+    HIT_SPEC_940,
+    legacy_files,
+    run_contracts,
 )
 from throwaway_dir import throwaway_dir  # noqa: E402
-
 
 # ---- icon-set: emoji vs Lucide (design.md Icons, fleet-config#284) ----
 

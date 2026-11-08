@@ -17,10 +17,15 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-from _suite import REPO, check, _h
+from _suite import REPO, _h, check
 
+# isort: split
 import design_lint as dl  # noqa: E402
-from design_lint.web_page import adopted_only, contract_token_names, without_build_copies  # noqa: E402
+from design_lint.web_page import (  # noqa: E402
+    adopted_only,
+    contract_token_names,
+    without_build_copies,
+)
 from throwaway_dir import remove_dir, throwaway_dir  # noqa: E402
 
 SPEC = REPO / "design.web.md"

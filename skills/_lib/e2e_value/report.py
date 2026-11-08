@@ -13,19 +13,34 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import git_run
 
+from .fit import projection_fit
+from .measures import (
+    buckets,
+    executed_e2e,
+    first_node,
+    is_e2e,
+    modules,
+    projections,
+    tail,
+)
 from .sources import (
+    GH_TIMEOUT_S,
+    _gather,
+    _wall_s,
     checkout_of,
     failure_events,
-    GH_TIMEOUT_S,
     load_state,
     projection_of,
     repo_slug,
-    _gather,
-    _wall_s,
 )
-from .measures import buckets, executed_e2e, first_node, is_e2e, modules, projections, tail
-from .fit import projection_fit
-from .waits import app_timers, rank_waits, runtime_drift, slow_fixtures, slow_nodes, wait_sites
+from .waits import (
+    app_timers,
+    rank_waits,
+    runtime_drift,
+    slow_fixtures,
+    slow_nodes,
+    wait_sites,
+)
 
 __all__ = [
     "race_candidates",

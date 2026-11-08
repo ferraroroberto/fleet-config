@@ -44,7 +44,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # cmd.exe `%VAR%` expansion — requires 2+ chars between the percent signs to
 # dodge bare printf specs (`%s`) and single-letter date-format runs (`%Y%m%d`).
 ENV_VAR_RE = re.compile(r"%[A-Za-z_][A-Za-z0-9_]+%")

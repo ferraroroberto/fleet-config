@@ -275,8 +275,8 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
     for the three tray apps, and the recovery hint stays actionable and
     :8446-safe. Both are pure (no tray needed), so they're gate-testable."""
     sys.path.insert(0, str(HOOKS))
-    import restart_and_verify_webapp as rw  # noqa: E402
     import _lib  # noqa: E402
+    import restart_and_verify_webapp as rw  # noqa: E402
 
     check = _Checker()
 

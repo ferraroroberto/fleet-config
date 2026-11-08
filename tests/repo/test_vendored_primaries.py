@@ -17,11 +17,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
-from vendored_wave import primaries as pr  # noqa: E402
-from worktree import service_probe as sp  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from git_fixtures import make_upstream_and_clone, run_git  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
+from vendored_wave import primaries as pr  # noqa: E402
+from worktree import service_probe as sp  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

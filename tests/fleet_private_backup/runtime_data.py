@@ -6,8 +6,9 @@ import time
 from pathlib import Path
 
 from _suite import _write, check, tmp
-import backup as bp
 
+# isort: split
+import backup as bp
 
 # =======================================================================
 # The runtime-data leg (fleet-config#724)

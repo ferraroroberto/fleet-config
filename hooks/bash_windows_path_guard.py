@@ -45,7 +45,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # Drive-letter path token: `E:\automation`, `C:\Users\rober\file.txt`.
 DRIVE_PATH_RE = re.compile(r"[A-Za-z]:\\[^\s'\"]*")
 

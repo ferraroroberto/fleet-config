@@ -30,9 +30,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_repo_scan  # noqa: E402
 import fleet_status  # noqa: E402
 import git_run  # noqa: E402
+
+from fleet_core import fleet_repo_scan  # noqa: E402
 
 GATED = "gated"
 UNGATED = "ungated"

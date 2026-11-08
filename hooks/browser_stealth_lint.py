@@ -30,7 +30,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 WATCHED_NAMES = {"chrome_launch.py", "browser.py"}
 WATCHED_GLOB = "*_session.py"
 

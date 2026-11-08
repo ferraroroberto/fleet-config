@@ -42,7 +42,6 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
-from conversation.transcript_readers import read_transcript  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
     capture_config_from_project,
@@ -51,6 +50,8 @@ from conversation_capture import (  # noqa: E402
     transcript_start_time,
     write_capture,
 )
+
+from conversation.transcript_readers import read_transcript  # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]

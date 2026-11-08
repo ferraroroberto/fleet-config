@@ -39,10 +39,12 @@ _REPO = Path(__file__).resolve().parents[3]
 _LIB = _REPO / "skills" / "_lib"
 BRIEF_TEMPLATE = Path(__file__).resolve().parent / "research-brief.md"
 sys.path.insert(0, str(_LIB))
-from fleet_core import fleet_repo_scan  # noqa: E402
-from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 import quota_snapshot  # noqa: E402
+from fleet_core import (
+    fleet_repo_scan,  # noqa: E402
+    fleet_toml,  # noqa: E402
+)
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -292,15 +294,18 @@ def _cmd_select(a: argparse.Namespace) -> int:
             "quiet": [{"name": r.name, "commits": r.commits, "line": one_line(r.description)}
                       for r in sel.quiet],
         }
+        # runtime-write-exempt: the run folder is the run_dir argument
         (Path(a.run_dir) / "selection.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return 0
 
 
 def _cmd_rundir(a: argparse.Namespace) -> int:
     d = run_dir(dt.date.fromisoformat(a.date) if a.date else dt.date.today())
+    # runtime-write-exempt: run folder under the hooks state dir (run_dir())
     (d / "repos").mkdir(parents=True, exist_ok=True)
     stamp = d / "run.json"
     if not stamp.is_file():
+        # runtime-write-exempt: run folder under the hooks state dir (run_dir())
         stamp.write_text(json.dumps({"started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                                      "quota_start": quota_reading()}), encoding="utf-8")
     print(f"RUN_DIR={d}")
@@ -314,9 +319,11 @@ def _cmd_brief(a: argparse.Namespace) -> int:
         print(f"ERROR=no selection.json in {run}; run select --run-dir first")
         return 2
     template = BRIEF_TEMPLATE.read_text(encoding="utf-8")
+    # runtime-write-exempt: briefs go in the run folder named by the run_dir argument
     (run / "briefs").mkdir(exist_ok=True)
     for repo in sel["active"]:
         out = run / "briefs" / f"{repo['name']}.md"
+        # runtime-write-exempt: briefs go in the run folder named by the run_dir argument
         out.write_text(render_brief(template, repo, run, Path(a.root)), encoding="utf-8")
         print(f"BRIEF={repo['name']}|{out}")
     return 0
@@ -372,6 +379,7 @@ def _cmd_footer(a: argparse.Namespace) -> int:
     sel = _load(run / "selection.json")
     rule = sel.get("rule", "unknown") if isinstance(sel, dict) else "unknown"
     wall, quota = _run_stats(run)
+    # runtime-write-exempt: report.md sits in the run folder under the hooks state dir
     with report.open("a", encoding="utf-8") as fh:
         fh.write(footer_text(rule, wall, quota, a.agents, a.tokens))
     print(f"FOOTER=appended|WALL={wall}|QUOTA={quota}")
@@ -392,6 +400,7 @@ def _cmd_rank(a: argparse.Namespace) -> int:
     if isinstance(sel, dict):
         branches = {r["name"]: r["branch"] for r in sel.get("active", [])}
     ranked = rank(docs)
+    # runtime-write-exempt: ranked.md goes in the run folder named by the run_dir argument
     (d / "ranked.md").write_text(ranked_table(ranked, branches) + "\n", encoding="utf-8")
     wall, quota = _run_stats(d)
     print(f"RANKED={len(ranked)}|REPOS={len(docs)}|INVALID={','.join(bad) or 'none'}|WALL={wall}|QUOTA={quota}")

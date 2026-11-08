@@ -34,8 +34,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fleet_core import fleet_repo_scan  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import (
+    fleet_repo_scan,  # noqa: E402
+    hooks_state,  # noqa: E402
+)
 
 ACTIVE = "active"
 DORMANT = "dormant"

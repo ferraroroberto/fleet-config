@@ -30,7 +30,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # A subprocess-spawning indicator in the file.
 SUBPROCESS_RE = re.compile(r"\b(?:subprocess|Popen|os\.system|check_output|check_call|getoutput)\b")
 

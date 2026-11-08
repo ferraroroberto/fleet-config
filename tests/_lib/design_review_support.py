@@ -20,7 +20,8 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 
 import design_review as dr  # noqa: E402
-from design_review import evaluate as ev, rubric as rb  # noqa: E402
+from design_review import evaluate as ev  # noqa: E402
+from design_review import rubric as rb
 
 FIX = REPO / "tests" / "fixtures" / "design_review"
 RUBRIC = REPO / "design.rubric.toml"

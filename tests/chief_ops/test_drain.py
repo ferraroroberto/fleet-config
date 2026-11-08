@@ -21,6 +21,7 @@ from pathlib import Path
 
 from _suite import _h, _session_card, check, co  # noqa: E402
 
+# isort: split
 import chief_plan  # noqa: E402
 from chief import drain  # noqa: E402
 

@@ -83,6 +83,7 @@ from typing import Dict, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from design_lint.rules import GLYPH_ICON_RENDERED_RE  # noqa: E402
+
 # walk.py, run by the target repo's interpreter, imports this file as a top-level
 # module from its own folder; inside the package the halves are relative siblings.
 if __package__:

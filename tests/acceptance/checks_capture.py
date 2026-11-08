@@ -33,8 +33,8 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
     """The per-session dedup logic: stable token, filename shape, and the
     supersede-prior sweep that collapses a session's many Stop captures to one."""
     sys.path.insert(0, str(HOOKS))
-    import conversation_capture as cc  # noqa: E402
     import _lib  # noqa: E402
+    import conversation_capture as cc  # noqa: E402
 
     check = _Checker()
 

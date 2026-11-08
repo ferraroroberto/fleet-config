@@ -24,7 +24,6 @@ from config_edit import (  # noqa: E402
     inline_comment,
 )
 
-
 RETENTION_DAYS = 730
 
 

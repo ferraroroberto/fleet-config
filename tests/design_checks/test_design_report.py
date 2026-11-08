@@ -23,12 +23,17 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
-from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner, doc as _doc, specs as _specs  # noqa: E402
-from check_harness import CheckHarness  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
+from design_review_support import FIX, RUBRIC, SPEC_ARGS, cli_runner  # noqa: E402
+from design_review_support import doc as _doc
+from design_review_support import specs as _specs
+from throwaway_dir import throwaway_dir  # noqa: E402
 
-from design_review import evaluate as ev, mockups, report, rubric as rb  # noqa: E402
+# isort: split
+from design_review import evaluate as ev  # noqa: E402
+from design_review import mockups, report
+from design_review import rubric as rb
 
 _h = CheckHarness()
 check = _h.check

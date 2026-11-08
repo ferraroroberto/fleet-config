@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .sources import projection_of, _test_tree_files
+from .sources import _test_tree_files, projection_of
 
 __all__ = [
     "BUCKETS",

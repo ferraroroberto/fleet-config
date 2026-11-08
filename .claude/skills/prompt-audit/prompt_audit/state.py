@@ -5,14 +5,13 @@ Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
-import datetime as dt
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .common import atomic_write_text
-
 
 # ---- state ----------------------------------------------------------------------
 
@@ -33,6 +32,7 @@ def load_state(path: Optional[Path] = None) -> dict:
 
 def save_state(state: dict, path: Optional[Path] = None) -> None:
     p = path or state_path()
+    # runtime-write-exempt: state file under the prompt-audit state dir or the caller's path
     p.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(p, json.dumps(state, indent=2, sort_keys=True) + "\n")
 

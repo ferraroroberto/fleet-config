@@ -138,11 +138,11 @@ def atomic_write_text(
 def append_jsonl_rotating(
     path: Path, record: dict, max_bytes: int, *, ensure_ascii: bool = True, sort_keys: bool = False) -> None:
     """Best-effort append to ``path`` as JSONL, rotating it past ``max_bytes`` to ``<path>.1``."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: the caller names the JSONL log
     with contextlib.suppress(OSError):
         if path.stat().st_size > max_bytes:
             os.replace(path, path.with_suffix(path.suffix + ".1"))
-    with path.open("a", encoding="utf-8") as fh:
+    with path.open("a", encoding="utf-8") as fh:  # runtime-write-exempt: the caller names the JSONL log
         fh.write(json.dumps(record, ensure_ascii=ensure_ascii, sort_keys=sort_keys) + "\n")
 
 
@@ -322,6 +322,7 @@ def repair_mojibake(text: Optional[str]) -> Optional[str]:
 # import carries no ordering hazard. The `_ACTIVE_AGENT` / `_ACTIVE_EVENT`
 # globals the emitters read live there, not here.
 
+# isort: off
 from hook_wire.harness_wire import (  # noqa: E402
     AGENT_HINT_KEY as AGENT_HINT_KEY,
     allow as allow,
@@ -333,7 +334,7 @@ from hook_wire.harness_wire import (  # noqa: E402
     shell_is_ambiguous as shell_is_ambiguous,
     warn as warn,
 )
-
+# isort: on
 
 # ------------------------------------------------------------ JSONL records
 
@@ -824,12 +825,12 @@ def command_string(payload: Dict[str, Any]) -> str:
 # makes this reverse import safe despite `_lib` not having finished loading
 # yet at the point it reaches this line.
 
+# isort: off
 from hook_wire.edit_events import (  # noqa: E402
     EditEvent as EditEvent,
     EditTarget as EditTarget,
     edit_event as edit_event,
 )
-
 
 # ----------------------------------------------------------- projects.toml
 #
@@ -839,7 +840,6 @@ from hook_wire.edit_events import (  # noqa: E402
 # `_lib.detect_project`, etc. keep working unchanged for every existing hook
 # import. registry.py has no dependency on `_lib`, so this import carries no
 # ordering hazard.
-
 from hook_wire.registry import (  # noqa: E402
     BOARD_URL_ENV_VAR as BOARD_URL_ENV_VAR,
     DOTENV_PATH_ENV_VAR as DOTENV_PATH_ENV_VAR,
@@ -855,7 +855,7 @@ from hook_wire.registry import (  # noqa: E402
     resolve_board_url as resolve_board_url,
     resolve_notify_target as resolve_notify_target,
 )
-
+# isort: on
 
 # ------------------------------------------------------------------- .venv
 

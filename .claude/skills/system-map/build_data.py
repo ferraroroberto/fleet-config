@@ -64,10 +64,12 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from fleet_core import fleet_contracts  # noqa: E402
-from fleet_core import fleet_repo_scan  # noqa: E402
-from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
+from fleet_core import (
+    fleet_contracts,  # noqa: E402
+    fleet_repo_scan,  # noqa: E402
+    fleet_toml,  # noqa: E402
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"

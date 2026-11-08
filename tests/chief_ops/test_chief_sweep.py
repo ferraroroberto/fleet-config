@@ -32,8 +32,8 @@ TMP = throwaway_dir("chief_sweep_")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(TMP / "state")
 
 import chief_ops as co  # noqa: E402
-from chief import chief_sweep as cs  # noqa: E402
 import worktree_claim  # noqa: E402
+from chief import chief_sweep as cs  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check

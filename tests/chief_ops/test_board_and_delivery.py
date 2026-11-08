@@ -12,9 +12,17 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from _suite import _CHIEF_SID, _WORKER_SID, _exchange_columns, _h, _session_card, check, co, sd  # noqa: E402
+from _suite import (  # noqa: E402
+    _CHIEF_SID,
+    _WORKER_SID,
+    _exchange_columns,
+    _h,
+    _session_card,
+    check,
+    co,
+    sd,
+)
 from chief import commands  # noqa: E402
-
 
 # ---- repo_occupancy ---------------------------------------------------------
 
@@ -402,7 +410,6 @@ check(
 
 import contextlib  # noqa: E402
 import io  # noqa: E402
-
 
 check(
     co.resolve_session_id("ad3e8bbbcccccccccccccccccccccccc", _exchange_columns)

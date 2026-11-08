@@ -36,7 +36,11 @@ from acceptance import structure_ratchet_gate as gate  # noqa: E402
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 from git_fixtures import run_git  # noqa: E402
-from ratchet_gate_fixtures import assert_check_function, assert_exit_mapping, run_ratchet  # noqa: E402
+from ratchet_gate_fixtures import (  # noqa: E402
+    assert_check_function,
+    assert_exit_mapping,
+    run_ratchet,
+)
 
 _h = CheckHarness()
 check = _h.check

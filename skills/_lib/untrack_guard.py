@@ -149,7 +149,9 @@ def guarded_fast_forward(repo: Path, target: str) -> GuardedFastForward:
         try:
             for rel in live:
                 dst = stash / rel
+                # runtime-write-exempt: copies between the repo and the stash folder it keeps
                 dst.parent.mkdir(parents=True, exist_ok=True)
+                # runtime-write-exempt: copies between the repo and the stash folder it keeps
                 shutil.copy2(repo / rel, dst)
         except OSError as exc:
             shutil.rmtree(stash, ignore_errors=True)
@@ -173,7 +175,9 @@ def guarded_fast_forward(repo: Path, target: str) -> GuardedFastForward:
             result.kept_aside.append(rel)
             continue
         try:
+            # runtime-write-exempt: copies between the repo and the stash folder it keeps
             dst.parent.mkdir(parents=True, exist_ok=True)
+            # runtime-write-exempt: copies between the repo and the stash folder it keeps
             shutil.copy2(stash / rel, dst)
             result.restored.append(rel)
         except OSError:

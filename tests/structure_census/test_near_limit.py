@@ -23,13 +23,12 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 import fleet_audit_scan as fas  # noqa: E402
+import structure_ratchet  # noqa: E402  (scripts/ is on the path once structure_census is imported)
 from check_harness import CheckHarness  # noqa: E402
 from git_fixtures import make_upstream_and_clone, run_git  # noqa: E402
 from structure_census import measure, near_limit, repo_read  # noqa: E402
 from structure_debt import section  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
-
-import structure_ratchet  # noqa: E402  (scripts/ is on the path once structure_census is imported)
 
 _h = CheckHarness()
 check = _h.check

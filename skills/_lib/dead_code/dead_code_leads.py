@@ -44,10 +44,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from gate_coverage import enforced  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 

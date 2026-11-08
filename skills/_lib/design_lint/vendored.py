@@ -12,7 +12,6 @@ from typing import Dict, Optional
 
 from .files import find_vendored_root, read_text
 
-
 _SPRITE_SYMBOL_RE = re.compile(
     r'<symbol\b[^>]*\bid=["\']([^"\']+)["\'][^>]*>.*?</symbol>', re.S)
 

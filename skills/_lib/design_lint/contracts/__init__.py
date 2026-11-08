@@ -39,14 +39,22 @@ from .controls import (
     _check_theme_toggle,
 )
 from .feedback import _check_toast_neutral
-from .icons import _check_app_icon_family, _check_glyph_icons, _check_icon_set, _check_icon_sizes
+from .icons import (
+    _check_app_icon_family,
+    _check_glyph_icons,
+    _check_icon_set,
+    _check_icon_sizes,
+)
 from .modal import _check_editor_modal_contract, _check_native_dialog
 from .nav import _check_nav_contract, _check_status_bar_style, _check_viewport_lock
 from .page_foot import _check_page_foot
 from .states import _check_async_lifecycle
-from .typography import _check_break_all, _check_form_font_inherit, _check_uppercase_role
+from .typography import (
+    _check_break_all,
+    _check_form_font_inherit,
+    _check_uppercase_role,
+)
 from .vendored_tokens import _check_vendored_tokens
-
 
 _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_focus_visible_ring,

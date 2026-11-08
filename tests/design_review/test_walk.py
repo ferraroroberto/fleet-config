@@ -13,14 +13,13 @@ import tempfile
 from pathlib import Path
 
 from _suite import REPO, STATE, _h, check  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
-
 from design_review import capture, plan  # noqa: E402
 from design_review_support import (  # noqa: E402
-    FIX, rubric,
+    FIX,
     light_c,
+    rubric,
 )
-
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 # ---- capture: liveness probe, interpreter, run dir ---------------------------
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-
 _INLINE_MAP_RE = re.compile(r"^\{(.*)\}$", re.S)
 
 

@@ -241,7 +241,9 @@ def shoot(
             raise RuntimeError(
                 "screenshot was not written.\n" + shot.stderr.decode("utf-8", "replace")[-800:]
             )
+        # runtime-write-exempt: screenshot goes to the caller's out path
         out.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: screenshot goes to the caller's out path
         shutil.copyfile(staged, out)
     finally:
         staged.unlink(missing_ok=True)

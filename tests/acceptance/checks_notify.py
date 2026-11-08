@@ -650,8 +650,8 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
 def _notify_complete_unit_checks() -> Tuple[int, int]:
     """Canonical per-kind message assembly + the shared notify-target resolver."""
     sys.path.insert(0, str(HOOKS))
-    import notify_complete  # noqa: E402
     import _lib  # noqa: E402
+    import notify_complete  # noqa: E402
 
     check = _Checker()
 

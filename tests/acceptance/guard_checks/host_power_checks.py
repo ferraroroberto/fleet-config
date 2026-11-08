@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Tuple
 
 from acceptance.hook_cases.host_power import ALLOWED, REFUSED
-from acceptance.shared import HOOK_SPAWN_TIMEOUT_S, HOOKS, PYTHON, REPO, _Checker, hook_env
+from acceptance.shared import (
+    HOOK_SPAWN_TIMEOUT_S,
+    HOOKS,
+    PYTHON,
+    REPO,
+    _Checker,
+    hook_env,
+)
 
 _ENTRY = (
     "import sys\n"

@@ -23,15 +23,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import active_issue
 import chief_managed
 import chief_plan
-from chief import chief_sweep
 import dirty_tree_check
 import gate_evidence
 import owner_check
-from grokbot import status as grokbot_status
+import worktree_claim
 from fleet_core import hooks_state
+from grokbot import status as grokbot_status
 from no_window import NO_WINDOW
 from vendored_wave import primaries
-import worktree_claim
+
+from chief import chief_sweep
+
 # `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
 from chief.steer_delivery import (
@@ -292,6 +294,7 @@ def cmd_self_compact(args: argparse.Namespace) -> int:
         return 2
     verdict = delivery["reason"] or "submitted"
     try:
+        # runtime-write-exempt: marker under the hooks state dir
         (state / compact.COMPACT_QUEUED_MARKER).write_text(str(int(time.time())), encoding="utf-8")
     except OSError as exc:
         print(f"ℹ️ could not write {compact.COMPACT_QUEUED_MARKER} ({exc}); the Stop hook may nudge once more")
@@ -334,7 +337,9 @@ def cmd_lane_compact(args: argparse.Namespace) -> int:
         return 2
     try:
         marker = state / compact.LANE_QUEUED_DIRNAME / self_sid
+        # runtime-write-exempt: marker under the hooks state dir
         marker.parent.mkdir(parents=True, exist_ok=True)
+        # runtime-write-exempt: marker under the hooks state dir
         marker.write_text(str(int(time.time())), encoding="utf-8")
     except OSError as exc:
         print(f"ℹ️ could not write the queued marker ({exc}); the Stop hook may hold once more")

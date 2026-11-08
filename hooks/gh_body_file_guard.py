@@ -33,7 +33,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 # A gh write subcommand that takes a body: `gh issue create|comment`,
 # `gh pr create|comment|edit`.
 GH_WRITE_RE = re.compile(r"\bgh\s+(?:issue|pr)\s+(?:create|comment|edit)\b")

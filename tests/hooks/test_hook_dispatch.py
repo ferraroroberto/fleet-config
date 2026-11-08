@@ -20,8 +20,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "hooks"))
-from hook_wire import harness_wire  # noqa: E402
 import hook_dispatch  # noqa: E402
+from hook_wire import harness_wire  # noqa: E402
 
 FAKES = {
     "fake_crash": "def main():\n    raise RuntimeError('boom')\n",

@@ -45,7 +45,6 @@ from ._ctx import _ContractsCtx, _result
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # skills/_lib, as design_lint.files does
 from vendored_drift import parse_vendored_manifest  # noqa: E402
 
-
 _VAR_OPEN_RE = re.compile(r"\bvar\(\s*(--[A-Za-z0-9_-]+)\s*")
 _TICKED_TOKEN_RE = re.compile(r"`(--[A-Za-z][A-Za-z0-9_-]*)`")
 # A definition the app ships: a declaration in CSS or an inline style attribute,

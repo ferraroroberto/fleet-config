@@ -79,6 +79,7 @@ def main(argv: List[str] | None = None) -> int:
                         shots.append({"viewport": label, "theme": theme, "error": str(exc)[:300]})
         finally:
             browser.close()
+    # runtime-write-exempt: shots.json under the --out argument
     (Path(args.out) / "shots.json").write_text(json.dumps(shots), encoding="utf-8")
     return 1 if any("error" in s for s in shots) else 0
 

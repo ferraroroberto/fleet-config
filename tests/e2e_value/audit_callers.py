@@ -1,15 +1,15 @@
-from _suite import _norm, v
-from parsing_and_measures import tmp
-from parallel_and_budget import pt, tb
-from slimming_lessons import sf, tt, wr
-
-
 # ---- characterization pin: e2e_test_audit.py's caller paths into e2e_value (fleet-config#1247) ----------
 # Every subcommand that reaches e2e_value without GitHub, on the fixture repos above; `routing` lists
 # merged PRs through `gh`, so its report is pinned through `routing_report(pr_list=...)` above instead.
 import contextlib  # noqa: E402
 import io  # noqa: E402
 
+from _suite import _norm, v
+from parallel_and_budget import pt, tb
+from parsing_and_measures import tmp
+from slimming_lessons import sf, tt, wr
+
+# isort: split
 import e2e_test_audit  # noqa: E402
 
 v.parallel(pt, ["tests/e2e"])

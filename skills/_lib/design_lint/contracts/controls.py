@@ -10,7 +10,13 @@ import re
 from typing import Dict, List, Set
 
 from ..colormath import is_green, parse_color
-from ..css import _ANY_DECL_RE, _BLOCK_RE, _COLOR_LITERAL_RE, normalize_value, strip_comments
+from ..css import (
+    _ANY_DECL_RE,
+    _BLOCK_RE,
+    _COLOR_LITERAL_RE,
+    normalize_value,
+    strip_comments,
+)
 from ..files import read_text, rel
 from ..selectors import (
     _compounds,

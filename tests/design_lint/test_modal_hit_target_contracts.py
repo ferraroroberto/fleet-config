@@ -9,10 +9,11 @@ import re
 
 from _suite import _h, check  # noqa: E402
 from design_lint_support import (  # noqa: E402
-    GOOD_CSS, PRE_MODAL_CSS, PRE_MODAL_HTML,
+    GOOD_CSS,
+    PRE_MODAL_CSS,
+    PRE_MODAL_HTML,
     run_contracts,
 )
-
 
 # ---- editor-modal contract (design.md `modal` component, fleet-config#307) ----
 # Fixtures mirror the real app-launcher#70 before/after (job-editor dialog):

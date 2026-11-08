@@ -89,32 +89,31 @@ sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 sys.path.insert(0, str(SKILL_DIR))
 import git_run  # noqa: E402
 from audit_ledger.audit_issue_client import run_audit_issue  # noqa: E402
-from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
-
 from digest_model import (  # noqa: E402
+    _lines,
+    _merge_cell,
+    _num,
+    _primary_cell,
+    _revert,
     all_descriptions,
     blast_radius,
     collect,
     coverage_line,
     headline,
-    _lines,
     merge_blockers,
-    _merge_cell,
     merge_record,
     merge_state,
     merge_summary,
-    _num,
-    _primary_cell,
     probe_state,
     probe_verdict,
     ranked_repos,
-    _revert,
     rewritten_files,
     risk_score,
     untouched_files,
     validate,
 )
 from digest_style import PAGE_CSS  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
 LEDGER_REPO = "ferraroroberto/fleet-config"
@@ -718,10 +717,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             except (OSError, ValueError) as exc:
                 print(f"WARN could not read --reconcile-json: {exc}", file=sys.stderr)
         if args.md:
+            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
             args.md.write_text(render_markdown(run, args.url, backlog), encoding="utf-8")
         if args.html:
+            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
             args.html.write_text(render_html(run, backlog), encoding="utf-8")
         if args.chat_text:
+            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
             args.chat_text.write_text(render_chat(run, args.url, backlog), encoding="utf-8")
         print(f"RENDERED run={run.get('run_id')} "
               f"md={bool(args.md)} html={bool(args.html)} chat={bool(args.chat_text)}")

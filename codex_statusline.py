@@ -25,7 +25,6 @@ from config_edit import (  # noqa: E402
     syntax_mask,
 )
 
-
 REQUIRED_STATUS_ITEMS: tuple[str, ...] = (
     "context-used",
     "model",

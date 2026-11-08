@@ -13,7 +13,6 @@ from typing import Dict, List
 from .css import strip_comments
 from .files import read_text, rel
 
-
 _DEF_RE = re.compile(
     r"^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|"
     r"^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\()",

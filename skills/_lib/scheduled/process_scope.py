@@ -7,17 +7,17 @@ The stdin release is prepared while suspended; a failed release cannot run code.
 from __future__ import annotations
 
 import codecs
-from contextlib import contextmanager
 import ctypes
-from ctypes import wintypes
 import logging
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
+from ctypes import wintypes
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

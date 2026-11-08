@@ -61,9 +61,8 @@ from typing import List, Optional, Tuple
 
 # Sibling top-level module in skills/_lib, reached as `files.py` reaches it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
-
+from fleet_core import fleet_toml  # noqa: E402
 
 ROW_ID = "accepted-exception"
 _REQUIRED = ("check", "reason")

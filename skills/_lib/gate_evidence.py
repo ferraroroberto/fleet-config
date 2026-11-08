@@ -66,9 +66,9 @@ from typing import Dict, Iterator, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from active_issue import pid_state  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
+from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 EVIDENCE_NAME = "gate-evidence.json"
 # A marker per running gate under the hooks-state dir, so a lane never compacts
@@ -115,6 +115,7 @@ def tree_hash(repo: Path) -> Tuple[Optional[str], str]:
             # cannot be trusted) by comparing the entry's mtime to the INDEX FILE's mtime, at one-second
             # resolution on Git for Windows. A copy stamped "now" erases that, so a same-size rewrite in the
             # same second as the last index write read as unchanged and FRESH.
+            # runtime-write-exempt: temporary index copy in a temp folder
             shutil.copy2(index, tmp)
         else:
             tmp.unlink()  # a fresh repo has no index yet; git creates the temp one
@@ -180,6 +181,7 @@ def inflight_marker(repo: Path, label: str) -> Iterator[None]:
     body = {"pid": os.getpid(), "repo": str(repo), "label": label,
             "started": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     try:
+        # runtime-write-exempt: marker in the gate-inflight state folder
         path.parent.mkdir(parents=True, exist_ok=True)
         # A hard-killed gate never reaches its `finally`; reap markers whose pid
         # is confirmed gone so a reused pid cannot revive one.

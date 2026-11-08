@@ -23,15 +23,14 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/payload_normaliz
 
 from __future__ import annotations
 
-import json
 import io
-from contextlib import redirect_stdout, redirect_stderr
-from unittest.mock import patch
-
+import json
 import os
 import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "hooks"))
 import _lib  # noqa: E402

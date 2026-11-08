@@ -12,10 +12,10 @@ from __future__ import annotations
 import io
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 if hasattr(sys.stdout, "reconfigure"):

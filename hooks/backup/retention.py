@@ -10,8 +10,8 @@ module's bookkeeping and `snapshot.py`'s file-writing exist.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -24,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 
 from .config import (
-    BackupConfig,
     ARCHIVE_MANIFEST_NAME,
     CLAUDE_SESSIONS_LEG,
     CODEX_SESSIONS_LEG,
@@ -34,10 +33,11 @@ from .config import (
     FRESHNESS_UNKNOWN,
     LATEST_DIR,
     MANIFEST_NAME,
-    RUNTIME_DATA_LEG,
-    RUNTIME_DATA_GROUP,
     RUN_MARKER_NAME,
+    RUNTIME_DATA_GROUP,
+    RUNTIME_DATA_LEG,
     SESSION_ARCHIVE_DIR,
+    BackupConfig,
 )
 
 logger = logging.getLogger("backup_private")
@@ -93,6 +93,7 @@ def write_run_marker(snapshot_dir: Path, leg: str) -> None:
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
+        # runtime-write-exempt: marker inside the snapshot folder under the backup destination
         (snapshot_dir / RUN_MARKER_NAME).write_text(
             json.dumps(marker, ensure_ascii=False), encoding="utf-8",
         )
@@ -197,6 +198,7 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
         example_src = str(dest_root / LATEST_DIR / "life-os" / "*")
         example_dst = str(source / "life-os")
     try:
+        # runtime-write-exempt: note at the backup destination root
         (dest_root / RESTORE_NOTE_NAME).write_text(
             _RESTORE_NOTE.format(
                 leg=leg, source=source, example_src=example_src, example_dst=example_dst,
@@ -226,6 +228,7 @@ def _read_archive_manifest(dest_root: Path) -> Dict[str, Any]:
 def _replace_hardlink(source: Path, target: Path) -> None:
     """Atomically point an archive path at a completed snapshot file."""
 
+    # runtime-write-exempt: archive path under the backup destination
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     try:
@@ -367,6 +370,7 @@ def _write_archive_manifest(dest_root: Path, leg: str, files: Dict[str, Any],
         "sessions": sessions,
     }
     try:
+        # runtime-write-exempt: manifest under the backup destination root
         dest_root.mkdir(parents=True, exist_ok=True)
         _lib.atomic_write_text(
             dest_root / ARCHIVE_MANIFEST_NAME, json.dumps(archive_manifest, indent=2, ensure_ascii=False),
@@ -468,10 +472,12 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
         if source.is_dir():
             continue
         target = staging / source.relative_to(snapshot_dir)
+        # runtime-write-exempt: latest/ mirror under the backup destination
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             os.link(source, target)
         except OSError:
+            # runtime-write-exempt: latest/ mirror under the backup destination
             shutil.copy2(source, target)
         count += 1
 
@@ -580,12 +586,14 @@ def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, An
                 and target.is_file()):
             continue
         source = snapshot_dir / key
+        # runtime-write-exempt: latest/ mirror under the backup destination
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             target.unlink()
         try:
             os.link(source, target)
         except OSError:
+            # runtime-write-exempt: latest/ mirror under the backup destination
             shutil.copy2(source, target)
         if prev_entry is None:
             added += 1
@@ -612,6 +620,7 @@ def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, An
         try:
             os.link(source_manifest, latest_manifest)
         except OSError:
+            # runtime-write-exempt: latest/ mirror under the backup destination
             shutil.copy2(source_manifest, latest_manifest)
 
     _prune_empty_dirs(latest)

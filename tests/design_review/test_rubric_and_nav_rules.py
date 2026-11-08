@@ -11,13 +11,27 @@ from pathlib import Path
 from _suite import REPO, _h, check  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
 
+# isort: split
 import design_review as dr  # noqa: E402
-from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
-from design_review import mockups as mockups_mod, report as report_mod  # noqa: E402
 from design_lint.colormath import composite, contrast  # noqa: E402
+from design_review import capture, measure, plan  # noqa: E402
+from design_review import evaluate as ev
+from design_review import mockups as mockups_mod  # noqa: E402
+from design_review import report as report_mod
+from design_review import rubric as rb
+from design_review_support import (
+    comp as _comp,
+)
+from design_review_support import (
+    doc as _doc,
+)
 from design_review_support import (  # noqa: E402
+    light_c,
     rubric,
-    comp as _comp, doc as _doc, light_c, specs as _specs, src_specs,
+    src_specs,
+)
+from design_review_support import (
+    specs as _specs,
 )
 
 check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the evaluate module; the function is evaluate.evaluate (#972)")
@@ -33,7 +47,8 @@ check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule m
 check(all(r.severity in rb.SEVERITIES and r.owner in rb.OWNERS for r in rubric.rules), "severity/owner vocab")
 
 # ---- rules the static (design_lint) and rendered legs share are defined once (#1062) ----
-from design_lint import markup as _lint_markup, rules as _lint_rules  # noqa: E402
+from design_lint import markup as _lint_markup  # noqa: E402
+from design_lint import rules as _lint_rules
 from design_lint.contracts import typography as _lint_typography  # noqa: E402
 
 _type04 = next(r for r in rubric.rules if r.id == "TYPE-04")

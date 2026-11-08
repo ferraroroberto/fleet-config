@@ -9,11 +9,11 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from fleet_core import fleet_toml
 import git_run
+from fleet_core import fleet_toml
 
-from .sources import e2e_table, GIT_TIMEOUT_S, load_state, repo_slug, _gather
 from .measures import is_e2e
+from .sources import GIT_TIMEOUT_S, _gather, e2e_table, load_state, repo_slug
 
 __all__ = [
     "GROWTH_THRESHOLD",
@@ -107,12 +107,14 @@ def read_audit_record(repo_root: Path) -> Optional[Dict[str, object]]:
 
 def write_audit_record(repo_root: Path, raw_tests: int, node_count: Optional[int]) -> Path:
     p = audit_record_path(repo_root)
+    # runtime-write-exempt: audit record under the hooks state dir
     p.parent.mkdir(parents=True, exist_ok=True)
     res = git_run.run_git(["-C", str(repo_root), "rev-parse", "--short", "HEAD"], timeout=GIT_TIMEOUT_S)
     rec = {"raw_tests": raw_tests, "node_count": node_count,
            "date": _dt.datetime.now(_dt.timezone.utc).date().isoformat(),
            "sha": res.stdout.strip() if res.returncode == 0 else None}
     tmp = p.with_suffix(".json.tmp")
+    # runtime-write-exempt: audit record under the hooks state dir
     tmp.write_text(json.dumps(rec), encoding="utf-8")
     tmp.replace(p)
     return p

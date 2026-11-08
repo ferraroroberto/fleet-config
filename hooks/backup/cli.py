@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .config import (
-    BackupConfig,
+    _FRESHNESS_EXIT,
+    _SEVERITY,
     CLAUDE_SESSIONS_LEG,
     CODEX_SESSIONS_GROUP,
     CODEX_SESSIONS_LEG,
@@ -41,10 +42,24 @@ from .config import (
     MANIFEST_NAME,
     RUNTIME_DATA_GROUP,
     RUNTIME_DATA_LEG,
-    _FRESHNESS_EXIT,
-    _SEVERITY,
+    BackupConfig,
     load_backup_config,
     load_repo_overrides,
+)
+from .report import _notify, report
+from .retention import (
+    _index_manifest,
+    _previous_snapshot,
+    audit_session_archive,
+    clear_run_marker,
+    freshness,
+    prune,
+    read_run_marker,
+    rebuild_latest,
+    reconcile_latest,
+    reconcile_session_archive,
+    write_restore_note,
+    write_run_marker,
 )
 from .select import (
     Selection,
@@ -54,22 +69,12 @@ from .select import (
     select_runtime_data,
     select_transcripts,
 )
-from .snapshot import check_zero_file_regressions, runtime_data_staging, verify_sample, write_group
-from .retention import (
-    _index_manifest,
-    _previous_snapshot,
-    audit_session_archive,
-    clear_run_marker,
-    freshness,
-    prune,
-    read_run_marker,
-    reconcile_session_archive,
-    reconcile_latest,
-    rebuild_latest,
-    write_restore_note,
-    write_run_marker,
+from .snapshot import (
+    check_zero_file_regressions,
+    runtime_data_staging,
+    verify_sample,
+    write_group,
 )
-from .report import _notify, report
 
 logger = logging.getLogger("backup_private")
 
@@ -92,6 +97,7 @@ def _same_volume(a: Path, b: Path) -> bool:
 def _preflight(source: Path, dest: Path) -> Optional[str]:
     """Refuse to write a snapshot that shares a volume with its source."""
     try:
+        # runtime-write-exempt: creates the backup destination the caller names
         dest.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return f"destination {dest} is not writable: {exc}"
@@ -132,7 +138,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         # marker already sitting here belongs to an earlier run for this same
         # date that never finished — self-healing: this run overwrites the
         # directory and clears it on success, but the report names it first.
-        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: snapshot folder under the backup destination root
         manifest["recovered_marker"] = read_run_marker(snapshot_dir) or None
         write_run_marker(snapshot_dir, leg)
         prev_dir, prev_manifest, skipped_interrupted = _previous_snapshot(dest_root, today)
@@ -169,7 +175,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         manifest["status"] = "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
-    (snapshot_dir / MANIFEST_NAME).write_text(
+    (snapshot_dir / MANIFEST_NAME).write_text(  # runtime-write-exempt: snapshot folder under the backup destination root
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     # The manifest now describes this directory (even a "failed" one) — the

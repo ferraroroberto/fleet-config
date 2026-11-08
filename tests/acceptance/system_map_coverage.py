@@ -12,7 +12,6 @@ from typing import Tuple
 
 from acceptance.shared import REPO, _Checker, gate_projects_toml
 
-
 # A card row is a markdown table row whose FIRST cell names the project, in
 # bold, optionally after an icon: `| 🚀 **app-launcher** | ... |`. Anchoring to
 # the first cell is the whole point — a bare `r in doc` substring test passed

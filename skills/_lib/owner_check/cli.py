@@ -21,6 +21,7 @@ _LIB = Path(__file__).resolve().parent.parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
 from owner_check import backfill, block, github, reclassify, rule  # noqa: E402
 
 EXIT_NONE, EXIT_REQUIRED, EXIT_REFUSED, EXIT_UNKNOWN = 0, 1, 2, 3

@@ -65,6 +65,7 @@ from __future__ import annotations
 # the spelling every caller already uses and preserving it is the whole point of
 # re-exporting here. Nothing imports the shadowed submodules by attribute.
 from .adoption import adoption
+from .cli import main
 from .contracts import contracts
 from .css import (
     DARK_SELECTOR_HINTS,
@@ -91,7 +92,6 @@ from .siblings import siblings
 from .spec import parse_spec
 from .tokens import ALIASES, OPTIONAL_ROLES, map_tokens
 from .vendored import compare_icon_sprite, vendored
-from .cli import main
 
 __all__ = [
     "ALIASES",

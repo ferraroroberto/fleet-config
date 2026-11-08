@@ -6,29 +6,70 @@ Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import sys
 import tempfile
-import datetime as dt
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO_ROOT, RULES_MD, SOURCES_TOML, TITLE, VERDICTS, clean, ensure_utf8_stdio, fleet_repos, git_run, load_toml, rules_rubric
-from .sources import diff_source
-from .evals import fold as fold_evals, latest_two
-from .leads import LeadsError, load_leads, mark as mark_lead, resolve as resolve_leads, suggestions_comment
-from .coverage import (cache_page, coverage, coverage_comment, known_items,
-                       page_text, section_text)
-from .inventory import Entry, _read, inventory, kind_of, sections
-from .rules import parse_rules
-from .lint import hit_detail, hits_line, lint_entry, mcp_vocabulary
-from .dedup import dedup
-from .state import load_state, save_state, source_due
-from .ledger import _audit_issue, merge_ledger, plan_scan, read_ledger_issue, render_ledger_body
-from .digest import partition_run, provisional_rules, render_digest, render_ping
-from .drift import DRIFT_KIND, DRIFT_LABEL, DRIFT_LABEL_COLOR, DRIFT_LABEL_DESC, DRIFT_TITLE, OWNER, drift_items, merge_drift
 from gate_coverage import enforced as gate_enforced
 
+from .common import (
+    KIND,
+    LEDGER_REPO,
+    LITE_GLOBAL,
+    LITE_REPO,
+    MASTER_REPO,
+    REPO_ROOT,
+    RULES_MD,
+    SOURCES_TOML,
+    TITLE,
+    VERDICTS,
+    clean,
+    ensure_utf8_stdio,
+    fleet_repos,
+    git_run,
+    load_toml,
+    rules_rubric,
+)
+from .coverage import (
+    cache_page,
+    coverage,
+    coverage_comment,
+    known_items,
+    page_text,
+    section_text,
+)
+from .dedup import dedup
+from .digest import partition_run, provisional_rules, render_digest, render_ping
+from .drift import (
+    DRIFT_KIND,
+    DRIFT_LABEL,
+    DRIFT_LABEL_COLOR,
+    DRIFT_LABEL_DESC,
+    DRIFT_TITLE,
+    OWNER,
+    drift_items,
+    merge_drift,
+)
+from .evals import fold as fold_evals
+from .evals import latest_two
+from .inventory import Entry, _read, inventory, kind_of, sections
+from .leads import LeadsError, load_leads, suggestions_comment
+from .leads import mark as mark_lead
+from .leads import resolve as resolve_leads
+from .ledger import (
+    _audit_issue,
+    merge_ledger,
+    plan_scan,
+    read_ledger_issue,
+    render_ledger_body,
+)
+from .lint import hit_detail, hits_line, lint_entry, mcp_vocabulary
+from .rules import parse_rules
+from .sources import diff_source
+from .state import load_state, save_state, source_due
 
 # `gh` call timeouts (seconds), stated bounds rather than measured ones, so an unattended weekly run
 # cannot hang on one call. GH_QUICK_TIMEOUT_S covers issue reads and the one-shot label create;

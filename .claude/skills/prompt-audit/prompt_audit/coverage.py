@@ -37,6 +37,7 @@ def pages_dir() -> Path:
 def cache_page(sid: str, data: bytes) -> Path:
     """Write a fetched page's verbatim bytes to the cache; the next run reuses them while the page is fresh."""
     d = pages_dir()
+    # runtime-write-exempt: page cache under the prompt-audit state dir (pages_dir())
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{sid}.md"
     # `newline=""` and a lossless decode keep the page's bytes as fetched; `page_text` decodes with `replace` anyway.

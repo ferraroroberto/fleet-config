@@ -22,9 +22,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import chief_plan  # noqa: E402
 from chief import launcher, rails  # noqa: E402
+from owner_check import github as owner_github  # noqa: E402
+
 from grokbot import status as grok_status  # noqa: E402
 from grokbot import switch as grok_switch  # noqa: E402
-from owner_check import github as owner_github  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
 

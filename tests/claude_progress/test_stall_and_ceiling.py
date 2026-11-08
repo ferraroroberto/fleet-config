@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from _suite import INIT_LINE, RESULT_LINE, ReadinessClock, TOOL_LINE, _h, check, cp  # noqa: E402
-
+from _suite import INIT_LINE, RESULT_LINE, TOOL_LINE, ReadinessClock, _h, check, cp  # noqa: E402
 
 # ---- stall watchdog: a silent run is killed, not left wedged (fleet-config#411) ----
 

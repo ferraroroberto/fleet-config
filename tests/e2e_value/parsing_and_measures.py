@@ -3,7 +3,6 @@ from pathlib import Path
 
 from _suite import RUN1, RUN2, RUN3, _log, check, v
 
-
 # ---- parsing ------------------------------------------------------------------
 
 r1 = v.parse_run(RUN1)

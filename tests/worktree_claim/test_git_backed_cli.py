@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import json as _json
 import shutil
 import socket
 import subprocess
@@ -13,10 +14,8 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-import json as _json
 
 from _suite import _h, check, wc  # noqa: E402
-
 
 # ---- real junction + reparse-safe teardown: the target survives (#620) ------
 #

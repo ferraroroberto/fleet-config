@@ -20,7 +20,6 @@ from typing import Dict, List, Optional
 from .css import _ANY_DECL_RE, _COLOR_LITERAL_RE, strip_comments
 from .files import is_third_party, read_text, rel
 
-
 _COLOR_PROPS = ("color", "background", "background-color", "border",
                 "border-color", "border-top", "border-bottom", "border-left",
                 "border-right", "outline", "fill", "stroke")

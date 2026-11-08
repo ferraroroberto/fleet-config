@@ -10,7 +10,6 @@ import sys
 
 from _suite import _h, check, cp  # noqa: E402
 
-
 # ---- command construction: caller flags survive, stream contract is owned ----
 
 arguments = [

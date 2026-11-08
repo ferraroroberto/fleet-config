@@ -7,7 +7,6 @@ from typing import List
 from acceptance.hook_cases import Case
 from acceptance.hook_cases.fakes import FAKE_AKIA, FAKE_GHP, FAKE_SK, FAKE_XOXB
 
-
 # pre_commit_no_ai_trailer
 PRE_COMMIT_CASES: List[Case] = [
     ("pre_commit: Co-Authored-By Claude -> block",

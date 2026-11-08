@@ -9,8 +9,9 @@ import shutil
 from pathlib import Path
 
 from _suite import _h, check  # noqa: E402
-import design_lint as dl  # noqa: E402
 
+# isort: split
+import design_lint as dl  # noqa: E402
 from throwaway_dir import throwaway_dir  # noqa: E402
 
 _STATIC = "app/webapp/static"

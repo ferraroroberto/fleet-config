@@ -19,7 +19,6 @@ from typing import Any, Iterable, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
 TOKEN_DIVISOR = 4
 DEFAULT_MAX_LINES = 80
 DEFAULT_MAX_CHARS = 12_000
@@ -223,8 +222,10 @@ def cache_raw_output(command: str, raw: str) -> str:
     digest = hashlib.sha256((command + "\0" + stamp + "\0" + raw).encode("utf-8", "replace")).hexdigest()
     key = digest[:16]
     target_dir = data_dir() / "blobs"
+    # runtime-write-exempt: blob cache in the per-user context-filter data dir
     target_dir.mkdir(parents=True, exist_ok=True)
     _prune_old_blobs(target_dir)
+    # runtime-write-exempt: blob cache in the per-user context-filter data dir
     (target_dir / f"{key}.txt").write_text(raw, encoding="utf-8", errors="replace")
     return key
 

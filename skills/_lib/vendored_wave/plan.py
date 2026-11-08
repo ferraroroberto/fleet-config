@@ -37,8 +37,9 @@ from typing import Dict, FrozenSet, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import vendored_drift as vd  # noqa: E402
-from vendored_wave import wave_claim  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
+from vendored_wave import wave_claim  # noqa: E402
 
 ensure_utf8_stdio()
 

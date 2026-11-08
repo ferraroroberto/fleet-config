@@ -238,35 +238,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # question `/issue-finish` and any health sweep want, not part of the claim
 # FSM. `land-primary` is only its first caller, so it imports the one verdict
 # it needs rather than re-exporting the subsystem it no longer owns.
-from worktree.service_probe import service_state  # noqa: E402
-from untrack_guard import guarded_fast_forward, report_lines as untrack_report_lines  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from untrack_guard import guarded_fast_forward  # noqa: E402
+from untrack_guard import report_lines as untrack_report_lines
+
 # The claim FSM and the git/junction operations live in the `worktree`
 # package; their names are re-exported so every caller and test keeps
 # addressing them as `worktree_claim.<name>`. A test that swaps one of them
 # out swaps it on the module that owns it.
 from worktree.claim import (  # noqa: E402
     DEFAULT_TTL_HOURS,
-    LOCK_NAME as LOCK_NAME,
-    META_NAME as META_NAME,
     format_primary_state,
-    is_stale as is_stale,
     land_primary_check,
     owner_check,
     read_meta,
     try_acquire,
+)
+from worktree.claim import (
+    LOCK_NAME as LOCK_NAME,
+)
+from worktree.claim import (
+    META_NAME as META_NAME,
+)
+from worktree.claim import (
+    is_stale as is_stale,
+)
+from worktree.claim import (
     worktree_path as worktree_path,
+)
+from worktree.claim import (
     write_meta as write_meta,
 )
 from worktree.gitops import (  # noqa: E402
     _common_dir_or_none,
     _git,
     _is_primary_checkout_safe,
-    _junction as _junction,
-    _looks_like_worktree_name as _looks_like_worktree_name,
-    _strip_junction as _strip_junction,
     branch_exists_on_remote,
-    common_dir as common_dir,
     count_behind,
     is_primary_checkout,
     lock_dir_for,
@@ -275,10 +282,25 @@ from worktree.gitops import (  # noqa: E402
     primary_for_worktree,
     remove_worktree,
     setup_worktree,
-    worktree_add_args as worktree_add_args,
     worktree_junction_targets,
 )
-from worktree_residue import WT_SEP as WT_SEP  # noqa: E402
+from worktree.gitops import (
+    _junction as _junction,
+)
+from worktree.gitops import (
+    _looks_like_worktree_name as _looks_like_worktree_name,
+)
+from worktree.gitops import (
+    _strip_junction as _strip_junction,
+)
+from worktree.gitops import (
+    common_dir as common_dir,
+)
+from worktree.gitops import (
+    worktree_add_args as worktree_add_args,
+)
+from worktree.service_probe import service_state  # noqa: E402
+
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
 # lives in its own module -- including the side-instance preflight's own
 # config discovery and
@@ -288,19 +310,36 @@ from worktree_residue import WT_SEP as WT_SEP  # noqa: E402
 # tests address as `worktree_claim.<name>`. Import only what has a caller.
 from worktree.worktree_config import (  # noqa: E402
     WT_PORT_BASE as WT_PORT_BASE,
+)
+from worktree.worktree_config import (
     WT_PORT_SPAN as WT_PORT_SPAN,
+)
+from worktree.worktree_config import (
     check_provisioned_configs,
-    copy_env_file as copy_env_file,
-    copy_root_config as copy_root_config,
-    copy_runtime_config as copy_runtime_config,
     port_registry_state,
-    remove_secret_config as remove_secret_config,
     worktree_blank_config_keys,
-    worktree_port as worktree_port,
     worktree_primary_instance_ok,
     worktree_read_safe_config_keys,
+)
+from worktree.worktree_config import (
+    copy_env_file as copy_env_file,
+)
+from worktree.worktree_config import (
+    copy_root_config as copy_root_config,
+)
+from worktree.worktree_config import (
+    copy_runtime_config as copy_runtime_config,
+)
+from worktree.worktree_config import (
+    remove_secret_config as remove_secret_config,
+)
+from worktree.worktree_config import (
+    worktree_port as worktree_port,
+)
+from worktree.worktree_config import (
     worktree_secret_config_keys as worktree_secret_config_keys,
 )
+from worktree_residue import WT_SEP as WT_SEP  # noqa: E402
 
 ensure_utf8_stdio()
 

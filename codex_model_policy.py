@@ -26,9 +26,9 @@ from config_edit import (  # noqa: E402
     default_codex_config_path,
     inline_comment,
 )
+
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
-
 
 MAIN_MODEL = "gpt-5.6-sol"
 MAIN_EFFORT = "medium"
@@ -197,6 +197,7 @@ def validate_cli(config_text: str, catalog_text: str, executable: str) -> None:
     with tempfile.TemporaryDirectory(prefix="fleet-codex-policy-") as directory:
         home = Path(directory)
         temporary_catalog = home / "model_catalog.json"
+        # runtime-write-exempt: scratch files in an isolated temporary Codex home
         temporary_catalog.write_text(catalog_text, encoding="utf-8", newline="")
         rendered_config = re.sub(
             r'(?m)^model_catalog_json\s*=\s*"[^"]*"',
@@ -204,6 +205,7 @@ def validate_cli(config_text: str, catalog_text: str, executable: str) -> None:
             config_text,
             count=1,
         )
+        # runtime-write-exempt: scratch files in an isolated temporary Codex home
         (home / "config.toml").write_text(rendered_config, encoding="utf-8", newline="")
         environment = {**os.environ, "CODEX_HOME": str(home)}
         command = [binary, "debug", "models"]

@@ -27,7 +27,6 @@ import unittest.mock
 from datetime import timedelta
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = importlib.util.spec_from_file_location(
     "session_state_under_test", ROOT / "hooks" / "session_state.py")

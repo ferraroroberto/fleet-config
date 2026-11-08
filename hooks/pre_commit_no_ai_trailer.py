@@ -28,6 +28,7 @@ import sys
 # Resolve the sibling _lib without requiring this dir on sys.path
 from pathlib import Path
 from typing import List, Optional, Tuple
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 from secret_scan import shell_paths  # noqa: E402
@@ -39,7 +40,6 @@ from secret_scan_guard import (  # noqa: E402
     read_body,
     resolve_operand,
 )
-
 
 # Phrases that are a trailer when they start a line of a GitHub body.
 TEXT_PATTERNS = (

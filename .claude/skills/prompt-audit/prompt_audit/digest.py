@@ -9,10 +9,9 @@ from typing import Dict, Iterable, Set, Tuple
 
 from .common import COMMENT_CHAR_CAP, DIGEST_FINDINGS_CAP, STAMP_PREFIX, VERDICTS, clean
 from .coverage import digest_line
-from .leads import digest_lines as lead_digest_lines
-from .evals import digest_lines as eval_digest_lines
 from .dedup import dedup, norm_line
-
+from .evals import digest_lines as eval_digest_lines
+from .leads import digest_lines as lead_digest_lines
 
 # ---- digest ---------------------------------------------------------------------
 

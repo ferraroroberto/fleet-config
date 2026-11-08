@@ -1,11 +1,14 @@
 import json
 import subprocess
 
-from _suite import REPO, STATE, _walk_failure, _walk_run, check, interp, scaffold
 import walk
+from _suite import REPO, STATE, _walk_failure, _walk_run, check, interp, scaffold
 from design_review import evaluate as ev
-from design_review_support import FIX, L10_MISSING as _L10_MISSING, c18_of as _c18_of, doc as _doc, rubric, specs as _specs
-
+from design_review_support import FIX, rubric
+from design_review_support import L10_MISSING as _L10_MISSING
+from design_review_support import c18_of as _c18_of
+from design_review_support import doc as _doc
+from design_review_support import specs as _specs
 
 # label fit and container overflow at the 390px phone leg: the camera dialog that scored clean while broken (#1325)
 lf = {}
@@ -114,7 +117,12 @@ if not _tn_bad:
 
 # LAYOUT-10: a glance card that grows as its late reads land (#1354). Served over loopback: `/late?ms=N` answers after N ms
 # (capped at 120 s, past every bound the walk has), so the page's reads are real requests the walk's idle wait can see.
-import functools as _gl_functools, http.server as _gl_http, threading as _gl_threading, time as _gl_time, urllib.parse as _gl_parse  # noqa: E402
+import functools as _gl_functools  # noqa: E402
+import http.server as _gl_http
+import threading as _gl_threading
+import time as _gl_time
+import urllib.parse as _gl_parse
+
 
 class _LateReads(_gl_http.SimpleHTTPRequestHandler):
     def log_message(self, *a):  # noqa: D401 -- keep the test output clean

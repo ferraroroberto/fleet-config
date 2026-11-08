@@ -41,12 +41,11 @@ sys.path.insert(0, str(REPO / "tests"))
 _STATE = tempfile.mkdtemp(prefix="perf-review-state-")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = _STATE
 
-from check_harness import CheckHarness  # noqa: E402
-from acceptance.shared import SKIP_EXIT  # noqa: E402
-
 import audit_issue  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from acceptance.shared import SKIP_EXIT  # noqa: E402
+from check_harness import CheckHarness  # noqa: E402
 from fleet_core import hooks_state  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 from perf_review import cli, http_probe, report, stamping  # noqa: E402
 
 _h = CheckHarness()
@@ -481,6 +480,7 @@ check("--cold-samples" in load_src and re.search(r'"--cold-samples".*default=3',
 # local-llm-hub serves its API under `/admin/api/`: matching `startswith("/api/")` counted no boot call, so `warm.data_ms` and
 # `endpoints.api_p95_ms` came back unmeasured and the warm SPLIT line read `api=0 KB` beside TOP lines naming `/admin/api/hub/stats`.
 import ast as _ast
+
 _fn = next((n for n in _ast.parse(load_src).body if isinstance(n, _ast.FunctionDef) and n.name == "is_api_path"), None)
 check(_fn is not None, "load.py defines is_api_path, the one place that decides what an API path is")
 if _fn is not None:

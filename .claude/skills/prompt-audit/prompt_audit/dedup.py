@@ -10,7 +10,6 @@ from typing import Dict, List, Tuple
 
 from .common import HOME_REPO, LITE_REPO, MASTER_REPO
 
-
 # ---- scaffold dedup -------------------------------------------------------------
 
 _MARKUP = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+|[*_`>#]")

@@ -442,6 +442,7 @@ def file_run(run_dir: Path, repo: Optional[str], dry_run: bool, root: Optional[P
     out.update({"repo": repo, "issue": existing.get("number"), "duplicates": existing.get("duplicates") or [],
                 "dry_run": dry_run, "url": None, "run_id": run_id, "target": doc.get("target")})
     body_path = run_dir / ISSUE_BODY_NAME
+    # runtime-write-exempt: issue body file in the run folder
     body_path.write_text(out["body"], encoding="utf-8")
     out["body_path"] = str(body_path)
     if not dry_run:

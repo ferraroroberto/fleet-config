@@ -78,6 +78,7 @@ def read_meta(lock_dir: Path) -> Optional[dict]:
 
 
 def write_meta(lock_dir: Path, meta: dict) -> None:
+    # runtime-write-exempt: meta.json inside the claim folder
     (lock_dir / META_NAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
@@ -100,6 +101,7 @@ def _publish_claim(lock_dir: Path, meta: dict) -> bool:
     fully populated, never in between.
     """
     tmp_dir = lock_dir.with_name(f"{lock_dir.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    # runtime-write-exempt: temporary claim folder beside the final lock folder
     tmp_dir.mkdir(parents=False)
     write_meta(tmp_dir, meta)
     try:

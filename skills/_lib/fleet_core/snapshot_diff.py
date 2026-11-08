@@ -29,6 +29,7 @@ from typing import Callable, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
+
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # U+2212 MINUS SIGN for removals (reads cleaner than a hyphen, which looks like

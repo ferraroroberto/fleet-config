@@ -29,7 +29,8 @@ from throwaway_dir import throwaway_dir  # noqa: E402
 
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(throwaway_dir("design-review-web-state-"))
 
-from design_review import capture, plan, rubric as rubric_mod  # noqa: E402
+from design_review import capture, plan  # noqa: E402
+from design_review import rubric as rubric_mod
 from design_review.web import measure_web  # noqa: E402
 
 _h = CheckHarness()

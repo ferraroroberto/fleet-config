@@ -19,6 +19,7 @@ from typing import List, Optional, Tuple
 
 import browser_verify
 from no_window import NO_WINDOW
+
 from ui_proof import store
 
 VIEWPORTS = {"phone": "390x844", "desktop": "1280x900"}
@@ -74,6 +75,7 @@ def run(repo: Path, phase: str, url: str, state: str, viewports: List[str], them
         return False, f"CAPTURED=none reason=PLAYWRIGHT_MISSING playwright is not importable under {python}"
     if not browser_verify.app_reachable(url):
         return False, f"CAPTURED=none reason=APP_UNREACHABLE nothing answers at {url}"
+    # runtime-write-exempt: staging folder inside this checkout's .proof/
     root.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix=".shots-", dir=root))
     try:

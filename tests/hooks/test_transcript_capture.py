@@ -1,19 +1,19 @@
 """Regression boundary for shared native transcript capture (#753)."""
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parents[1] / 'hooks'))
 import _lib
 import conversation_capture as cc
-import conversation_search as cs
 import conversation_index as ci
+import conversation_search as cs
 from conversation import transcript_readers as tr
 
 SID = '11111111-1111-4111-8111-111111111111'

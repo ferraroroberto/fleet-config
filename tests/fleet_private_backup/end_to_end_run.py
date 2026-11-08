@@ -4,8 +4,9 @@ import sqlite3
 from _suite import _cfg, _git, _write, check, tmp
 from latest_and_notes import toml_path
 from runtime_data import live_db, rd_src, writer
-import backup as bp
 
+# isort: split
+import backup as bp
 
 # ---- end-to-end run ----------------------------------------------------
 e2e_cfg = _cfg(tmp, dest=tmp / "e2e-dest", transcripts_src=tmp / "e2e-transcripts",

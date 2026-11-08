@@ -37,7 +37,13 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
-from worktree.claim import DEFAULT_TTL_HOURS, is_stale, read_meta, try_acquire, write_meta  # noqa: E402
+from worktree.claim import (  # noqa: E402
+    DEFAULT_TTL_HOURS,
+    is_stale,
+    read_meta,
+    try_acquire,
+    write_meta,
+)
 
 ensure_utf8_stdio()
 

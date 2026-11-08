@@ -23,7 +23,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 
-from .config import BackupConfig, DB_SUFFIXES, RepoOverrides
+from .config import DB_SUFFIXES, BackupConfig, RepoOverrides
 from .snapshot import is_sqlite_sidecar, snapshot_sqlite
 
 logger = logging.getLogger("backup_private")
@@ -378,6 +378,7 @@ def select_codex_sessions(cfg: BackupConfig, staging: Path) -> Selection:
             snapshot_sqlite(source_db, target)
             sel.files.append((target, source_db.name, target.stat().st_size))
             if source_db.name.startswith("state_"):
+                # runtime-write-exempt: staging folder inside the backup snapshot
                 connection = sqlite3.connect(f"file:{target.as_posix()}?mode=ro", uri=True)
                 try:
                     rows = connection.execute(

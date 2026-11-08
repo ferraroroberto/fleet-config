@@ -12,11 +12,27 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from .common import (NEUTRAL, SIZE_CAPS, clean, frontmatter_description, frontmatter_error, frontmatter_field,
-                     prose_words, strip_quoted, unfenced_lines)
-from .inventory import Entry, _HEADING, _TICKED, _read, audience_at, references, sections
+from .common import (
+    NEUTRAL,
+    SIZE_CAPS,
+    clean,
+    frontmatter_description,
+    frontmatter_error,
+    frontmatter_field,
+    prose_words,
+    strip_quoted,
+    unfenced_lines,
+)
+from .inventory import (
+    _HEADING,
+    _TICKED,
+    Entry,
+    _read,
+    audience_at,
+    references,
+    sections,
+)
 from .rules import rule_applies_to_kind, verdict_cap
-
 
 # ---- lint -----------------------------------------------------------------------
 

@@ -29,8 +29,9 @@ from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
-from config_edit import atomic_write  # noqa: E402
 from quota_snapshot import read_snapshot  # noqa: E402
+
+from config_edit import atomic_write  # noqa: E402
 
 ESC = "\x1b"
 # Grok's own context item turns amber here when the agent reports no

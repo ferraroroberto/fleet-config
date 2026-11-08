@@ -32,7 +32,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-
 # How long the `--verify` poll waits between exchange reads. Lives here rather
 # than with `chief_ops`'s other CLI defaults because `recent_output_window`
 # floors itself at one interval -- the value is an input to the classifier, not
