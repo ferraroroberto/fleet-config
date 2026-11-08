@@ -138,8 +138,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         # marker already sitting here belongs to an earlier run for this same
         # date that never finished — self-healing: this run overwrites the
         # directory and clears it on success, but the report names it first.
-        # runtime-write-exempt: snapshot folder under the backup destination root
-        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: snapshot folder under the backup destination root
         manifest["recovered_marker"] = read_run_marker(snapshot_dir) or None
         write_run_marker(snapshot_dir, leg)
         prev_dir, prev_manifest, skipped_interrupted = _previous_snapshot(dest_root, today)
@@ -176,8 +175,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         manifest["status"] = "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
-    # runtime-write-exempt: snapshot folder under the backup destination root
-    (snapshot_dir / MANIFEST_NAME).write_text(
+    (snapshot_dir / MANIFEST_NAME).write_text(  # runtime-write-exempt: snapshot folder under the backup destination root
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     # The manifest now describes this directory (even a "failed" one) — the
