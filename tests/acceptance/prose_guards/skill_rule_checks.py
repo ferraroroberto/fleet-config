@@ -256,8 +256,11 @@ def _chief_wake_check() -> Tuple[int, int]:
           '"$OPS" inbox --count' in waking and "waiter_heartbeat.py" in waking)
     check("chief wake: no unconditional re-arm-after-every-wake rule", "Re-arm it after every wake" not in skill)
     compact = skill.partition("## Managing your own context")[2].partition("\n## ")[0]
-    check("chief wake: self-compact needs an armed waiter only in waiter mode",
-          "Make sure the waiter is armed." not in compact and "WAKE=waiter" in compact)
+    check("chief wake: self-compact arms the waiter the `wake` line names, fallback included",
+          "Make sure the waiter is armed." not in compact and "WAKE=waiter" in compact and "WAKE=doorbell" in compact)
+    check("chief wake: the doorbell line names the fallback waiter with the mailbox constants (#1938)",
+          "fallback=waiter seconds=1800" in waking and "--older-than 600" in waking
+          and "inbox --count $OLDER" in waking and "one fallback waiter" in waking)
     check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
     # The section body lives in its on-demand doc; SKILL.md keeps the pointer.
     incoming = (skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]

@@ -201,9 +201,11 @@ Edge cases, decided:
 
 `chief_ops.py inbox --count` implements exactly this rule and prints `PENDING=<n>`.
 
+`--older-than SECS` is a chief-side narrowing, not part of the launcher's ring rule: it counts a root event only once its name prefix is at least `SECS` old, and a claim only once it is at least the larger of `CLAIM_STALE_MS` and `SECS` old. A name with no readable time still counts. The doorbell's fallback waiter uses `--older-than 600`, so it fires only for an event the doorbell has failed to deliver for 10 minutes.
+
 ## Reading (the chief)
 
-The chief reads with `chief_ops.py inbox`, then `chief_ops.py ack <id…>` (at-least-once), when the doorbell rings. While `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown, it arms a one-shot waiter that polls `inbox --count` and then reads with `inbox` the same way.
+The chief reads with `chief_ops.py inbox`, then `chief_ops.py ack <id…>` (at-least-once), when the doorbell rings. While `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown, it arms a one-shot waiter that polls `inbox --count` and then reads with `inbox` the same way. With the switch on, `wake` still names one long fallback waiter (`fallback=waiter seconds=1800`) that polls `inbox --count --older-than 600`, so a doorbell that fails silently delays events by about 10 minutes plus its poll, not hours.
 
 The steps:
 

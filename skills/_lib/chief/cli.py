@@ -76,6 +76,8 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     ib.add_argument("--count", action="store_true", help="print PENDING=<n> and claim nothing")
     ib.add_argument("--stale-after", type=float, default=mailbox.CLAIM_STALE_SECONDS,
                     help="seconds before an unacked claim is re-offered")
+    ib.add_argument("--older-than", type=float, default=0.0,
+                    help="with --count: count only events that have waited at least this many seconds")
     ib.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     ib.set_defaults(func=commands.cmd_inbox)
 

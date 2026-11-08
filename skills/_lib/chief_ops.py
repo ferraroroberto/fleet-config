@@ -59,7 +59,7 @@ Subcommands
       named, on the human-readable path) so this answers the same question
       `dispatch` asks — see `dispatch` below.
 
-  inbox [--count] [--stale-after SECS]
+  inbox [--count [--older-than SECS]] [--stale-after SECS]
       Mailbox v2 reader (fleet-config#1455; contract: docs/chief-mailbox.md).
       Moves stale claims (unacked for `--stale-after`, default 900 s) back to
       the inbox root, then claims every pending event into

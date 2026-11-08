@@ -38,6 +38,11 @@ CLAIMED_DIRNAME = ".claimed"
 CLAIM_STALE_SECONDS = 900.0
 EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input",
                    "job-failed": "job failed"}
+# With the doorbell on, the chief keeps one long waiter that wakes it only for
+# an event that has waited this long: well past a ring's few seconds, so it
+# never races the doorbell, short enough to bound a silently dead one.
+FALLBACK_WAITER_SECONDS = 1800
+FALLBACK_OLDER_THAN_SECONDS = 600
 # Reading a just-claimed file retries a sharing violation this many times,
 # backing off from this delay and doubling (10+20+40+80 ms): the concurrent
 # claimer holding it finishes its rename in well under that.
@@ -76,19 +81,30 @@ def _event_files(directory: Path) -> List[Path]:
 
 
 def count_pending(inbox: Path, now_ms: Optional[int] = None,
-                  stale_after: float = CLAIM_STALE_SECONDS) -> int:
+                  stale_after: float = CLAIM_STALE_SECONDS, older_than: float = 0.0) -> int:
     """Pending events by file name alone -- the reference for docs/chief-mailbox.md.
 
     Every root event file, plus every `.claimed/` file whose claim is at
     least `stale_after` old (or whose name carries no readable claim time).
     No file is opened or parsed. Raises `OSError` when a directory exists but
     cannot be listed: that is "unknown", never zero.
+
+    `older_than` (seconds, 0 = off) counts only events that have waited at least
+    that long: the doorbell's fallback waiter must not race a ring that is a few
+    seconds old. A file name without a readable time still counts -- an event
+    whose age cannot be established is never hidden.
     """
     moment = _now_ms() if now_ms is None else now_ms
-    pending = len(_event_files(inbox))
+    waited_ms = older_than * 1000
+    pending = 0
+    for path in _event_files(inbox):
+        published_at, _ = _split_event_name(path.name)
+        if published_at is None or moment - published_at >= waited_ms:
+            pending += 1
+    claim_ms = max(stale_after, older_than) * 1000
     for path in _event_files(inbox / CLAIMED_DIRNAME):
         claimed_at, _ = _split_event_name(path.name)
-        if claimed_at is None or moment - claimed_at >= stale_after * 1000:
+        if claimed_at is None or moment - claimed_at >= claim_ms:
             pending += 1
     return pending
 
@@ -340,15 +356,18 @@ def resolve_wake_mode(
 ) -> Tuple[str, bool]:
     """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch (fleet-config#1457).
 
-    Only a confirmed `true` lets the chief arm no waiter: an
-    unread or non-boolean setting is `unknown` and still says arm one,
-    so a chief never ends a turn with no wake path at all.
+    A confirmed `true` rings the chief but still names a long fallback waiter
+    (#1938): a doorbell that fails silently otherwise leaves nothing to wake
+    a chief that sits idle. An unread or non-boolean setting is `unknown` and
+    says arm the full waiter, so a chief never ends a turn with no wake path.
+    The line keeps its `WAKE=doorbell` prefix: `hooks/chief_waiter_stop.py`
+    reads that prefix and the fallback adds no heartbeat requirement.
     """
     if config is None:
         return f"WAKE=waiter doorbell=unknown reason={unread_reason}", False
     value = config.get("chief_doorbell")
     if value is True:
-        return "WAKE=doorbell doorbell=on", True
+        return f"WAKE=doorbell doorbell=on fallback=waiter seconds={FALLBACK_WAITER_SECONDS}", True
     if value is False:
         return "WAKE=waiter doorbell=off", True
     return "WAKE=waiter doorbell=unknown reason=launcher config has no boolean chief_doorbell", False

@@ -182,8 +182,8 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
         check("chief_waiter_stop: heartbeat with a live pid -> allowed", code == 0)
         shutil.rmtree(tmp / "chief-waiters")
 
-        code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher(wake="WAKE=doorbell doorbell=on"))
-        check("chief_waiter_stop: doorbell on needs no waiter -> allowed", code == 0)
+        code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher(wake="WAKE=doorbell doorbell=on fallback=waiter seconds=1800"))
+        check("chief_waiter_stop: doorbell on needs no waiter heartbeat, fallback line included -> allowed", code == 0)
 
         _seed_state(tmp, lane_status="needs-you")
         code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())
