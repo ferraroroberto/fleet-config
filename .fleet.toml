@@ -34,8 +34,9 @@ comment_ratchet = { src = "scripts/comment_ratchet.py", sha = "4a06ca84fc9c5005d
 instruction_ratchet = { src = "scripts/instruction_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/instruction_ratchet.py" }
 doc_refs_ratchet = { src = "scripts/doc_refs_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/doc_refs_ratchet.py" }
 dead_code_ratchet = { src = "scripts/dead_code_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/dead_code_ratchet.py" }
-conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/conventions_ratchet.py" }
-conventions_readers = { src = "scripts/conventions_readers.py", sha = "8e66d3f9565ce79eaaa64ec006ed3283dad06a69", dest = "scripts/conventions_readers.py" }
+conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "559306924d03b088a2f3507981de043a27ef8fa8", dest = "scripts/conventions_ratchet.py" }
+conventions_readers = { src = "scripts/conventions_readers.py", sha = "559306924d03b088a2f3507981de043a27ef8fa8", dest = "scripts/conventions_readers.py" }
+conventions_state = { src = "scripts/conventions_state.py", sha = "559306924d03b088a2f3507981de043a27ef8fa8", dest = "scripts/conventions_state.py" }
 runtime_write_ratchet = { src = "scripts/runtime_write_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/runtime_write_ratchet.py" }
 runtime_write_resolve = { src = "scripts/runtime_write_resolve.py", sha = "5505185c5f4b10eea5ab268e7b6676c6c54340c4", dest = "scripts/runtime_write_resolve.py" }
 instruction_frontmatter = { src = "scripts/instruction_frontmatter.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_frontmatter.py" }
@@ -93,7 +94,7 @@ baseline = ".dead-code-ratchet-baseline.json"
 [conventions_ratchet]
 enabled      = true
 baseline     = ".conventions-ratchet-baseline.json"
-rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use"]
+rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use", "state-literal", "state-set-repeat", "state-write"]
 # tests/ is exempt from the NO_WINDOW rule (CLAUDE.md) and every other rule already
 # skips test modules, so nothing under it is scanned.
 exclude      = ["tests/**"]

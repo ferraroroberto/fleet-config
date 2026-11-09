@@ -68,6 +68,9 @@ CONVENTIONS: dict[str, tuple[str, str]] = {
     "no-pwsh-stub": ("claude-md-drift", "the 0-byte pwsh stub run as a command in text files"),
     "must-use": ("claude-md-drift", "calls to a named primitive outside its one declared helper"),
     "subprocess-timeout": ("claude-md-drift", "blocking subprocess calls with no timeout"),
+    "state-literal": ("maintainability", "lifecycle strings compared or stored as a state outside a declared machine"),
+    "state-set-repeat": ("maintainability", "one set of lifecycle states spelled out in more than one module"),
+    "state-write": ("maintainability", "lifecycle flags written from more than one module"),
 }
 # The prompt-audit lint rules the vendored instruction ratchet enforces (its `RULES`). R-13 and
 # R-37 stay with the weekly audit: the ratchet cannot decide them from one tree.
