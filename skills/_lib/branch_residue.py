@@ -19,7 +19,8 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
   default      -- the default branch. Never touched.
   checked-out  -- checked out in the primary or any registered worktree.
   no-issue     -- the name is not `<type>/<N>-slug`, so there is no issue to
-                  prove closed. Never `landed`.
+                  prove closed, and the tip carries work the default branch
+                  lacks. Kept. (One contained in the default branch is `landed`.)
   open-issue   -- issue N is open (protects a freshly cut, still-empty branch,
                   which is trivially an ancestor of the default branch).
   unknown      -- a fact could not be established: issue N is not an issue of
@@ -33,7 +34,9 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
   landed       -- no open PR AND the tip is proven landed: by
                   `worktree_residue.head_merged` (issue closed), or by its own
                   PR into the default branch merged with this exact tip as
-                  its head (any issue state: outranks open-issue, unknown).
+                  its head (any issue state: outranks open-issue, unknown);
+                  or, for a name with no issue number, no open PR AND the tip
+                  contained in the default branch (below).
   superseded   -- issue closed AND no open PR AND, though the tip is not
                   landed, merging it into the merge commit of a PR from a
                   *different* head that closed the issue (based on, and
@@ -64,6 +67,14 @@ one whose merge commit is not on the default branch is never a candidate. A
 failed lookup, a merge commit missing locally or an errored proof is
 `unknown`; no candidate, or one unshipped hunk, is `unlanded`.
 
+A name with no issue number has no closed issue to lean on, so its proof is
+containment in the default branch (the reason starts `contained in the default
+branch`): 0 commits ahead of it, or `git cherry` listing only `-` lines with as
+many lines as commits ahead (cherry skips merge commits, so a tip carrying one
+is not proven). Any `+` line is `no-issue`; a count or cherry git cannot read,
+or a tip object that is not local, is `unknown`. An open PR on the head still
+keeps it.
+
 Orphan folders
 ---------------
 A sibling `<repo>-wt-*` directory (any suffix) that `git worktree list` does
@@ -91,7 +102,8 @@ Subcommands
         `/issue-finish` runs it as a fixed step after its own merge. Without
         `--branch` it acts on every deletable row, with it only on the named
         ones; naming any other class (the default, a checked-out branch,
-        `no-issue`, `unlanded`, `unknown`, ...) is refused with its class. Each
+        `no-issue` with work main lacks, `unlanded`, `unknown`, ...) is
+        refused with its class. Each
         target is re-judged immediately before acting from a fresh tip sha,
         proof and PR lookup, so a branch that moved or gained a PR is skipped.
           local   `git branch -D` (`-d` refuses squash-merged branches).
@@ -229,19 +241,31 @@ def classify_ref(
     superseded_how: str = "",
     own_pr: Optional[bool] = False,
     own_pr_how: str = "",
+    contained: Optional[bool] = False,
+    contained_how: str = "",
 ) -> Tuple[str, str]:
     """Pure (class, reason) for one ref. `None` means "could not establish".
 
-    `merged` / `superseded` / `own_pr` / `open_pr` are only consulted past the
-    gates that make them matter, so a caller may leave them `None` for a ref
-    decided earlier.
+    `merged` / `superseded` / `own_pr` / `contained` / `open_pr` are only
+    consulted past the gates that make them matter, so a caller may leave them
+    `None` for a ref decided earlier.
     """
     if is_default:
         return DEFAULT, "the default branch"
     if checked_out:
         return CHECKED_OUT, "checked out in a worktree"
     if issue is None:
-        return NO_ISSUE, "name carries no issue number, so there is no closed issue to prove"
+        if not tip_readable:
+            return UNKNOWN, "tip commit is not present locally, so it cannot be proven"
+        if contained is None:
+            return UNKNOWN, contained_how or "could not establish whether the tip is contained in the default branch"
+        if not contained:
+            return NO_ISSUE, "name carries no issue number and the tip carries work the default branch lacks"
+        if open_pr is None:
+            return UNKNOWN, "could not establish whether an open PR has this head"
+        if open_pr:
+            return OPEN_PR, "an open PR has this head"
+        return LANDED, f"contained in the default branch: {contained_how}"
     if issue_state != "closed" and own_pr:  # nothing is unshipped, so a possibly foreign issue number cannot matter
         if open_pr is None:
             return UNKNOWN, "could not establish whether an open PR has this head"
@@ -317,6 +341,30 @@ def tip_readable(repo: Path, sha: str) -> bool:
     return git_run.run_git(["-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"]).returncode == 0
 
 
+def contained_in_default(repo: Path, sha: str, default_ref: str) -> Tuple[Optional[bool], str]:
+    """(contained, how) -- is every commit of `sha` already in `default_ref`? Rule in the module docstring.
+
+    `None` when git cannot say; a merge commit is not covered by `git cherry`
+    (it lists non-merge commits only), so a tip with one is `False`, not guessed.
+    """
+    counted = git_run.run_git(["-C", str(repo), "rev-list", "--count", f"{default_ref}..{sha}"])
+    count = (counted.stdout or "").strip()
+    if counted.returncode != 0 or not count.isdigit():
+        return None, f"could not count the commits {sha[:7]} is ahead of {default_ref} (exit {counted.returncode})"
+    ahead = int(count)
+    if ahead == 0:
+        return True, f"0 commits ahead of {default_ref}"
+    cherry = git_run.run_git(["-C", str(repo), "cherry", default_ref, sha])
+    if cherry.returncode != 0:
+        return None, f"git cherry {default_ref} {sha[:7]} failed (exit {cherry.returncode})"
+    marks = [ln.split(None, 1)[0] for ln in (cherry.stdout or "").splitlines() if ln.strip()]
+    if any(m not in ("+", "-") for m in marks):
+        return None, f"git cherry {default_ref} {sha[:7]} printed a line this report cannot read"
+    if "+" in marks or len(marks) != ahead:
+        return False, ""
+    return True, f"git cherry lists only - lines ({ahead} commits patch-equivalent on {default_ref})"
+
+
 def find_orphans(primary: str, registered: Sequence[str]) -> List[Orphan]:
     """Sibling `<primary-name>-wt-*` folders that git does not register, as `worktree_residue` scans and judges them."""
     found: List[Orphan] = []
@@ -352,6 +400,7 @@ class _Judge:
         self._closing: Dict[int, Optional[List[ClosingPr]]] = {}
         self._supersedes: Dict[Tuple[str, str, int], Tuple[Optional[bool], str]] = {}
         self._proofs: Dict[str, Tuple[bool, Optional[bool], str]] = {}
+        self._contained: Dict[str, Tuple[bool, Optional[bool], str]] = {}
         self._pr_heads: List[Optional[Set[str]]] = []
 
     def state(self, n: int) -> Optional[str]:
@@ -368,6 +417,16 @@ class _Judge:
                 merged, how = wr.head_merged(self.repo, sha, self.default_ref)
                 self._proofs[sha] = (True, merged, how)
         return self._proofs[sha]
+
+    def contain(self, sha: str) -> Tuple[bool, Optional[bool], str]:
+        """(tip readable, contained in the default branch, how) for a no-issue tip."""
+        if sha not in self._contained:
+            if not tip_readable(self.repo, sha):
+                self._contained[sha] = (False, None, "")
+            else:
+                contained, how = contained_in_default(self.repo, sha, self.default_ref)
+                self._contained[sha] = (True, contained, how)
+        return self._contained[sha]
 
     def closing(self, n: int) -> Optional[List[ClosingPr]]:
         if n not in self._closing:
@@ -430,6 +489,7 @@ class _Judge:
         numbers = sorted({n for n in (branch_issue(r.name) for r in live) if n is not None})
         with ThreadPoolExecutor(max_workers=LOOKUP_WORKERS) as pool:
             list(pool.map(self.state, numbers))
+            list(pool.map(self.contain, sorted({r.sha for r in live if branch_issue(r.name) is None})))
             closed = [r for r in live if self._states.get(branch_issue(r.name)) == "closed"]
             unclosed = [r for r in live if branch_issue(r.name) is not None and r not in closed]
             list(pool.map(lambda r: self.own_landed(r.name, r.sha), unclosed))
@@ -453,6 +513,12 @@ class _Judge:
         superseded_how = ""
         own_pr: Optional[bool] = False
         own_pr_how = ""
+        contained: Optional[bool] = False
+        contained_how = ""
+        if issue is None and not (is_default or is_checked_out):
+            readable, contained, contained_how = self.contain(ref.sha)
+            if contained:
+                open_pr = self.has_open_pr(ref.name)
         if not gated and state != "closed":
             own_pr, own_pr_how = self.own_landed(ref.name, ref.sha)  # None (lookup failed) leaves the issue's answer standing
             if own_pr:
@@ -469,6 +535,7 @@ class _Judge:
             is_default=is_default, checked_out=is_checked_out, issue=issue, issue_state=state,
             tip_readable=readable, merged=merged, merged_how=how, open_pr=open_pr,
             superseded=superseded, superseded_how=superseded_how, own_pr=own_pr, own_pr_how=own_pr_how,
+            contained=contained, contained_how=contained_how,
         )
         return Row(ref, issue, cls, why)
 

@@ -184,7 +184,9 @@ git(primary, "checkout", "-q", "feat/19-ahead")
 commit(primary, "extra19.txt", "local only\n", "local extra")
 git(primary, "checkout", "-q", "main")
 
-git(primary, "branch", "housekeeping-2026", "main")  # local only, no issue number
+git(primary, "checkout", "-q", "-b", "housekeeping-2026", "main")  # local only, no issue number, one unshipped commit
+commit(primary, "h2026.txt", "unshipped\n", "unshipped housekeeping")
+git(primary, "checkout", "-q", "main")
 
 
 def recut(old: str, old_files: dict, shipped: dict) -> str:
@@ -507,7 +509,9 @@ def make_fixture(tag: str) -> Fx:
     commit(f.primary, "u23.txt", "unshipped\n", "unshipped work")
     git(f.primary, "push", "-q", "origin", "feat/23-unlanded")
     git(f.primary, "checkout", "-q", "main")
-    git(f.primary, "branch", "housekeeping-2026", "main")
+    git(f.primary, "checkout", "-q", "-b", "housekeeping-2026", "main")
+    commit(f.primary, "h2026.txt", "unshipped\n", "unshipped housekeeping")
+    git(f.primary, "checkout", "-q", "main")
     git(f.primary, "worktree", "add", "-q", str(f.root / "gamma-wt-26"), "feat/26-checkedout")
 
     f.issues = {21: "closed", 22: "closed", 23: "closed", 24: "open", 25: "closed", 26: "closed", 27: "closed"}
