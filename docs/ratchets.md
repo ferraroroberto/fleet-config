@@ -47,7 +47,8 @@ Every rule the vendored script knows, and whether this repo turns it on.
 
 The rule titles, vendor tags and fix shapes live in [`.claude/skills/prompt-audit/rules.md`](../.claude/skills/prompt-audit/rules.md).
 
-- **Enforced at ship time:** R-01, R-02, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-11, R-12, R-14, R-15, R-16, R-17, R-30, R-34, R-35, R-36, R-45.
+- **Enforced at ship time:** R-01, R-02, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-11, R-12, R-14, R-16, R-17, R-30, R-34, R-35, R-36, R-45.
+- **Advisory, never counted:** R-15 (its hits sit on line 1 of an agent-neutral `SKILL.md`, where no heading can scope them, so they stay at "consider").
 - **Left to the weekly `/prompt-audit`:** R-13 (a ratio of negative wording the audit judges, so a count would refuse every legitimate new prohibition) and R-37 (its vocabulary spans every repo's skills, so it is not decidable from one tree).
 
 ## Notes per ratchet
