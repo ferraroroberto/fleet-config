@@ -18,13 +18,28 @@ Nine baseline-and-ratchet stages gate `tests/run_acceptance.py`. [`code-quality.
 | --- | --- | --- | --- | --- | --- | --- |
 | `static_ratchet` | a duplicate block (jscpd), an unused import or variable (ruff `F401`, `F841`), a ruff bug (`B`) or security (`S`) finding, an unsorted import block (ruff `I001`); `S113` is strict | `tests/acceptance/static_ratchet_gate.py` | `exclude` | `.static-ratchet-baseline.json` | 0 | [static-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/static-ratchet.md) |
 | `docs_ratchet` | `README.md` past 40 KiB or its baselined size; an issue reference, dated heading or changelog heading in `README.md` or `docs/**/*.md` | `tests/acceptance/docs_ratchet_gate.py` | — | `.docs-ratchet-baseline.json` | 0 | [docs-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/docs-ratchet.md) |
-| `structure_ratchet` | a file past 1,000 lines, a function past 100 lines, a flat directory past 40 modules, new or above its entry; root folders that do not match `shape` plus `extra_roots` | `tests/acceptance/structure_ratchet_gate.py` | — | `.structure-ratchet-baseline.json` | 0 | [structure-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/structure-ratchet.md) |
+| `structure_ratchet` | a file past 1,000 lines, a function past 100 lines, a flat directory past 40 modules, new or above its entry; a folder layout that breaks `shape` plus `extra_roots` (layout rules below) | `tests/acceptance/structure_ratchet_gate.py` | — | `.structure-ratchet-baseline.json` | 0 | [structure-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/structure-ratchet.md) |
 | `comment_ratchet` | a file's count of `#NNN` issue references inside comments rising above its entry, or any in a file with no entry | `tests/acceptance/comment_ratchet_gate.py` | — | `.comment-ratchet-baseline.json` | 0 | [comment-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/comment-ratchet.md) |
 | `instruction_ratchet` | a prompt-audit lint rule's hit count in an instruction file rising above its entry, or a file past its size cap | `tests/acceptance/instruction_ratchet_gate.py` | `skill_dirs`, `extra_files` | `.instruction-ratchet-baseline.json` | 0 | [instruction-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/instruction-ratchet.md) |
 | `doc_refs_ratchet` | `README.md`, `CLAUDE.md` or `docs/**/*.md` naming a repo path, `python -m` module or relative link that does not exist | `tests/acceptance/doc_refs_ratchet_gate.py` | `allow_refs` | `.doc-refs-ratchet-baseline.json` | 0 | [doc-refs-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/doc-refs-ratchet.md) |
 | `dead_code_ratchet` | a function, class or method nothing in the tracked tree refers to | `tests/acceptance/dead_code_ratchet_gate.py` | — | `.dead-code-ratchet-baseline.json` | 0 | [dead-code-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/dead-code-ratchet.md) |
 | `conventions_ratchet` | a file's hit count for an enabled `ast` rule rising above its entry (rules below) | `tests/acceptance/conventions_ratchet_gate.py` | `rules`, `exclude`, `print_paths`, `git_wrappers`, `must_use` | `.conventions-ratchet-baseline.json` | 0 | [conventions-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/conventions-ratchet.md) |
 | `runtime_write_ratchet` | a tracked Python file gaining a write target that resolves under a code folder, or one it cannot resolve; any file the run leaves under a code folder | `tests/acceptance/runtime_write/runtime_write_ratchet_gate.py` | `code_folders`, `safe_calls` | `.runtime-write-ratchet-baseline.json` | 0 | [runtime-write-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/runtime-write-ratchet.md) |
+
+## Layout rules
+
+The `structure_ratchet` row above also enforces the repo's folder layout, through the vendored `scripts/structure_layout.py`. The declared `shape` fixes the allowed root folders, the root files, the file types each folder takes and, where the shape names homes, where files may sit one level down. This repo declares `shape = "skills-governance"` and `extra_roots = ["agy", "codex", "commands", "copilot-hooks", "pi", "shell", "stream-deck", "tray"]`, both top-level `.fleet.toml` keys. The preset tables and the reasoning are in project-scaffolding's [structure-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/structure-ratchet.md) and [repo-layout.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/repo-layout.md).
+
+| Rule | Fails on | Baselined |
+| --- | --- | --- |
+| `root-layout` | a required root folder with no tracked file, or a tracked root folder that neither the shape nor `extra_roots` lists | never |
+| `root` | an `extra_roots` folder the shape's preset does not already list | yes, so the list only shrinks |
+| `rootfile` | a tracked root file that neither the common set nor the shape lists; a kept one is named in `extra_root_files` with its reason | yes, by name |
+| `type` | a file whose extension its folder's type does not take | yes, per folder |
+| `place` | where the shape declares homes, a file under one of its roots that sits outside every home | yes, per folder |
+| `redundant` | an `extra_roots` or `extra_root_files` entry the shape's preset already allows | yes |
+
+A new root folder is declared in `extra_roots`, never allowed by default; a stale or redundant entry is deleted rather than kept.
 
 ## Conventions rules
 
