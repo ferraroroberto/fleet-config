@@ -271,12 +271,14 @@ Decision below is driven by the project's `## CI expectations` block
   **The rule (the same one `/cleanup-fleet-all` states):** a ref classed `landed`
   (no open PR, tip proven merged with a closed issue, or equal to the recorded head of
   its own PR merged into the default branch whatever the issue says) or `superseded` (closed issue, no
-  open PR, tip contained in the merge of another branch's PR that closed the issue)
-  holds no unshipped work, so any run deletes it, local and on `origin`. The
+  open PR, tip contained in the merge of another branch's PR that closed the issue),
+  or a branch with no issue number whose tip is contained in the default branch
+  (0 commits ahead, or `git cherry` all `-`; no open PR), holds no unshipped work,
+  so any run deletes it, local and on `origin`. The
   helper re-judges each target from a fresh tip, proof and PR lookup right before
   deleting it and skips anything that moved or changed class. It never touches
   the default branch, a checked-out branch, or an `open-issue`, `open-pr`,
-  `no-issue`, `unlanded` or `unknown` ref.
+  `no-issue` (a unique commit), `unlanded` or `unknown` ref.
   Put its result in the step-7 summary: every `DELETED=` line (with its
   `RESTORE=`), then `branch residue: N unlanded, K unknown` from the `SUMMARY` line,
   naming each `unlanded` ref, plus each `ORPHAN=` line (a `<repo>-wt-*` folder git

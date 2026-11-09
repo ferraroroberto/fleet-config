@@ -601,6 +601,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "is testable "
      "on its own against real throwaway git repos with injected `gh` "
      "lookups (fleet-config#1516, #1528)"),
+    ("branch_residue_contained", "repo/test_branch_residue_contained.py",
+     "a no-issue branch lands only when contained in main, else keep or unknown, on real git (#1958)"),
     ("stall_probe", "claude_progress/test_stall_probe.py",
      "the host stall probe -- a late sleep, a slow loopback GET and a slow "
      "per-volume disk read logged as UTC stall records, evidence captured "
