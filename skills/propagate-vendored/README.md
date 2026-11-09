@@ -118,3 +118,7 @@ Two rules follow, and both are about not overclaiming:
   sets `catalog_known: false`. Neither may be folded into the clean count:
   "found nothing" and "could not look" are different claims, and the second one
   wearing the first one's clothes is the whole defect.
+
+## Declared forks
+
+An adopter that keeps a component deliberately different records it in a `[vendored_forks]` table beside `[vendored]` (keys `src`, `reason`, `upstream`; the shape is owned by project-scaffolding's `docs/components.md`). `vendored_drift.py scan` reports it in `forks` and counts it in `coverage.declared_forks`: it is not drift, not an undeclared carrier, and a wave never re-vendors over it. A component in both tables is an error naming it.

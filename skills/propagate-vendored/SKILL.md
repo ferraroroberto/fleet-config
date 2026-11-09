@@ -146,7 +146,15 @@ with no manifest entry, each carrying:
   whether it is a stale copy to re-vendor or a deliberate divergence to leave
   alone.
 
+`forks` lists every deliberate divergence an adopter declared in its
+`[vendored_forks]` table (`state: "fork"`, with `reason` and `upstream`): not drift,
+not a carrier, and never a re-vendor target, so a wave leaves the path alone. An
+`upstream` of `null` is a fork with no offer to the scaffold; name it. A component
+listed in both `[vendored]` and `[vendored_forks]`, or a fork with no `src`/`reason`,
+arrives in `errors` (`kind` `fork_conflict` / `fork_malformed`); report it by name.
+
 `coverage` carries the two numbers this skill must always state, plus
+`declared_forks` (state it too: a fork is neither current nor drifted), plus
 `carriers_unknown` (repos whose `.fleet.toml` could not be parsed — their carrier
 status is *unestablished*, never "clean") and `catalog_known`. **If
 `catalog_known` is `false` the scaffold checkout has no `[components]` table and
@@ -229,7 +237,8 @@ behind on, the PRs the wave would open against one per component), then:
     …
   no signal (<n> repos): <comma-separated, or "none">
 
-  coverage: <n> declared adopters, <m> undeclared carriers, <k> unknown (<repos, or "none">)
+  declared forks (left alone): <repo>   <component>   <reason>   upstream <issue, or "none">
+  coverage: <n> declared adopters, <m> undeclared carriers, <f> declared forks, <k> unknown (<repos, or "none">)
             catalog: <c> components known | NOT KNOWN (<reason>)
             contract: <j> adopter(s) would lose selectors (<repo> @ <short-pin>: <removed selectors>, or "none")
             README changed for: <repos, or "none">

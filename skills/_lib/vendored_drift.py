@@ -48,6 +48,13 @@ A fifth is about what an adopter's agents search (`ignore_block`):
      its `[vendored]` dest paths, so a Grep of its own repo skips the copies? Reported
      per adopter in `ignore_blocks`; `coverage.ignore_drift` names every repo not `ok`.
 
+A sixth is about copies an adopter deliberately keeps different (fleet-config#1951):
+
+  6. **declared forks** — an adopter lists such a component in its `[vendored_forks]` table (shape:
+     project-scaffolding's `docs/components.md`: `src`, `reason`, `upstream`). It reports as `fork` in `forks`, is
+     never an undeclared carrier or a re-vendor target, and is counted in `coverage.declared_forks` rather than
+     folded into the clean adopters. A component in both tables, or a fork with no `src`/`reason`, is an error.
+
 Both `/propagate-vendored --dry-run` and any future audit call `scan_fleet`
 directly rather than re-deriving any of these checks by hand.
 
@@ -94,6 +101,7 @@ import git_run  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from vendored_wave import ignore_block  # noqa: E402
+from vendored_wave.forks import fork_rows, parse_vendored_forks  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -542,6 +550,8 @@ def scan_fleet(
     no_manifest: List[str] = []
     errors: List[Dict[str, str]] = []
     manifests: Dict[str, Dict[str, Dict[str, str]]] = {}
+    forked: Dict[str, frozenset] = {}
+    forks: List[Dict[str, object]] = []
     unreadable: List[str] = []
     ignore_blocks: Dict[str, str] = {}
 
@@ -554,48 +564,67 @@ def scan_fleet(
             manifests[repo_name] = {}
             continue
         try:
-            manifest = parse_vendored_manifest(toml_path.read_text(encoding="utf-8"))
+            text = toml_path.read_text(encoding="utf-8")
+            manifest, declared_forks = parse_vendored_manifest(text), parse_vendored_forks(text)
         except (OSError, tomllib.TOMLDecodeError) as exc:
             errors.append({"repo": repo_name, "error": f"unreadable/invalid .fleet.toml: {exc}"})
             unreadable.append(repo_name)
             ignore_blocks[repo_name] = "unknown"
             continue
         manifests[repo_name] = manifest
+        forked[repo_name] = frozenset(declared_forks)
+        forks.extend(fork_rows(repo_name, declared_forks, manifest,
+                                lambda c: _wanted(c, component_filter), errors))
         if not manifest:
             no_manifest.append(repo_name)
             continue
         ignore_blocks[repo_name] = ignore_block.repo_state(
             repo_dir, [str(e["dest"]) for e in manifest.values() if e.get("dest")])
 
-        for component, entry in manifest.items():
-            if not _wanted(component, component_filter):
-                continue
-            src, sha, dest = entry.get("src"), entry.get("sha"), entry.get("dest")
-            if not (src and sha and dest):
-                errors.append({"repo": repo_name, "component": component, "error": "manifest entry missing src/sha/dest"})
-                continue
-
-            result = classify_adopter(hash_component_local(repo_dir, dest),
-                                      hash_dir_at_ref(scaffold_root, sha, src),
-                                      _head_files(scaffold_root, head_ref, src, head_cache))
-            row: Dict[str, object] = {
-                "repo": repo_name, "component": component, "src": src, "dest": dest,
-                "pinned_sha": sha, "head_sha": head_sha, **result,
-            }
-            if result["behind_head"]:
-                row["contract"] = _contract_for(scaffold_root, head_ref, sha, src,
-                                                head_texts, contract_cache)
-            adopters.append(row)
+        adopters.extend(_adopter_rows(scaffold_root, head_ref, head_sha, repo_name, repo_dir, manifest,
+                                      component_filter, (head_cache, head_texts, contract_cache), errors))
 
     if catalog_error:
         errors.append({"repo": "project-scaffolding", "error": catalog_error})
     errors.extend({"repo": "project-scaffolding", "kind": "requires", **p} for p in problems)
     carriers = scan_undeclared_carriers(scaffold_root, repos, manifests, catalog, head_ref, head_cache,
-                                        component_filter=component_filter, scaffold_resolved=scaffold_resolved)
+                                        component_filter=component_filter, scaffold_resolved=scaffold_resolved,
+                                        forked=forked)
     report = _scan_report(scaffold_root, head_ref, head_sha, repos, adopters, no_manifest, errors,
-                          catalog, catalog_error, carriers, unreadable, ignore_blocks)
-    report["requires"] = _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos, head_sha)
+                          catalog, catalog_error, carriers, unreadable, ignore_blocks, forks)
+    report["requires"] = _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos,
+                                          head_sha, forked)
     return report
+
+
+def _adopter_rows(scaffold_root: Path, head_ref: str, head_sha: str, repo_name: str, repo_dir: Path,
+                  manifest: Dict[str, Dict[str, str]], component_filter: Optional[object],
+                  caches: tuple, errors: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    """The two drift signals for each `[vendored]` entry of one repo; a malformed entry is an error, not a row.
+
+    `caches` is the scan's `(head_cache, head_texts, contract_cache)`, shared across repos so the scaffold is read
+    once per component."""
+    head_cache, head_texts, contract_cache = caches
+    rows: List[Dict[str, object]] = []
+    for component, entry in manifest.items():
+        if not _wanted(component, component_filter):
+            continue
+        src, sha, dest = entry.get("src"), entry.get("sha"), entry.get("dest")
+        if not (src and sha and dest):
+            errors.append({"repo": repo_name, "component": component, "error": "manifest entry missing src/sha/dest"})
+            continue
+
+        result = classify_adopter(hash_component_local(repo_dir, dest),
+                                  hash_dir_at_ref(scaffold_root, sha, src),
+                                  _head_files(scaffold_root, head_ref, src, head_cache))
+        row: Dict[str, object] = {
+            "repo": repo_name, "component": component, "src": src, "dest": dest,
+            "pinned_sha": sha, "head_sha": head_sha, **result,
+        }
+        if result["behind_head"]:
+            row["contract"] = _contract_for(scaffold_root, head_ref, sha, src, head_texts, contract_cache)
+        rows.append(row)
+    return rows
 
 
 def _resolve_requires(
@@ -618,12 +647,14 @@ def _resolve_requires(
     return (closure if wanted else component_filter), edges, problems, blocked_components(edges, problems)
 
 
-def _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos, head_sha) -> Dict[str, object]:
+def _requires_report(edges, blocked, catalog, manifests, carriers, scaffold_resolved, repos, head_sha,
+                     forked) -> Dict[str, object]:
     """The report's `requires` block: the edges followed, what they block, and the siblings to add."""
     return {
         "edges": [{"component": c, "requires": d} for c, d in edges],
         "blocked": blocked,
-        "missing": _missing_requires(edges, catalog, manifests, carriers, blocked, scaffold_resolved, repos, head_sha),
+        "missing": _missing_requires(edges, catalog, manifests, carriers, blocked, scaffold_resolved, repos, head_sha,
+                                     forked),
     }
 
 
@@ -637,14 +668,14 @@ def _head_files(scaffold_root: Path, head_ref: str, src: str, head_cache: Dict[s
 def _missing_requires(
     edges: List[tuple[str, str]], catalog: Dict[str, str], manifests: Dict[str, Dict[str, Dict[str, str]]],
     carriers: List[Dict[str, object]], blocked: Dict[str, str], scaffold_resolved: Path,
-    repos: Dict[str, Path], head_sha: str,
+    repos: Dict[str, Path], head_sha: str, forked: Dict[str, frozenset],
 ) -> List[Dict[str, object]]:
     """Repos that hold (or will hold) a component but neither declare nor carry what it requires.
 
     A repo counts as holding the requester when it declares it, or carries it byte-identical to
     the tip (the wave adopts that). A carrier that differs is a human call and pulls nothing in.
-    A dependency the repo already declares or carries is left to the ordinary re-vendor or
-    carrier path, so a row here means the repo has no copy at all: one row per repo and
+    A dependency the repo already declares, carries or holds as a declared fork is left to the
+    ordinary re-vendor, carrier or fork path, so a row here means the repo has no copy at all: one row per repo and
     dependency, naming every requester. A dependency that is added pulls in its own
     requirements the same way, so a chain lands whole.
     """
@@ -664,7 +695,7 @@ def _missing_requires(
                 row = rows.get((repo_name, dep))
                 if row is not None:
                     row["required_by"].append(component)
-                elif dep not in holds and (repo_name, dep) not in carried:
+                elif dep not in holds and (repo_name, dep) not in carried and dep not in forked.get(repo_name, ()):
                     rows[(repo_name, dep)] = {
                         "repo": repo_name, "component": dep, "src": catalog[dep], "dest": catalog[dep],
                         "head_sha": head_sha, "required_by": [component]}
@@ -689,7 +720,8 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
                  adopters: List[Dict[str, object]], no_manifest: List[str],
                  errors: List[Dict[str, str]], catalog: Dict[str, str],
                  catalog_error: Optional[str], carriers: List[Dict[str, object]],
-                 unreadable: List[str], ignore_blocks: Dict[str, str]) -> Dict[str, object]:
+                 unreadable: List[str], ignore_blocks: Dict[str, str],
+                 forks: List[Dict[str, object]]) -> Dict[str, object]:
     """`scan_fleet`'s result, with the coverage line every caller must state."""
     return {
         "scaffold": str(scaffold_root),
@@ -706,6 +738,9 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
             "error": catalog_error,
         },
         "undeclared_carriers": carriers,
+        # Deliberate divergences adopters declared in `[vendored_forks]`: a state of their own, never drift and
+        # never counted as a clean adopter.
+        "forks": forks,
         # Per adopter: does its `.ignore` block match its manifest (`ok`), or is it
         # `missing`/`stale`/`malformed`/`unknown`. Only `ok` is clean.
         "ignore_blocks": dict(sorted(ignore_blocks.items())),
@@ -717,6 +752,7 @@ def _scan_report(scaffold_root: Path, head_ref: str, head_sha: str, repos: Dict[
         "coverage": {
             "declared_adopters": len({str(a["repo"]) for a in adopters}),
             "undeclared_carriers": len({str(c["repo"]) for c in carriers}),
+            "declared_forks": len(forks),
             "carriers_unknown": sorted(unreadable),
             "catalog_known": catalog_error is None,
             "ignore_drift": sorted(r for r, state in ignore_blocks.items() if state != "ok"),
@@ -738,6 +774,7 @@ def scan_undeclared_carriers(
     head_cache: Dict[str, Dict[str, str]],
     component_filter: Optional[str] = None,
     scaffold_resolved: Optional[Path] = None,
+    forked: Optional[Dict[str, frozenset]] = None,
 ) -> List[Dict[str, object]]:
     """Repos holding a catalogued component's files without declaring it.
 
@@ -746,7 +783,8 @@ def scan_undeclared_carriers(
     which is what `/propagate-vendored` defaults `dest` to — in every fleet repo
     that has no `[vendored]` entry for it. A path that exists there is a
     **carrier**: the repo has the component, the manifest doesn't say so, and
-    every propagation wave has been skipping it silently.
+    every propagation wave has been skipping it silently. A component the repo
+    lists in `[vendored_forks]` (`forked`) is declared, so it is never one.
 
     Each finding carries `matches_head`, and that distinction is the point:
 
@@ -778,7 +816,7 @@ def scan_undeclared_carriers(
         for component, src in sorted(catalog.items()):
             if not _wanted(component, component_filter):
                 continue
-            if component in declared:
+            if component in declared or component in (forked or {}).get(repo_name, ()):
                 continue
             local = hash_component_local(repo_dir, src)
             if not local:
