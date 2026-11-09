@@ -38,6 +38,7 @@ from pathlib import Path
 from extract import ReportExtractor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -154,16 +155,14 @@ def main() -> int:
         return 3
 
     out_dir = USAGE_DIR / "weekly"
-    # runtime-write-exempt: report folder is INSIGHTS_USAGE_DIR or ~/.claude/usage-data
-    out_dir.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(out_dir, parents=True, exist_ok=True)
     out_file = out_dir / f"insights-diff-{today}.md"
     front = (
         f"<!-- insights-weekly {mode} · {today} · model={MODEL} · {header} -->\n"
         f"# Claude Code Insights — weekly {('diff' if mode == 'diff' else 'baseline')} ({today})\n\n"
         f"_{header}_\n\n"
     )
-    # runtime-write-exempt: report folder is INSIGHTS_USAGE_DIR or ~/.claude/usage-data
-    out_file.write_text(front + body + "\n", encoding="utf-8")
+    runtime_files.save_text(out_file, front + body + "\n", encoding="utf-8")
 
     # stdout: machine-friendly first line (path) + the Telegram digest after a blank line.
     print(out_file)

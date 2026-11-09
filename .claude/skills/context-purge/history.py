@@ -41,6 +41,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import git_run  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 MARKER = "context-purge-history"
@@ -340,8 +341,7 @@ def cmd_relocate(path: Path, issue: str, span: str, pointer: str) -> int:
     if not is_relocated(span, relocated_quotes(fetch_comment_bodies(key))):
         print(f"FAIL  comment on {key} not found after posting; {path.as_posix()} left unchanged")
         return 2
-    # runtime-write-exempt: rewrites the context file the caller names
-    path.write_bytes(raw.replace(span, pointer).encode("utf-8"))
+    runtime_files.save_bytes(path, raw.replace(span, pointer).encode("utf-8"))
     print(f"RELOCATED {path.as_posix()} -> {key}")
     return 0
 

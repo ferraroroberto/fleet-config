@@ -68,6 +68,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import git_run  # noqa: E402
 from design_lint.accepted import accepted_array  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 
 from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 from .report import SEVERITY_ORDER, worst_screen  # noqa: E402
@@ -442,8 +443,7 @@ def file_run(run_dir: Path, repo: Optional[str], dry_run: bool, root: Optional[P
     out.update({"repo": repo, "issue": existing.get("number"), "duplicates": existing.get("duplicates") or [],
                 "dry_run": dry_run, "url": None, "run_id": run_id, "target": doc.get("target")})
     body_path = run_dir / ISSUE_BODY_NAME
-    # runtime-write-exempt: issue body file in the run folder
-    body_path.write_text(out["body"], encoding="utf-8")
+    runtime_files.save_text(body_path, out["body"], encoding="utf-8")
     out["body_path"] = str(body_path)
     if not dry_run:
         out["url"] = upsert(repo, KIND, TITLE, out["body"], LABEL)

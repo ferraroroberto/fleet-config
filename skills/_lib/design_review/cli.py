@@ -82,7 +82,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core import (
+    fleet_repo_scan,  # noqa: E402
+    runtime_files,  # noqa: E402
+)
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 from . import (  # noqa: E402
@@ -144,8 +147,7 @@ def cmd_measure(args: argparse.Namespace) -> int:
     specs = rubric_mod.load_specs(Path(args.spec) if args.spec else None, None)
     run_dir = Path(args.run_dir) if args.run_dir else None
     if run_dir:
-        # runtime-write-exempt: run folder is --run-dir, else under the hooks state dir
-        run_dir.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(run_dir, parents=True, exist_ok=True)
     doc = capture.measure_target(target, rb, specs["light"], devices, python_override=args.python,
                                  scaffold=args.scaffold, run_dir=run_dir, walk_timeout=args.walk_timeout,
                                  synthetic=synthetic, e2e=args.e2e)
@@ -209,8 +211,7 @@ def cmd_measure_web(args: argparse.Namespace) -> int:
         print(f"ERROR={exc}")
         return 2
     run_dir = Path(args.run_dir) if args.run_dir else capture.run_dir_for(target.name)
-    # runtime-write-exempt: run folder is --run-dir, else under the hooks state dir
-    run_dir.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(run_dir, parents=True, exist_ok=True)
     pages_arg = (args.pages or "").strip()
     doc = measure_web.measure_web(target, rb, tokens, devices, run_dir,
                                   pages=[p for p in pages_arg.split(",") if p] if pages_arg not in ("", "all") else None,
@@ -320,10 +321,8 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         return 2
     if args.out:
         out_path = Path(args.out)
-        # runtime-write-exempt: output file named by the --out argument
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: output file named by the --out argument
-        out_path.write_text(json.dumps(out, indent=2, ensure_ascii=True), encoding="utf-8")
+        runtime_files.make_dirs(out_path.parent, parents=True, exist_ok=True)
+        runtime_files.save_text(out_path, json.dumps(out, indent=2, ensure_ascii=True), encoding="utf-8")
         print(f"EVALUATE={out_path}")
         _print_summary(out)
         return 0
@@ -348,8 +347,7 @@ def cmd_judge_prompt(args: argparse.Namespace) -> int:
     text = judgment.judge_prompt(doc, run_dir, rb)
     out = run_dir / "judge-prompt.md"
     try:
-        # runtime-write-exempt: prompt file in the run folder
-        out.write_text(text, encoding="utf-8")
+        runtime_files.save_text(out, text, encoding="utf-8")
     except OSError as exc:
         print(f"ERROR=cannot write prompt: {exc}")
         return 2
@@ -393,8 +391,7 @@ def cmd_judge_merge(args: argparse.Namespace) -> int:
     merged = judgment.merge_judges(docs)
     ev_doc["judgment"] = merged
     try:
-        # runtime-write-exempt: evaluate.json in the run folder
-        evaluate_path.write_text(json.dumps(ev_doc, indent=2, ensure_ascii=True), encoding="utf-8")
+        runtime_files.save_text(evaluate_path, json.dumps(ev_doc, indent=2, ensure_ascii=True), encoding="utf-8")
     except OSError as exc:
         print(f"ERROR=cannot write {evaluate_path}: {exc}")
         return 2
@@ -429,8 +426,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         else:
             doc = _evaluate_file(src, args)
             evaluate_path = src.parent / "evaluate.json"
-            # runtime-write-exempt: evaluate.json beside the document being rendered
-            evaluate_path.write_text(json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
+            runtime_files.save_text(evaluate_path, json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
     except rubric_mod.RubricError as exc:
         print(f"ERROR=rubric: {exc}")
         return 2
@@ -481,8 +477,7 @@ def cmd_ledger(args: argparse.Namespace) -> int:
     d = ledger.diff(doc, prev)
     doc["diff"] = d
     try:
-        # runtime-write-exempt: evaluate.json in the run folder
-        evaluate_path.write_text(json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
+        runtime_files.save_text(evaluate_path, json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
     except OSError as exc:
         print(f"ERROR=cannot write {evaluate_path}: {exc}")
         return 2
@@ -560,8 +555,7 @@ def cmd_fleet(args: argparse.Namespace) -> int:
     projects_toml = Path(args.projects_toml) if args.projects_toml else None
     out_dir = Path(args.out_dir) if args.out_dir else None
     if out_dir:
-        # runtime-write-exempt: output folder is --out-dir, else under the hooks state dir
-        out_dir.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(out_dir, parents=True, exist_ok=True)
     dig = fleet.run_fleet(rb, specs, devices, projects_toml, file_issues=bool(args.file), out_dir=out_dir,
                           scaffold=args.scaffold, walk_timeout=args.walk_timeout, python_override=args.python)
     print(f"FLEET_DIR={dig['out_dir']}")

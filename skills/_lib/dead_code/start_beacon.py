@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 PTH_NAME = "fleet_start_beacon.pth"
@@ -123,10 +124,8 @@ def _utc_now() -> str:
 
 
 def _append_header(ledger: Path, header: str, detail: str) -> None:
-    # runtime-write-exempt: the caller names the ledger file
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: the caller names the ledger file
-    with ledger.open("a", encoding="utf-8") as f:
+    runtime_files.make_dirs(ledger.parent, parents=True, exist_ok=True)
+    with runtime_files.open_for_write(ledger, "a", encoding="utf-8") as f:
         f.write(f"{header}{_utc_now()} {detail}\n")
 
 
@@ -158,8 +157,7 @@ def install(repo: Path, venv: Path) -> Dict[str, Any]:
     first = not target.exists()
     wrote = first or target.read_text(encoding="utf-8") != text
     if wrote:
-        # runtime-write-exempt: ledger under the hooks state dir (ledger_path())
-        ledger.parent.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(ledger.parent, parents=True, exist_ok=True)
         atomic_write_text(target, text)  # a starting interpreter never reads a half-written .pth
     if first:
         _append_header(ledger, INSTALLED, f"venv={venv}")

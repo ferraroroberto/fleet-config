@@ -33,7 +33,10 @@ import git_run  # noqa: E402
 from design_review.capture import probe_listening, resolve_interpreter, target_commit  # noqa: E402
 from design_review.filing import repo_slug  # noqa: E402
 from design_review.plan import BadFleetToml, PlanError, resolve_target  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import (
+    hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
+)
 from no_window import NO_WINDOW  # noqa: E402
 from worktree import service_probe  # noqa: E402
 
@@ -71,8 +74,7 @@ def tls_name(base_url: str) -> str:
             der = tls.getpeercert(binary_form=True)
         with tempfile.TemporaryDirectory() as tmp:
             pem = Path(tmp) / "peer.pem"
-            # runtime-write-exempt: certificate copy in a temporary folder
-            pem.write_text(ssl.DER_cert_to_PEM_cert(der), encoding="ascii")
+            runtime_files.save_text(pem, ssl.DER_cert_to_PEM_cert(der), encoding="ascii")
             decoded = ssl._ssl._test_decode_cert(str(pem))  # type: ignore[attr-defined]  # stdlib, no third-party parser
     except (OSError, ssl.SSLError, ValueError, AttributeError):
         return ""
@@ -90,8 +92,7 @@ def run_load(python: str, base_url: str, run_dir: Path, block: dict, budgets: di
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=LOAD_TIMEOUT_S, creationflags=NO_WINDOW)
-        # runtime-write-exempt: load log in the run folder
-        (run_dir / "load.log").write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+        runtime_files.save_text(run_dir / "load.log", (proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
         return json.loads((run_dir / "load.json").read_text(encoding="utf-8"))
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         return {"legs": {"android_cold": {"status": "error", "error": f"load leg failed: {exc}"[:300]}}, "api": {}}

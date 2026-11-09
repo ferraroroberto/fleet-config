@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import git_run
-from fleet_core import hooks_state
+from fleet_core import hooks_state, runtime_files
 
 from ui_proof import proof
 
@@ -130,16 +130,14 @@ def capture(repo: Path, phase: str, manifest: Optional[Path], images: List[dict]
     if not entries:
         return False, "CAPTURED=none reason=give --manifest and/or --image"
     folder = root / BRANCH_DIR / safe_name(branch)
-    # runtime-write-exempt: staging folder inside this checkout's .proof/
-    folder.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(folder, parents=True, exist_ok=True)
     data = _load_json(folder / DATA_NAME)
     legs: Dict[str, dict] = {_leg_key(e): e for e in data.get(phase, [])}
     missing = []
     for e in entries:
         name = f"{phase}-{safe_name(str(e.get('state')))}-{e.get('viewport')}-{e.get('theme')}.png"
         try:
-            # runtime-write-exempt: staging folder inside this checkout's .proof/
-            shutil.copyfile(str(e.get("screenshot", "")), folder / name)
+            runtime_files.copy_file(str(e.get("screenshot", "")), folder / name)
         except OSError:
             missing.append(_leg_key(e))
             continue
@@ -161,13 +159,11 @@ def _leg_key(entry: dict) -> str:
 
 def _merge_into(src: Path, dst: Path) -> None:
     """Move staging captures into the PR folder; a re-capture overwrites the same leg."""
-    # runtime-write-exempt: moves captures into the PR folder inside .proof/
-    dst.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(dst, parents=True, exist_ok=True)
     incoming, existing = _load_json(src / DATA_NAME), _load_json(dst / DATA_NAME)
     for item in src.iterdir():
         if item.name != DATA_NAME:
-            # runtime-write-exempt: moves captures into the PR folder inside .proof/
-            shutil.move(str(item), str(dst / item.name))
+            runtime_files.move(str(item), str(dst / item.name))
     for phase in PHASES:
         rows = {_leg_key(e): e for e in existing.get(phase, [])}
         rows.update({_leg_key(e): e for e in incoming.get(phase, [])})
@@ -227,12 +223,10 @@ def publish(repo: Path, pr: int) -> List[str]:
         return [f"PUBLISHED=none reason=no .proof/{pr}/index.html in this checkout"]
     if local.resolve() == primary.resolve():
         return [f"PUBLISHED={src} same_checkout=yes"]
-    # runtime-write-exempt: copies into the primary checkout's .proof/
-    primary.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(primary, parents=True, exist_ok=True)
     incoming = primary / f".{pr}.incoming"
     shutil.rmtree(incoming, ignore_errors=True)
-    # runtime-write-exempt: copies into the primary checkout's .proof/
-    shutil.copytree(src, incoming)
+    runtime_files.copy_tree(src, incoming)
     shutil.rmtree(primary / str(pr), ignore_errors=True)
     incoming.replace(primary / str(pr))
     row = _load_json(local / INDEX_NAME).get(str(pr))

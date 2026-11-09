@@ -48,6 +48,10 @@ instruction_repeats = { src = "scripts/instruction_repeats.py", sha = "e55de9619
 [static_ratchet]
 enabled  = true
 baseline = ".static-ratchet-baseline.json"
+# The hooks-tier copy of skills/_lib/fleet_core/runtime_files.py: hooks must import with only their own
+# directory on sys.path, so the guard is repeated there, and tests/repo/test_runtime_files.py holds the
+# shared functions to the same code. The skills copy is scanned.
+exclude  = ["hooks/runtime_files/**"]
 
 [docs_ratchet]
 enabled  = true

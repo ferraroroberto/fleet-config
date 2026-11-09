@@ -22,6 +22,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import runtime_files  # noqa: E402
 from conversation.transcript_readers import Transcript, read_transcript  # noqa: E402
 
 logger = logging.getLogger("conversation_capture")
@@ -559,8 +560,7 @@ def write_capture(
                             format=transcript.source_format, version=transcript.source_version)
     content = render_markdown(make_description(transcript.messages), transcript.messages,
                               header=header, agent=transcript.harness)
-    # runtime-write-exempt: capture file goes in the caller's out_dir (a conversations folder)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(out_path.parent, parents=True, exist_ok=True)
     # The shared atomic writer, rather than a hand-rolled tempfile +
     # os.replace: it also sweeps this target's own orphaned temps, which
     # the hand-rolled version never did on a hard kill mid-write.

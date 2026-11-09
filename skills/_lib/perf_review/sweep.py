@@ -32,7 +32,10 @@ from typing import Callable, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import box_lock  # noqa: E402
 from design_review import fleet  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import (
+    hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
+)
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import cli, report  # noqa: E402
@@ -207,11 +210,9 @@ def write_result(out_path: Path, payload: dict) -> None:
     """Atomically publish `payload` as JSON to `out_path` — the same temp-then-rename discipline
     `fleet_audit_scan.write_result` uses, so a poller can never observe a partially written file.
     """
-    # runtime-write-exempt: result file is the caller's out_path
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(out_path.parent, parents=True, exist_ok=True)
     tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
-    # runtime-write-exempt: result file is the caller's out_path
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    runtime_files.save_text(tmp, json.dumps(payload), encoding="utf-8")
     tmp.replace(out_path)
 
 
@@ -237,11 +238,9 @@ def launch_detached(child_argv: List[str], log_path: Path) -> int:
     independent, console-less process that outlives this call — the `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` pattern
     `fleet_audit_scan.launch_detached` already uses for the same reason. Does not wait for the child; returns its pid.
     """
-    # runtime-write-exempt: detached run's log is the caller's log_path
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(log_path.parent, parents=True, exist_ok=True)
     pkg_dir = Path(__file__).resolve().parent
-    # runtime-write-exempt: detached run's log is the caller's log_path
-    with open(log_path, "wb") as log_file:
+    with runtime_files.open_for_write(log_path, "wb") as log_file:
         proc = subprocess.Popen(
             [sys.executable, str(pkg_dir), *child_argv],
             stdout=log_file,

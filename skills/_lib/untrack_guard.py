@@ -66,6 +66,7 @@ from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 
@@ -149,10 +150,8 @@ def guarded_fast_forward(repo: Path, target: str) -> GuardedFastForward:
         try:
             for rel in live:
                 dst = stash / rel
-                # runtime-write-exempt: copies between the repo and the stash folder it keeps
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                # runtime-write-exempt: copies between the repo and the stash folder it keeps
-                shutil.copy2(repo / rel, dst)
+                runtime_files.make_dirs(dst.parent, parents=True, exist_ok=True)
+                runtime_files.copy_with_metadata(repo / rel, dst)
         except OSError as exc:
             shutil.rmtree(stash, ignore_errors=True)
             return GuardedFastForward(False, f"could not preserve {rel}: {exc}")
@@ -175,9 +174,9 @@ def guarded_fast_forward(repo: Path, target: str) -> GuardedFastForward:
             result.kept_aside.append(rel)
             continue
         try:
-            # runtime-write-exempt: copies between the repo and the stash folder it keeps
+            # runtime-write-exempt: restores a live file the merge untracked into the repo, which may be this one's code folders
             dst.parent.mkdir(parents=True, exist_ok=True)
-            # runtime-write-exempt: copies between the repo and the stash folder it keeps
+            # runtime-write-exempt: restores a live file the merge untracked into the repo, which may be this one's code folders
             shutil.copy2(stash / rel, dst)
             result.restored.append(rel)
         except OSError:

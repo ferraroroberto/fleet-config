@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
+import runtime_files
+
 from .config import DB_LOCK_TIMEOUT_SECONDS, DB_SIDECAR_MARKERS, DB_SUFFIXES
 
 logger = logging.getLogger("backup_private")
@@ -98,8 +100,7 @@ def snapshot_sqlite(src: Path, dst: Path,
     its own failure state; a database that could not be snapshotted must never
     look like one that simply was not there.
     """
-    # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
-    dst.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(dst.parent, parents=True, exist_ok=True)
     base = src.resolve().as_uri()
     busy = min(timeout, _BACKUP_BUSY_SLICE_SECONDS)
     last: Optional[BaseException] = None
@@ -121,14 +122,13 @@ def snapshot_sqlite(src: Path, dst: Path,
         with contextlib.suppress(OSError):
             dst.unlink()
         try:
-            # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
+            # runtime-write-exempt: the source database is only read; the copy's destination is the guarded connect_sqlite below
             source = sqlite3.connect(uri, uri=True, timeout=busy)
         except sqlite3.Error as exc:
             last = exc
             continue
         try:
-            # runtime-write-exempt: the copy goes to the caller's dst inside the backup snapshot
-            target = sqlite3.connect(str(dst), timeout=busy)
+            target = runtime_files.connect_sqlite(dst, timeout=busy)
             try:
                 source.backup(target, pages=_BACKUP_PAGES_PER_STEP, progress=on_step)
             finally:
@@ -192,8 +192,7 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
         target = snapshot_dir / group / rel
         try:
             digest = sha256_file(abs_path)
-            # runtime-write-exempt: files go into the backup snapshot folder
-            target.parent.mkdir(parents=True, exist_ok=True)
+            runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
             # Idempotent per target: a re-run on the same date, or a retry after a
             # partial run, must overwrite rather than fail. `os.link` refuses an
             # existing target where `copy2` would silently overwrite it, so the
@@ -206,8 +205,7 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
                 os.link(prev_file, target)
                 linked += 1
             else:
-                # runtime-write-exempt: files go into the backup snapshot folder
-                shutil.copy2(abs_path, target)
+                runtime_files.copy_with_metadata(abs_path, target)
                 # Native JSONL histories are append-only but live. They can
                 # change after the source hash and before/during copy, so the
                 # manifest's authority is the stable snapshot that landed,

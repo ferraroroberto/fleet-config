@@ -31,6 +31,7 @@ from typing import AbstractSet, Any, Callable, Dict, Iterator, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 from worktree_residue import WT_SEP  # noqa: E402
 
@@ -129,8 +130,7 @@ def _read_lock_owner(lock_dir: Path) -> Optional[Dict[str, Any]]:
 
 def _write_lock_owner(lock_dir: Path, token: str) -> None:
     marker = lock_dir / f"{_LOCK_OWNER_PREFIX}.{os.getpid()}.{token}"
-    # runtime-write-exempt: owner marker inside the state-lock folder
-    marker.touch(exist_ok=False)
+    runtime_files.touch_file(marker, exist_ok=False)
 
 
 def state_file(filename: str = STATE_FILENAME) -> Path:
@@ -198,8 +198,7 @@ def prune_rows(
 
 
 def write_rows(path: Path, rows: Dict[str, Any]) -> None:
-    # runtime-write-exempt: the caller names the active-issues state file
-    path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
     payload = json.dumps(rows, indent=2, sort_keys=True) + "\n"
     last_error: Optional[OSError] = None
     for attempt in range(_REPLACE_ATTEMPTS):
@@ -232,15 +231,13 @@ def state_lock(
     so a holder that was reclaimed while it slept past the stale horizon
     can't turn around and delete the reclaimer's lock out from under it.
     """
-    # runtime-write-exempt: lock folder beside the active-issues state file
-    path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
     lock_dir = path.with_name(path.name + ".lock")
     deadline = time.monotonic() + timeout_seconds
     token = uuid.uuid4().hex
     while True:
         try:
-            # runtime-write-exempt: lock folder beside the active-issues state file
-            lock_dir.mkdir()
+            runtime_files.make_dirs(lock_dir)
             break
         except (FileExistsError, PermissionError):
             # Windows can surface PermissionError instead of FileExistsError

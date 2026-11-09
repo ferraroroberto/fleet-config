@@ -113,6 +113,7 @@ from digest_model import (  # noqa: E402
     validate,
 )
 from digest_style import PAGE_CSS  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
@@ -717,14 +718,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             except (OSError, ValueError) as exc:
                 print(f"WARN could not read --reconcile-json: {exc}", file=sys.stderr)
         if args.md:
-            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
-            args.md.write_text(render_markdown(run, args.url, backlog), encoding="utf-8")
+            runtime_files.save_text(args.md, render_markdown(run, args.url, backlog), encoding="utf-8")
         if args.html:
-            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
-            args.html.write_text(render_html(run, backlog), encoding="utf-8")
+            runtime_files.save_text(args.html, render_html(run, backlog), encoding="utf-8")
         if args.chat_text:
-            # runtime-write-exempt: output files named by the --md/--html/--chat-text arguments
-            args.chat_text.write_text(render_chat(run, args.url, backlog), encoding="utf-8")
+            runtime_files.save_text(args.chat_text, render_chat(run, args.url, backlog), encoding="utf-8")
         print(f"RENDERED run={run.get('run_id')} "
               f"md={bool(args.md)} html={bool(args.html)} chat={bool(args.chat_text)}")
         return 0

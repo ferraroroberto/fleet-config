@@ -379,9 +379,9 @@ def cmd_bootstrap(repo: Path, scaffold: Path, force: bool) -> int:
             print("BOOTSTRAP=refused REASON=existing classifier differs from scaffold "
                   "(custom implementation - migrate deliberately with --force)")
             return 1
-    # runtime-write-exempt: installs the classifier into the target repo, as bootstrap is for
+    # runtime-write-exempt: installs the classifier into the target repo's scripts/, a code folder by design
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: installs the classifier into the target repo, as bootstrap is for
+    # runtime-write-exempt: installs the classifier into the target repo's scripts/, a code folder by design
     dest.write_bytes(src.read_bytes())
     if not files_identical(src, dest):
         print("BOOTSTRAP=error REASON=post-copy verification failed (bytes differ)")

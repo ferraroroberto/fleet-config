@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
+import runtime_files  # noqa: E402
 
 from .config import (
     ARCHIVE_MANIFEST_NAME,
@@ -93,8 +94,7 @@ def write_run_marker(snapshot_dir: Path, leg: str) -> None:
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        # runtime-write-exempt: marker inside the snapshot folder under the backup destination
-        (snapshot_dir / RUN_MARKER_NAME).write_text(
+        runtime_files.save_text(snapshot_dir / RUN_MARKER_NAME,
             json.dumps(marker, ensure_ascii=False), encoding="utf-8",
         )
     except OSError as exc:
@@ -198,8 +198,7 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
         example_src = str(dest_root / LATEST_DIR / "life-os" / "*")
         example_dst = str(source / "life-os")
     try:
-        # runtime-write-exempt: note at the backup destination root
-        (dest_root / RESTORE_NOTE_NAME).write_text(
+        runtime_files.save_text(dest_root / RESTORE_NOTE_NAME,
             _RESTORE_NOTE.format(
                 leg=leg, source=source, example_src=example_src, example_dst=example_dst,
                 what=what.format(source=source, leg=leg),
@@ -228,8 +227,7 @@ def _read_archive_manifest(dest_root: Path) -> Dict[str, Any]:
 def _replace_hardlink(source: Path, target: Path) -> None:
     """Atomically point an archive path at a completed snapshot file."""
 
-    # runtime-write-exempt: archive path under the backup destination
-    target.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     try:
         temporary.unlink(missing_ok=True)
@@ -370,8 +368,7 @@ def _write_archive_manifest(dest_root: Path, leg: str, files: Dict[str, Any],
         "sessions": sessions,
     }
     try:
-        # runtime-write-exempt: manifest under the backup destination root
-        dest_root.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(dest_root, parents=True, exist_ok=True)
         _lib.atomic_write_text(
             dest_root / ARCHIVE_MANIFEST_NAME, json.dumps(archive_manifest, indent=2, ensure_ascii=False),
         )
@@ -472,13 +469,11 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
         if source.is_dir():
             continue
         target = staging / source.relative_to(snapshot_dir)
-        # runtime-write-exempt: latest/ mirror under the backup destination
-        target.parent.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
         try:
             os.link(source, target)
         except OSError:
-            # runtime-write-exempt: latest/ mirror under the backup destination
-            shutil.copy2(source, target)
+            runtime_files.copy_with_metadata(source, target)
         count += 1
 
     if latest.exists():
@@ -586,15 +581,13 @@ def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, An
                 and target.is_file()):
             continue
         source = snapshot_dir / key
-        # runtime-write-exempt: latest/ mirror under the backup destination
-        target.parent.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
         if target.exists():
             target.unlink()
         try:
             os.link(source, target)
         except OSError:
-            # runtime-write-exempt: latest/ mirror under the backup destination
-            shutil.copy2(source, target)
+            runtime_files.copy_with_metadata(source, target)
         if prev_entry is None:
             added += 1
         else:
@@ -620,8 +613,7 @@ def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, An
         try:
             os.link(source_manifest, latest_manifest)
         except OSError:
-            # runtime-write-exempt: latest/ mirror under the backup destination
-            shutil.copy2(source_manifest, latest_manifest)
+            runtime_files.copy_with_metadata(source_manifest, latest_manifest)
 
     _prune_empty_dirs(latest)
     return added, updated, removed

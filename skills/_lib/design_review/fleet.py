@@ -65,6 +65,7 @@ from fleet_core import (
     fleet_repo_scan,  # noqa: E402
     fleet_toml,  # noqa: E402
     hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
 )
 
 from . import capture, filing, inventory, ledger, plan, report  # noqa: E402
@@ -160,8 +161,7 @@ def review_app(name: str, table: dict, rb: Rubric, specs: Dict[str, Dict[str, st
     run_id = ledger.run_id_of(run_dir, doc)
     prev = ledger.previous(target.name, run_id)
     doc["diff"] = ledger.diff(doc, prev)
-    # runtime-write-exempt: evaluate.json in the app's run folder
-    (run_dir / "evaluate.json").write_text(json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
+    runtime_files.save_text(run_dir / "evaluate.json", json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
     live = ledger.live_build(target.base_url, table.get("api_version_path")) if probe["status"] == "listening" else None
     entry = ledger.record(run_dir, doc, live)
     report.write_report(doc, run_dir / "report.html")
@@ -372,8 +372,7 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
 
     def land(repo: Optional[str], key: str, body: str) -> None:
         path = out_dir / f"issue-{key}.md"
-        # runtime-write-exempt: issue body in the fleet output folder
-        path.write_text(body, encoding="utf-8")
+        runtime_files.save_text(path, body, encoding="utf-8")
         if not repo:
             dig["filing"]["issues"][key] = f"no GitHub remote resolved — body at {path}"
         elif file_issues:
@@ -410,9 +409,7 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
             home_statuses = {**statuses, **inventory.carry_statuses(body, inv)}
         land(repo, home, digest_body(body, findings, home, dig, home_statuses, today))
 
-    # runtime-write-exempt: digest files in the fleet output folder
-    (out_dir / DIGEST_JSON).write_text(json.dumps(dig, indent=2, ensure_ascii=True), encoding="utf-8")
-    # runtime-write-exempt: digest files in the fleet output folder
-    (out_dir / DIGEST_HTML).write_text(render_digest(dig), encoding="utf-8")
+    runtime_files.save_text(out_dir / DIGEST_JSON, json.dumps(dig, indent=2, ensure_ascii=True), encoding="utf-8")
+    runtime_files.save_text(out_dir / DIGEST_HTML, render_digest(dig), encoding="utf-8")
     dig["out_dir"] = str(out_dir)
     return dig

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
+from fleet_core import runtime_files
 from worktree_residue import WT_SEP
 
 LOCK_NAME = "issue-claim.lock"
@@ -78,8 +79,7 @@ def read_meta(lock_dir: Path) -> Optional[dict]:
 
 
 def write_meta(lock_dir: Path, meta: dict) -> None:
-    # runtime-write-exempt: meta.json inside the claim folder
-    (lock_dir / META_NAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    runtime_files.save_text(lock_dir / META_NAME, json.dumps(meta, indent=2), encoding="utf-8")
 
 
 def _publish_claim(lock_dir: Path, meta: dict) -> bool:
@@ -101,8 +101,7 @@ def _publish_claim(lock_dir: Path, meta: dict) -> bool:
     fully populated, never in between.
     """
     tmp_dir = lock_dir.with_name(f"{lock_dir.name}.tmp-{os.getpid()}-{time.time_ns()}")
-    # runtime-write-exempt: temporary claim folder beside the final lock folder
-    tmp_dir.mkdir(parents=False)
+    runtime_files.make_dirs(tmp_dir, parents=False)
     write_meta(tmp_dir, meta)
     try:
         tmp_dir.rename(lock_dir)

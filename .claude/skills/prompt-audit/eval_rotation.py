@@ -41,6 +41,7 @@ from typing import Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+from fleet_core import runtime_files  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 SKILL_TIERS = ("skills", ".claude/skills")
@@ -96,25 +97,19 @@ def rotation_state(root: Optional[Path] = None) -> Dict[str, dict]:
 
 def save_rotation(state: Dict[str, dict], root: Optional[Path] = None) -> None:
     root = root or out_root()
-    # runtime-write-exempt: rotation state under out_root() or the caller's root
-    root.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: rotation state under out_root() or the caller's root
-    (root / "rotation.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    runtime_files.make_dirs(root, parents=True, exist_ok=True)
+    runtime_files.save_text(root / "rotation.json", json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def build_wrapper(skill_dir: Path, dest: Path) -> Path:
     """A minimal plugin around one skill: the manifest, the skill (cases excluded) and its cases."""
     name = skill_dir.name
-    # runtime-write-exempt: wrapper plugin built in the caller's dest (a work folder)
-    (dest / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: wrapper plugin built in the caller's dest (a work folder)
-    (dest / ".claude-plugin" / "plugin.json").write_text(
+    runtime_files.make_dirs(dest / ".claude-plugin", parents=True, exist_ok=True)
+    runtime_files.save_text(dest / ".claude-plugin" / "plugin.json",
         json.dumps({"name": f"fleet-{name}", "version": "0.0.0",
                     "description": f"eval wrapper for the {name} skill"}) + "\n", encoding="utf-8")
-    # runtime-write-exempt: wrapper plugin built in the caller's dest (a work folder)
-    shutil.copytree(skill_dir, dest / "skills" / name, ignore=SKIP_COPY)
-    # runtime-write-exempt: wrapper plugin built in the caller's dest (a work folder)
-    shutil.copytree(skill_dir / "evals", dest / "evals", ignore=shutil.ignore_patterns("results", "__pycache__"))
+    runtime_files.copy_tree(skill_dir, dest / "skills" / name, ignore=SKIP_COPY)
+    runtime_files.copy_tree(skill_dir / "evals", dest / "evals", ignore=shutil.ignore_patterns("results", "__pycache__"))
     return dest
 
 
@@ -301,15 +296,13 @@ def _read_result(path: Path) -> Optional[dict]:
 
 def write_aggregate(rows: List[dict], meta: dict, root: Optional[Path] = None) -> Path:
     root = root or out_root()
-    # runtime-write-exempt: aggregate under out_root() or the caller's root
-    root.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(root, parents=True, exist_ok=True)
     body = dict(meta, rows=rows, verdicts=verdicts(rows),
                 cost_usd=round(sum(r["cost_usd"] for r in rows), 4))
     stamp = meta["started"].replace(":", "").replace("-", "")[:15]
     path = root / f"{stamp}.json"
     for p in (path, root / "latest.json"):
-        # runtime-write-exempt: aggregate under out_root() or the caller's root
-        p.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+        runtime_files.save_text(p, json.dumps(body, indent=2) + "\n", encoding="utf-8")
     return path
 
 

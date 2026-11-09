@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from fleet_core import runtime_files
 from fleet_core.fleet_repo_scan import fleet_repos
 from fleet_core.frontmatter import frontmatter_field
 from git_run import run_git
@@ -145,8 +146,7 @@ def _persist(repo: Path, manifest: dict) -> None:
     temporary = path.with_suffix(".json.tmp")
     if present(temporary):
         raise ValueError(f"manifest temporary path occupied: {temporary}")
-    # runtime-write-exempt: manifest beside the caller's path
-    with temporary.open("x", encoding="utf-8") as stream:
+    with runtime_files.open_for_write(temporary, "x", encoding="utf-8") as stream:
         stream.write(json.dumps(manifest, indent=2) + "\n")
     temporary.replace(path)
 
@@ -161,13 +161,11 @@ def _save(repo: Path, manifest: dict) -> None:
     exclude = Path(result.stdout.strip())
     if is_link(exclude):
         raise ValueError(f"Git exclude file is a link; preserve and inspect: {exclude}")
-    # runtime-write-exempt: git's own exclude file, as reported by git
-    exclude.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(exclude.parent, parents=True, exist_ok=True)
     lock = exclude.with_name(".fleet-discovery-exclude.lock")
     # Shared info/exclude is edited under a short exclusive lock. A simultaneous
     # reconciliation reports unknown/retry, never loses a sibling's block.
-    # runtime-write-exempt: git's own exclude file, as reported by git
-    with lock.open("x") as guard:
+    with runtime_files.open_for_write(lock, "x") as guard:
         try:
             content = exclude.read_bytes() if exclude.exists() else b""
             identity = manifest.get("exclude_id", hashlib.sha256(str(repo).encode()).hexdigest()[:16])
@@ -189,8 +187,7 @@ def _save(repo: Path, manifest: dict) -> None:
             _persist(repo, manifest)
             if updated != content:
                 temporary = exclude.with_name(".fleet-discovery-exclude.tmp")
-                # runtime-write-exempt: git's own exclude file, as reported by git
-                with temporary.open("xb") as stream:
+                with runtime_files.open_for_write(temporary, "xb") as stream:
                     stream.write(updated)
                 temporary.replace(exclude)
         finally:
@@ -208,8 +205,7 @@ def _unlink(path: Path) -> None:
 
 
 def _link(source: Path, target: Path) -> None:
-    # runtime-write-exempt: link created at the caller's target
-    target.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
     if sys.platform == "win32":
         # PowerShell reads paths from env, never interpolated as executable code.
         env = dict(os.environ, FLEET_LINK_SOURCE=str(source), FLEET_LINK_TARGET=str(target))

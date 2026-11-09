@@ -49,6 +49,7 @@ from typing import Callable, Dict, Iterator, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from active_issue import pid_state  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
@@ -150,8 +151,7 @@ def try_acquire(mode: str, repo: str, folder: Optional[Path] = None,
     name = f"{mode}.{os.getpid()}.{uuid.uuid4().hex}.json"
     marker = folder / name
     try:
-        # runtime-write-exempt: marker folder is the caller's folder, default lock_dir()
-        folder.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(folder, parents=True, exist_ok=True)
         atomic_write_text(marker, json.dumps({
             "pid": os.getpid(), "repo": repo, "mode": mode,
             "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),

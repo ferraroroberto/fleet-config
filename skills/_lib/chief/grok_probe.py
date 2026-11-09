@@ -37,6 +37,7 @@ from typing import Dict, List, Optional
 
 # A direct run starts without `skills/_lib` on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 logger = logging.getLogger("fleet_chief")
@@ -111,10 +112,8 @@ FAKE_INBOX = 'Start-Sleep -Seconds 15\nWrite-Output "INBOX owner: status please"
 def _write_probe_folder(folder: Path) -> None:
     """Lay down the probe hook, its settings and the fake inbox script."""
     hook = folder / "probe_hook.py"
-    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
-    hook.write_text(HOOK_SOURCE, encoding="utf-8")
-    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
-    (folder / "fake_inbox.ps1").write_text(FAKE_INBOX, encoding="utf-8")
+    runtime_files.save_text(hook, HOOK_SOURCE, encoding="utf-8")
+    runtime_files.save_text(folder / "fake_inbox.ps1", FAKE_INBOX, encoding="utf-8")
     base = f"{Path(sys.executable).as_posix()} {hook.as_posix()}"
     settings = {"hooks": {
         "SessionStart": [{"hooks": [{"type": "command", "command": f"{base} SS"}]}],
@@ -122,10 +121,8 @@ def _write_probe_folder(folder: Path) -> None:
         "PreToolUse": [{"matcher": "AskUserQuestion",
                         "hooks": [{"type": "command", "command": f"{base} Ask"}]}],
     }}
-    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
-    (folder / ".claude").mkdir()
-    # runtime-write-exempt: probe files go in the throwaway temp folder the caller passes
-    (folder / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    runtime_files.make_dirs(folder / ".claude")
+    runtime_files.save_text(folder / ".claude" / "settings.json", json.dumps(settings), encoding="utf-8")
 
 
 def _run_grok(folder: Path, prompt: str, timeout: int, env_extra: Dict[str, str]) -> Optional[str]:

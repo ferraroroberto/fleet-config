@@ -102,6 +102,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("worktree_claim_git_cli", "worktree_claim/test_git_backed_cli.py",
      "the git-backed CLI -- reparse-safe teardown, land-primary, root-config "
      "mirroring and mode -- runs against real temp repos"),
+    ("runtime_files", "repo/test_runtime_files.py", "the guarded writers refuse a path under a code folder (fleet-config#1949)"),
     ("untrack_guard", "repo/test_untrack_guard.py",
      "a fast-forward keeps every live file the merged range untracks -- "
      "the automation#144 config loss reproduced through land-primary against "
@@ -890,10 +891,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "redacted reads, and a call log with no bodies or ids, with no write in "
      "the code tree"),
     ("readme_fence_refs", "acceptance/readme_fence/test_readme_fence_refs.py",
-     "the fenced-block half of the docs-history check the vendored "
-     "scripts/docs_ratchet.py deliberately skips -- README.md's `## Layout` "
-     "tree is a fenced block where an issue reference or a provenance aside "
-     "can accumulate unnoticed -- is testable on its own against a synthetic "
-     "fence and proven against the live README (fleet-config#1697)"),
+     "the fenced-block half of the docs-history check the vendored scripts/docs_ratchet.py "
+     "skips -- README.md's `## Layout` tree can gather an issue reference or provenance aside "
+     "unnoticed -- tested on a synthetic fence and the live README (fleet-config#1697)"),
 )
-

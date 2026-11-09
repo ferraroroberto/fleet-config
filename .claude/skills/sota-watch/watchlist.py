@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -78,10 +79,8 @@ def load_state(path: Optional[Path] = None) -> Dict[str, str]:
 
 def save_state(state: Dict[str, str], path: Optional[Path] = None) -> None:
     p = path or state_path()
-    # runtime-write-exempt: state file under the hooks state dir or the caller's path
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: state file under the hooks state dir or the caller's path
-    p.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    runtime_files.make_dirs(p.parent, parents=True, exist_ok=True)
+    runtime_files.save_text(p, json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def last_checked(name: str, cfg: Dict[str, Any], state: Dict[str, str]) -> dt.date:

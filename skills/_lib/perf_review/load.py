@@ -46,6 +46,9 @@ from urllib.parse import urlsplit, urlunsplit
 from playwright.sync_api import Error as PwError
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from fleet_core import runtime_files  # noqa: E402
+
 PAINT_JS = """() => {
   const nav = performance.getEntriesByType('navigation')[0] || {};
   const fcp = (performance.getEntriesByName('first-contentful-paint')[0] || {}).startTime;
@@ -322,10 +325,8 @@ def main(argv=None) -> int:
             else:
                 doc["legs"].update(got["legs"])
                 doc["api"] = got["api"]
-    # runtime-write-exempt: load.json under the --out argument
-    Path(a.out).mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: load.json under the --out argument
-    (Path(a.out) / "load.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    runtime_files.make_dirs(Path(a.out), parents=True, exist_ok=True)
+    runtime_files.save_text(Path(a.out) / "load.json", json.dumps(doc, indent=1), encoding="utf-8")
     return 0
 
 

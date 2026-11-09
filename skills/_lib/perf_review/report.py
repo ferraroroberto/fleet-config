@@ -22,6 +22,7 @@ import audit_issue  # noqa: E402
 from fleet_core import (
     fleet_toml,  # noqa: E402
     hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
 )
 
 from .http_probe import SKIPPED_STREAM  # noqa: E402
@@ -383,10 +384,8 @@ def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Opti
              "endpoints": {e["path"]: {"status": e["status"], "budget": e["budget"], "p50": e.get("p50"), "p95": e.get("p95")}
                            for e in v["endpoints"]}}
     path = ledger_path()
-    # runtime-write-exempt: the ledger lives in the hooks state directory, never a code folder
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: appended in place so a concurrent run's record is never rewritten away
-    with path.open("a", encoding="utf-8", newline="\n") as fh:
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
+    with runtime_files.open_for_write(path, "a", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
     return entry
 
