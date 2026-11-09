@@ -101,6 +101,7 @@ import git_run  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from vendored_wave import ignore_block  # noqa: E402
+from vendored_wave.forks import fork_rows, parse_vendored_forks  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -121,25 +122,11 @@ def parse_vendored_manifest(toml_text: str) -> Dict[str, Dict[str, str]]:
     the schema validator; a malformed entry just can't be drift-checked and
     surfaces as "missing src/sha/dest" from the caller instead.
     """
-    return _parse_entry_table(toml_text, "vendored")
-
-
-def parse_vendored_forks(toml_text: str) -> Dict[str, Dict[str, str]]:
-    """Parse a `.fleet.toml`'s optional `[vendored_forks]` table (fleet-config#1951).
-
-    The shape is project-scaffolding's `docs/components.md`: ``{component: {"src": ..., "reason": ...,
-    "upstream": ...}}``, a deliberate divergence from the byte-for-byte copy that `[vendored]` records. Absent,
-    empty and malformed entries read exactly as `parse_vendored_manifest` reads them.
-    """
-    return _parse_entry_table(toml_text, "vendored_forks")
-
-
-def _parse_entry_table(toml_text: str, table: str) -> Dict[str, Dict[str, str]]:
-    """The inline tables of one top-level `.fleet.toml` table, keyed by component name."""
-    entries = tomllib.loads(toml_text).get(table)
-    if not isinstance(entries, dict):
+    data = tomllib.loads(toml_text)
+    vendored = data.get("vendored")
+    if not isinstance(vendored, dict):
         return {}
-    return {name: dict(entry) for name, entry in entries.items() if isinstance(entry, dict)}
+    return {name: dict(entry) for name, entry in vendored.items() if isinstance(entry, dict)}
 
 
 def parse_scaffold_catalog(toml_text: str) -> Dict[str, str]:
@@ -586,7 +573,8 @@ def scan_fleet(
             continue
         manifests[repo_name] = manifest
         forked[repo_name] = frozenset(declared_forks)
-        forks.extend(_fork_rows(repo_name, declared_forks, manifest, component_filter, errors))
+        forks.extend(fork_rows(repo_name, declared_forks, manifest,
+                                lambda c: _wanted(c, component_filter), errors))
         if not manifest:
             no_manifest.append(repo_name)
             continue
@@ -636,31 +624,6 @@ def _adopter_rows(scaffold_root: Path, head_ref: str, head_sha: str, repo_name: 
         if result["behind_head"]:
             row["contract"] = _contract_for(scaffold_root, head_ref, sha, src, head_texts, contract_cache)
         rows.append(row)
-    return rows
-
-
-def _fork_rows(repo_name: str, declared: Dict[str, Dict[str, str]], manifest: Dict[str, Dict[str, str]],
-               component_filter: Optional[object], errors: List[Dict[str, str]]) -> List[Dict[str, object]]:
-    """One `fork` row per well-formed `[vendored_forks]` entry; every other entry is an error, never a row.
-
-    A component in both tables contradicts itself (a fork leaves `[vendored]`), so it is named as an error and
-    its `[vendored]` entry keeps being drift-checked. An entry with no `src` or `reason` cannot say what differs
-    or why, which is the whole content of the declaration. A missing `upstream` stays a row with `upstream: None`,
-    so the smell is visible without hiding the fork.
-    """
-    rows: List[Dict[str, object]] = []
-    for component, entry in sorted(declared.items()):
-        if not _wanted(component, component_filter):
-            continue
-        if component in manifest:
-            errors.append({"repo": repo_name, "component": component, "kind": "fork_conflict", "error":
-                           f"component {component!r} is declared in both [vendored] and [vendored_forks]"})
-        elif not (entry.get("src") and entry.get("reason")):
-            errors.append({"repo": repo_name, "component": component, "kind": "fork_malformed",
-                           "error": "[vendored_forks] entry missing src/reason"})
-        else:
-            rows.append({"repo": repo_name, "component": component, "state": "fork", "src": entry["src"],
-                         "reason": entry["reason"], "upstream": entry.get("upstream") or None})
     return rows
 
 
