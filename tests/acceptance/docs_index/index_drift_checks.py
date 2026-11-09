@@ -28,6 +28,9 @@ SCAFFOLD_DOCS = "https://github.com/ferraroroberto/project-scaffolding/blob/main
 _STANDARD_KEYS = frozenset({"enabled", "baseline"})
 _SKILL_TIERS = ("skills", ".claude/skills")
 _SKILL_LINK = re.compile(r"\[`/([a-z0-9-]+)`\]\(([^)\s#]+)")
+# Registered in the vendored script's RULES but never counted: R-15 only reads a SKILL.md description, which
+# sits on line 1 where no heading scopes it and the file is agent-neutral, so its hits stay at "consider".
+ADVISORY_RULES = frozenset({"R-15"})
 
 
 def _section(doc: str, heading: str) -> str:
@@ -77,7 +80,8 @@ def collect_ratchet_facts(repo: Path = REPO) -> Dict[str, Any]:
         "counts": counts,
         "gates": gates,
         "conventions_known": set(_literal(repo / "scripts" / "conventions_ratchet.py", "RULES")),
-        "instruction_enforced": set(_literal(instruction, "RULES")),
+        "instruction_enforced": set(_literal(instruction, "RULES")) - ADVISORY_RULES,
+        "instruction_advisory": set(ADVISORY_RULES),
         "instruction_audit": set(_literal(instruction, "NOT_ENFORCED")),
     }
 
@@ -115,9 +119,11 @@ def _conventions_problems(doc: str, facts: Dict[str, Any]) -> List[str]:
 
 def _instruction_problems(doc: str, facts: Dict[str, Any]) -> List[str]:
     section = _section(doc, "Instruction rules")
-    lines = {key: next((ln for ln in section.splitlines() if key in ln), "") for key in ("Enforced", "Left to")}
+    lines = {key: next((ln for ln in section.splitlines() if key in ln), "") for key in ("Enforced", "Advisory", "Left to")}
     out = []
-    for key, want in (("Enforced", facts["instruction_enforced"]), ("Left to", facts["instruction_audit"])):
+    wanted = (("Enforced", facts["instruction_enforced"]), ("Advisory", facts["instruction_advisory"]),
+              ("Left to", facts["instruction_audit"]))
+    for key, want in wanted:
         got = set(re.findall(r"R-\d+", lines[key]))
         if got != want:
             out.append(f"instruction rules '{key}' list {sorted(got)} != vendored script {sorted(want)}")
@@ -164,6 +170,7 @@ def _self_tests(check: _Checker, doc: str, facts: Dict[str, Any], skills_doc: st
         "a new option key": lambda f: f["tables"]["docs_ratchet"].__setitem__("exclude", []),
         "a baseline burned down": lambda f: f["counts"].__setitem__("runtime_write_ratchet", f["counts"]["runtime_write_ratchet"] - 1),
         "a new instruction rule": lambda f: f["instruction_enforced"].add("R-99"),
+        "an advisory instruction rule listed as enforced": lambda f: f["instruction_advisory"].clear(),
     }
     for label, mutate in mutations.items():
         drifted = copy.deepcopy(facts)
