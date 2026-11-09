@@ -32,10 +32,20 @@ def _today() -> str:
 
 
 def _ref(text: str) -> tuple:
-    repo, sep, num = text.partition("#")
-    if not sep or not repo or not num.isdigit():
-        raise argparse.ArgumentTypeError(f"expected <repo>#<N>, got {text!r}")
-    return repo, int(num)
+    """Parse `<repo>#<N>` or `<owner>/<repo>#<N>` into a bare `(repo, N)`.
+
+    The github seam prefixes the fleet owner itself, so a qualified ref keeps only
+    its repo; a different owner is refused rather than silently read as ours.
+    """
+    expected = f"expected <repo>#<N> or <owner>/<repo>#<N>, got {text!r}"
+    name, sep, num = text.partition("#")
+    parts = name.split("/")
+    if not sep or not num.isdigit() or len(parts) > 2 or not all(parts):
+        raise argparse.ArgumentTypeError(expected)
+    if len(parts) == 2 and parts[0] != github.OWNER:
+        raise argparse.ArgumentTypeError(
+            f"owner {parts[0]!r} is not the fleet owner {github.OWNER!r}; {expected}")
+    return parts[-1], int(num)
 
 
 def _print_reasons(reasons: Sequence[str]) -> None:

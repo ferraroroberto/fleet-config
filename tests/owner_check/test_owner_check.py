@@ -460,4 +460,40 @@ check(code == 0 and "RECLASSIFY=applied before=2 clear=1 keep=1" in out and clea
       and "back-fill-only" in cleared.get("answer", "") and len(fake.comments) == 1,
       f"apply clears with a public-safe cleared block ({code}, {out}, {fake.comments})")
 
+
+# ---- ref parsing: bare and owner-qualified ----
+
+for sub, extra in (("gate", []), ("mark", ["--kind", "validate-after", "--reason", "r", "--try", "open it on the tower"]),
+                   ("clear", ["--answer", "ok"])):
+    for ref in ("demo#7", f"{github.OWNER}/demo#7"):
+        fake = FakeGh(issue(labels=("enhancement",)))
+        code, out = run([sub, ref, *extra], fake)
+        repos = [c[c.index("--repo") + 1] for c in fake.calls if "--repo" in c]
+        check(repos and set(repos) == {f"{github.OWNER}/demo"},
+              f"{sub} {ref}: gh is addressed as {github.OWNER}/demo, got {fake.calls} ({code}, {out})")
+        check("could not read" not in out, f"{sub} {ref}: no read failure ({out})")
+
+fake = FakeGh(issue(), "modified\tsrc/app.py\n")
+code, out = run(["finish", f"{github.OWNER}/demo#7", "--pr", "9", "--verified", "yes"], fake)
+check(code == 0 and "OWNER_CHECK=none" in out and all(
+        c[c.index("--repo") + 1] == f"{github.OWNER}/demo" for c in fake.calls if "--repo" in c),
+      f"finish takes the qualified ref too ({code}, {out}, {fake.calls})")
+
+for bad in ("demo", "demo#", "#7", "demo#x", "a/b/demo#7", "/demo#7", f"{github.OWNER}/#7"):
+    try:
+        cli._ref(bad)
+    except cli.argparse.ArgumentTypeError as exc:
+        check("<repo>#<N>" in str(exc) and "<owner>/<repo>#<N>" in str(exc),
+              f"malformed {bad!r} names both accepted forms, got {exc}")
+    else:
+        check(False, f"malformed {bad!r} must be rejected")
+try:
+    cli._ref("someone-else/demo#7")
+except cli.argparse.ArgumentTypeError as exc:
+    check("someone-else" in str(exc) and github.OWNER in str(exc), f"a foreign owner is its own error, got {exc}")
+else:
+    check(False, "a foreign owner must be rejected, not silently re-owned")
+check(cli._ref(f"{github.OWNER}/demo#7") == ("demo", 7) and cli._ref("demo#7") == ("demo", 7),
+      "both forms parse to the same bare (repo, number)")
+
 _h.report_and_exit("test_owner_check")
