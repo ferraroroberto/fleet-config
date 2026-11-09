@@ -59,6 +59,8 @@ Words are matched in the title only. Issue bodies quote phone viewports, network
 
 ## Where it runs
 
+Every `<repo>#<N>` argument (`gate`, `finish`, `mark`, `clear`) also takes the owner-qualified `<owner>/<repo>#<N>` that `gh` prints. The owner must be the fleet owner; any other owner, or any other shape, is refused with an error naming both accepted forms.
+
 | Point | Command | Effect |
 | --- | --- | --- |
 | `/issue-add` step 6 | `owner_check classify --body-file <draft> --title "<title>" --label <type>` | The verdict for the template's `Owner validation:` line. The model writes only the why and the "try" text. |
