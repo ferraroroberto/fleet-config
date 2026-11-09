@@ -116,8 +116,11 @@ check(drain.marker_kind("  \n<!-- audit-managed: kind=stale -->\nbody") == "stal
 # ---- cmd_drain end to end against a fake launcher ------------------------------------
 
 class FakeLauncher:
-    def __init__(self, settings, cards=(), start_exc=None, cap=3):
+    def __init__(self, settings, cards=(), start_exc=None, cap=3, lag=False, late_cards=()):
         self.settings = settings
+        self.late_cards = list(late_cards)  # sessions that start after drain's own board read
+        self.board_reads = 0
+        self.lag = lag  # a fresh spawn is not on the board yet, as seen seconds after a real start
         self.cards = list(cards)
         self.start_exc = start_exc
         self.cap = cap
@@ -130,6 +133,9 @@ class FakeLauncher:
             # Scope `all`: every live card holds a slot, so the cap is decided by the fake board alone.
             return {"settings": {"worker_cap": self.cap, "worker_cap_scope": "all", **self.settings}}
         if path == "/api/board":
+            self.board_reads += 1
+            if self.board_reads == 2:
+                self.cards.extend(self.late_cards)
             return {"columns": {"claude_turn": list(self.cards), "your_turn": []}}
         if path == "/api/jobs":
             return {"jobs": []}
@@ -138,7 +144,8 @@ class FakeLauncher:
             if self.start_exc is not None:
                 raise self.start_exc
             sid = f"lane{len(self.posted)}"
-            self.cards.append(_session_card(project=body["repo"], session_id=sid))
+            if not self.lag:
+                self.cards.append(_session_card(project=body["repo"], session_id=sid))
             return {"session": {"session_id": sid}, "launched": f"/issue-start {body['number']}"}
         raise AssertionError(f"unexpected path: {path}")
 
@@ -214,8 +221,8 @@ posted = [(b["repo"], b["number"], b.get("model")) for b in fake.posted]
 check(posted == [("app-a", 1, "sonnet"), ("app-b", 3, "opus")],
       f"dispatch fills free slots from the top of drain's rows with the kind's model (got {posted})")
 check("DRAIN_SKIPPED=busy#2 reason=repo-busy" in out, "an occupied repo is skipped")
-check("DRAIN_STOPPED=app-c#4 reason=refused" in out and "DRAIN=done added=4 dispatched=2" in out,
-      f"the cap refusal stops the drain, then the summary line (got {out!r})")
+check("DRAIN=done added=4 dispatched=2" in out and "DRAIN_STOPPED" not in out and "app-c#4 " not in out.replace("DRAIN_ADDED=app-c#4 ", ""),
+      f"the pass stops once the free slots are filled, then the summary line (got {out!r})")
 check(all(b["repo"] != "app-z" for b in fake.posted), "a hand-queued row with no brief is not dispatched")
 check("DRAIN_SKIPPED=app-z#9 reason=no-brief" in out, f"a hand-queued row with no brief says why (got {out!r})")
 lanes = {lane["repo"]: lane for lane in doc["lanes"]}
@@ -360,12 +367,15 @@ fake, out, doc = _hand(plan, {("app-x", 5): {"state": "CLOSED", "labels": []}}, 
 posted = [(b["repo"], b["number"]) for b in fake.posted]
 check(posted == [("app-b", 1), ("app-c", 2)],
       f"met after conditions release rows, filling the cap in plan order (got {posted})")
-check("DRAIN_STOPPED=app-a#3 reason=refused" in out,
-      f"the worker cap still ends the drain through dispatch's own refusal (got {out!r})")
+check(len(posted) == 2 and "app-a#3" not in out and "DRAIN=done added=0 dispatched=2" in out,
+      f"the pass ends once its free slots are filled (got {out!r})")
 
-# A dispatch refusal on a hand row stops the drain, same as for drain's own rows.
+# A dispatch refusal on a hand row stops the drain, same as for drain's own rows: here a session
+# starts after drain's own board read, so dispatch's fresh count hits the cap.
 plan = _hand_plan(("app-a#1", {"brief": _brief}), ("app-b#2", {"brief": _brief}))
-fake, out, doc = _hand(plan, settings={"worker_cap": 0})
+_reset()
+fake = FakeLauncher({"auto_drain": True, "worker_cap": 1}, late_cards=[_busy_card])
+rc, out, plan_path, _ = _run(fake, [], plan=plan)
 check(not fake.posted and "DRAIN_STOPPED=app-a#1 reason=refused" in out and "DRAIN_SKIPPED=app-b#2" not in out,
       f"a refused hand row stops the drain (got {out!r})")
 
@@ -393,6 +403,19 @@ _reset()
 fake = FakeLauncher({"auto_drain": True})
 rc, out, plan_path, _ = _run(fake, [], plan=legacy)
 check(rc == 0 and "DRAIN_SKIPPED=app-a#1 reason=no-brief" in out, f"a row without the new fields loads (got {out!r})")
+
+# ---- a fresh spawn that is not on the board yet (fleet-config#1962) --------------------------
+
+# One free slot, two eligible rows in different repos, and a board that lags the first spawn:
+# the second dispatch would read the same live count, so the pass must stop at its measured slots.
+plan = _hand_plan(("app-a#1", {"brief": _brief}), ("app-b#2", {"brief": _brief}))
+_reset()
+fake = FakeLauncher({"auto_drain": True}, cards=[_busy_card], cap=2, lag=True)
+rc, out, plan_path, _ = _run(fake, [], plan=plan)
+check([(b["repo"], b["number"]) for b in fake.posted] == [("app-a", 1)] and "dispatched=1" in out,
+      f"a lagging board does not let a pass dispatch past its free slots (got {out!r})")
+check("DRAIN_DISPATCHED=app-a#1" in out and "app-b#2" not in out and "SLOTS_IDLE=" not in out,
+      f"the row past the free slot is left alone and no idle slot is claimed (got {out!r})")
 
 # ---- idle slots (fleet-config#1941) -------------------------------------------------------
 

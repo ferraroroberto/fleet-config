@@ -18,8 +18,10 @@ judgment (verifying each merge, closing each lane) with the chief:
    generic per-kind brief. A hand-queued row is dispatched only when it carries
    its own `brief` file, every `after` condition holds, its repo has no live
    session and its issue is open without an owner, validation or ledger label;
-   each hand row left out prints why. The first refusal or unconfirmed dispatch
-   ends the drain for this turn.
+   each hand row left out prints why. A pass dispatches at most the free slots
+   it measured at its start (a fresh spawn is not on the board for a while, so
+   dispatch's own live count would read one lane too few). The first refusal or
+   unconfirmed dispatch ends the drain for this turn.
 
 Drain's ledger (`chief-drain.json` in the hooks state dir) lists every ref it
 ever queued. That is how it tells its own rows from hand-queued ones (which
@@ -445,7 +447,9 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
     stopped = False
     for row in queued_rows(doc):
         ref = f"{row['repo']}{row['ref']}"
-        if args.dry_run and free is not None and dispatched >= free:
+        if free is not None and dispatched >= free:
+            # A fresh spawn is not on the board for a while, so dispatch's own live count would
+            # read one lane too few; the slots measured at the start are all this pass may fill.
             break
         reason = row_skip(row, doc, known, busy)
         if reason is not None:
