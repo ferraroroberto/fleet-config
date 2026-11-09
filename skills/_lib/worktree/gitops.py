@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import git_run
-from fleet_core import fleet_toml
+from fleet_core import fleet_toml, runtime_files
 from no_window import NO_WINDOW
 from worktree_residue import WT_SEP
 
@@ -305,8 +305,7 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     the combined stderr/stdout on failure, empty on success. Pure OS wrapper --
     the caller decides whether a failure is fatal.
     """
-    # runtime-write-exempt: creates the junction at the caller's link path
-    link.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(link.parent, parents=True, exist_ok=True)
     # encoding pinned to the OEM code page: `mklink` is a native console tool
     # and emits cp850 here, which is not valid UTF-8. Under bare text=True the
     # decode yields empty output, so setup_worktree aborted with

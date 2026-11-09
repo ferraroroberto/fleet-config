@@ -53,6 +53,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import runtime_files  # noqa: E402
 from conversation import hub_client  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
@@ -399,8 +400,7 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
     json_path = conv_dir / INDEX_JSON_NAME
     if changed or (entries and not json_path.exists()):
         try:
-            # runtime-write-exempt: index.md inside the conversations folder the caller names
-            index_path.write_text(
+            runtime_files.save_text(index_path,
                 render_index(label, entries, decay_tail(index_path)), encoding="utf-8"
             )
         except OSError as exc:

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 LOOPBACK = "127.0.0.1"
@@ -142,8 +143,7 @@ class PreviewServer:
 
     def __enter__(self) -> "PreviewServer":
         argv = [self.python] + [a.replace("{port}", str(self.port)) for a in self.plan.argv]
-        # runtime-write-exempt: server output goes to the log_path the caller passed
-        log = self.log_path.open("w", encoding="utf-8")
+        log = runtime_files.open_for_write(self.log_path, "w", encoding="utf-8")
         try:
             self.proc = subprocess.Popen(argv, cwd=str(self.plan.cwd), stdin=subprocess.DEVNULL, stdout=log,
                                          stderr=subprocess.STDOUT, creationflags=NO_WINDOW)

@@ -71,6 +71,7 @@ import git_run  # noqa: E402
 from fleet_core import (
     fleet_toml,  # noqa: E402
     hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
 )
 from no_window import NO_WINDOW  # noqa: E402
 
@@ -308,10 +309,8 @@ def envelope(target: Target, rubric: Rubric, run_dir: Path, devices: List[str], 
 def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], params: Dict[str, object],
                scaffold: str, timeout: float = WALK_TIMEOUT_S, synthetic: bool = False) -> Dict[str, object]:
     """Run `walk.py` under the target interpreter; return `{returncode, stderr_tail, timed_out}`."""
-    # runtime-write-exempt: walk artefacts go in the run folder
-    (run_dir / "params.json").write_text(json.dumps(params["script"]), encoding="utf-8")
-    # runtime-write-exempt: walk artefacts go in the run folder
-    (run_dir / "review.json").write_text(json.dumps(target.review), encoding="utf-8")
+    runtime_files.save_text(run_dir / "params.json", json.dumps(params["script"]), encoding="utf-8")
+    runtime_files.save_text(run_dir / "review.json", json.dumps(target.review), encoding="utf-8")
     argv = [python, str(WALK_PY), "--url", target.base_url, "--out", str(run_dir),
             "--devices", ",".join(devices), "--scaffold", scaffold,
             "--params", str(run_dir / "params.json"), "--review", str(run_dir / "review.json")]
@@ -324,8 +323,7 @@ def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], p
         tail = (exc.stderr or b"")
         tail = tail.decode("utf-8", "replace") if isinstance(tail, bytes) else str(tail)
         return {"returncode": None, "stderr_tail": tail[-2000:], "timed_out": True}
-    # runtime-write-exempt: walk artefacts go in the run folder
-    (run_dir / "walk.log").write_text(proc.stderr or "", encoding="utf-8")
+    runtime_files.save_text(run_dir / "walk.log", proc.stderr or "", encoding="utf-8")
     return {"returncode": proc.returncode, "stderr_tail": (proc.stderr or "")[-2000:], "timed_out": False}
 
 
@@ -413,8 +411,7 @@ class SyntheticInstance:
             except subprocess.TimeoutExpired:
                 return "unknown"
         finally:
-            # runtime-write-exempt: synthetic server log in the run folder
-            self.log_path.write_text("".join(self._log)[-200000:], encoding="utf-8")
+            runtime_files.save_text(self.log_path, "".join(self._log)[-200000:], encoding="utf-8")
 
 
 def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], devices: List[str],
@@ -559,8 +556,7 @@ def e2e_screens(capture_dir: Path, shots: Path) -> Dict[str, List]:
     """
     out: Dict[str, List] = {"screens": [], "duplicates": [], "unreadable": []}
     seen: set = set()
-    # runtime-write-exempt: shots folder is the caller's, inside the run folder
-    shots.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(shots, parents=True, exist_ok=True)
     found = []
     for path in capture_dir.glob("*.json"):
         name, _, theme = path.name[:-len(".json")].rpartition(".")
@@ -605,8 +601,7 @@ def prepare_e2e_dir(python: str, run_dir: Path, params: Dict[str, object], revie
     """Build `<run_dir>/e2e/` for the hook: `{dir, geometry, error}`. Files left by an earlier run there are removed
     first, so a stale capture can never read as this run's."""
     cap = run_dir / E2E_DIR
-    # runtime-write-exempt: e2e folder inside the run folder
-    cap.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(cap, parents=True, exist_ok=True)
     for stale in cap.iterdir():
         if stale.is_file():
             stale.unlink()
@@ -620,12 +615,10 @@ def prepare_e2e_dir(python: str, run_dir: Path, params: Dict[str, object], revie
         return {"dir": str(cap), "geometry": None,
                 "error": f"walk.py --emit-script exit {proc.returncode}: {(proc.stderr or '').strip()[-300:]}"}
     geometry = next((l[len("GEOMETRY="):] for l in proc.stdout.splitlines() if l.startswith("GEOMETRY=")), None)
-    # runtime-write-exempt: e2e folder inside the run folder
-    (cap / "params.json").write_text(json.dumps(params["script"]), encoding="utf-8")
+    runtime_files.save_text(cap / "params.json", json.dumps(params["script"]), encoding="utf-8")
     key = review.get("theme_storage_key") if isinstance(review, dict) else None
     if isinstance(key, str) and key:
-        # runtime-write-exempt: e2e folder inside the run folder
-        (cap / "capture.json").write_text(json.dumps({"theme_storage_key": key}), encoding="utf-8")
+        runtime_files.save_text(cap / "capture.json", json.dumps({"theme_storage_key": key}), encoding="utf-8")
     return {"dir": str(cap), "geometry": geometry, "error": None}
 
 
@@ -640,8 +633,7 @@ def run_e2e_suite(python: str, root: Path, command: List[str], capture_dir: Path
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                 errors="replace", env=env, creationflags=NO_WINDOW)
     except OSError as exc:
-        # runtime-write-exempt: suite log at the caller's log_path in the run folder
-        log_path.write_text(f"could not start {python}: {exc}\n", encoding="utf-8")
+        runtime_files.save_text(log_path, f"could not start {python}: {exc}\n", encoding="utf-8")
         return {"returncode": None, "timed_out": False, "tail": f"could not start {python}: {exc}"}
     timed_out = False
     try:
@@ -653,8 +645,7 @@ def run_e2e_suite(python: str, root: Path, command: List[str], capture_dir: Path
             output, _ = proc.communicate(timeout=E2E_DRAIN_S)
         except subprocess.TimeoutExpired:
             output = ""
-    # runtime-write-exempt: suite log at the caller's log_path in the run folder
-    log_path.write_text(output or "", encoding="utf-8")
+    runtime_files.save_text(log_path, output or "", encoding="utf-8")
     return {"returncode": proc.returncode, "timed_out": timed_out, "tail": (output or "")[-2000:]}
 
 
@@ -801,6 +792,5 @@ def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold:
 
 
 def _write(doc: Dict[str, object], run_dir: Path) -> Dict[str, object]:
-    # runtime-write-exempt: metrics.json in the run folder
-    (run_dir / "metrics.json").write_text(json.dumps(doc, indent=1, ensure_ascii=True), encoding="utf-8")
+    runtime_files.save_text(run_dir / "metrics.json", json.dumps(doc, indent=1, ensure_ascii=True), encoding="utf-8")
     return doc

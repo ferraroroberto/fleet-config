@@ -26,7 +26,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_toml  # noqa: E402
+from fleet_core import (
+    fleet_toml,  # noqa: E402
+    runtime_files,  # noqa: E402
+)
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -131,8 +134,7 @@ def write_repo(repo: Path, dests: Iterable[str]) -> str:
     if not new.strip():
         path.unlink()
         return "removed"
-    # runtime-write-exempt: regenerates .ignore in the repo the caller names
-    with open(path, "w", encoding="utf-8", newline="") as fh:
+    with runtime_files.open_for_write(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(new)
     return "written"
 

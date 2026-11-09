@@ -74,6 +74,7 @@ from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 SCHEMA = 1
@@ -314,10 +315,8 @@ def cmd_capture(source: str, label: str, out: Optional[Path]) -> None:
     if out is None:
         print(payload)
     else:
-        # runtime-write-exempt: capture file named by the --out argument
-        out.parent.mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: capture file named by the --out argument
-        out.write_text(payload + "\n", encoding="utf-8")
+        runtime_files.make_dirs(out.parent, parents=True, exist_ok=True)
+        runtime_files.save_text(out, payload + "\n", encoding="utf-8")
     # Status goes to stderr so `capture` can pipe its JSON straight to a file.
     print(f"STATUS={'CAPTURED' if run.total is not None else 'UNKNOWN'}", file=sys.stderr)
     print(f"SKIPPED={'' if run.total is None else run.total}", file=sys.stderr)

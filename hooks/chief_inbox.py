@@ -52,6 +52,7 @@ from typing import Any, Dict, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import runtime_files  # noqa: E402
 
 logger = logging.getLogger("fleet_hooks")
 
@@ -368,8 +369,7 @@ def _debounced(directory: Path, sid: str, now: float) -> bool:
     except OSError:
         pass
     try:
-        # runtime-write-exempt: debounce stamp in the chief inbox folder under the hooks state dir
-        stamp.write_text("", encoding="utf-8")
+        runtime_files.save_text(stamp, "", encoding="utf-8")
         os.utime(stamp, (now, now))
     except OSError as exc:
         logger.info("ℹ️ chief_inbox: debounce stamp not written (%s)", exc)

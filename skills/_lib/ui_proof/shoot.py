@@ -19,6 +19,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from fleet_core import runtime_files  # noqa: E402
+
 SETTLE_MS = 2000
 CLICK_SETTLE_MS = 800
 TIMEOUT_MS = 15000
@@ -79,8 +82,7 @@ def main(argv: List[str] | None = None) -> int:
                         shots.append({"viewport": label, "theme": theme, "error": str(exc)[:300]})
         finally:
             browser.close()
-    # runtime-write-exempt: shots.json under the --out argument
-    (Path(args.out) / "shots.json").write_text(json.dumps(shots), encoding="utf-8")
+    runtime_files.save_text(Path(args.out) / "shots.json", json.dumps(shots), encoding="utf-8")
     return 1 if any("error" in s for s in shots) else 0
 
 

@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Deque, Dict, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -141,10 +142,8 @@ def write_tail(wave: str, repo: str, tail: OutputTail, path: Optional[Path] = No
     base = (path or ledger_path()).parent
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     target = base / OUTPUT_DIRNAME / _safe_name(wave) / f"{_safe_name(repo)}-{stamp}.log"
-    # runtime-write-exempt: log under the gate-ledger folder in the hooks state dir
-    target.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: log under the gate-ledger folder in the hooks state dir
-    target.write_text(tail.text(), encoding="utf-8", newline="\n")
+    runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
+    runtime_files.save_text(target, tail.text(), encoding="utf-8", newline="\n")
     return target.relative_to(base).as_posix()
 
 
@@ -162,10 +161,8 @@ def append_record(wave: str, repo: str, result: str, seconds: Optional[float], p
     if output is not None:
         record["output"], record["failed_stage"] = output, failed_stage
     target = path or ledger_path()
-    # runtime-write-exempt: ledger under the hooks state dir or the caller's path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: ledger under the hooks state dir or the caller's path
-    with open(target, "a", encoding="utf-8", newline="\n") as handle:
+    runtime_files.make_dirs(target.parent, parents=True, exist_ok=True)
+    with runtime_files.open_for_write(target, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record) + "\n")
     return record
 

@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import runtime_files
+
 from .config import (
     _FRESHNESS_EXIT,
     _SEVERITY,
@@ -97,8 +99,7 @@ def _same_volume(a: Path, b: Path) -> bool:
 def _preflight(source: Path, dest: Path) -> Optional[str]:
     """Refuse to write a snapshot that shares a volume with its source."""
     try:
-        # runtime-write-exempt: creates the backup destination the caller names
-        dest.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(dest, parents=True, exist_ok=True)
     except OSError as exc:
         return f"destination {dest} is not writable: {exc}"
     if _same_volume(source, dest):
@@ -138,7 +139,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         # marker already sitting here belongs to an earlier run for this same
         # date that never finished — self-healing: this run overwrites the
         # directory and clears it on success, but the report names it first.
-        snapshot_dir.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: snapshot folder under the backup destination root
+        runtime_files.make_dirs(snapshot_dir, parents=True, exist_ok=True)
         manifest["recovered_marker"] = read_run_marker(snapshot_dir) or None
         write_run_marker(snapshot_dir, leg)
         prev_dir, prev_manifest, skipped_interrupted = _previous_snapshot(dest_root, today)
@@ -175,7 +176,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         manifest["status"] = "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
-    (snapshot_dir / MANIFEST_NAME).write_text(  # runtime-write-exempt: snapshot folder under the backup destination root
+    runtime_files.save_text(snapshot_dir / MANIFEST_NAME,
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     # The manifest now describes this directory (even a "failed" one) — the

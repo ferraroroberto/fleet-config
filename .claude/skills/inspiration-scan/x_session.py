@@ -21,6 +21,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Sequence, Tuple
 
+from fleet_core import runtime_files
+
 VIEWPORT = {"width": 1280, "height": 900}
 
 LAUNCH_ARGS = [
@@ -79,7 +81,7 @@ def launch_with_backoff(launch: Callable[[], Any], schedule: Sequence[int] = LOC
 
 def open_context(playwright: Any, profile_dir: Path, headless: bool = False) -> Any:
     """A persistent Chrome context on `profile_dir`, stealth init script applied."""
-    profile_dir.mkdir(parents=True, exist_ok=True)  # runtime-write-exempt: the dedicated Chrome profile under the machine-local state root
+    runtime_files.make_dirs(profile_dir, parents=True, exist_ok=True)
     context = launch_with_backoff(
         lambda: playwright.chromium.launch_persistent_context(str(profile_dir), **launch_kwargs(headless)))
     context.add_init_script(WEBDRIVER_INIT_SCRIPT)

@@ -33,6 +33,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import page_js  # noqa: E402
 from playwright.sync_api import Page, sync_playwright  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from fleet_core import runtime_files  # noqa: E402
+
 DEVICES: Dict[str, Dict[str, Any]] = {
     "phone": {"viewport": {"width": 390, "height": 844}, "device_scale_factor": 2, "is_mobile": True, "has_touch": True},
     "tablet": {"viewport": {"width": 800, "height": 1000}, "device_scale_factor": 1, "is_mobile": False, "has_touch": True},
@@ -159,8 +162,7 @@ def measure_page(page: Page, url: str, device: str, params: Dict[str, Any], shot
     rec["fold_eager"] = guarded(page.evaluate, page_js.FOLD_JS)
     scroll_through(page)
     rec["measure"] = guarded(page.evaluate, page_js.MEASURE_JS, params)
-    # runtime-write-exempt: screenshot goes to the caller's shot path
-    shot.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(shot.parent, parents=True, exist_ok=True)
     page.screenshot(path=str(shot), full_page=True, scale="css")
     rec["screenshot"] = str(shot)
     carousels = rec["measure"].get("page", {}).get("carousels", []) if "error" not in rec["measure"] else []
@@ -242,8 +244,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 raw["pages"][path] = entry
         finally:
             browser.close()
-    # runtime-write-exempt: raw.json under the --out argument
-    (out / "raw.json").write_text(json.dumps(raw, indent=1), encoding="utf-8")
+    runtime_files.save_text(out / "raw.json", json.dumps(raw, indent=1), encoding="utf-8")
     return 0
 
 

@@ -23,6 +23,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core import runtime_files  # noqa: E402
+
 # Pin stdout/stderr to UTF-8 at the entry point -- see the same guard in
 # capture.py. `previous` prints a prior ledger entry verbatim, and the ledger
 # is full of arrows and box-drawing characters, so under captured stdout on
@@ -111,10 +114,8 @@ def cmd_append(args) -> int:
         parts += ["\n", tail, "\n"]
 
     try:
-        # runtime-write-exempt: ledger under --root, FLEET_HEALTH_ROOT or ~/.claude/fleet-health
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: ledger under --root, FLEET_HEALTH_ROOT or ~/.claude/fleet-health
-        path.write_text("".join(parts), encoding="utf-8")
+        runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
+        runtime_files.save_text(path, "".join(parts), encoding="utf-8")
     except OSError as exc:
         print(f"ledger unwritable: {exc}", file=sys.stderr)
         return 5

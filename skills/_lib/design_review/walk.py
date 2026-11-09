@@ -80,6 +80,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measure  # noqa: E402
 import plan  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from fleet_core import runtime_files  # noqa: E402
+
 log = logging.getLogger("design_review.walk")
 
 SETTLE_MS = 2500       # after goto — the prototype's numbers were taken with these waits
@@ -678,16 +681,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     if args.emit_script:
         geometry = load_geometry_js(args.scaffold)
-        # runtime-write-exempt: outputs go under the --out argument
-        Path(args.emit_script).write_text(measure.build_script(geometry), encoding="utf-8")
+        runtime_files.save_text(Path(args.emit_script), measure.build_script(geometry), encoding="utf-8")
         print(f"GEOMETRY={'loaded' if geometry else 'GEOMETRY_MISSING'}")
         return 0
     if not args.url or not args.out:
         ap.error("--url and --out are required unless --emit-script is given")
     out = Path(args.out)
     shots = out / "shots"
-    # runtime-write-exempt: outputs go under the --out argument
-    shots.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(shots, parents=True, exist_ok=True)
     params = json.loads(Path(args.params).read_text(encoding="utf-8")) if args.params else measure.default_params()
     review = json.loads(Path(args.review).read_text(encoding="utf-8")) if args.review else {}
     geometry = load_geometry_js(args.scaffold)
@@ -708,10 +709,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     info.setdefault("legs", {})[f"{device}-{theme}"] = round(time.time() - t0, 1)  # type: ignore[union-attr]
     finally:
         info["finished"] = time.time()
-        # runtime-write-exempt: outputs go under the --out argument
-        (out / "screens.json").write_text(json.dumps(screens, indent=1), encoding="utf-8")
-        # runtime-write-exempt: outputs go under the --out argument
-        (out / "walk.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
+        runtime_files.save_text(out / "screens.json", json.dumps(screens, indent=1), encoding="utf-8")
+        runtime_files.save_text(out / "walk.json", json.dumps(info, indent=1), encoding="utf-8")
     return 0
 
 

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from worktree.claim import (  # noqa: E402
@@ -74,8 +75,7 @@ def acquire(lock: Path, holder: str, now: float, ttl_hours: float = DEFAULT_TTL_
             session: Optional[str] = None) -> Claim:
     meta = {"holder": holder, "session": session, "created": now, "created_iso": _stamp(now)}
     try:
-        # runtime-write-exempt: the lock directory is the caller's, by default under the hooks state root, never a code folder
-        lock.parent.mkdir(parents=True, exist_ok=True)
+        runtime_files.make_dirs(lock.parent, parents=True, exist_ok=True)
         if lock.exists():
             current = read_meta(lock)
             if current is None:

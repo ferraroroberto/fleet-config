@@ -42,6 +42,7 @@ HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.
 sys.path.insert(0, str(HELPER.parent))
 import git_run  # noqa: E402
 from audit_ledger.audit_issue_client import run_audit_issue  # noqa: E402
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -353,8 +354,7 @@ def write_bucket_files(out_dir: Path, prs: list[dict], issues: list[dict]) -> li
         for i in bi:
             tag = f" [{','.join(i['labels'])}]" if i["labels"] else ""
             lines.append(f"- [{i['repo']}#{i['number']}] {i['title']}{tag}")
-        # runtime-write-exempt: bucket files go in the caller's out_dir
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        runtime_files.save_text(path, "\n".join(lines) + "\n", encoding="utf-8")
         manifest.append((bucket, slug, len(bp), len(bi), path))
     return manifest
 
@@ -386,8 +386,7 @@ def cmd_gather(args) -> int:
     since, source = resolve_since(args.since, prior_body, _dt.date.today())
 
     out_dir = Path(args.out_dir or (Path(__import__("tempfile").gettempdir()) / f"learning-log-{today}"))
-    # runtime-write-exempt: output folder is --out-dir, else a temp folder
-    out_dir.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(out_dir, parents=True, exist_ok=True)
 
     repos = list_repos(args.owner)
     if repos is None:
@@ -414,11 +413,9 @@ def cmd_gather(args) -> int:
         stats_md += (f"\n_Incomplete: {len(failed_repos)} of {len(repos)} repos could not be read "
                      f"and are not counted: {', '.join(failed_repos)}._\n")
     stats_file = out_dir / "stats.md"
-    # runtime-write-exempt: output folder is --out-dir, else a temp folder
-    stats_file.write_text(stats_md, encoding="utf-8")
+    runtime_files.save_text(stats_file, stats_md, encoding="utf-8")
 
-    # runtime-write-exempt: output folder is --out-dir, else a temp folder
-    (out_dir / "prior-horizon.md").write_text(
+    runtime_files.save_text(out_dir / "prior-horizon.md",
         slice_section(prior_body, HORIZON_HEADER) or "(none — first run, no prior horizon to grade)",
         encoding="utf-8")
 
@@ -451,8 +448,7 @@ def cmd_assemble_ledger(args) -> int:
     horizon = Path(args.horizon_file).read_text(encoding="utf-8") if args.horizon_file else ""
     discoveries = Path(args.discoveries_file).read_text(encoding="utf-8") if args.discoveries_file else ""
     body = build_ledger_body(prior_body, today, horizon, discoveries)
-    # runtime-write-exempt: output file named by the --out argument
-    Path(args.out).write_text(body, encoding="utf-8")
+    runtime_files.save_text(Path(args.out), body, encoding="utf-8")
     print(args.out)
     return 0
 

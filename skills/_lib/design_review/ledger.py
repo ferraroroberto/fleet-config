@@ -59,7 +59,10 @@ from typing import Dict, List, Optional
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import (
+    hooks_state,  # noqa: E402
+    runtime_files,  # noqa: E402
+)
 from worktree import service_probe  # noqa: E402
 
 from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
@@ -131,8 +134,7 @@ def run_id_of(run_dir: Path, doc: Optional[dict] = None) -> str:
 
 
 def _write(path: Path, entries: List[dict]) -> None:
-    # runtime-write-exempt: the caller names the ledger file
-    path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
     text = json.dumps({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries}, indent=1, ensure_ascii=True)
     hooks_state.atomic_write_text(path, text, newline="\n")
 

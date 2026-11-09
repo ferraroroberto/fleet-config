@@ -42,6 +42,8 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from no_window import NO_WINDOW  # noqa: E402
 
+from fleet_core import runtime_files  # noqa: E402
+
 _DEFAULT_CHROME = r"C:/Program Files/Google/Chrome/Application/chrome.exe"
 _HEADLESS_SHELL_NAMES = {"chrome-headless-shell", "chrome-headless-shell.exe"}
 DIMS_RE = re.compile(rb"DIMS (\d+) (\d+)")
@@ -241,10 +243,8 @@ def shoot(
             raise RuntimeError(
                 "screenshot was not written.\n" + shot.stderr.decode("utf-8", "replace")[-800:]
             )
-        # runtime-write-exempt: screenshot goes to the caller's out path
-        out.parent.mkdir(parents=True, exist_ok=True)
-        # runtime-write-exempt: screenshot goes to the caller's out path
-        shutil.copyfile(staged, out)
+        runtime_files.make_dirs(out.parent, parents=True, exist_ok=True)
+        runtime_files.copy_file(staged, out)
     finally:
         staged.unlink(missing_ok=True)
     return w, h

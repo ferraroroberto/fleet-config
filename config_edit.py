@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
+from fleet_core import runtime_files  # noqa: E402
 
 # One `[table]` header line (optional trailing comment and newline) and the
 # `key =` head of one assignment line, matched a line at a time.
@@ -94,8 +98,7 @@ def atomic_write(path: Path, text: str) -> None:
     """Write `text` to `path` via a sibling temp file and `os.replace`, so a
     reader never sees a half-written config; the temp file is removed on any
     failure. Newlines are written exactly as given."""
-    # runtime-write-exempt: writes the config file the caller names
-    path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(

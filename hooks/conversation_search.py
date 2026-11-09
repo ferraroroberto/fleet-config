@@ -64,6 +64,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import runtime_files  # noqa: E402
 from conversation.transcript_readers import native_id  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
@@ -147,10 +148,8 @@ def _schema_current(conn: sqlite3.Connection) -> bool:
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    # runtime-write-exempt: the caller supplies the search database path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # runtime-write-exempt: the caller supplies the search database path
-    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
+    runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
+    conn = runtime_files.connect_sqlite(path, timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     if not _schema_current(conn):
         # The db is a pure derivative, so a stale or fresh one is rebuilt rather

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 SCHEMA_VERSION = 1
@@ -200,8 +201,7 @@ def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:
     """
     source = validate_source(raw)
     folder = (directory or state_dir()) / "quota-v1"
-    # runtime-write-exempt: shard folder under the hooks state dir or the caller's directory
-    folder.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(folder, parents=True, exist_ok=True)
     target = folder / (source["producer"] + ".json")
     text = json.dumps(source, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
     atomic_write_text(target, text, newline="\n", fsync=True, replace_retries=5)

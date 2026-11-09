@@ -57,6 +57,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -533,11 +534,9 @@ def table(doc: Dict[str, Any]) -> str:
 
 def _write_output(folder: Path, name: str, doc: Dict[str, Any]) -> Path:
     """The tool's only write: machine-local state, never the target repo."""
-    # runtime-write-exempt: machine-local state folder the caller passes, never the target repo
-    folder.mkdir(parents=True, exist_ok=True)
+    runtime_files.make_dirs(folder, parents=True, exist_ok=True)
     path = folder / name
-    # runtime-write-exempt: machine-local state folder the caller passes, never the target repo
-    path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    runtime_files.save_text(path, json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 

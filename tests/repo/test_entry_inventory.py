@@ -201,7 +201,7 @@ try:
     source = (REPO / "skills" / "_lib" / "dead_code" / "entry_inventory.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     writes = sorted({f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
-                     for node in ast.walk(f) if isinstance(node, ast.Attribute) and node.attr in ("write_text", "write_bytes", "mkdir")})
+                     for node in ast.walk(f) if isinstance(node, ast.Attribute) and node.attr in ("save_text", "save_bytes", "make_dirs", "write_text", "write_bytes", "mkdir")})
     forbidden = sorted({f"{node.value.id}.{node.attr}" for node in ast.walk(tree) if isinstance(node, ast.Attribute)
                         and isinstance(node.value, ast.Name) and node.value.id in ("os", "shutil")
                         and node.attr in ("remove", "unlink", "rename", "replace", "rmdir", "rmtree", "move")}
