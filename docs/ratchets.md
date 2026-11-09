@@ -23,7 +23,7 @@ Nine baseline-and-ratchet stages gate `tests/run_acceptance.py`. [`code-quality.
 | `instruction_ratchet` | a prompt-audit lint rule's hit count in an instruction file rising above its entry, or a file past its size cap | `tests/acceptance/instruction_ratchet_gate.py` | `skill_dirs`, `extra_files` | `.instruction-ratchet-baseline.json` | 0 | [instruction-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/instruction-ratchet.md) |
 | `doc_refs_ratchet` | `README.md`, `CLAUDE.md` or `docs/**/*.md` naming a repo path, `python -m` module or relative link that does not exist | `tests/acceptance/doc_refs_ratchet_gate.py` | `allow_refs` | `.doc-refs-ratchet-baseline.json` | 0 | [doc-refs-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/doc-refs-ratchet.md) |
 | `dead_code_ratchet` | a function, class or method nothing in the tracked tree refers to | `tests/acceptance/dead_code_ratchet_gate.py` | — | `.dead-code-ratchet-baseline.json` | 0 | [dead-code-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/dead-code-ratchet.md) |
-| `conventions_ratchet` | a file's hit count for an enabled `ast` rule rising above its entry (rules below) | `tests/acceptance/conventions_ratchet_gate.py` | `rules`, `exclude`, `print_paths`, `git_wrappers`, `must_use` | `.conventions-ratchet-baseline.json` | 0 | [conventions-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/conventions-ratchet.md) |
+| `conventions_ratchet` | a file's hit count for an enabled `ast` rule rising above its entry (rules below) | `tests/acceptance/conventions_ratchet_gate.py` | `rules`, `exclude`, `print_paths`, `git_wrappers`, `must_use` | `.conventions-ratchet-baseline.json` | 10 | [conventions-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/conventions-ratchet.md) |
 | `runtime_write_ratchet` | a tracked Python file gaining a write target that resolves under a code folder, or one it cannot resolve; any file the run leaves under a code folder | `tests/acceptance/runtime_write/runtime_write_ratchet_gate.py` | `code_folders`, `safe_calls` | `.runtime-write-ratchet-baseline.json` | 0 | [runtime-write-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/runtime-write-ratchet.md) |
 
 ## Layout rules
@@ -52,6 +52,9 @@ Every rule the vendored script knows, and whether this repo turns it on.
 | `no-drive-path` | on | nothing hardcodes a drive letter; a machine default that a flag or config overrides carries an exempt marker |
 | `git-wrapper` | on | `run_git` exists in both tiers (`hooks/_lib.py`, `skills/_lib/git_run.py`) and owns `GIT_OPTIONAL_LOCKS=0` |
 | `subprocess-timeout` | on | a blocking `subprocess.run`/`call`/`check_*` with no `timeout=` hangs an unattended run; a foreground runner whose length is the caller's carries `# subprocess-timeout-exempt: <why>` |
+| `state-literal` | on | a lifecycle string compared or stored as a state (`status == "running"`) outside a declared machine is an implicit-state-machine suspect; the baseline holds today's suspects for the burn-down |
+| `state-set-repeat` | on | one set of lifecycle states spelled in more than one module lets two readers disagree about which states count |
+| `state-write` | on | a lifecycle flag written from more than one module has no single owner |
 | `secret-compare` | off | the repo has no constant-time compare helper to route compares through |
 | `password-input-vendored` | off | the repo ships no sign-in page |
 | `login-lockout` | off | the repo serves no password route |
