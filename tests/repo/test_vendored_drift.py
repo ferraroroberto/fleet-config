@@ -518,4 +518,98 @@ finally:
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---- [vendored_forks]: a declared fork is a state of its own (fleet-config#1951) ----
+#
+# Adopters record a deliberate divergence under `[vendored_forks]` (project-scaffolding docs/components.md). Before the
+# reader existed such a copy surfaced as an undeclared carrier -- "stale or forked, human call" -- the very question the
+# declaration answers, so every declared fork kept reading as unexplained drift.
+
+check(vd.parse_vendored_forks("") == {}, "forks: no [vendored_forks] table -> {}")
+check(vd.parse_vendored_forks('[vendored]\nnav = { src = "a", sha = "s", dest = "a" }\n') == {},
+      "forks: [vendored] is not [vendored_forks]")
+check(vd.parse_vendored_forks(
+    '[vendored_forks]\nno_window = { src = "src/no_window.py", reason = "r", upstream = "o/p#1" }\nbad = "x"\n')
+    == {"no_window": {"src": "src/no_window.py", "reason": "r", "upstream": "o/p#1"}},
+    "forks: an entry parses to {src, reason, upstream}; a non-table entry is dropped")
+
+root = Path(tempfile.mkdtemp(prefix="vendored_forks_"))
+try:
+    scaffold = root / "project-scaffolding"
+    _init_repo(scaffold)
+    (scaffold / "src").mkdir()
+    for name in ("no_window", "ratchet", "readers"):
+        (scaffold / "src" / f"{name}.py").write_text(f"{name} = 1\n", encoding="utf-8", newline="")
+    (scaffold / ".fleet.toml").write_text(
+        'layer = "governance"\nicon = "x"\ndescription = "d"\n\n[components]\n'
+        'no_window = { src = "src/no_window.py" }\n'
+        'ratchet = { src = "src/ratchet.py", requires = ["readers"] }\n'
+        'readers = { src = "src/readers.py" }\n', encoding="utf-8", newline="")
+    _git(scaffold, "add", "-A")
+    _git(scaffold, "commit", "-q", "-m", "scaffold")
+    pin = _git(scaffold, "rev-parse", "HEAD")
+    _FORK = 'no_window = { src = "src/no_window.py", reason = "adds a flag", upstream = "o/project-scaffolding#680" }\n'
+    _HDR = 'layer = "working-web"\nicon = "x"\ndescription = "d"\n\n'
+
+    def _fork_repo(name: str, fleet_toml: str, files: dict[str, str]) -> Path:
+        d = root / name
+        _init_repo(d)
+        for rel, text in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8", newline="")
+        (d / ".fleet.toml").write_text(fleet_toml, encoding="utf-8", newline="")
+        _git(d, "add", "-A")
+        _git(d, "commit", "-q", "-m", "x")
+        return d
+
+    forked = _fork_repo("forked", _HDR + "[vendored_forks]\n" + _FORK, {"src/no_window.py": "no_window = 2\n"})
+    undeclared = _fork_repo("undeclared", _HDR, {"src/no_window.py": "no_window = 2\n"})
+    both = _fork_repo("both", _HDR + f'[vendored]\nno_window = {{ src = "src/no_window.py", sha = "{pin}", '
+                      'dest = "src/no_window.py" }\n[vendored_forks]\n' + _FORK, {"src/no_window.py": "no_window = 1\n"})
+    no_reason = _fork_repo("no-reason", _HDR + '[vendored_forks]\nno_window = { src = "src/no_window.py" }\n',
+                           {"src/no_window.py": "no_window = 2\n"})
+    # Requests `readers` through `ratchet`, holds `readers` as a fork: the wave must not add a second copy of it.
+    dep_fork = _fork_repo("dep-fork", _HDR + f'[vendored]\nratchet = {{ src = "src/ratchet.py", sha = "{pin}", '
+                          'dest = "src/ratchet.py" }\n[vendored_forks]\n'
+                          'readers = { src = "src/readers.py", reason = "local loader", upstream = "o/project-scaffolding#1" }\n',
+                          {"src/ratchet.py": "ratchet = 1\n", "src/readers.py": "readers = 2\n"})
+    repos = {"project-scaffolding": scaffold, "forked": forked, "undeclared": undeclared, "both": both,
+             "no-reason": no_reason, "dep-fork": dep_fork}
+    report = vd.scan_fleet(scaffold, repos=repos)
+    forks = {(f["repo"], f["component"]): f for f in report["forks"]}
+    carriers = {(c["repo"], c["component"]) for c in report["undeclared_carriers"]}
+    errs = [e for e in report["errors"] if e.get("repo") != "project-scaffolding"]
+
+    check(forks.get(("forked", "no_window"), {}).get("state") == "fork"
+          and forks[("forked", "no_window")]["reason"] == "adds a flag"
+          and forks[("forked", "no_window")]["upstream"] == "o/project-scaffolding#680",
+          f"forks: a declared fork reports as `fork` with its reason and upstream ({forks.get(('forked', 'no_window'))})")
+    check(("forked", "no_window") not in carriers and ("undeclared", "no_window") in carriers,
+          "forks: a declared fork is not an undeclared carrier; the same copy undeclared still is")
+    check(not any(a["repo"] == "forked" for a in report["adopters"]) and "forked" in report["no_manifest"],
+          "forks: a fork is not a [vendored] adopter, so a wave never re-vendors over it")
+    check(not any(e["repo"] == "forked" for e in errs), "forks: a well-formed fork is not an error")
+    check(report["coverage"]["declared_forks"] == 2,
+          f"forks: coverage counts declared forks as its own number ({report['coverage']['declared_forks']})")
+
+    conflict = [e for e in errs if e["repo"] == "both"]
+    check(len(conflict) == 1 and "no_window" in conflict[0]["error"]
+          and "[vendored]" in conflict[0]["error"] and "[vendored_forks]" in conflict[0]["error"],
+          f"forks: a component in both tables is an error naming it ({conflict})")
+    check(("both", "no_window") not in forks, "forks: a component in both tables is not also reported as a fork")
+
+    missing = [e for e in errs if e["repo"] == "no-reason"]
+    check(len(missing) == 1 and "reason" in missing[0]["error"] and ("no-reason", "no_window") not in forks
+          and ("no-reason", "no_window") not in carriers,
+          f"forks: an entry without a reason is one error, neither a fork nor a carrier ({missing})")
+
+    check(("dep-fork", "readers") in forks
+          and not any(m["repo"] == "dep-fork" for m in report["requires"]["missing"]),
+          "forks: a required sibling held as a fork is not reported missing, so the wave leaves it alone")
+
+    only = vd.scan_fleet(scaffold, component_filter="readers", repos=repos)
+    check({f["component"] for f in only["forks"]} == {"readers"}, "forks: --component filters the fork list")
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+
+
 _h.report_and_exit("test_vendored_drift")
