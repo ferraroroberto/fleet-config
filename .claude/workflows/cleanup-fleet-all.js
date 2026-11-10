@@ -61,6 +61,9 @@ export const meta = {
 
 const MAX_ROUNDS = 2
 
+// How a lane ended. Every reader and writer of a lane's status names one of these.
+const LANE_STATUS = Object.freeze({ MERGED: 'merged', ESCALATED: 'escalated', FAILED: 'failed' })
+
 const BUILD_RESULT_SCHEMA = {
   type: 'object',
   required: ['status', 'verification'],
@@ -149,7 +152,7 @@ function structuralBlocked(issue, verdict) {
 // `repoPr` is null when the PR number cannot be read from the lane's `pr`; the
 // skill reports that as PROMOTION=unknown rather than skipping it.
 function promotionOf(lane) {
-  const line = lane.status === 'merged' ? (lane.structural || '').trim() : ''
+  const line = lane.status === LANE_STATUS.MERGED ? (lane.structural || '').trim() : ''
   const name = /\bSCOPE=generalizable\s+NAME=(\S+)/.exec(line)
   const path = /\bPATH=(\S+)/.exec(line)
   if (!/^STRUCTURAL=pass\s/.test(line) || !name || !path) return null
@@ -301,7 +304,7 @@ function teardownPrompt(issue, lane, own) {
     ...own.paths.map(p => `--own-worktree '${p}'`),
     ...own.branches.map(b => `--own-branch '${b}'`),
   ].join(' ')
-  const shipped = lane.status === 'merged'
+  const shipped = lane.status === LANE_STATUS.MERGED
   const commentStep = shipped
     ? `1. No issue comment needed — this one merged (${lane.pr || 'PR recorded'}).`
     : lane.alreadyClosed
@@ -383,7 +386,7 @@ Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 
 async function processIssue(bucket, issue) {
   let feedback = null
   let lane = {
-    bucket, issue, status: 'escalated', round: MAX_ROUNDS,
+    bucket, issue, status: LANE_STATUS.ESCALATED, round: MAX_ROUNDS,
     branch: null, worktree: null, reason: 'exhausted retries', alreadyClosed: false,
     recurrence: recurrenceOf(issue), structural: undefined,
   }
@@ -414,7 +417,7 @@ async function processIssue(bucket, issue) {
         feedback = reason
         continue
       }
-      lane = { ...lane, status: 'escalated', round, reason, alreadyClosed: !!(build && build.alreadyClosed) }
+      lane = { ...lane, status: LANE_STATUS.ESCALATED, round, reason, alreadyClosed: !!(build && build.alreadyClosed) }
       break
     }
 
@@ -447,9 +450,9 @@ async function processIssue(bucket, issue) {
         schema: EXECUTE_RESULT_SCHEMA,
       })
       if (shipped && shipped.result === 'MERGED') {
-        lane = { ...lane, status: 'merged', round, pr: shipped.pr, mergeSha: shipped.mergeSha, reason: null, restoredUntracked: shipped.restoredUntracked }
+        lane = { ...lane, status: LANE_STATUS.MERGED, round, pr: shipped.pr, mergeSha: shipped.mergeSha, reason: null, restoredUntracked: shipped.restoredUntracked }
       } else {
-        lane = { ...lane, status: 'failed', round, reason: shipped ? shipped.reason : 'execute agent returned no result' }
+        lane = { ...lane, status: LANE_STATUS.FAILED, round, reason: shipped ? shipped.reason : 'execute agent returned no result' }
       }
       break
     }
@@ -459,7 +462,7 @@ async function processIssue(bucket, issue) {
       feedback = vFeedback
       continue
     }
-    lane = { ...lane, status: 'escalated', round, reason: vFeedback }
+    lane = { ...lane, status: LANE_STATUS.ESCALATED, round, reason: vFeedback }
     break
   }
 
@@ -610,9 +613,9 @@ for (const bucket of bucketNames) {
     }
   }
 
-  const merged = results.filter(r => r.status === 'merged').length
-  const escalated = results.filter(r => r.status === 'escalated').length
-  const failed = results.filter(r => r.status === 'failed').length
+  const merged = results.filter(r => r.status === LANE_STATUS.MERGED).length
+  const escalated = results.filter(r => r.status === LANE_STATUS.ESCALATED).length
+  const failed = results.filter(r => r.status === LANE_STATUS.FAILED).length
   log(`${bucket}: ${merged} merged, ${escalated} escalated, ${failed} failed`)
 
   allResults.push({ bucket, results })

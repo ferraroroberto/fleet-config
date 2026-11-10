@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import enum
 import json
 import os
 import socket
@@ -152,7 +153,19 @@ def diagnostics_base(machine: dict) -> Optional[str]:
     return f"http://{address}:{HUB_PORT}" if address else None
 
 
-def classify(machine: dict) -> tuple[str, str, Optional[str]]:
+class Coverage(enum.StrEnum):
+    """Whether a capture can start on one machine, and if not, why; `classify` is the only place that decides."""
+
+    READY = "ready"
+    DORMANT = "dormant"
+    UNREACHABLE = "unreachable"
+    NO_ADDRESS = "no-address"
+    NO_DIAGNOSTICS = "no-diagnostics"
+    NO_HUB = "no-hub"
+    PROBE_FAILED = "probe-failed"
+
+
+def classify(machine: dict) -> tuple[Coverage, str, Optional[str]]:
     """Return (status, reason, diagnostics_base).
 
     status is ``ready`` when a capture can be started, otherwise a
@@ -160,31 +173,31 @@ def classify(machine: dict) -> tuple[str, str, Optional[str]]:
     silence is never an option (fleet-config#397 acceptance).
     """
     if machine.get("dormant"):
-        return "dormant", "machine is dormant — not powered for scheduled capture", None
+        return Coverage.DORMANT, "machine is dormant — not powered for scheduled capture", None
 
     state = str(machine.get("state") or "")
     if state not in ("self", "up") or machine.get("reachable") is False:
-        return "unreachable", f"machine did not answer the hub probe (state={state or 'unknown'})", None
+        return Coverage.UNREACHABLE, f"machine did not answer the hub probe (state={state or 'unknown'})", None
 
     base = diagnostics_base(machine)
     if base is None:
-        return ("no-address",
+        return (Coverage.NO_ADDRESS,
                 "the hub inventory returned no LAN address for this machine, "
                 "so its own hub cannot be dialled", None)
 
     status, _ = _get(f"{base}/admin/api/diagnostics/status", timeout=TIMEOUT_S)
     if status == 200:
-        return "ready", "", base
+        return Coverage.READY, "", base
     if status == 404:
-        return ("no-diagnostics",
+        return (Coverage.NO_DIAGNOSTICS,
                 f"hub at {base} answers but does not serve the diagnostics API (404) — "
                 f"the peer is on an older build and needs a host sync", base)
     if status == 0:
         ssh = bool((machine.get("actions") or {}).get("ssh_terminal"))
         hint = (" — SSH-reachable, so it needs the portable sampler from "
                 "local-llm-hub#316") if ssh else ""
-        return "no-hub", f"no hub answering at {base}{hint}", base
-    return "probe-failed", f"hub at {base} answered {status} on the diagnostics probe", base
+        return Coverage.NO_HUB, f"no hub answering at {base}{hint}", base
+    return Coverage.PROBE_FAILED, f"hub at {base} answered {status} on the diagnostics probe", base
 
 
 # ---------------------------------------------------------------- capture
@@ -456,7 +469,7 @@ def cmd_start(args) -> int:
     for machine in machines:
         mid = str(machine.get("id") or "?")
         status, reason, base = classify(machine)
-        if status == "ready" and base:
+        if status == Coverage.READY and base:
             targets[mid] = base
         else:
             skipped.append({"id": mid, "detail": status, "reason": reason})

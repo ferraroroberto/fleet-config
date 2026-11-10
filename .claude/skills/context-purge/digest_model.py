@@ -145,6 +145,7 @@ def untouched_files(run: dict) -> list[dict]:
 
 # ---- merge outcome: what the run applied, and whether it was allowed to ------
 
+REPO_STATUSES = ("shipped", "skipped", "failed")
 MERGE_STATES = ("merged", "not-merged")
 PRIMARY_STATES = ("fast-forwarded", "left")
 
@@ -340,7 +341,7 @@ def validate(run: Any) -> list[str]:
         name = repo.get("repo", "<unnamed>")
         if not repo.get("repo"):
             errors.append("a repo entry has no name")
-        if repo.get("status") not in ("shipped", "skipped", "failed"):
+        if repo.get("status") not in REPO_STATUSES:
             errors.append(f"{name}: status must be shipped|skipped|failed, "
                           f"got {repo.get('status')!r}")
         for f in repo.get("files", []):
