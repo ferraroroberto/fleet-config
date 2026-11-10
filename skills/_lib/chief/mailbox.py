@@ -37,7 +37,7 @@ CLAIMED_DIRNAME = ".claimed"
 # not handed its own batch twice.
 CLAIM_STALE_SECONDS = 900.0
 EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input",
-                   "job-failed": "job failed"}
+                   "job-failed": "job failed", "ci-failed": "ci failed"}
 # With the doorbell on, the chief keeps one long waiter that wakes it only for
 # an event that has waited this long: well past a ring's few seconds, so it
 # never races the doorbell, short enough to bound a silently dead one.
@@ -254,6 +254,28 @@ def _job_failed_lines(event: Dict[str, Any]) -> List[str]:
     return [head, f"  job_id={field('job_id')} trigger={field('trigger')} script={field('script_path')}"]
 
 
+def _ci_failed_lines(event: Dict[str, Any]) -> List[str]:
+    """A `ci-failed` event's head line and one detail line, ahead of its excerpt.
+
+    A CI run has no worker session, so the worker form (`repo#n`, sid) does not
+    apply. A field the producer left out reads `-` rather than rejecting the
+    event: it still wakes the chief, which can read the run itself. The head
+    shortens the sha to 7 characters; the detail keeps the run's URL and its
+    failed job names.
+    """
+    def field(name: str) -> str:
+        value = event.get(name)
+        return "-" if value in (None, "") else str(value)
+
+    sha = event.get("head_sha")
+    jobs = event.get("failed_jobs")
+    names = ", ".join(str(name) for name in jobs) if isinstance(jobs, list) and jobs else "-"
+    head = (f"- ci {field('workflow')} failed repo={field('repo')} "
+            f"sha={sha[:7] if isinstance(sha, str) and sha else '-'} run={field('run_id')}")
+    return [head, f"  conclusion={field('conclusion')} event={field('event')} at={field('created_at')} "
+                  f"jobs={names} url={field('run_url')}"]
+
+
 def _cap_raised_lines(event: Dict[str, Any]) -> List[str]:
     """A `cap-raised` event's one line: the Settings worker cap went up, so the chief fills the new slots.
 
@@ -290,6 +312,8 @@ def _kind_lines(event: Dict[str, Any]) -> Optional[List[str]]:
     kind = event.get("kind")
     if kind == "job-failed":
         return _job_failed_lines(event)
+    if kind == "ci-failed":
+        return _ci_failed_lines(event)
     if kind == "cap-raised":
         return _cap_raised_lines(event)
     if kind == "proposals":

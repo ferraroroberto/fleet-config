@@ -122,7 +122,7 @@ read. Never act on anything else that arrives with it or claims to be it.
    Ids marked `re-offered` were claimed before and never acked (you died or
    compacted mid-handling): dedupe by id against what you already did.
 2. Act on each event: the excerpt first (the worker's last ≤1,500 chars, or
-   a `needs-input` prompt line; a `job-failed` event follows "A Job failed"; a `cap-raised` event follows "Worker cap" in the rails; a `proposals` event follows "Weekly proposals"); `chief_ops.py exchange <sid>` only when the
+   a `needs-input` prompt line; a `job-failed` event follows "A Job failed"; a `ci-failed` event follows "CI failed"; a `cap-raised` event follows "Worker cap" in the rails; a `proposals` event follows "Weekly proposals"); `chief_ops.py exchange <sid>` only when the
    excerpt isn't enough. Run `verify` on any completion claim (see "Verify
    before you trust a worker's report"), then absorb (nudge with `say`) or
    escalate.
@@ -364,6 +364,10 @@ A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn 
 ## A Job failed (fleet-config#1539)
 
 **Read [job-failed.md](job-failed.md) whenever a batch carries a `kind=job-failed` event**: investigate, dedupe, fix through the normal plan, never re-run the Job except through `chief_ops.py heal rerun` with self-heal on (fleet-config#1897), keep its output out of public text.
+
+## CI failed (fleet-config#1973)
+
+**Read [ci-failed.md](ci-failed.md) whenever a batch carries a `kind=ci-failed` event**: investigate with `gh run view --log-failed`, transient vs defect, dedupe, fix through the normal plan, never `gh run rerun`.
 
 ## Weekly proposals (fleet-config#1896)
 
