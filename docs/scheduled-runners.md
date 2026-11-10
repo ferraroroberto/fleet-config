@@ -34,7 +34,7 @@ Unknown stays unknown: the verdict policy is not the thing that drifts, the pars
 
 An unknown record is a statement about the parser, not about the run, so it does **not** fire `122` on its own. It could not: the CLI adds record types routinely, so counting them as a verdict would send every scheduled job on the host red the week a new subtype shipped — `fleet-health-weekly` run `20260909T233001` delivered its digest, its ledger entry and its Telegram ping under `150 unknown stream record(s)` and would have exited `122` under such a rule. That is the inverse of the failure this runner exists to prevent: it manufactures a red rather than hiding one, and an alert that cries wolf on a timetable is how a real red gets ignored.
 
-What stays verdict-bearing is evidence that a fact was never *established*, never merely that something was unfamiliar: a missing terminal event, a record the adapter could not parse at all, a burst of unknown records near shutdown with no terminal result, and the surfaces `ProgressFormatter._mark_unverified` counts — a Codex collaboration item whose completion cannot be read, a drain deadline reached with a pipe still open or a descendant still running, and a child that never exited inside the terminate timeout. Those get their own log line naming the shapes, and keep `122`:
+What stays verdict-bearing is evidence that a fact was never *established*, never merely that something was unfamiliar: a missing terminal event, a record the adapter could not parse at all, a burst of unknown records near shutdown with no terminal result, and the surfaces `ProgressFormatter.mark_unverified` counts — a Codex collaboration item whose completion cannot be read, a drain deadline reached with a pipe still open or a descendant still running, and a child that never exited inside the terminate timeout. Those get their own log line naming the shapes, and keep `122`:
 
 ```
 ⚠ 1 record(s) left this run unverified · item.completed/collab_tool_call ×1
@@ -50,23 +50,28 @@ Each unknown record is counted **and named** by its shape — `type/subtype`, or
 
 Descriptors carry discriminator fields only, never payload, and are sanitized and length-capped before they reach the log. A bare count is what let this drift sit unread for weeks: a healthy run and a truncated one printed the same sentence.
 
-| Exit | Meaning |
-| --- | --- |
-| `0` | Complete stream and tool work; delivery confirmed if a check was supplied |
-| `114` | Cancellation requested, descendant termination unconfirmed |
-| `115` | Required tools/MCP unavailable |
-| `116` | Model unavailable or unsupported |
-| `117` | Authentication unavailable |
-| `118` | Unfinished tools or children, **or** owned descendants still running after the provider exited |
-| `119` | Claude upstream 5xx failure; eligible pre-tool attempts may be retried |
-| `120` | Complete turn invoked no tools |
-| `121` | Delivery postcondition not confirmed |
-| `122` | Missing terminal event, malformed record, shutdown burst, or an unverifiable surface |
-| `123` | Skill asserted `SCHEDULED-RUN-FAILED` |
-| `124` | Stalled stream |
-| `125` | Native background-kill signature on stderr |
-| `127` | Native executable could not start |
-| `130` | Requested cancellation of the owned process tree confirmed |
+Every run ends in exactly one of these states. `skills/_lib/scheduled/run_outcome.py` declares them as `RunState`, and `decide` is the only function that maps a drained run's evidence (`RunEvidence`) to one; the exit code, the verdict line, the transient-retry gate and the delivery-check override all read what it returns. A state whose facts could not be established (`stream_unverified`, `incomplete_work`, `cancellation_unconfirmed`, `delivery_unconfirmed`) is its own state, never `completed` or `failed`. A test fails if this table and `RunState` disagree.
+
+| Exit | State | Meaning |
+| --- | --- | --- |
+| `0` | `completed` | Complete stream and tool work; delivery confirmed if a check was supplied |
+| `1` | `failed` | The child failed by its own account (a failed terminal result, or its own non-zero exit); a child's own non-zero code is kept as it is |
+| `114` | `cancellation_unconfirmed` | Cancellation requested, or the child left no exit status, and descendant termination is unconfirmed |
+| `115` | `tools_unavailable` | Required tools/MCP unavailable |
+| `116` | `model_unavailable` | Model unavailable or unsupported |
+| `117` | `auth_unavailable` | Authentication unavailable |
+| `118` | `incomplete_work` | Unfinished tools or children, **or** owned descendants still running after the provider exited |
+| `119` | `transient_api` | Claude upstream 5xx failure; eligible pre-tool attempts may be retried |
+| `120` | `no_tool_use` | Complete turn invoked no tools |
+| `121` | `delivery_unconfirmed` | Delivery postcondition not confirmed |
+| `122` | `stream_unverified` | Missing terminal event, malformed record, shutdown burst, or an unverifiable surface |
+| `123` | `self_reported_failure` | Skill asserted `SCHEDULED-RUN-FAILED` |
+| `124` | `stalled` | Stalled stream |
+| `125` | `background_killed` | Native background-kill signature on stderr |
+| `127` | `start_failed` | Native executable could not start |
+| `130` | `cancelled` | Requested cancellation of the owned process tree confirmed |
+
+`decide` checks, in order: a requested cancellation, a watchdog stall, owned descendants over a clean exit, an upstream 5xx over a failed child, an unavailable provider, then — only over a clean exit — the background-kill signature, the self-reported marker, a failed terminal result, unfinished work, an unverified stream and zero tool use. A failed child otherwise keeps its own code, and the verdict line names a cause only where this run's own evidence backs it. A requested delivery check can only turn `completed` into `delivery_unconfirmed`.
 
 A background task that ends `failed`, or one the run deliberately cancels (`TaskStop`, reported as `stopped`), is **not** a verdict on the run: it is counted, named on its own `⚠ background task(s): …` line, and left out of the exit code. Recovering from a failed child is the orchestrator's job, and every question such a child could raise about delivery is already answered by a detector that reads the run's own outcome (`1`, `118`, `120`–`123`). `125` therefore means only what its name says — the CLI's own background-task ceiling killed sub-agents still in flight — and is reachable only from `KILL_SIGNATURE_TERMS` on stderr.
 

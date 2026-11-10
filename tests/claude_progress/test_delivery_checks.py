@@ -40,7 +40,7 @@ dup_formatter.handle_event(
 dup_formatter.handle_event(
     {"type": "result", "subtype": "success", "is_error": False, "result": dup_report}
 )
-dup_formatter.finish(0)
+dup_formatter.finish(cp.decide(dup_formatter.evidence(child_exit=0)))
 dup_output = "\n".join(dup_lines)
 check(dup_formatter.saw_self_reported_failure,
       "the marker registers even when the duplicate copy is deduped away")
@@ -56,7 +56,7 @@ delivered_formatter.handle_event({
     "is_error": False,
     "result": "Fleet audit — 0 to audit, 31 unchanged; digest posted, Telegram pinged.",
 })
-delivered_formatter.finish(0)
+delivered_formatter.finish(cp.RunOutcome(cp.RunState.COMPLETED, 0))
 check(not delivered_formatter.saw_self_reported_failure
       and "✅ completed" in "\n".join(delivered_lines),
       "an all-unchanged run that still delivered a digest stays a success")
@@ -142,7 +142,7 @@ complete_formatter.handle_event({
     "is_error": False,
     "result": COMPLETE_REPORT,
 })
-complete_formatter.finish(0)
+complete_formatter.finish(cp.decide(complete_formatter.evidence(child_exit=0)))
 check(not complete_formatter.saw_self_reported_failure,
       "a cleanup-fleet-all run that completed all lanes stays a success")
 
@@ -194,7 +194,7 @@ some_skipped_formatter.handle_event({
         "  documentation: 3 merged, 0 escalated\n"
     ),
 })
-some_skipped_formatter.finish(0)
+some_skipped_formatter.finish(cp.decide(some_skipped_formatter.evidence(child_exit=0)))
 check(not some_skipped_formatter.saw_self_reported_failure,
       "a run that skipped some repos but shipped lanes stays a success")
 

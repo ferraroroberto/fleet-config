@@ -111,6 +111,15 @@ call   = "os.replace"
 helper = ["hooks/_lib.py", "skills/_lib/fleet_core/hooks_state.py", "config_edit.py"]
 why    = "atomic writes go through atomic_write_text (hooks/_lib.py, skills/_lib/fleet_core/hooks_state.py) or config_edit.atomic_write"
 
+# The scheduled-run outcome: every fact a drained run leaves behind is ordered into
+# one RunState by decide(); the exit code, verdict line, retry gate and delivery
+# override read it (docs/scheduled-runners.md).
+[[state_machines]]
+name   = "scheduled-run-outcome"
+module = "skills/_lib/scheduled/run_outcome.py"
+type   = "RunState"
+derive = "decide"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"

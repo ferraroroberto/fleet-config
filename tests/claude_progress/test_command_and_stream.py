@@ -155,7 +155,7 @@ formatter.handle_line(json.dumps({
 }))
 formatter.handle_line("not-json SECRET_MALFORMED")
 formatter.handle_line(json.dumps({"type": "future_event", "raw": "SECRET_FUTURE"}))
-formatter.finish(0)
+formatter.finish(cp.decide(formatter.evidence(child_exit=0)))
 
 rendered = "\n".join(lines)
 check("Claude Code 2.1.212" in rendered and "session started" in rendered,
@@ -230,12 +230,12 @@ check("❌ failed" in kill_output and "background tasks killed after timeout" in
 direct_lines: list[str] = []
 direct_formatter = cp.ProgressFormatter(emit=direct_lines.append)
 direct_formatter.emit_stderr("Background tasks still running after 600s; terminating")
-direct_formatter.finish(0)
+direct_formatter.finish(cp.decide(direct_formatter.evidence(child_exit=0)))
 direct_output = "\n".join(direct_lines)
 check(direct_formatter.saw_kill_signature,
       "emit_stderr detects the exact observed incident wording")
-check("❌ failed" in direct_output and "exit 0" in direct_output,
-      "finish() reports failed even when passed exit_code=0 directly")
+check("❌ failed" in direct_output and f"exit {cp.BACKGROUND_KILL_EXIT_CODE}" in direct_output,
+      "finish() reports the kill as failed under the code the decision chose, over a clean child exit")
 check("✅ completed" not in direct_output, "a killed run is never reported as completed")
 
 
@@ -255,7 +255,7 @@ for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
 check(burst_formatter.stream_truncated, "a shutdown burst is visible before finish() is called")
 check(burst_formatter.truncated_stream_burst() == cp.UNKNOWN_BURST_THRESHOLD,
       "the burst count is the number of unknown records inside the window")
-burst_formatter.finish(cp.TRUNCATED_STREAM_EXIT_CODE)
+burst_formatter.finish(cp.decide(burst_formatter.evidence(child_exit=cp.TRUNCATED_STREAM_EXIT_CODE)))
 burst_output = "\n".join(burst_lines)
 check("burst of" in burst_output and "unknown stream record" in burst_output,
       "a burst of unknown records near shutdown is flagged")
@@ -284,7 +284,7 @@ quiet_lines: list[str] = []
 quiet_formatter = cp.ProgressFormatter(emit=quiet_lines.append, clock=lambda: 0.0)
 for _ in range(cp.UNKNOWN_BURST_THRESHOLD - 1):
     quiet_formatter.handle_line(json.dumps({"type": "future_event"}))
-quiet_formatter.finish(0)
+quiet_formatter.finish(cp.decide(quiet_formatter.evidence(child_exit=0)))
 check("burst of" not in "\n".join(quiet_lines),
       "fewer than the threshold of unknown records stays silent")
 
@@ -305,7 +305,7 @@ for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
     delivered_formatter.handle_line(json.dumps({"type": "future_event"}))
 check(not delivered_formatter.stream_truncated,
       "a shutdown burst after a terminal result event is not truncation")
-delivered_formatter.finish(0)
+delivered_formatter.finish(cp.RunOutcome(cp.RunState.COMPLETED, 0))
 delivered_output = "\n".join(delivered_lines)
 check("no terminal result event" not in delivered_output,
       "the result event was received, so finish() must not claim otherwise")
@@ -322,7 +322,7 @@ for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
     undelivered_formatter.handle_line(json.dumps({"type": "future_event"}))
 check(undelivered_formatter.stream_truncated,
       "a shutdown burst with no result event is still reported as truncated (#560)")
-undelivered_formatter.finish(cp.TRUNCATED_STREAM_EXIT_CODE)
+undelivered_formatter.finish(cp.decide(undelivered_formatter.evidence(child_exit=cp.TRUNCATED_STREAM_EXIT_CODE)))
 undelivered_output = "\n".join(undelivered_lines)
 check("❓ not confirmed" in undelivered_output,
       "the no-result-event case still reports delivery as unconfirmed")
