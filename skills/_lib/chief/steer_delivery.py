@@ -28,9 +28,20 @@ call stays with the operator.
 """
 from __future__ import annotations
 
+import enum
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+
+class DeliveryState(enum.StrEnum):
+    """What a steer's delivery check concluded; the string is what `chief_ops` prints beside the sid."""
+
+    DELIVERED = "delivered"  # a confirmed submit, or an exchange that advanced past a non-deferred send
+    PENDING = "pending"      # no verdict reached yet; delivery likely, never a success
+    STRANDED = "stranded"    # positive grounds that the input never landed
+    UNKNOWN = "unknown"      # the exchange could not be read at all
+
 
 # How long the `--verify` poll waits between exchange reads. Lives here rather
 # than with `chief_ops`'s other CLI defaults because `recent_output_window`
@@ -111,17 +122,17 @@ def parse_exchange_timestamp(ts: Any) -> Optional[datetime]:
     return parsed
 
 
-def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetime) -> str:
+def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetime) -> DeliveryState:
     """"delivered" if the exchange carries a parseable assistant timestamp
     newer than `send_time`; "pending" otherwise. An unreadable exchange
     (unavailable, or a source with no timestamp) must never read as
     delivered — it just means the poll keeps waiting (fleet-config#453)."""
     if not available:
-        return "pending"
+        return DeliveryState.PENDING
     parsed = parse_exchange_timestamp(timestamp)
     if parsed is None:
-        return "pending"
-    return "delivered" if parsed > send_time else "pending"
+        return DeliveryState.PENDING
+    return DeliveryState.DELIVERED if parsed > send_time else DeliveryState.PENDING
 
 
 # ---- output age: the evidence the classifier rests on (pure) ---------------
@@ -178,7 +189,7 @@ def format_output_age(age: Optional[float]) -> str:
 # ---- the verdict (pure) ----------------------------------------------------
 
 def finalize_delivery(
-    last_marker_state: str,
+    last_marker_state: DeliveryState,
     target_status: Optional[str],
     *,
     marker_available: bool = True,
@@ -186,7 +197,7 @@ def finalize_delivery(
     last_input: Optional[Dict[str, Any]] = None,
     last_output_age: Optional[float] = None,
     output_window: float = DEFAULT_RECENT_OUTPUT_WINDOW,
-) -> str:
+) -> DeliveryState:
     """The caller-facing verdict once the poll budget is exhausted: one of
     "delivered", "pending", "stranded", "unknown" (fleet-config#643).
 
@@ -253,25 +264,25 @@ def finalize_delivery(
     command, so the decision stays with the operator.
     """
     if post_reason in INPUT_NEGATIVE_REASONS:
-        return "stranded"
+        return DeliveryState.STRANDED
     deferred = deferred_submit_outcome(post_reason, last_input)
     if deferred == "confirmed":
-        return "delivered"
+        return DeliveryState.DELIVERED
     if deferred == "failed":
-        return "stranded"
+        return DeliveryState.STRANDED
     if deferred == "in_flight":
-        return "pending"
-    if last_marker_state == "delivered":
-        return "delivered"
+        return DeliveryState.PENDING
+    if last_marker_state == DeliveryState.DELIVERED:
+        return DeliveryState.DELIVERED
     if (last_input or {}).get("reason") in INPUT_NEGATIVE_REASONS:
-        return "stranded"
+        return DeliveryState.STRANDED
     if target_status == "working":
-        return "pending"
+        return DeliveryState.PENDING
     if not marker_available:
-        return "unknown"
+        return DeliveryState.UNKNOWN
     if last_output_age is None or last_output_age <= output_window:
-        return "pending"
-    return "stranded"
+        return DeliveryState.PENDING
+    return DeliveryState.STRANDED
 
 
 # ---- operator-facing rendering (pure) --------------------------------------

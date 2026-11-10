@@ -39,6 +39,7 @@ from .config import (
     RUNTIME_DATA_LEG,
     SESSION_ARCHIVE_DIR,
     BackupConfig,
+    LegStatus,
 )
 
 logger = logging.getLogger("backup_private")
@@ -698,7 +699,7 @@ def freshness(dest_root: Path, cfg: BackupConfig,
             "status": manifest.get("status"),
             "files": (manifest.get("totals") or {}).get("files"),
         }
-        if manifest.get("status") != "ok":
+        if manifest.get("status") != LegStatus.OK:
             return FRESHNESS_STALE, {**detail, "reason": "last run did not report ok"}
         if age_hours > cfg.freshness_max_hours:
             return FRESHNESS_STALE, {**detail, "reason": f"older than {cfg.freshness_max_hours}h"}

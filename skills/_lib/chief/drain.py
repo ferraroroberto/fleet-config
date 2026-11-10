@@ -178,13 +178,14 @@ def apply_adds(doc: Dict[str, Any], adds: List[Dict[str, str]]) -> None:
 
 def queued_rows(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Every `queued` row in plan order; parked, merged, waiting and in-flight rows are never drain's."""
-    return [row for row in doc["queue"] if row["status"] == "queued"]
+    return [row for row in doc["queue"] if row["status"] == chief_plan.QueueStatus.QUEUED]
 
 
 def _issue_closed(doc: Dict[str, Any], repo: str, local: str) -> Tuple[bool, str]:
     """`(closed, detail)`: the plan says merged, else GitHub says closed; unreadable is not closed."""
     for row in doc["queue"]:
-        if row["repo"].lower() == repo.lower() and row["ref"] == local and row["status"] == "merged":
+        if (row["repo"].lower() == repo.lower() and row["ref"] == local
+                and row["status"] == chief_plan.QueueStatus.MERGED):
             return True, ""
     state = launcher.fetch_issue_state(repo, int(local[1:]))
     if state.get("error"):
@@ -290,7 +291,7 @@ def idle_line(free: Optional[int], reasons: List[str], blockers: Set[str],
 def record_lane(doc: Dict[str, Any], repo: str, local_ref: str, sid: str, model: Optional[str]) -> None:
     """The lane exactly as `plan lane <repo> building --item #N --session <sid>` writes it."""
     chief_plan.set_lane(doc, repo, "building", item=local_ref, session=sid, model=model)
-    chief_plan.set_item(doc, f"{repo}{local_ref}", status="building")
+    chief_plan.set_item(doc, f"{repo}{local_ref}", status=chief_plan.QueueStatus.BUILDING)
 
 
 # ---- state ----------------------------------------------------------------------

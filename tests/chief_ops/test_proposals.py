@@ -273,5 +273,35 @@ check(rc == 1 and "PROPOSALS=unknown reason=ledger-or-inbox" in out and not _eve
 rc, out = _run(FakeLauncher(), FakeGh(), "publish", "--file", str(_TMP / "missing.json"))
 check(rc == 1 and "reason=candidates-unreadable" in out, "an unreadable candidates file is unknown")
 
+
+
+# state-machine-proof: proposal-answer
+# Illegal transitions are refused: only an owner's recorded answer reaches accepted or declined,
+# a silent proposal ages into unanswered and never into a decision, and the set is closed.
+def test_proposal_answer_refuses_illegal_transitions() -> None:
+    from datetime import datetime, timezone
+
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    fresh = (now - timedelta(hours=1)).isoformat()
+    stale = (now - proposals.UNANSWERED_AFTER - timedelta(hours=1)).isoformat()
+    for stored in (None, "pending", "unanswered", "maybe", "ACCEPTED"):
+        for stamp, expected in ((fresh, proposals.ProposalAnswer.PENDING),
+                                (stale, proposals.ProposalAnswer.UNANSWERED)):
+            got = proposals.effective_answer({"answer": stored, "proposed_at": stamp}, now)
+            check(got is expected, f"stored answer {stored!r} aged {stamp[:10]} reads {expected}, got {got}")
+    check(proposals.effective_answer({"answer": "pending", "proposed_at": "not a time"}, now)
+          is proposals.ProposalAnswer.UNANSWERED, "an unreadable proposal time is unanswered, never pending")
+    check(proposals.effective_answer({"answer": "accepted", "proposed_at": stale}, now)
+          is proposals.ProposalAnswer.ACCEPTED, "a recorded answer outlives the window")
+    try:
+        proposals.ProposalAnswer("withdrawn")
+        closed = False
+    except ValueError:
+        closed = True
+    check(closed, "ProposalAnswer is closed: an unknown value is refused")
+
+
+test_proposal_answer_refuses_illegal_transitions()
+
 shutil.rmtree(_TMP, ignore_errors=True)
 _h.report_and_exit("test_proposals")

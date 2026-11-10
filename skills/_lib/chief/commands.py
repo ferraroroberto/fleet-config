@@ -40,6 +40,7 @@ from chief.steer_delivery import (
     INPUT_DEFERRED,
     INPUT_NEGATIVE_REASONS,
     VERDICT_REASONS,
+    DeliveryState,
     classify_exchange_marker,
     deferred_submit_outcome,
     finalize_delivery,
@@ -603,7 +604,7 @@ def cmd_say(args: argparse.Namespace) -> int:
         ))
         return 1
 
-    state, marker = "pending", {"available": False, "timestamp": None}
+    state, marker = DeliveryState.PENDING, {"available": False, "timestamp": None}
     if posted["ok"]:
         state, marker = _poll_delivery(args, post_reason, send_time)
 
@@ -631,7 +632,7 @@ def cmd_say(args: argparse.Namespace) -> int:
     )
     # DELIVERED is printed only after the full classification, never straight
     # out of the poll loop: exchange movement alone is not proof.
-    if state == "delivered":
+    if state == DeliveryState.DELIVERED:
         print(f"DELIVERED sid={args.sid} chars={len(text)}")
         return 0
 
@@ -651,7 +652,7 @@ def cmd_say(args: argparse.Namespace) -> int:
 
 def _poll_delivery(
     args: argparse.Namespace, post_reason: Optional[str], send_time: datetime,
-) -> Tuple[str, Dict[str, Any]]:
+) -> Tuple[DeliveryState, Dict[str, Any]]:
     """Poll the exchange after an accepted POST until it is delivered, the
     deferred watcher reports, or `--timeout` passes: `(state, last marker)`."""
     deadline = time.monotonic() + args.timeout
@@ -665,7 +666,7 @@ def _poll_delivery(
             card = launcher.fetch_session_card(args.base_url, args.sid)
             if deferred_submit_outcome(post_reason, launcher._last_input(card)) != "in_flight":
                 return state, marker
-        elif state == "delivered":
+        elif state == DeliveryState.DELIVERED:
             return state, marker
         if time.monotonic() >= deadline:
             return state, marker
@@ -673,13 +674,13 @@ def _poll_delivery(
 
 
 def _verdict_reason(
-    state: str, post_reason: Optional[str], target_status: Optional[str],
+    state: DeliveryState, post_reason: Optional[str], target_status: Optional[str],
     output_age: Optional[float], last_input_reason: Optional[str], post_error: Optional[str],
 ) -> str:
     """The reason printed beside a non-delivered verdict."""
-    if state == "pending":
+    if state == DeliveryState.PENDING:
         return VERDICT_REASONS[pending_reason_key(post_reason, target_status, output_age)]
-    if state == "unknown":
+    if state == DeliveryState.UNKNOWN:
         return VERDICT_REASONS["unknown"]
     if post_reason in INPUT_NEGATIVE_REASONS or last_input_reason in INPUT_NEGATIVE_REASONS:
         reason = VERDICT_REASONS["stranded_negative"]

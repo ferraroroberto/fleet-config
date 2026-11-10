@@ -177,8 +177,10 @@ from .config import (  # noqa: E402
     RUNTIME_DATA_LEG,
     SESSION_ARCHIVE_DIR,
     BackupConfig,
+    LegStatus,
     RepoOverrides,
     _read_toml,
+    leg_status,
     load_backup_config,
     load_repo_overrides,
 )
@@ -230,7 +232,7 @@ from .snapshot import (  # noqa: E402
 logger = logging.getLogger("backup_private")
 
 __all__ = [
-    "BackupConfig", "RepoOverrides", "Selection",
+    "BackupConfig", "RepoOverrides", "Selection", "LegStatus", "leg_status",
     "EXIT_OK", "EXIT_REPO_FAILURE", "EXIT_VERIFY_FAILED", "EXIT_DEST_UNUSABLE",
     "EXIT_ZERO_FILES_REGRESSION", "FRESHNESS_OK", "FRESHNESS_STALE", "FRESHNESS_UNKNOWN",
     "MANIFEST_NAME", "RUN_MARKER_NAME", "LATEST_DIR", "DATE_FMT", "RUNTIME_DATA_LEG",

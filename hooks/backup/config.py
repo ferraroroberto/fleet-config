@@ -11,6 +11,7 @@ was split into (fleet-config#564).
 
 from __future__ import annotations
 
+import enum
 import os
 import sys
 from dataclasses import dataclass
@@ -51,6 +52,30 @@ FRESHNESS_OK = "ok"
 FRESHNESS_STALE = "stale"
 FRESHNESS_UNKNOWN = "unknown"
 _FRESHNESS_EXIT = {FRESHNESS_OK: 0, FRESHNESS_STALE: 1, FRESHNESS_UNKNOWN: 2}
+
+
+
+class LegStatus(enum.StrEnum):
+    """How one leg's run (and each group inside it) ended; the manifest and the freshness check store the string."""
+
+    UNKNOWN = "unknown"  # the run has not reached a verdict (a torn manifest stays here)
+    DRY_RUN = "dry-run"  # listed, nothing written
+    OK = "ok"            # written, verified, no regression, every group ok
+    FAILED = "failed"    # any of the four checks above did not hold
+
+
+def leg_status(verification_status: str, regressions: object, failed_groups: object,
+               archive: Optional[Dict[str, Any]]) -> LegStatus:
+    """The only place a finished leg's facts become a `LegStatus`: ok needs every fact to hold.
+
+    `archive` is the session-archive reconcile result, empty or None when the leg keeps none.
+    """
+    if verification_status not in {"pass", "empty"} or regressions or failed_groups:
+        return LegStatus.FAILED
+    if archive and archive.get("status") != "pass":
+        return LegStatus.FAILED
+    return LegStatus.OK
+
 
 MANIFEST_NAME = "manifest.json"
 RUN_MARKER_NAME = ".run-in-progress"

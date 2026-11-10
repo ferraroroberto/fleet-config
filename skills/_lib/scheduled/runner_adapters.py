@@ -12,11 +12,31 @@ that does still decide the outcome.
 """
 from __future__ import annotations
 
+import enum
 import re
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+
+class ChildStatus(enum.StrEnum):
+    """The terminal `status` of a Claude `task_notification`; anything else is an unrecognised record."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED = "stopped"  # what `TaskStop` reports: a deliberate cancel, not a fault
+
+
+class ToolItemStatus(enum.StrEnum):
+    """The terminal `status` of a Codex tool item; anything else is an unrecognised record."""
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+_CHILD_TERMINAL = tuple(ChildStatus)
+_TOOL_ITEM_TERMINAL = tuple(ToolItemStatus)
 
 
 @dataclass(frozen=True)
@@ -210,7 +230,7 @@ class ClaudeAdapter:
                     return [ProgressEvent("malformed")]
                 mapped = {"task_started": "child_start", "task_progress": "child_progress", "task_notification": "child_end"}[subtype]
                 status = event.get("status")
-                if subtype == "task_notification" and status not in {"completed", "failed", "stopped"}:
+                if subtype == "task_notification" and status not in _CHILD_TERMINAL:
                     return [ProgressEvent("unknown", name=describe_record(kind, subtype, status))]
                 # `stopped` is what `TaskStop` reports, and the run that exposed
                 # this used it exactly as intended: a background disk scan
@@ -219,8 +239,8 @@ class ClaudeAdapter:
                 # both a wrong render (`✗ task failed`) and, downstream, a
                 # wrong verdict. Only `failed` is a failure here.
                 return [ProgressEvent(mapped, id=task_id, name="task", metadata=event,
-                                      failed=status == "failed",
-                                      cancelled=status == "stopped")]
+                                      failed=status == ChildStatus.FAILED,
+                                      cancelled=status == ChildStatus.STOPPED)]
         elif kind in {"rate_limit_event", "prompt_suggestion"}:
             return []
         elif kind == "result":
@@ -361,10 +381,10 @@ class CodexAdapter:
                 return []
             if kind == "item.started":
                 return [ProgressEvent("tool_start", id=item["id"], name=item_type)]
-            if item.get("status") not in {"completed", "failed"}:
+            if item.get("status") not in _TOOL_ITEM_TERMINAL:
                 return [ProgressEvent("unknown", name=describe_record(kind, item_type, item.get("status")))]
             return [ProgressEvent("tool_end", id=item["id"], name=item_type,
-                                  failed=item.get("status") == "failed" or item.get("exit_code", 0) not in {0, None})]
+                                  failed=item.get("status") == ToolItemStatus.FAILED or item.get("exit_code", 0) not in {0, None})]
         # Native delegated-child completion is a separate unproven surface, and
         # the one adapter site that is not schema drift: a collaboration item
         # registers no tool and no child, so nothing downstream would notice it

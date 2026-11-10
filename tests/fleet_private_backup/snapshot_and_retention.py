@@ -55,6 +55,35 @@ bp.write_group([(vanish_src / "here.md", "sub/dir/x.md", 7)], "g",
                tmp / "vanish-dest", None, {}, perm_errors, [])
 check(not perm_errors, "vanish: a nested target path is created, not an error")
 
+# ---- leg status -------------------------------------------------------
+
+
+# state-machine-proof: backup-leg-status
+# Illegal transitions are refused: a leg is ok only when verification passed, nothing regressed,
+# no group failed and any session archive reconciled; the set of statuses is closed.
+def test_leg_status_refuses_illegal_transitions() -> None:
+    ok = ("pass", [], [], {"status": "pass"})
+    check(bp.leg_status(*ok) is bp.LegStatus.OK, "leg status: every fact holding is ok")
+    check(bp.leg_status("empty", [], [], None) is bp.LegStatus.OK, "leg status: an empty sample with no archive is ok")
+    for label, facts in (
+        ("a failed sample", ("fail", [], [], None)),
+        ("an unrecognised verification", ("unknown", [], [], None)),
+        ("a zero-file regression", ("pass", ["repo-a"], [], None)),
+        ("a failed group", ("pass", [], ["repo-a"], None)),
+        ("an archive that did not pass", ("pass", [], [], {"status": "fail"})),
+        ("an archive with no status", ("pass", [], [], {"files": 3})),
+    ):
+        check(bp.leg_status(*facts) is bp.LegStatus.FAILED, f"leg status: {label} is failed, never ok")
+    try:
+        bp.LegStatus("green")
+        closed = False
+    except ValueError:
+        closed = True
+    check(closed, "LegStatus is closed: an unknown value is refused")
+
+
+test_leg_status_refuses_illegal_transitions()
+
 # ---- sample verification ----------------------------------------------
 manifest2 = {"groups": {"g": {"files": entries2}}}
 verdict = bp.verify_sample(day2, manifest2)

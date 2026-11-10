@@ -148,4 +148,30 @@ code, out = cli(["extract", "5"], (None, "network down"))
 check(code == 2 and out.strip() == "ACCEPTANCE=unknown reason=network down",
       "CLI: an unreadable issue is unknown, its own state")
 
+
+
+# state-machine-proof: acceptance-audit-state
+# Illegal transitions are refused: no finding of any kind reaches `done`, the more severe state
+# always wins, and the set of states is closed.
+def test_audit_state_refuses_illegal_transitions() -> None:
+    import itertools
+
+    for flags in itertools.product((False, True), repeat=4):
+        got = aa.audit_state(*flags)
+        check((got is aa.AuditState.DONE) == (not any(flags)),
+              f"audit_state{flags}: only an empty set of findings reaches done, got {got}")
+    check(aa.audit_state(True, True, True, True) is aa.AuditState.INCOMPLETE,
+          "a criterion with no verdict outranks every other finding")
+    check(aa.audit_state(False, True, True, True) is aa.AuditState.NOT_DONE,
+          "NOT DONE outranks blocked and unverifiable")
+    try:
+        aa.AuditState("maybe")
+        closed = False
+    except ValueError:
+        closed = True
+    check(closed, "AuditState is closed: an unknown value is refused")
+
+
+test_audit_state_refuses_illegal_transitions()
+
 _h.report_and_exit("test_acceptance_audit")

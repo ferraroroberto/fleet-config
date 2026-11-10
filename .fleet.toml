@@ -120,6 +120,53 @@ module = "skills/_lib/scheduled/run_outcome.py"
 type   = "RunState"
 derive = "decide"
 
+# The acceptance audit verdict: the findings of one `tally` ordered into a single AuditState by
+# audit_state(); the `ACCEPTANCE=` line and the exit code read it.
+[[state_machines]]
+name   = "acceptance-audit-state"
+module = "skills/_lib/acceptance_audit.py"
+type   = "AuditState"
+derive = "audit_state"
+
+# The verdict of `chief_ops say --verify`: the exchange marker, the endpoint's reason and the target's
+# output age ordered into one DeliveryState by finalize_delivery().
+[[state_machines]]
+name   = "steer-delivery"
+module = "skills/_lib/chief/steer_delivery.py"
+type   = "DeliveryState"
+derive = "finalize_delivery"
+
+# Where a chief proposal stands: the ledger's stored answer plus the answer window, read through
+# effective_answer() only.
+[[state_machines]]
+name   = "proposal-answer"
+module = "skills/_lib/chief/proposals.py"
+type   = "ProposalAnswer"
+derive = "effective_answer"
+
+# A chief plan queue row's status; chief_plan guards each move (a question, a kind) and validate()
+# refuses any value outside the set.
+[[state_machines]]
+name   = "chief-queue-row"
+module = "skills/_lib/chief_plan.py"
+type   = "QueueStatus"
+derive = "validate"
+
+# What a native-discovery probe established for one client; failed and unknown evidence never
+# becomes verified (docs/cross-agent-parity.md).
+[[state_machines]]
+name   = "probe-status"
+module = "skills/_lib/discovery_probe.py"
+type   = "ProbeStatus"
+
+# How one backup leg (and each group in it) ended; leg_status() is the only place a finished leg's
+# facts become a status, and the freshness check reads the stored manifest through it.
+[[state_machines]]
+name   = "backup-leg-status"
+module = "hooks/backup/config.py"
+type   = "LegStatus"
+derive = "leg_status"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"

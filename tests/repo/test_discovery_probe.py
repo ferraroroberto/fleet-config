@@ -82,6 +82,25 @@ class DiscoveryProbeTests(unittest.TestCase):
             result["skills"][0]["status"] = "missing"
             self.assertEqual(probe.main(["--run"]), 2)
 
+    # state-machine-proof: probe-status
+    # Illegal transitions are refused: contradicting evidence is failed and a changed inventory is
+    # unknown, never verified, and the set of statuses is closed.
+    def test_probe_status_refuses_illegal_transitions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            source.write_text("fixture")
+            rows = {scope: [{"name": name, "path": str(source), "source": str(source)}
+                            for name in names] for scope, names in probe.EXPECTED.items()}
+            rows["root"][0]["path"] = str(source.parent / "elsewhere")
+            self.assertIs(probe._catalog_result("codex", "installed", "test", rows, [])["status"],
+                          probe.ProbeStatus.FAILED)
+        reports = [{"client": "grok", "status": probe.ProbeStatus.VERIFIED, "scopes": {"root": ["one"]}},
+                   {"client": "grok", "status": probe.ProbeStatus.VERIFIED, "scopes": {"root": ["two"]}}]
+        with patch.object(probe, "_grok_inventory", side_effect=reports):
+            self.assertIs(probe._grok({})["status"], probe.ProbeStatus.UNKNOWN)
+        with self.assertRaises(ValueError):
+            probe.ProbeStatus("passed")
+
 
 if __name__ == "__main__":
     unittest.main()

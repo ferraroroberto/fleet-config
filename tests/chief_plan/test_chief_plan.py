@@ -489,4 +489,28 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+# state-machine-proof: chief-queue-row
+# Illegal transitions are refused: waiting-roberto without a question, parked without a kind, a kind
+# on a row that is not parked, an unrecognised status, and a status outside the closed set.
+def test_queue_row_refuses_illegal_transitions() -> None:
+    doc = _valid()
+    cp.add_item(doc, "app-a#1", "a row")
+    check("plan ask" in _raises(cp.set_item, doc, "app-a#1", status=cp.QueueStatus.WAITING_ROBERTO),
+          "a row cannot wait on Roberto without a plan ask")
+    check("kind" in _raises(cp.set_item, doc, "app-a#1", status=cp.QueueStatus.PARKED),
+          "a row cannot be parked without a kind")
+    check("--kind" in _raises(cp.set_item, doc, "app-a#1", status=cp.QueueStatus.GATE, kind="owner"),
+          "a kind only applies to a parked row")
+    doc["queue"][0]["status"] = "shipping"
+    check(any("status" in problem for problem in cp.validate(doc)), "an unrecognised status fails validation")
+    try:
+        cp.QueueStatus("shipping")
+        closed = False
+    except ValueError:
+        closed = True
+    check(closed, "QueueStatus is closed: an unknown value is refused")
+
+
+test_queue_row_refuses_illegal_transitions()
+
 _h.report_and_exit("test_chief_plan")
