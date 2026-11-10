@@ -120,6 +120,14 @@ module = "skills/_lib/scheduled/run_outcome.py"
 type   = "RunState"
 derive = "decide"
 
+# The acceptance audit verdict: the findings of one `tally` ordered into a single AuditState by
+# audit_state(); the `ACCEPTANCE=` line and the exit code read it.
+[[state_machines]]
+name   = "acceptance-audit-state"
+module = "skills/_lib/acceptance_audit.py"
+type   = "AuditState"
+derive = "audit_state"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"

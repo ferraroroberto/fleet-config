@@ -52,6 +52,7 @@ Pure logic (``parse_criteria``, ``tally``) is unit-tested in
 from __future__ import annotations
 
 import argparse
+import enum
 import json
 import re
 import subprocess
@@ -62,6 +63,19 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from git_run import run_gh  # noqa: E402
+
+
+class AuditState(enum.StrEnum):
+    """The one verdict `tally` returns; the string is what `ACCEPTANCE=` prints and `_EXIT` maps."""
+
+    UNKNOWN = "unknown"
+    INCOMPLETE = "incomplete"
+    NOT_DONE = "not_done"
+    BLOCKED = "blocked"
+    UNVERIFIABLE = "unverifiable"
+    DONE = "done"
+    NO_CRITERIA = "no_criteria"
+
 
 PROOF_LOCATIONS = ("DIFF", "CROSS-REPO", "EXTERNAL")
 VERDICTS = ("DONE", "NOT DONE", "UNVERIFIABLE")
@@ -128,12 +142,25 @@ def _entry_problem(entry: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def audit_state(missing: bool, not_done: bool, blocked: bool, unverifiable: bool) -> AuditState:
+    """The only function that orders the findings into a state, most severe first."""
+    if missing:
+        return AuditState.INCOMPLETE
+    if not_done:
+        return AuditState.NOT_DONE
+    if blocked:
+        return AuditState.BLOCKED
+    if unverifiable:
+        return AuditState.UNVERIFIABLE
+    return AuditState.DONE
+
+
 def tally(
     criteria: List[Dict[str, Any]], entries: List[Dict[str, Any]], unattended: bool = False,
-) -> Tuple[str, List[str]]:
+) -> Tuple[AuditState, List[str]]:
     """``(state, lines)`` for the filled template ``entries`` against ``criteria``."""
     if not criteria:
-        return "no_criteria", ["CRITERIA=0 -- judge the issue's prose and say so"]
+        return AuditState.NO_CRITERIA, ["CRITERIA=0 -- judge the issue's prose and say so"]
     by_id: Dict[int, Dict[str, Any]] = {}
     for entry in entries:
         try:
@@ -167,16 +194,7 @@ def tally(
             if unattended and not (location == "EXTERNAL" and entry.get("post_merge") is True):
                 blocked.append(f"BLOCKED: #{cid} {text} -- {location}, not checkable post-merge")
 
-    if missing:
-        state = "incomplete"
-    elif not_done:
-        state = "not_done"
-    elif blocked:
-        state = "blocked"
-    elif unverifiable:
-        state = "unverifiable"
-    else:
-        state = "done"
+    state = audit_state(bool(missing), bool(not_done), bool(blocked), bool(unverifiable))
 
     lines = [
         f"CRITERIA={len(criteria)} DONE={done} NOT_DONE={len(not_done)} "
@@ -195,8 +213,8 @@ def tally(
     return state, lines
 
 
-_EXIT = {"done": 0, "unverifiable": 0, "no_criteria": 0,
-         "not_done": 1, "incomplete": 1, "blocked": 1}
+_EXIT = {AuditState.DONE: 0, AuditState.UNVERIFIABLE: 0, AuditState.NO_CRITERIA: 0,
+         AuditState.NOT_DONE: 1, AuditState.INCOMPLETE: 1, AuditState.BLOCKED: 1}
 
 
 def fetch_body(number: int, repo: Optional[str]) -> Tuple[Optional[str], str]:
@@ -232,7 +250,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     body, reason = fetch_body(args.number, args.repo)
     if body is None:
-        print(f"ACCEPTANCE=unknown reason={reason}")
+        print(f"ACCEPTANCE={AuditState.UNKNOWN} reason={reason}")
         return 2
     criteria = parse_criteria(body)
     if args.cmd == "extract":
@@ -242,12 +260,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         entries = json.loads(args.verdicts.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        print(f"ACCEPTANCE=incomplete reason=verdicts file unreadable: {exc}")
+        print(f"ACCEPTANCE={AuditState.INCOMPLETE} reason=verdicts file unreadable: {exc}")
         return 1
     if not isinstance(entries, list):
         entries = []
     state, lines = tally(criteria, [e for e in entries if isinstance(e, dict)], args.unattended)
-    print(f"ACCEPTANCE={state}")
+    print(f"ACCEPTANCE={state.value}")
     for line in lines:
         print(line)
     return _EXIT[state]
