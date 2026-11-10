@@ -110,6 +110,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the automation#144 config loss reproduced through land-primary against "
      "a fixture repo, plus the refusal and unknown-ignore paths that must "
      "never lose a file (fleet-config#1086)"),
+    ("tray_lifecycle_restart", "repo/test_tray_lifecycle_restart.py",
+     "a tray restart passes only when a new process serves HEAD -- the verdict table and `launch -Restart` "
+     "against stub version servers, so a surviving old process and an unreadable identity never read as a "
+     "pass (fleet-config#1975)"),
     ("shell_parse", "hooks/test_shell_parse.py",
      "the shell guards' three tokeniser splits, pinned in tables to what "
      "each guard read before they moved into one `_lib` home, so the move "

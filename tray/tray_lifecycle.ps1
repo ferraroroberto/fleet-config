@@ -24,8 +24,9 @@
     PowerShell process, so tray.bat does not parse helper output at all.
 
     A separate outer-shell hazard happens before this file can run: Git Bash/MSYS rewrites `cmd.exe /c` to `cmd.exe C:/`.
-    That opens an interactive cmd prompt, so tray.bat and this helper are never
-    entered. Automation must invoke tray.bat through a real PowerShell caller
+    That opens an interactive cmd prompt that exits 0, so tray.bat and this helper are never
+    entered and no verification here runs; an app that wants to catch that wraps the restart
+    with its own before/after process check. Automation must invoke tray.bat through a real PowerShell caller
     (or use the MSYS-safe `cmd.exe //c` spelling); the fleet Bash hook and issue
     workflow skills enforce the PowerShell path.
 
@@ -40,8 +41,14 @@
                  under this repo's .venv (orphan-proof), printing each reclaim:
         powershell.exe -NoProfile -NonInteractive -File tray_lifecycle.ps1 `
           reclaim -VenvDir "<repo>\.venv" -Ports "8445,8446"
-      launch  -> idempotent start, or restart with port reclaim and git_sha
-                 verification:
+      launch  -> idempotent start, or restart with port reclaim and verification
+                 that a NEW process serves HEAD: the version endpoint is read
+                 before the restart, and afterwards the helper passes only when
+                 the serving process changed (the reported `pid`, else the port
+                 owner's pid and creation time) and `git_sha` matches HEAD. A
+                 process whose identity cannot be read is "not confirmed"
+                 (non-zero exit), never a pass. It cannot see a restart that
+                 never entered this script:
         powershell.exe -NoProfile -NonInteractive -File tray_lifecycle.ps1 `
           launch -AppName "my-app" -ScriptDir "<repo>" -VenvDir "<repo>\.venv" `
           -TrayMatch "launcher\.py\s+tray" -Ports "8445" `
@@ -230,40 +237,133 @@ function Test-GitShaMatches {
         $ServedSha.StartsWith($HeadSha, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
-function Wait-VersionMatchesHead {
-    $urls = @(Resolve-VersionUrls)
+function Get-PortOwnerIdentity {
+    # The listening process on a port, for an app whose /api/version carries no
+    # pid. Creation time rides along because a pid alone can be reused. $null
+    # when nothing listens or the owner cannot be read.
+    param([int] $Port)
+    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $listener) { return $null }
+    $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $listener.OwningProcess) -ErrorAction SilentlyContinue
+    $started = $null
+    if ($cim -and $cim.CreationDate) { $started = [string] $cim.CreationDate.ToUniversalTime().Ticks }
+    return @{ Pid = [int] $listener.OwningProcess; Started = $started }
+}
+
+function Get-ServedState {
+    # One look at what answers the version endpoint: the git_sha it serves, the
+    # pid it reports (if any), and the port owner's identity. Answered is false
+    # when no candidate URL answered.
+    $state = @{ Answered = $false; Url = $null; Sha = ''; ReportedPid = $null; OwnerPid = $null; OwnerStarted = $null; AssetHash = $null; Error = $null }
+    foreach ($url in @(Resolve-VersionUrls)) {
+        try {
+            $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 3
+        } catch {
+            $state.Error = "$url : $($_.Exception.Message)"
+            continue
+        }
+        $sha = $response.git_sha
+        if (-not $sha) { $sha = $response.gitSha }
+        $state.Answered = $true
+        $state.Url = $url
+        $state.Sha = [string] $sha
+        $state.AssetHash = if ($response.asset_hash) { $response.asset_hash } else { $response.assetHash }
+        $parsedPid = 0
+        if ($null -ne $response.pid -and [int]::TryParse([string] $response.pid, [ref] $parsedPid)) {
+            $state.ReportedPid = $parsedPid
+        }
+        $owner = $null
+        try { $owner = Get-PortOwnerIdentity -Port ([System.Uri] $url).Port } catch { $owner = $null }
+        if ($owner) {
+            $state.OwnerPid = $owner.Pid
+            $state.OwnerStarted = $owner.Started
+        }
+        return $state
+    }
+    return $state
+}
+
+function Get-RestartVerdict {
+    # Pure decision: is $After a different process than $Before, serving $Head?
+    # A matching git_sha alone proves nothing -- a restart that never ran leaves
+    # the old process serving, and when it already loaded HEAD the sha matches
+    # anyway. Status is one of:
+    #   confirmed      new process, serving HEAD
+    #   stale          nothing answering, or serving another sha: keep polling
+    #   unchanged      the same process is still serving: keep polling
+    #   not-confirmed  the identity (or the baseline) could not be read: never a pass
+    param($Before, $After, [string] $Head)
+    if (-not $Before.Known) {
+        return @{ Status = 'not-confirmed'; Reason = 'the version endpoint could not be read before the restart, so no baseline process exists to compare' }
+    }
+    if (-not $After.Answered) {
+        $why = 'nothing is answering the version endpoint'
+        if ($After.Error) { $why = $After.Error }
+        return @{ Status = 'stale'; Reason = $why }
+    }
+    if (-not (Test-GitShaMatches -ServedSha $After.Sha -HeadSha $Head)) {
+        return @{ Status = 'stale'; Reason = ("{0} served git_sha '{1}', expected HEAD '{2}'" -f $After.Url, $After.Sha, $Head) }
+    }
+    if (-not $Before.Answered) {
+        return @{ Status = 'confirmed'; Reason = 'no process was serving before the restart' }
+    }
+    if ($null -ne $Before.ReportedPid -and $null -ne $After.ReportedPid) {
+        if ($Before.ReportedPid -eq $After.ReportedPid) {
+            return @{ Status = 'unchanged'; Reason = ("the same process (pid {0}) is still serving: the restart did not replace it" -f $After.ReportedPid) }
+        }
+        return @{ Status = 'confirmed'; Reason = ("pid {0} -> {1}" -f $Before.ReportedPid, $After.ReportedPid) }
+    }
+    if ($null -ne $Before.OwnerPid -and $null -ne $After.OwnerPid) {
+        if ($Before.OwnerPid -eq $After.OwnerPid -and $Before.OwnerStarted -eq $After.OwnerStarted) {
+            return @{ Status = 'unchanged'; Reason = ("the same process (port owner pid {0}) is still serving: the restart did not replace it" -f $After.OwnerPid) }
+        }
+        return @{ Status = 'confirmed'; Reason = ("port owner pid {0} -> {1}" -f $Before.OwnerPid, $After.OwnerPid) }
+    }
+    return @{ Status = 'not-confirmed'; Reason = 'the serving process has no readable identity (no pid in the version answer, no port owner), so a restart cannot be confirmed' }
+}
+
+function Get-RestartBaseline {
+    # What served before the restart. Known is false when the probe could not
+    # even be attempted, which the verdict reports as not confirmed.
+    Install-LoopbackCertBypass
+    try {
+        $state = Get-ServedState
+        $state.Known = $true
+        return $state
+    } catch {
+        return @{ Known = $false; Answered = $false }
+    } finally {
+        if (([System.Management.Automation.PSTypeName]'LoopbackCertBypass').Type) {
+            [LoopbackCertBypass]::Restore()
+        }
+    }
+}
+
+function Wait-RestartedAndServingHead {
+    param($Before)
     $head = Get-GitHead
     Install-LoopbackCertBypass
     try {
         $deadline = (Get-Date).AddSeconds($VerifyTimeoutSeconds)
-        $lastError = $null
+        $verdict = $null
 
         do {
-            foreach ($url in $urls) {
-                try {
-                    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 3
-                    $servedSha = $response.git_sha
-                    if (-not $servedSha) { $servedSha = $response.gitSha }
-                    $lastSha = [string] $servedSha
-                    if (Test-GitShaMatches -ServedSha $lastSha -HeadSha $head) {
-                        $assetHash = $response.asset_hash
-                        if (-not $assetHash) { $assetHash = $response.assetHash }
-                        if ($assetHash) {
-                            Write-Host ("Verified {0} serves git_sha {1} (asset_hash {2})." -f $url, $lastSha, $assetHash)
-                        } else {
-                            Write-Host ("Verified {0} serves git_sha {1}." -f $url, $lastSha)
-                        }
-                        return
-                    }
-                    $lastError = "$url served git_sha '$lastSha', expected HEAD '$head'"
-                } catch {
-                    $lastError = "$url : $($_.Exception.Message)"
-                }
+            $after = Get-ServedState
+            $verdict = Get-RestartVerdict -Before $Before -After $after -Head $head
+            if ($verdict.Status -eq 'confirmed') {
+                $assetNote = ''
+                if ($after.AssetHash) { $assetNote = (" (asset_hash {0})" -f $after.AssetHash) }
+                Write-Host ("Verified {0} serves git_sha {1} from a new process ({2}){3}." -f $after.Url, $after.Sha, $verdict.Reason, $assetNote)
+                return
             }
             Start-Sleep -Seconds 1
         } while ((Get-Date) -lt $deadline)
 
-        throw ("restart verification failed: {0}" -f $lastError)
+        if ($verdict.Status -eq 'not-confirmed') {
+            throw ("restart not confirmed: {0}" -f $verdict.Reason)
+        }
+        throw ("restart verification failed: {0}" -f $verdict.Reason)
     } finally {
         if (([System.Management.Automation.PSTypeName]'LoopbackCertBypass').Type) {
             [LoopbackCertBypass]::Restore()
@@ -287,7 +387,9 @@ switch ($Action) {
             exit 0
         }
 
+        $before = $null
         if ($Restart) {
+            $before = Get-RestartBaseline
             if ($trayPids.Count -gt 0) {
                 Write-Host ("Stopping previous {0} tray (PID: {1})..." -f $AppName, ($trayPids -join " "))
                 Stop-TrayProcesses -ProcessIds $trayPids
@@ -298,7 +400,7 @@ switch ($Action) {
 
         Start-TrayProcess
         if ($Restart) {
-            Wait-VersionMatchesHead
+            Wait-RestartedAndServingHead -Before $before
         }
     }
 }
