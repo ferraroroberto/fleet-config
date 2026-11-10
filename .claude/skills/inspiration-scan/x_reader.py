@@ -33,6 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import x_session  # noqa: E402
 
 X_HOME = "https://x.com"
+# The reason scan.py maps to its own login-needed state.
+REASON_LOGGED_OUT = "logged-out"
 # Long enough for a profile page to render its first posts on a slow night.
 RENDER_TIMEOUT_MS = 15000
 # A pause between accounts in the range a person clicking through would take.
@@ -63,7 +65,7 @@ def classify_page(url: str, page_text: str, signed_in: bool) -> Optional[str]:
     if "/account/access" in lowered or "captcha" in lowered or "arkose" in page_text.lower():
         return "challenge"
     if "/login" in lowered or "/i/flow/" in lowered or not signed_in:
-        return "logged-out"
+        return REASON_LOGGED_OUT
     return None
 
 
@@ -120,7 +122,7 @@ def read_all(request: Dict[str, Any]) -> Dict[str, Any]:
             for index, handle in enumerate(handles):
                 result = _read_handle(page, handle, since, scrolls)
                 results.append(result)
-                if result["reason"] in {"logged-out", "challenge"}:
+                if result["reason"] in {REASON_LOGGED_OUT, "challenge"}:
                     results.extend({"handle": h, "status": "not-read", "reason": result["reason"], "items": []}
                                    for h in handles[index + 1:])
                     break
