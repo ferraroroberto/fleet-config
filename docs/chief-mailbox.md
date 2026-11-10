@@ -49,7 +49,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed`, `cap-raised` or `proposals`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). A `proposals` is the weekly learning-log run offering candidate issues, see [Proposal events](#proposal-events-kind-proposals). |
+| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed`, `ci-failed`, `cap-raised` or `proposals`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `ci-failed` is a red GitHub Actions run on a fleet repo's default branch, see [CI events](#ci-events-kind-ci-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). A `proposals` is the weekly learning-log run offering candidate issues, see [Proposal events](#proposal-events-kind-proposals). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so a v1 reader would still name the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
@@ -106,6 +106,46 @@ An app-launcher Job run that failed is published as one `job-failed` event, so a
 | `excerpt`, `excerpt_source` | The last 1,500 characters of the run's `output.log`, with `excerpt_source: "job-output"`. `excerpt` and `excerpt_source` are `null`, with `excerpt_unavailable`, when the log is missing or empty. Job output can hold private data: it is for the chief's eyes only and never copied into an issue. |
 
 The event `id` is the dedupe key, as for every event. Readers render the event as `job <job_name> failed exit=<n> run=<run_id> repo=<repo>` (`-` for a null `exit_code` or `repo`; ` outcome=not-confirmed` appended when `outcome` is not `failed`), then a `job_id=… trigger=… script=…` line, then the excerpt lines.
+
+### CI events (`kind: "ci-failed"`)
+
+A failed GitHub Actions run on a fleet repo's default branch is published as one `ci-failed` event, so a red CI wakes the chief instead of waiting for the owner to notice GitHub's email. Like a Job, a CI run has no worker session: `launcher_sid`, `number`, `agent` and `dispatch_id` are always `null`. The launcher polls GitHub and writes the file; it never imports from `hooks/`. Pull-request runs are out of scope for the event.
+
+```json
+{
+  "v": 2,
+  "id": "3e4f5a6b7c8d49e0a1b2c3d4e5f60718",
+  "kind": "ci-failed",
+  "repo": "example-app",
+  "workflow": "CI",
+  "run_id": 7001234567,
+  "run_url": "https://github.com/example-owner/example-app/actions/runs/7001234567",
+  "head_sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a099887766",
+  "event": "push",
+  "conclusion": "failure",
+  "created_at": "2026-11-09T14:03:21Z",
+  "failed_jobs": ["unit-tests", "lint"],
+  "launcher_sid": null,
+  "number": null,
+  "agent": null,
+  "dispatch_id": null,
+  "ts": "2026-11-09T14:05:00Z",
+  "excerpt": "<last ≤1500 chars of the failed step's log, redacted, or null>",
+  "excerpt_source": "ci-log"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `repo` | The fleet repo's short name, as every other event spells it. |
+| `workflow`, `run_id`, `run_url`, `head_sha` | Which workflow and run, its page on GitHub, and the commit it ran on. `run_id` is the GitHub run id. |
+| `event` | The GitHub trigger that started the run: `push`, `schedule` or `pull_request` (any other value passes through, and a reader renders it as-is). A `ci-failed` event carries no worker-style envelope name here: for this kind `event` is the trigger, and readers name the event by `kind`. |
+| `conclusion` | `failure`, `timed_out` or `startup_failure`. |
+| `created_at` | When the run was created, UTC, second precision, `Z` suffix. `ts` is when the producer wrote the event. |
+| `failed_jobs` | The failed jobs' names, nothing else. An empty list reads `-`. |
+| `excerpt`, `excerpt_source` | At most ~1,500 characters from the failed step's log, with `excerpt_source: "ci-log"`. The producer redacts it by the `job-failed` rule: no private data (secrets, tokens, private paths and the like). `excerpt` and `excerpt_source` are `null`, with `excerpt_unavailable`, when no failed step log can be read. |
+
+The dedupe key is `repo` + `run_id`: the producer writes one event per failed run and never a second for the same pair, and the event `id` is the claim and ack key as for every event. Readers render the event as `ci <workflow> failed repo=<repo> sha=<sha7> run=<run_id>` (`-` for any missing field), then a `conclusion=… event=… at=… jobs=… url=…` line, then the excerpt lines. How the chief handles one: `.claude/skills/chief/ci-failed.md`.
 
 ### Cap events (`kind: "cap-raised"`)
 
@@ -244,5 +284,6 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/chief_ops/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
 - `tests/chief_ops/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `inbox` batch line for it.
 - `tests/chief_ops/test_chief_job_failed.py`: a synthetic `job-failed` event through the real `inbox` (the head line, the detail line, the excerpt, a null `exit_code` and `repo`, `not-confirmed`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2 and `needs-input` events rendering unchanged beside it.
+- `tests/chief_ops/test_chief_ci_failed.py`: a synthetic `ci-failed` event through the real `inbox` (the head line with the 7-character sha, the detail line, the excerpt, missing fields reading `-`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2, `job-failed` and `needs-input` events rendering unchanged beside it.
 - `tests/chief_ops/test_chief_cap_raised.py`: a synthetic `cap-raised` event through the real `inbox` (the one-line render, a non-integer bound reading `-`), the event counted as pending by file name, claimed and acked like any kind, and worker lines rendering unchanged beside it.
 - `tests/chief_ops/test_proposals.py`: the `chief_weekly_proposals` switch (off, missing and unreadable write nothing), screening (at most four candidates, public repos only, open-issue and in-batch duplicates), one `proposals` event per week through the real `inbox` (head and candidate lines), claimed and acked like any kind, and the answers ledger: a declined idea is not published again without new evidence.
