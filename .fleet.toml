@@ -144,6 +144,14 @@ module = "skills/_lib/chief/proposals.py"
 type   = "ProposalAnswer"
 derive = "effective_answer"
 
+# A chief plan queue row's status; chief_plan guards each move (a question, a kind) and validate()
+# refuses any value outside the set.
+[[state_machines]]
+name   = "chief-queue-row"
+module = "skills/_lib/chief_plan.py"
+type   = "QueueStatus"
+derive = "validate"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"

@@ -120,7 +120,7 @@ def apply_plan(path: Path, plan: List[Dict[str, Any]]) -> Tuple[int, List[str]]:
     def mutate(doc: Dict[str, Any]) -> None:
         for row in doc["queue"]:
             ref = f"{row['repo']}{row['ref']}"
-            if ref in written and row["status"] == "parked":
+            if ref in written and row["status"] == cp.QueueStatus.PARKED:
                 kind, blocker = cp.parse_kind(by_ref[ref]["spec"])
                 row["kind"] = kind
                 if blocker:
@@ -148,7 +148,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         cp.parse_kind(kind)
         overrides[ref.strip()] = kind.strip()
     try:
-        rows = [r for r in cp.load(path)["queue"] if r["status"] == "parked" and not r.get("kind")]
+        rows = [r for r in cp.load(path)["queue"] if r["status"] == cp.QueueStatus.PARKED and not r.get("kind")]
         plan = classify_rows(rows, overrides)
     except (ValueError, RuntimeError) as exc:
         print(f"MIGRATE=unknown reason={exc}")

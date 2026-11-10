@@ -25,6 +25,7 @@ stdlib only.
 from __future__ import annotations
 
 import argparse
+import enum
 import json
 import re
 import sys
@@ -40,7 +41,21 @@ STATE_FILENAME = "chief-plan.json"
 VERSION = 1
 
 LANE_STATUSES = ("building", "gate", "idle", "waiting")
-QUEUE_STATUSES = ("queued", "building", "gate", "merged", "parked", "waiting-roberto")
+
+
+class QueueStatus(enum.StrEnum):
+    """Where a queue row stands. The guards that tie a status to a kind or a question live in
+    `_apply_kind` and `_require_question`; the plan file stores the string."""
+
+    QUEUED = "queued"                    # waiting for a free lane
+    BUILDING = "building"                # a lane is working it
+    GATE = "gate"                        # a lane holds the verification gate
+    MERGED = "merged"                    # shipped; prune_items drops it
+    PARKED = "parked"                    # deliberately not dispatched; needs a kind
+    WAITING_ROBERTO = "waiting-roberto"  # blocked on a plan ask answer
+
+
+QUEUE_STATUSES = tuple(status.value for status in QueueStatus)
 # Why a row is `parked`. Only `owner` rows are Roberto's to act on, and they
 # ride the `needs-owner` label into the Board's "Waiting for start".
 PARKED_KINDS = ("owner", "umbrella", "blocked-by")
@@ -470,7 +485,7 @@ def _apply_kind(row: Dict[str, Any], status: str, kind: Optional[str]) -> None:
     `parked` drops it. An `owner` kind is refused unless the issue already carries
     `needs-owner`, because that label is the Board's only owner list.
     """
-    if status != "parked":
+    if status != QueueStatus.PARKED:
         if kind:
             raise ValueError(f"--kind only applies to a parked item, not {status!r}")
         row.pop("kind", None)
@@ -521,7 +536,7 @@ def _child_refs(doc: Dict[str, Any], parent: str, children: str) -> List[str]:
     return refs
 
 
-def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
+def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = QueueStatus.QUEUED,
              note: Optional[str] = None, at: Optional[int] = None,
              model: Optional[str] = None, kind: Optional[str] = None,
              brief: Optional[str] = None, after: Optional[str] = None,
@@ -533,7 +548,7 @@ def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
     and model. Then `chief_ops.py drain` finds the next item with no judgment of its own.
     """
     repo, local = split_ref(ref)
-    if status == "waiting-roberto":
+    if status == QueueStatus.WAITING_ROBERTO:
         _require_question(doc, ref)
     child_refs = _child_refs(doc, f"{repo}{local}", children) if children is not None else []
     row: Dict[str, Any] = {"repo": repo, "ref": local, "title": title, "status": status}
@@ -548,7 +563,7 @@ def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
         child_repo, child_local = split_ref(child)
         entry: Dict[str, Any] = {
             "repo": child_repo, "ref": child_local, "title": short_text(f"{title}: {child}"),
-            "status": "queued", "note": f"child of {repo}{local}",
+            "status": QueueStatus.QUEUED, "note": f"child of {repo}{local}",
         }
         _set_model(entry, model)
         _set_dispatch_fields(entry, brief, f"no-lane:{child_repo}")
@@ -567,9 +582,9 @@ def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
     if all(value is None for value in (status, note, title, model, kind, brief, after)):
         raise ValueError("nothing to set: pass --status, --note, --title, --model, --kind, --brief or --after")
     row = doc["queue"][_index(doc, ref)]
-    if status == "waiting-roberto":
+    if status == QueueStatus.WAITING_ROBERTO:
         _require_question(doc, ref)
-    if status == "parked" or kind or (status is not None and row["status"] == "parked"):
+    if status == QueueStatus.PARKED or kind or (status is not None and row["status"] == QueueStatus.PARKED):
         _apply_kind(row, status or row["status"], kind)
     _set_model(row, model)
     _set_dispatch_fields(row, brief, after)
@@ -600,7 +615,7 @@ def remove_item(doc: Dict[str, Any], ref: str) -> None:
     doc["queue"].pop(_index(doc, ref))
 
 
-def prune_items(doc: Dict[str, Any], statuses: Sequence[str] = ("merged",)) -> int:
+def prune_items(doc: Dict[str, Any], statuses: Sequence[str] = (QueueStatus.MERGED,)) -> int:
     """Drop every queue row whose status is in `statuses`; returns how many went.
 
     Lanes and waiting items are never touched: a lane's `item` is only a `#N`
@@ -615,7 +630,7 @@ def prune_items(doc: Dict[str, Any], statuses: Sequence[str] = ("merged",)) -> i
     return pruned
 
 
-def prune_plan_file(path: Path, statuses: Sequence[str] = ("merged",)) -> int:
+def prune_plan_file(path: Path, statuses: Sequence[str] = (QueueStatus.MERGED,)) -> int:
     """`prune_items` through the locked read-modify-write; the in-process entry for the app.
 
     Returns the number of rows removed. A plan this writer cannot parse raises
@@ -764,7 +779,7 @@ def _run(args: argparse.Namespace) -> int:
         print(render(load(path)))
         return 0
     if action == "prune":
-        pruned = prune_plan_file(path, args.status or ("merged",))
+        pruned = prune_plan_file(path, args.status or (QueueStatus.MERGED,))
         print(f"PRUNED={pruned} " + _summary(load(path)))
         return 0
     added: List[str] = []
@@ -814,7 +829,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     add = acts.add_parser("add", help="queue <repo>#<N>")
     add.add_argument("ref")
     add.add_argument("title")
-    add.add_argument("--status", choices=QUEUE_STATUSES, default="queued")
+    add.add_argument("--status", choices=QUEUE_STATUSES, default=QueueStatus.QUEUED.value)
     add.add_argument("--note", default=None)
     add.add_argument("--at", type=int, default=None, help="1-based position (default: end)")
     add.add_argument("--model", default=None, help="|".join(MODELS))
