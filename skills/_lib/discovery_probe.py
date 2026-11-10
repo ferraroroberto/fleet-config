@@ -11,6 +11,7 @@ on loopback, retaining only metadata.
 from __future__ import annotations
 
 import argparse
+import enum
 import gzip
 import hashlib
 import json
@@ -36,6 +37,18 @@ from scheduled.codex_app_server import (
     AppServerSession,
     AppServerTimeout,
 )
+
+
+class ProbeStatus(enum.StrEnum):
+    """What one client's probe established; the string is what the JSON report carries."""
+
+    VERIFIED = "verified"          # the sentinels were seen exactly as expected
+    FAILED = "failed"              # the client ran and the evidence contradicts the expectation
+    UNKNOWN = "unknown"            # the evidence could not be gathered or two reads disagreed
+    MISSING = "missing"            # the client is not installed
+    UNSUPPORTED = "unsupported"    # the installed version cannot discover scoped skills
+    NOT_PROBED = "not-probed"      # a live run was not asked for
+
 
 PROBE_PREFIX = "fleet-probe-748"
 GLOBAL_SKILL = f"{PROBE_PREFIX}-global"
@@ -138,7 +151,7 @@ def _catalog_result(client: str, executable: Optional[str], version: Optional[st
                     catalogs: dict[str, list[dict[str, str]]], errors: list[str],
                     path_evidence: Optional[bool] = True) -> dict[str, Any]:
     if not executable:
-        return {"client": client, "status": "missing", "version": None,
+        return {"client": client, "status": ProbeStatus.MISSING, "version": None,
                 "scopes": {}, "errors": [f"{client} executable not found"]}
     observed = {scope: [item["name"] for item in catalogs.get(scope, [])] for scope in SCOPES}
     if path_evidence is True:
@@ -153,7 +166,7 @@ def _catalog_result(client: str, executable: Optional[str], version: Optional[st
     )
     return {
         "client": client,
-        "status": "verified" if verified else "failed",
+        "status": ProbeStatus.VERIFIED if verified else ProbeStatus.FAILED,
         "version": version,
         "scopes": observed,
         "paths_resolve_to_synthetic_sources": (
@@ -282,14 +295,14 @@ def _pi(paths: dict[str, Path]) -> dict[str, Any]:
     version = _version(pi_executable)
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if not npm:
-        return {"client": "pi", "status": "missing", "version": version,
+        return {"client": "pi", "status": ProbeStatus.MISSING, "version": version,
                 "scopes": {}, "errors": ["npm executable not found"]}
     npm_root = _run([npm, "root", "-g"], paths["root"], timeout=10)
     module = Path(npm_root.stdout.strip()) / "@earendil-works/pi-coding-agent/dist/core"
     loader = module / "resource-loader.js"
     settings = module / "settings-manager.js"
     if not loader.is_file() or not settings.is_file():
-        return {"client": "pi", "status": "unsupported", "version": version,
+        return {"client": "pi", "status": ProbeStatus.UNSUPPORTED, "version": version,
                 "scopes": {}, "errors": ["installed DefaultResourceLoader modules not found"]}
     script = paths["home"] / "pi_probe.mjs"
     runtime_files.save_text(script,
@@ -357,7 +370,7 @@ def _grok_inventory(paths: dict[str, Path]) -> dict[str, Any]:
         "sibling": [GLOBAL_SKILL],
     }
     if not errors and report["scopes"] == grok_current_scope_only:
-        report["status"] = "unsupported"
+        report["status"] = ProbeStatus.UNSUPPORTED
         report["unsupported_capability"] = (
             "Grok 0.2.118 inspect discovers global plus current-scope skills, "
             "but does not inherit project skills from ancestor scopes"
@@ -368,11 +381,11 @@ def _grok_inventory(paths: dict[str, Path]) -> dict[str, Any]:
 def _grok(paths: dict[str, Path]) -> dict[str, Any]:
     """Distinguish observed capability from inconsistent native scope discovery."""
     first = _grok_inventory(paths)
-    if first["status"] in {"missing", "failed"}:
+    if first["status"] in {ProbeStatus.MISSING, ProbeStatus.FAILED}:
         return first
     second = _grok_inventory(paths)
     if first.get("scopes") != second.get("scopes") or first["status"] != second["status"]:
-        return {"client": "grok", "version": first.get("version"), "status": "unknown",
+        return {"client": "grok", "version": first.get("version"), "status": ProbeStatus.UNKNOWN,
                 "reason": "native ancestor-scope inventory changed between two fresh invocations",
                 "observations": [first, second]}
     first["repeated_native_inventory"] = "same result in two fresh invocations"
@@ -382,14 +395,14 @@ def _grok(paths: dict[str, Path]) -> dict[str, Any]:
 def _codex_instructions(paths: dict[str, Path]) -> dict[str, Any]:
     executable = shutil.which("codex.exe") or shutil.which("codex")
     if not executable:
-        return {"client": "codex", "status": "missing"}
+        return {"client": "codex", "status": ProbeStatus.MISSING}
     env = os.environ.copy()
     env["CODEX_HOME"] = str(paths["home"] / ".agents")
     result = _run([executable, "debug", "prompt-input", "PROBE_748"], paths["package"], env=env)
     text = result.stdout
     start = text.find("[")
     if result.returncode or start < 0:
-        return {"client": "codex", "status": "failed",
+        return {"client": "codex", "status": ProbeStatus.FAILED,
                 "reason": result.stderr.strip() or "prompt-input JSON absent"}
     try:
         payload = json.loads(text[start:])
@@ -398,7 +411,7 @@ def _codex_instructions(paths: dict[str, Path]) -> dict[str, Any]:
             if isinstance(part, dict)
         )
     except (json.JSONDecodeError, TypeError) as exc:
-        return {"client": "codex", "status": "failed", "reason": str(exc)}
+        return {"client": "codex", "status": ProbeStatus.FAILED, "reason": str(exc)}
     global_path = paths["home"] / ".agents" / "AGENTS.md"
     assembly_verified = all(marker in visible for marker in (
         "CODEX_GLOBAL_EOF_748",
@@ -407,7 +420,7 @@ def _codex_instructions(paths: dict[str, Path]) -> dict[str, Any]:
     ))
     return {
         "client": "codex",
-        "status": "unknown" if assembly_verified else "failed",
+        "status": ProbeStatus.UNKNOWN if assembly_verified else ProbeStatus.FAILED,
         "mode": "native debug prompt-input; no model turn",
         "global": {"bytes": global_path.stat().st_size,
                    "eof_loaded": "CODEX_GLOBAL_EOF_748" in visible},
@@ -425,7 +438,7 @@ def _codex_model_instructions(paths: dict[str, Path], model: str) -> dict[str, A
     """Use an explicitly requested Codex model turn to follow synthetic pointers."""
     executable = shutil.which("codex.exe") or shutil.which("codex")
     if not executable:
-        return {"client": "codex-model", "status": "missing"}
+        return {"client": "codex-model", "status": ProbeStatus.MISSING}
     root_target = (paths["root"] / "CLAUDE.md").resolve()
     nested_target = (paths["package"] / "CLAUDE.md").resolve()
     root_marker, nested_marker = "CLAUDE_ROOT_EOF_748", "CLAUDE_NESTED_EOF_748"
@@ -452,7 +465,7 @@ the comma-separated EOF marker values from the two files, in root then nested or
         )
     except subprocess.TimeoutExpired:
         return {
-            "client": "codex-model", "status": "unknown", "model": model,
+            "client": "codex-model", "status": ProbeStatus.UNKNOWN, "model": model,
             "reason": "Codex model probe timed out after 150 seconds",
         }
     records: list[dict[str, Any]] = []
@@ -460,7 +473,7 @@ the comma-separated EOF marker values from the two files, in root then nested or
         records = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     except json.JSONDecodeError as exc:
         return {
-            "client": "codex-model", "status": "unknown", "model": model,
+            "client": "codex-model", "status": ProbeStatus.UNKNOWN, "model": model,
             "reason": f"Codex JSONL could not be parsed: {exc}",
         }
     completed_commands = [
@@ -490,16 +503,16 @@ the comma-separated EOF marker values from the two files, in root then nested or
     markers_verified = (bool(agent_messages) and agent_messages[-1] == expected
                         and all(marker in output for marker in expected.split(",")))
     if result.returncode:
-        status = "unknown"
+        status = ProbeStatus.UNKNOWN
         reason = f"Codex exited {result.returncode}: {result.stderr.strip() or 'no stderr'}"
     elif not scope_verified:
-        status = "unknown"
+        status = ProbeStatus.UNKNOWN
         reason = "exactly one completed command reading both synthetic targets was not confirmed"
     elif not markers_verified:
-        status = "failed"
+        status = ProbeStatus.FAILED
         reason = "model response did not exactly match both target EOF markers"
     else:
-        status = "verified"
+        status = ProbeStatus.VERIFIED
         reason = None
     report: dict[str, Any] = {
         "client": "codex-model",
@@ -572,10 +585,10 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
     """Compare Claude's real request assembly locally; never call a model."""
     executable = shutil.which("claude.exe") or shutil.which("claude")
     if not executable:
-        return {"client": "claude", "status": "missing"}
+        return {"client": "claude", "status": ProbeStatus.MISSING}
     global_path = Path.home() / ".claude" / "CLAUDE.md"
     if not global_path.is_file():
-        return {"client": "claude", "status": "unknown",
+        return {"client": "claude", "status": ProbeStatus.UNKNOWN,
                 "reason": f"global instruction file missing: {global_path}"}
     captured: list[bytes] = []
 
@@ -596,7 +609,7 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
         server.server_close()
         thread.join(timeout=5)
     if not captured:
-        return {"client": "claude", "status": "failed",
+        return {"client": "claude", "status": ProbeStatus.FAILED,
                 "reason": result.stderr.strip() or "no loopback request captured"}
     try:
         request = json.loads(captured[0].decode("utf-8"))
@@ -607,7 +620,7 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
             if isinstance(part, dict)
         ).replace("\r\n", "\n")
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
-        return {"client": "claude", "status": "failed", "reason": str(exc)}
+        return {"client": "claude", "status": ProbeStatus.FAILED, "reason": str(exc)}
     global_bytes = global_path.read_bytes()
     global_text = global_bytes.decode("utf-8-sig").replace("\r\n", "\n").strip()
     global_lines = [line for line in global_text.splitlines() if line.strip()]
@@ -627,7 +640,7 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
     verified = global_eof and not missing and root_full and nested_full
     return {
         "client": "claude",
-        "status": "verified" if verified else "failed",
+        "status": ProbeStatus.VERIFIED if verified else ProbeStatus.FAILED,
         "mode": "dummy key; loopback request capture; no model endpoint or retained request",
         "request_bytes": len(captured[0]),
         "global": {
@@ -674,7 +687,7 @@ def probe(instruction_proof: bool = False,
         skills = [_claude(paths), _codex(paths), _pi(paths), _grok(paths)]
         instructions = [_codex_instructions(paths)]
         instructions.append(_claude_instructions(paths) if instruction_proof else {
-            "client": "claude", "status": "not-probed",
+            "client": "claude", "status": ProbeStatus.NOT_PROBED,
             "reason": "opt in with --instruction-proof for local-only request assembly",
         })
         if codex_model:
@@ -702,7 +715,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.codex_model_proof and not args.instruction_proof:
         parser.error("--codex-model-proof requires --instruction-proof")
     if not args.run:
-        print(json.dumps({"status": "not-probed", "reason": "opt in with --run"}, indent=2))
+        print(json.dumps({"status": ProbeStatus.NOT_PROBED, "reason": "opt in with --run"}, indent=2))
         return 2
     result = probe(
         instruction_proof=args.instruction_proof,
@@ -710,19 +723,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     print(json.dumps(result, indent=2))
     statuses = {row["client"]: row["status"] for row in result["skills"]}
-    if any(status == "failed" for status in statuses.values()):
+    if any(status == ProbeStatus.FAILED for status in statuses.values()):
         return 1
-    if any(statuses.get(client) != "verified" for client in ("claude", "codex")):
+    if any(statuses.get(client) != ProbeStatus.VERIFIED for client in ("claude", "codex")):
         return 2
     if args.instruction_proof:
         by_client = {row["client"]: row for row in result["instructions"]}
-        if by_client["claude"]["status"] != "verified":
+        if by_client["claude"]["status"] != ProbeStatus.VERIFIED:
             return 1
         if args.codex_model_proof:
-            if (by_client["codex"]["status"] == "failed"
-                    or by_client["codex-model"]["status"] != "verified"):
+            if (by_client["codex"]["status"] == ProbeStatus.FAILED
+                    or by_client["codex-model"]["status"] != ProbeStatus.VERIFIED):
                 return 1
-        elif by_client["codex"]["status"] != "verified":
+        elif by_client["codex"]["status"] != ProbeStatus.VERIFIED:
             return 1
     return 0
 

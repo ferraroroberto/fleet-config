@@ -152,6 +152,13 @@ module = "skills/_lib/chief_plan.py"
 type   = "QueueStatus"
 derive = "validate"
 
+# What a native-discovery probe established for one client; failed and unknown evidence never
+# becomes verified (docs/cross-agent-parity.md).
+[[state_machines]]
+name   = "probe-status"
+module = "skills/_lib/discovery_probe.py"
+type   = "ProbeStatus"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"
