@@ -37,6 +37,7 @@ USER_AGENT = "inspiration-scan/1.0 (personal feed reader)"
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _MEDIA = "{http://search.yahoo.com/mrss/}"
+_DC = "{http://purl.org/dc/elements/1.1/}"
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 
@@ -50,6 +51,7 @@ class Item:
     link: str
     text: str
     published: Optional[_dt.datetime]
+    author: str = ""
 
 
 @dataclass
@@ -98,7 +100,8 @@ def _rss_items(root: ET.Element, source: Source) -> List[Item]:
             continue
         items.append(Item(item_id(link), source.kind, source.name, clean_text(_text(entry.find("title"))),
                           link, clean_text(_text(entry.find("description"))),
-                          parse_date(_text(entry.find("pubDate")))))
+                          parse_date(_text(entry.find("pubDate"))),
+                          clean_text(_text(entry.find(f"{_DC}creator")) or _text(entry.find("author")))))
     return items
 
 
@@ -119,7 +122,8 @@ def _atom_items(root: ET.Element, source: Source) -> List[Item]:
                    or _text(entry.find(f"{_MEDIA}group/{_MEDIA}description")))
         published = _text(entry.find(f"{_ATOM}published")) or _text(entry.find(f"{_ATOM}updated"))
         items.append(Item(item_id(link), source.kind, source.name, clean_text(_text(entry.find(f"{_ATOM}title"))),
-                          link, clean_text(summary), parse_date(published)))
+                          link, clean_text(summary), parse_date(published),
+                          clean_text(_text(entry.find(f"{_ATOM}author/{_ATOM}name")))))
     return items
 
 

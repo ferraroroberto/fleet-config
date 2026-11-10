@@ -18,9 +18,13 @@ New items go to the local hub's `POST /v1/messages` in batches of 20 (`score.py`
 
 One self-contained HTML file: inline CSS with light and dark tokens, no scripts. A header chip per source type shows how many sources were read and why the rest were not; X skipped for no login shows as "skipped: not logged in" with a note that it is not a quiet day. With no usable source list the digest is a single card, "Source list not filled in yet", naming the file to fill in. Then come ranked cards: source, linked title, score, why it fits, what to try and a monospace `/issue-add …` line. A footer counts the items left out as already seen. It is sent with `send_file.py` in a launcher session, and otherwise uploaded to the owner's private bot chat with `hooks/notify_send.py --category log --file`.
 
+## Ideas for the Board
+
+Each run writes the kept ideas to `ideas.json` with full attribution and a ready `/issue-add` prompt, and `scan.py ideas apply|filter` records what became of each one in an append-only ledger the next run honours. The file, the ledger, the writer and the Board's message are in [inspiration-ideas.md](../inspiration-ideas.md); the chief's filing steps are `.claude/skills/chief/ideas.md`.
+
 ## Private data
 
-The source list, `seen.json`, the Chrome profile and every digest live in the machine-local state root, `~/.claude/inspiration-scan/` (override with `INSPIRATION_SCAN_ROOT`). The repo holds only `sources.example.toml`, with placeholder names. Nothing from a digest goes to GitHub, and the manifest names source types and counts only.
+The source list, `seen.json`, `ideas.json`, the ideas ledger, the Chrome profile and every digest live in the machine-local state root, `~/.claude/inspiration-scan/` (override with `INSPIRATION_SCAN_ROOT`). The repo holds only `sources.example.toml`, with placeholder names. Nothing from a digest goes to GitHub, and the manifest names source types and counts only.
 
 ## Owner setup
 

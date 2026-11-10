@@ -14,7 +14,7 @@ description: Daily digest of ideas from the newsletters, YouTube channels and X 
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
-- **Private data stays local.** The source list, the seen ledger and every digest live in the machine-local state root (`~/.claude/inspiration-scan/`, or `INSPIRATION_SCAN_ROOT`). Never post a source name, an item or a digest to GitHub. The manifest names source types and counts only.
+- **Private data stays local.** The source list, the seen ledger, `ideas.json`, the ideas ledger and every digest live in the machine-local state root (`~/.claude/inspiration-scan/`, or `INSPIRATION_SCAN_ROOT`). Never post a source name, an item or a digest to GitHub. The manifest names source types and counts only.
 - **Read-only on every source.** Feeds are plain GETs. X is read through the dedicated Chrome profile by `x_reader.py`, which only opens profile pages: it never posts, likes, follows or clicks.
 - **At most one pass a day.** A second run on the same day re-reads the sources, so never loop or retry a run to fill a quiet digest.
 - **Run everything in the foreground** and wait for it in this turn. A scheduled run has no wake-up.
@@ -33,6 +33,7 @@ This can take up to about twenty minutes when the X profile is held by another C
 - `SOURCES=<type>|total=|ok=|not-read=|unknown=|login-needed=|items=`: one line per source type. `login-needed` counts X sources skipped because the X profile is not logged in.
 - `COUNTS=new=|seen_before=|scored=|unscored=|deferred=|kept=`.
 - `SCORING_ERROR=<batch>: <error>`: a batch the hub did not score. Its items are listed as unscored and come back tomorrow.
+- `IDEAS=<n>`: ideas now in `ideas.json` (today's kept ones plus earlier undecided ones), for the Board.
 - `DIGEST=<path>`: the HTML digest.
 - `SOURCES_FILE=created|unfilled|invalid`, when the source list is missing, still the untouched example, or unparseable.
 - `STATUS=ok|degraded|no-sources|bad-config`.
@@ -58,6 +59,10 @@ On `REFUSED=`, relay the reason and still try the Telegram upload. Either helper
 ### 3. Report
 
 Print a few lines: the `STATUS=`, ideas kept, sources not read and why (X skipped for no login is reported as that, never as quiet), scoring errors, and which channel delivered the digest (or that none did). No item titles or source names.
+
+## Ideas on the Board
+
+Each run also writes `ideas.json` and drops any idea the chief has recorded in `ideas-ledger.jsonl`. The run never writes the ledger: only `scan.py ideas apply|filter` does, and only the chief calls it ([docs/inspiration-ideas.md](E:/automation/fleet-config/docs/inspiration-ideas.md)).
 
 ## Owner setup
 
