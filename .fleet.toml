@@ -128,6 +128,14 @@ module = "skills/_lib/acceptance_audit.py"
 type   = "AuditState"
 derive = "audit_state"
 
+# The verdict of `chief_ops say --verify`: the exchange marker, the endpoint's reason and the target's
+# output age ordered into one DeliveryState by finalize_delivery().
+[[state_machines]]
+name   = "steer-delivery"
+module = "skills/_lib/chief/steer_delivery.py"
+type   = "DeliveryState"
+derive = "finalize_delivery"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"

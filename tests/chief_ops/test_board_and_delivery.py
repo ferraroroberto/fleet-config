@@ -554,4 +554,30 @@ rc, calls = _run_say_verify(
 check(rc == 1, "cmd_say --verify: exchange present but never advances -> failure")
 check(calls["input"] == 1, "cmd_say --verify still posts exactly once even on a stranded result")
 
+
+
+# state-machine-proof: steer-delivery
+# Illegal transitions are refused: an endpoint-reported negative is never delivered whatever the
+# exchange did, an unreadable exchange never reads as delivered, and the set of states is closed.
+def test_delivery_refuses_illegal_transitions() -> None:
+    for reason in sorted(sd.INPUT_NEGATIVE_REASONS):
+        got = sd.finalize_delivery(sd.DeliveryState.DELIVERED, "working", post_reason=reason)
+        check(got is sd.DeliveryState.STRANDED, f"post reason {reason} is stranded even over a moved exchange, got {got}")
+    for marker_state in sd.DeliveryState:
+        got = sd.finalize_delivery(marker_state, "needs-you", marker_available=False,
+                                   last_output_age=600.0)
+        check((got is sd.DeliveryState.DELIVERED) == (marker_state is sd.DeliveryState.DELIVERED),
+              f"an unreadable exchange adds no delivery evidence of its own (marker {marker_state}, got {got})")
+    check(sd.classify_exchange_marker(False, _after, _send_time) is sd.DeliveryState.PENDING,
+          "an unavailable exchange is pending, never delivered")
+    try:
+        sd.DeliveryState("shipped")
+        closed = False
+    except ValueError:
+        closed = True
+    check(closed, "DeliveryState is closed: an unknown value is refused")
+
+
+test_delivery_refuses_illegal_transitions()
+
 _h.report_and_exit("test_board_and_delivery")
