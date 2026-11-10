@@ -52,7 +52,7 @@ Every rule the vendored script knows, and whether this repo turns it on.
 | `no-drive-path` | on | nothing hardcodes a drive letter; a machine default that a flag or config overrides carries an exempt marker |
 | `git-wrapper` | on | `run_git` exists in both tiers (`hooks/_lib.py`, `skills/_lib/git_run.py`) and owns `GIT_OPTIONAL_LOCKS=0` |
 | `subprocess-timeout` | on | a blocking `subprocess.run`/`call`/`check_*` with no `timeout=` hangs an unattended run; a foreground runner whose length is the caller's carries `# subprocess-timeout-exempt: <why>` |
-| `state-literal` | on | a lifecycle string compared or stored as a state (`status == "running"`) outside a declared machine is an implicit-state-machine suspect; the baseline holds today's suspects for the burn-down |
+| `state-literal` | on | a lifecycle string compared or stored as a state (`status == "running"`) outside a declared machine is an implicit-state-machine suspect; the baseline is empty and the declared machines are in [state-machines.md](state-machines.md) |
 | `state-set-repeat` | on | one set of lifecycle states spelled in more than one module lets two readers disagree about which states count |
 | `state-write` | on | a lifecycle flag written from more than one module has no single owner |
 | `secret-compare` | off | the repo has no constant-time compare helper to route compares through |
