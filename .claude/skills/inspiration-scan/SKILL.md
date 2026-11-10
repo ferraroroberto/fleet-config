@@ -30,13 +30,14 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/inspiration-s
 
 This can take up to about twenty minutes when the X profile is held by another Chrome, because the reader waits with backoff instead of killing the holder. Capture every manifest line:
 
-- `SOURCES=<type>|total=|ok=|not-read=|unknown=|items=`: one line per source type.
+- `SOURCES=<type>|total=|ok=|not-read=|unknown=|login-needed=|items=`: one line per source type. `login-needed` counts X sources skipped because the X profile is not logged in.
 - `COUNTS=new=|seen_before=|scored=|unscored=|deferred=|kept=`.
 - `SCORING_ERROR=<batch>: <error>`: a batch the hub did not score. Its items are listed as unscored and come back tomorrow.
 - `DIGEST=<path>`: the HTML digest.
+- `SOURCES_FILE=created|unfilled|invalid`, when the source list is missing, still the untouched example, or unparseable.
 - `STATUS=ok|degraded|no-sources|bad-config`.
 
-`STATUS=no-sources` (exit 2) means the source list does not exist yet; `bad-config` (exit 3) means it does not parse. Report the line `scan.py` printed and stop: there is nothing to deliver.
+`STATUS=no-sources` (exit 2) means the source list was missing (`run` created it from the example) or is still the untouched example. It still writes a `DIGEST=` that says what to fill in and where, so deliver that digest in step 2. `bad-config` (exit 3) means the list does not parse: report the line `scan.py` printed and stop, there is no digest.
 
 ### 2. Deliver the digest
 
@@ -56,10 +57,10 @@ On `REFUSED=`, relay the reason and still try the Telegram upload. Either helper
 
 ### 3. Report
 
-Print a few lines: the `STATUS=`, ideas kept, sources not read and why, scoring errors, and which channel delivered the digest (or that none did). No item titles or source names.
+Print a few lines: the `STATUS=`, ideas kept, sources not read and why (X skipped for no login is reported as that, never as quiet), scoring errors, and which channel delivered the digest (or that none did). No item titles or source names.
 
 ## Owner setup
 
-- `scan.py init` creates the source list from `sources.example.toml`; fill in your own sources.
-- `scan.py login-x` opens the dedicated X profile headed: log in once, then close the window.
+- `scan.py run` creates the source list from `sources.example.toml` when it is missing (`scan.py init` does the same on its own); fill in your own sources.
+- `scan.py login-x` opens the dedicated X profile headed: log in once, then close the window. Until then the digest reports X as skipped for no login.
 - The app-launcher Job runs `.claude/skills/inspiration-scan/run-weekly.bat` daily at 03:00; the entry shape is in [docs/skills/inspiration-scan.md](E:/automation/fleet-config/docs/skills/inspiration-scan.md).

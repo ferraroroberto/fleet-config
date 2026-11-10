@@ -207,6 +207,19 @@ _spawned = subprocess.run([sys.executable, "-I", str(scan.SKILL_DIR / "x_reader.
                           cwd=tempfile.gettempdir(), env=_bare_env, creationflags=scan.NO_WINDOW)
 check("ModuleNotFoundError" not in _spawned.stderr and _spawned.stdout.strip().startswith("{"),
       "x_reader: spawned under an interpreter without fleet_core on its path, it starts and answers in JSON")
+walled = scan._x_results(handles, {"sources": [
+    {"handle": "a", "status": "not-read", "reason": "logged-out", "items": []},
+    {"handle": "b", "status": "not-read", "reason": "logged-out", "items": []}]})
+check([r.status for r in walled] == ["login-needed", "login-needed"],
+      "scan: a logged-out X profile is its own login-needed state, not not-read")
+challenged = scan._x_results(handles[:1], {"sources": [
+    {"handle": "a", "status": "not-read", "reason": "challenge", "items": []}]})
+check(challenged[0].status == "not-read", "scan: a challenge page stays not-read")
+check("login-needed=2" in scan._manifest(walled)[0] and "ok=0" in scan._manifest(walled)[0],
+      "scan: the manifest counts login-needed sources apart from not-read")
+walled_page = render.render("2026-11-07", walled, [], [], 0, [])
+check("skipped: not logged in (2 of 2)" in walled_page and "not a quiet day on X" in walled_page,
+      "render: a skipped X is named as skipped for no login, not reported as an empty source")
 mapped = scan._x_results(handles, {"sources": [
     {"handle": "a", "status": "ok", "items": [{"link": "https://x.com/a/status/9", "text": "hi",
                                                 "published": "2026-11-06T09:00:00+00:00"}]}]})
@@ -245,8 +258,19 @@ try:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         code = scan.cmd_run(NOW.date())
+    first_digest = tmp / "digests" / f"{NOW.date().isoformat()}.html"
     check(code == scan.EXIT_NO_SOURCES and "STATUS=no-sources" in out.getvalue(),
           "cmd_run: a missing source list is its own exit and status, not an empty digest")
+    check((tmp / "sources.toml").is_file() and "SOURCES_FILE=created" in out.getvalue(),
+          "cmd_run: a missing source list is created from the example, with no init step")
+    check(first_digest.is_file() and "Source list not filled in yet" in first_digest.read_text(encoding="utf-8")
+          and str(tmp / "sources.toml") in first_digest.read_text(encoding="utf-8").replace("&#x27;", "'"),
+          "cmd_run: the digest says the list is not filled in and names the file")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        again = scan.cmd_run(NOW.date())
+    check(again == scan.EXIT_NO_SOURCES and "SOURCES_FILE=unfilled" in out.getvalue(),
+          "cmd_run: the untouched example is still unfilled, so its placeholder feeds are never read")
 
     (tmp / "sources.toml").write_text(
         '[[newsletter]]\nname = "Private Letter Name"\nfeed = "https://letter.example/feed"\n'

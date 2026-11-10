@@ -25,6 +25,8 @@ from sources import Source
 STATUS_OK = "ok"
 STATUS_NOT_READ = "not-read"
 STATUS_UNKNOWN = "unknown"
+# X was skipped because the dedicated Chrome profile is not logged in: the owner's step, not a quiet day.
+STATUS_LOGIN_NEEDED = "login-needed"
 
 # A feed answers in well under a second; twenty covers a slow host without
 # letting one dead source stall the whole run.

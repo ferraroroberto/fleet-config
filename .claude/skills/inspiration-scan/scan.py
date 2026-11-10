@@ -3,7 +3,8 @@
   run       read every configured source, drop items seen on earlier days,
             score the rest through the hub, write the HTML digest and print a
             manifest (DIGEST=, per-type SOURCES= lines, counts, STATUS=).
-  init      copy sources.example.toml into the state root if no list exists.
+  init      copy sources.example.toml into the state root if no list exists
+            (`run` does the same when the list is missing).
   login-x   open the dedicated X Chrome profile headed so the owner logs in once.
 
 Everything it writes (the source list, `seen.json`, `digests/`) lives in the
@@ -33,6 +34,7 @@ import feeds  # noqa: E402
 import render  # noqa: E402
 import score  # noqa: E402
 import sources  # noqa: E402
+import x_reader  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -70,8 +72,10 @@ def _x_results(x_sources: List[sources.Source], reply: Dict[str, object]) -> Lis
         items = [feeds.Item(feeds.item_id(p["link"]), sources.KIND_X, src.name, feeds.clean_text(p["text"])[:120],
                             p["link"], feeds.clean_text(p["text"]),
                             feeds.parse_date(p.get("published"))) for p in row.get("items", [])]
-        results.append(feeds.SourceResult(src, str(row.get("status", feeds.STATUS_UNKNOWN)),
-                                          str(row.get("reason", "")), items))
+        status, reason = str(row.get("status", feeds.STATUS_UNKNOWN)), str(row.get("reason", ""))
+        if reason == x_reader.REASON_LOGGED_OUT:
+            status = feeds.STATUS_LOGIN_NEEDED
+        results.append(feeds.SourceResult(src, status, reason, items))
     return results
 
 
@@ -150,19 +154,47 @@ def _manifest(results: List[feeds.SourceResult]) -> List[str]:
         mine = [r for r in results if r.source.kind == kind]
         if mine:
             states = {s: sum(1 for r in mine if r.status == s)
-                      for s in (feeds.STATUS_OK, feeds.STATUS_NOT_READ, feeds.STATUS_UNKNOWN)}
+                      for s in (feeds.STATUS_OK, feeds.STATUS_NOT_READ, feeds.STATUS_UNKNOWN,
+                                feeds.STATUS_LOGIN_NEEDED)}
             lines.append(f"SOURCES={kind}|total={len(mine)}|ok={states['ok']}|not-read={states['not-read']}"
-                         f"|unknown={states['unknown']}|items={sum(len(r.items) for r in mine)}")
+                         f"|unknown={states['unknown']}|login-needed={states['login-needed']}"
+                         f"|items={sum(len(r.items) for r in mine)}")
     return lines
 
 
+def _example_text() -> str:
+    return (SKILL_DIR / "sources.example.toml").read_text(encoding="utf-8")
+
+
+def write_example_sources() -> None:
+    target = sources.sources_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, _example_text())
+
+
+def _unfilled_sources_result(today: _dt.date, created: bool) -> int:
+    """No usable source list: say what to fill in via a digest, so a scheduled run still delivers something."""
+    target = sources.sources_path()
+    digest_dir = sources.state_root() / "digests"
+    digest_dir.mkdir(parents=True, exist_ok=True)
+    digest = digest_dir / f"{today.isoformat()}.html"
+    atomic_write_text(digest, render.render_unfilled(today.isoformat(), str(target)))
+    print(f"SOURCES_FILE={'created' if created else 'unfilled'} (the source list is not filled in yet); fill it in")
+    print(f"DIGEST={digest}")
+    print("STATUS=no-sources")
+    return EXIT_NO_SOURCES
+
+
 def cmd_run(today: _dt.date) -> int:
+    target = sources.sources_path()
+    if not target.exists():
+        write_example_sources()
+        return _unfilled_sources_result(today, created=True)
+    # The untouched example holds placeholder feeds; reading them would only produce errors.
+    if target.read_text(encoding="utf-8") == _example_text():
+        return _unfilled_sources_result(today, created=False)
     try:
         config = sources.load_config()
-    except FileNotFoundError:
-        print(f"SOURCES_FILE=missing ({sources.sources_path()}); run `scan.py init` and fill it in")
-        print("STATUS=no-sources")
-        return EXIT_NO_SOURCES
     except sources.ConfigError as exc:
         print(f"SOURCES_FILE=invalid: {exc}")
         print("STATUS=bad-config")
@@ -206,8 +238,7 @@ def cmd_init() -> int:
     if target.exists():
         print(f"SOURCES_FILE={target} (exists, left unchanged)")
         return 0
-    target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(target, (SKILL_DIR / "sources.example.toml").read_text(encoding="utf-8"))
+    write_example_sources()
     print(f"SOURCES_FILE={target} (created from the example; edit it)")
     return 0
 

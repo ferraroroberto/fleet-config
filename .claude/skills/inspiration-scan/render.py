@@ -13,7 +13,7 @@ import html
 from collections import OrderedDict
 from typing import Dict, List
 
-from feeds import STATUS_OK, SourceResult
+from feeds import STATUS_LOGIN_NEEDED, STATUS_OK, SourceResult
 from score import Scored
 from sources import KIND_NEWSLETTER, KIND_X, KIND_YOUTUBE
 
@@ -60,6 +60,13 @@ def health_chips(results: List[SourceResult]) -> List[Dict[str, str]]:
         if not mine:
             continue
         read = sum(1 for r in mine if r.status == STATUS_OK)
+        if any(r.status == STATUS_LOGIN_NEEDED for r in mine):
+            skipped = sum(1 for r in mine if r.status == STATUS_LOGIN_NEEDED)
+            text = f"{label} skipped: not logged in ({skipped} of {len(mine)})"
+            others = sorted({f"{r.status}: {r.reason}" if r.reason else r.status
+                             for r in mine if r.status not in (STATUS_OK, STATUS_LOGIN_NEEDED)})
+            chips.append({"text": text + (" · " + "; ".join(others) if others else ""), "cls": "warn"})
+            continue
         reasons = sorted({f"{r.status}: {r.reason}" if r.reason else r.status
                           for r in mine if r.status != STATUS_OK})
         text = f"{label} {read}/{len(mine)} read"
@@ -85,12 +92,33 @@ def _card(entry: Scored) -> str:
     return "".join(parts)
 
 
+def _page(body: List[str]) -> str:
+    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<title>Inspiration digest</title><style>{_CSS}</style></head><body><main>"
+            + "".join(body) + "</main></body></html>")
+
+
+def render_unfilled(date: str, sources_file: str) -> str:
+    """The digest for a run with no usable source list: what to fill in, and where."""
+    return _page([f"<h1>Inspiration digest · {_e(date)}</h1>",
+                  '<p class="sub">Source list not filled in yet</p>',
+                  '<article class="card"><p>No sources were read today. Open this file and replace the '
+                  'example newsletters, YouTube channels and X handles with your own:</p>'
+                  f'<div class="issue">{_e(sources_file)}</div>'
+                  '<p class="note">The next run reads them. X also needs a one-time login '
+                  '(<code>scan.py login-x</code>).</p></article>'])
+
+
 def render(date: str, results: List[SourceResult], top: List[Scored], unscored: List[Scored],
            dropped_seen: int, scoring_errors: List[str]) -> str:
     chips = "".join(f'<li class="chip {c["cls"]}">{_e(c["text"])}</li>' for c in health_chips(results))
     body = [f"<h1>Inspiration digest · {_e(date)}</h1>",
             f'<p class="sub">{len(top)} ideas from {sum(len(r.items) for r in results)} items read</p>',
             f'<ul class="chips">{chips}</ul>']
+    if any(r.status == STATUS_LOGIN_NEEDED for r in results):
+        body.append('<p class="note">X was skipped because its Chrome profile is not logged in. '
+                    'This is not a quiet day on X. Log in once with <code>scan.py login-x</code>.</p>')
     if scoring_errors:
         body.append(f'<p class="note">Scoring not confirmed for {len(unscored)} item(s): '
                     f'{_e("; ".join(scoring_errors))}. They are listed below and come back tomorrow.</p>')
@@ -101,7 +129,4 @@ def render(date: str, results: List[SourceResult], top: List[Scored], unscored: 
         body.append("<h2>Unscored</h2>")
         body.extend(_card(entry) for entry in unscored)
     body.append(f"<footer>{dropped_seen} item(s) already seen on earlier days were left out.</footer>")
-    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            f"<title>Inspiration digest</title><style>{_CSS}</style></head><body><main>"
-            + "".join(body) + "</main></body></html>")
+    return _page(body)
