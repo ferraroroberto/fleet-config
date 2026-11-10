@@ -26,6 +26,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# The Playwright Python this runs under has neither this folder nor fleet-config's
+# shared package on its path, and `x_session` imports `fleet_core`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import x_session  # noqa: E402
 
