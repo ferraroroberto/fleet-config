@@ -6,7 +6,6 @@
     {"key": ".claude/workflows/cleanup-fleet-all.js", "counts": {"state-literal": 2}},
     {"key": "hooks/backup/cli.py", "counts": {"state-literal": 4}},
     {"key": "skills/_lib/chief/drain.py", "counts": {"state-literal": 1}},
-    {"key": "skills/_lib/chief/proposals.py", "counts": {"state-literal": 1}},
     {"key": "skills/_lib/chief_plan.py", "counts": {"state-literal": 1}},
     {"key": "skills/_lib/discovery_probe.py", "counts": {"state-literal": 8}},
     {"key": "skills/_lib/scheduled/runner_adapters.py", "counts": {"state-literal": 8}}

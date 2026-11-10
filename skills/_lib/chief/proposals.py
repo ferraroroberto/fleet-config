@@ -23,6 +23,7 @@ Subcommands: `context`, `publish`, `answer`, `show`.
 from __future__ import annotations
 
 import argparse
+import enum
 import json
 import re
 import subprocess
@@ -39,6 +40,15 @@ from fleet_core.hooks_state import state_dir
 
 from . import launcher, mailbox
 from .heal import load_ledger, update_ledger
+
+
+class ProposalAnswer(enum.StrEnum):
+    """Where a proposed idea stands; the stored `answer` is the first two or `pending`, the rest is derived."""
+
+    PENDING = "pending"        # proposed, inside the answer window
+    ACCEPTED = "accepted"      # the owner filed it
+    DECLINED = "declined"      # the owner said no
+    UNANSWERED = "unanswered"  # never answered past the window, or the proposal time is unreadable
 
 LEDGER_FILENAME = "chief-proposals-ledger.json"
 SWITCH_KEY = "chief_weekly_proposals"
@@ -131,16 +141,16 @@ def candidate_problem(cand: Any, public_repos: Iterable[str]) -> Optional[str]:
     return None
 
 
-def effective_answer(entry: Dict[str, Any], now: datetime) -> str:
-    """`accepted`, `declined`, `pending` or `unanswered` (never answered past the window)."""
+def effective_answer(entry: Dict[str, Any], now: datetime) -> ProposalAnswer:
+    """The one place a ledger row becomes a `ProposalAnswer` (`unanswered`: never answered past the window)."""
     answer = entry.get("answer")
-    if answer in ("accepted", "declined"):
-        return answer
+    if answer in (ProposalAnswer.ACCEPTED, ProposalAnswer.DECLINED):
+        return ProposalAnswer(answer)
     try:
         stamp = datetime.fromisoformat(str(entry.get("proposed_at")).replace("Z", "+00:00"))
     except ValueError:
-        return "unanswered"
-    return "unanswered" if now - stamp > UNANSWERED_AFTER else "pending"
+        return ProposalAnswer.UNANSWERED
+    return ProposalAnswer.UNANSWERED if now - stamp > UNANSWERED_AFTER else ProposalAnswer.PENDING
 
 
 def _prior_problem(cand: Dict[str, Any], entries: List[Dict[str, Any]], now: datetime) -> Optional[str]:
@@ -149,11 +159,11 @@ def _prior_problem(cand: Dict[str, Any], entries: List[Dict[str, Any]], now: dat
         if entry.get("repo") != cand["repo"] or not same_idea(entry.get("title", ""), cand["title"]):
             continue
         state = effective_answer(entry, now)
-        if state == "declined":
+        if state is ProposalAnswer.DECLINED:
             if set(cand["evidence"]) - set(entry.get("evidence") or []):
                 continue  # new evidence reopens a declined idea
             return "declined-no-new-evidence"
-        if state in ("accepted", "pending"):
+        if state in (ProposalAnswer.ACCEPTED, ProposalAnswer.PENDING):
             return f"already-{state}"
     return None
 
@@ -186,12 +196,12 @@ def accept_rates(entries: List[Dict[str, Any]], now: datetime) -> Dict[str, Dict
     rates: Dict[str, Dict[str, List[int]]] = {"type": {}, "repo": {}}
     for entry in entries:
         state = effective_answer(entry, now)
-        if state not in ("accepted", "declined"):
+        if state not in (ProposalAnswer.ACCEPTED, ProposalAnswer.DECLINED):
             continue
         for axis in ("type", "repo"):
             cell = rates[axis].setdefault(str(entry.get(axis)), [0, 0])
             cell[1] += 1
-            cell[0] += state == "accepted"
+            cell[0] += state is ProposalAnswer.ACCEPTED
     return {axis: {k: (v[0], v[1]) for k, v in cells.items()} for axis, cells in rates.items()}
 
 
@@ -201,7 +211,7 @@ def last_week_line(entries: List[Dict[str, Any]], current_week: str) -> str:
     if not earlier:
         return "Last week: 0 proposed, 0 filed."
     rows = [e for e in entries if e.get("week") == earlier[-1]]
-    return f"Last week: {len(rows)} proposed, {sum(e.get('answer') == 'accepted' for e in rows)} filed."
+    return f"Last week: {len(rows)} proposed, {sum(e.get('answer') == ProposalAnswer.ACCEPTED for e in rows)} filed."
 
 
 def build_event(week: str, kept: List[Dict[str, Any]], now: datetime) -> Dict[str, Any]:
@@ -216,7 +226,8 @@ def build_event(week: str, kept: List[Dict[str, Any]], now: datetime) -> Dict[st
 
 
 def ledger_rows(event: Dict[str, Any]) -> List[Dict[str, Any]]:
-    return [{**c, "week": event["week"], "event_id": event["id"], "proposed_at": event["ts"], "answer": "pending"}
+    return [{**c, "week": event["week"], "event_id": event["id"], "proposed_at": event["ts"],
+             "answer": ProposalAnswer.PENDING}
             for c in event["candidates"]]
 
 
@@ -294,7 +305,7 @@ def cmd_context(args: argparse.Namespace) -> int:
     week = week_id(now)
     print(f"PROPOSALS=on week={week} max={MAX_CANDIDATES} types={','.join(TYPE_LABELS)}")
     print(f"PROPOSALS_LAST_WEEK={last_week_line(entries, week)}")
-    declined = [e for e in entries if effective_answer(e, now) == "declined"][-DECLINED_SHOWN:]
+    declined = [e for e in entries if effective_answer(e, now) is ProposalAnswer.DECLINED][-DECLINED_SHOWN:]
     for entry in declined:
         note = f" note={entry['note']}" if entry.get("note") else ""
         print(f"PROPOSALS_DECLINED={entry['repo']} | {entry['title']} | evidence={','.join(entry.get('evidence') or [])}{note}")
@@ -384,7 +395,7 @@ def cmd_answer(args: argparse.Namespace) -> int:
         if len(matches) != 1:
             return None
         entry = matches[0]
-        entry["answer"] = "accepted" if args.accepted else "declined"
+        entry["answer"] = ProposalAnswer.ACCEPTED if args.accepted else ProposalAnswer.DECLINED
         entry["answered_at"] = _iso_z(_now())
         if args.note:
             entry["note"] = args.note

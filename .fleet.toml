@@ -136,6 +136,14 @@ module = "skills/_lib/chief/steer_delivery.py"
 type   = "DeliveryState"
 derive = "finalize_delivery"
 
+# Where a chief proposal stands: the ledger's stored answer plus the answer window, read through
+# effective_answer() only.
+[[state_machines]]
+name   = "proposal-answer"
+module = "skills/_lib/chief/proposals.py"
+type   = "ProposalAnswer"
+derive = "effective_answer"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"
