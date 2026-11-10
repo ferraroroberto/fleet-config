@@ -142,7 +142,7 @@ report.py: budgets.toml verdict · ledger.jsonl under ~/.claude/hooks/state/perf
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
-    INSPIRATION["inspiration-scan\nscan.py · feeds.py · score.py · render.py\nx_reader.py + x_session.py under app-launcher .venv"]
+    INSPIRATION["inspiration-scan\nscan.py · feeds.py · score.py · render.py · ideas.py\nx_reader.py + x_session.py under app-launcher .venv"]
     FLEET10X["fleet-10x\nfleet10x.py select · brief · rank · footer\nSonnet researcher per repo → Opus synthesis"]
     PROMPTAUDIT["prompt-audit\nrules.md · sources.toml · audit.py → prompt_audit/ package (#931) · delivery_check.py\nfreshness gate → lint + judgment → digest"]
     OTHERFLEET["insights-weekly · learning-log"]
@@ -182,7 +182,7 @@ report.py: budgets.toml verdict · ledger.jsonl under ~/.claude/hooks/state/perf
   HEALTHLEDGER["~/.claude/fleet-health/\nledger + run annexes — never committed"]
   FLEETHEALTH -->|discovers + captures each machine via its own hub| HUB
   FLEETHEALTH -->|appends| HEALTHLEDGER
-  INSPIRATIONSTATE["~/.claude/inspiration-scan/\nsource list · seen.json · Chrome profile · digests — never committed"]
+  INSPIRATIONSTATE["~/.claude/inspiration-scan/\nsource list · seen.json · ideas.json + ideas ledger · Chrome profile · digests — never committed"]
   INSPIRATION -->|scores items| HUB
   INSPIRATION -->|writes| INSPIRATIONSTATE
   SOTALEDGER["sota-watch ledger issue (audit-managed)\n+ ~/.claude/sota-watch/state.json — never committed"]

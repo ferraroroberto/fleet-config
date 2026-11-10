@@ -373,6 +373,10 @@ A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn 
 
 **Read [proposals.md](proposals.md) whenever a batch carries a `kind=proposals` event**: one `plan ask --multi`, record each answer with `chief_ops.py proposals answer`, file the picked ones with `/issue-add`, public-safe text only.
 
+## Ideas from the Board (fleet-config#1971)
+
+**Read [ideas.md](ideas.md) whenever your terminal receives a message starting `Idea from the Board:`**: file it with `/issue-add` (the owner's prompt as grounding, no attachment posted) or drop it, and record either outcome only through `scan.py ideas apply|filter`.
+
 ## Verify before you trust a worker's report
 
 **Never take a worker's self-reported "shipped ✅"/"built ✅" on trust** — a

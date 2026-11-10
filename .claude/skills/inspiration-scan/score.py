@@ -41,7 +41,8 @@ _SYSTEM = (
     "automation repos with coding agents. Score how likely each item gives them an idea worth "
     "trying in their own workflows. Be strict: generic news, promotion and hot takes score low. "
     "Reply with only a JSON array, one object per item, keys: id, score (integer 0-10), "
-    "why_fits (one line), experiment (one line), issue_idea (one line, an issue title they could file)."
+    "why_fits (one line), experiment (one line), issue_idea (one line, an issue title they could file), "
+    "repo (the name of the one fleet repo from the list that should take the idea)."
 )
 
 
@@ -52,6 +53,8 @@ class Scored:
     why_fits: str = ""
     experiment: str = ""
     issue_idea: str = ""
+    suggested_repo: str = ""
+    model: str = ""
 
 
 def fleet_profile(automation_root: Path) -> str:
@@ -64,7 +67,7 @@ def fleet_profile(automation_root: Path) -> str:
         data, _error = fleet_toml.load_checked(repo)
         description = str((data or {}).get("description", "")).strip()
         if description:
-            lines.append(f"- {(data or {}).get('display_name', repo.name)}: {description}")
+            lines.append(f"- {repo.name}: {description}")
     return "\n".join(lines)
 
 
@@ -123,5 +126,6 @@ def score_items(items: List[Item], profile: str, likes: str, model: str,
                 results.append(Scored(item, None))
                 continue
             results.append(Scored(item, int(row["score"]), str(row.get("why_fits", "")),
-                                  str(row.get("experiment", "")), str(row.get("issue_idea", ""))))
+                                  str(row.get("experiment", "")), str(row.get("issue_idea", "")),
+                                  str(row.get("repo", "")).strip(), model))
     return results, errors

@@ -10,7 +10,10 @@ stubbed hub and a temp state root -- no network, no browser:
 - the X launch helper carries the fleet's stealth profile and waits on a held
   profile instead of failing or killing it;
 - the HTML digest escapes feed text and carries no script;
-- the manifest names source types and counts, never a source name.
+- the manifest names source types and counts, never a source name;
+- the ideas file carries full attribution and a `## Source` section, the ledger writer refuses
+  an unknown id and a second outcome each with its own reason, and an id in the ledger is never
+  kept again even after it has aged out of `seen.json`.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/inspiration_scan/test_inspiration_scan.py`
 (also invoked by tests/run_acceptance.py)
@@ -18,6 +21,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/inspiration_scan
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import datetime as _dt
 import io
@@ -38,6 +42,7 @@ from check_harness import CheckHarness  # noqa: E402
 
 sys.path.insert(0, str(SKILL))
 import feeds  # noqa: E402
+import ideas  # noqa: E402
 import render  # noqa: E402
 import scan  # noqa: E402
 import score  # noqa: E402
@@ -249,6 +254,81 @@ check("Newsletters 1/2 read" in page and "not-read: HTTP 404" in page,
 check("/issue-add idea" in page and "2 item(s) already seen" in page,
       "render: each card has its /issue-add line and the footer counts seen items")
 
+# ---- ideas file, ledger and writer ----
+
+author_item = feeds.Item("idea1", "newsletter", "Made-up Letter", "A made-up title", "https://letter.example/p/1",
+                         " ".join(f"w{n}" for n in range(40)), NOW - _dt.timedelta(days=1), "Pat Example")
+author_entry = score.Scored(author_item, 8, "it fits", "try it", "File a made-up idea", "fleet-config", "model-x")
+idea = ideas.build_idea(author_entry, "2026-11-07")
+check(all(k in idea for k in ("id", "title", "link", "source", "author", "published", "excerpt", "digest", "score",
+                              "model", "why_fits", "experiment", "suggested_repo", "prompt"))
+      and idea["source"] == {"name": "Made-up Letter", "kind": "newsletter"} and idea["author"] == "Pat Example",
+      "ideas: an idea carries every contract field, with the source as name and kind")
+check(len(idea["excerpt"].rstrip("…").split()) == ideas.EXCERPT_WORDS and idea["excerpt"].endswith("…"),
+      "ideas: the excerpt is cut to the word cap, never the full text")
+tail = idea["prompt"].split("## Source", 1)[1] if "## Source" in idea["prompt"] else ""
+check(idea["prompt"].startswith("File a made-up idea") and all(
+      want in tail for want in ("Pat Example", "2026-11-06", "https://letter.example/p/1", "Digest: 2026-11-07",
+                                "8/10", "model-x")) and idea["prompt"].rstrip().endswith("scored by model-x"),
+      "ideas: the prompt ends with a Source section naming author, date, link, digest and score/model")
+bare = ideas.build_idea(
+    score.Scored(feeds.Item("idea2", "x", "@made_up", "t", "https://x.example/1", "short", None), 7), "d")
+check("Author: not given" in bare["prompt"] and "Published: not given" in bare["prompt"] and bare["published"] == "",
+      "ideas: a missing author or date is stated as not given, never blank")
+check(feeds.parse_feed(b"<rss><channel><item><title>t</title><link>https://a.example/1</link>"
+                       b"<author>Made Up</author></item></channel></rss>", letter)[0].author == "Made Up"
+      and feeds.parse_feed(ATOM.replace(b"<published>", b"<author><name>Chan Nel</name></author><published>"),
+                           channel)[0].author == "Chan Nel",
+      "feeds: an RSS author or Atom author name reaches the item")
+
+ledger_root = Path(tempfile.mkdtemp(prefix="inspiration-ideas-test-"))
+
+
+def _writer(*argv: str) -> tuple:
+    parser = argparse.ArgumentParser()
+    ideas.add_parser(parser.add_subparsers(dest="command", required=True))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = ideas.run_command(parser.parse_args(["ideas", *argv]), ledger_root)
+    return code, buf.getvalue()
+
+
+try:
+    ideas.write_ideas(ledger_root, [idea, bare], set(), NOW.date())
+    code, said = _writer("apply", "nope", "--issue", "fleet-config#5")
+    check(code == 2 and "IDEAS_REFUSED=nope reason=unknown-id" in said and not ideas.ledger_path(ledger_root).exists(),
+          "writer: an unknown id is refused and writes nothing")
+    code, said = _writer("apply", "idea1", "--issue", "not-a-ref")
+    check(code == 2 and "reason=bad-ref" in said and not ideas.ledger_path(ledger_root).exists(),
+          "writer: an issue ref that is not <repo>#<n> is refused")
+    code, said = _writer("apply", "idea1", "--issue", "fleet-config#5")
+    rows = ideas.read_ledger(ledger_root)
+    check(code == 0 and len(rows) == 1 and rows[0]["state"] == "applied" and rows[0]["issue"] == "fleet-config#5"
+          and rows[0]["at"].endswith("Z") and rows[0]["author"] == "Pat Example" and rows[0]["link"] == idea["link"]
+          and rows[0]["source"] == idea["source"] and rows[0]["score"] == 8 and rows[0]["model"] == "model-x",
+          "writer: apply appends one applied row with the issue and a copy of the attribution")
+    code, said = _writer("filter", "idea1", "--note", "not now")
+    check(code == 2 and "reason=already-applied" in said and len(ideas.read_ledger(ledger_root)) == 1,
+          "writer: a second outcome for the same id is refused as already-applied and writes nothing")
+    code, _said = _writer("filter", "idea2", "--note", "  too vague ")
+    rows = ideas.read_ledger(ledger_root)
+    check(code == 0 and rows[1]["state"] == "filtered" and rows[1]["note"] == "too vague",
+          "writer: filter appends one filtered row with the owner's note")
+    code, said = _writer("apply", "idea2", "--issue", "fleet-config#6")
+    check(code == 2 and "reason=already-filtered" in said, "writer: a filtered id cannot then be applied")
+    # The ledger outlives the ideas file: the refusal reason must still be the true one.
+    ideas.write_ideas(ledger_root, [], {"idea1", "idea2"}, NOW.date())
+    code, said = _writer("filter", "idea1")
+    check(code == 2 and "already-applied" in said, "writer: a decided id stays refused after ideas.json drops it")
+    code, said = _writer("list", "--state", "applied")
+    check(code == 0 and "state=applied" in said and "IDEAS_ENTRIES=1" in said and "filtered" not in said,
+          "writer: list --state applied shows only applied rows")
+    ideas.ledger_path(ledger_root).write_text("not json\n", encoding="utf-8")
+    code, said = _writer("filter", "idea1")
+    check(code == 1 and "IDEAS=unknown" in said, "writer: an unreadable ledger is unknown, never an empty one")
+finally:
+    shutil.rmtree(ledger_root, ignore_errors=True)
+
 # ---- end to end through cmd_run on a temp state root ----
 
 tmp = Path(tempfile.mkdtemp(prefix="inspiration-scan-test-"))
@@ -302,8 +382,23 @@ try:
           "cmd_run: unscored items are not marked seen")
     second = _run(NOW.date() + _dt.timedelta(days=1))
     check("kept=2" in second and "STATUS=ok" in second, "cmd_run: the next day scores the items the hub missed")
+    ideas_file = json.loads((tmp / "ideas.json").read_text(encoding="utf-8"))
+    kept_ids = [i["id"] for i in ideas_file["ideas"]]
+    check(ideas_file["version"] == 1 and len(kept_ids) == 2 and "## Source" in ideas_file["ideas"][0]["prompt"],
+          "cmd_run: ideas.json holds the kept ideas, with a version and a Source section in each prompt")
+    check("IDEAS=2" in second, "cmd_run: the manifest counts the ideas written")
     third = _run(NOW.date() + _dt.timedelta(days=2))
     check("seen_before=2" in third and "kept=0" in third, "cmd_run: items scored on an earlier day are not shown again")
+    check([i["id"] for i in json.loads((tmp / "ideas.json").read_text(encoding="utf-8"))["ideas"]] == kept_ids,
+          "cmd_run: ideas the owner has not decided on stay in ideas.json on a later run")
+    with contextlib.redirect_stdout(io.StringIO()):
+        scan.main(["ideas", "filter", kept_ids[0], "--note", "no"])
+    (tmp / "seen.json").write_text("{}", encoding="utf-8")
+    fourth = _run(NOW.date() + _dt.timedelta(days=3))
+    check("kept=1" in fourth and "seen_before=1" in fourth,
+          "cmd_run: an id in the ledger is not kept again even after it aged out of seen.json")
+    check([i["id"] for i in json.loads((tmp / "ideas.json").read_text(encoding="utf-8"))["ideas"]] == kept_ids[1:],
+          "cmd_run: a decided idea leaves ideas.json")
     digest = tmp / "digests" / f"{(NOW.date() + _dt.timedelta(days=1)).isoformat()}.html"
     check(digest.is_file() and "Fresh &amp; useful" in digest.read_text(encoding="utf-8"),
           "cmd_run: the digest is written under the state root")

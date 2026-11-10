@@ -6,10 +6,13 @@
   init      copy sources.example.toml into the state root if no list exists
             (`run` does the same when the list is missing).
   login-x   open the dedicated X Chrome profile headed so the owner logs in once.
+  ideas     list the ideas the Board shows, and record what became of one
+            (`ideas apply|filter`, the only writer of the ideas ledger).
 
-Everything it writes (the source list, `seen.json`, `digests/`) lives in the
-machine-local state root, never in the repo. The manifest names source types
-and counts only; source names and item text stay in the digest file.
+Everything it writes (the source list, `seen.json`, `ideas.json`, the ideas
+ledger, `digests/`) lives in the machine-local state root, never in the repo.
+The manifest names source types and counts only; source names and item text
+stay in the digest file.
 
 stdlib only; the X reader runs as a subprocess under a Python with Playwright.
 """
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +35,7 @@ AUTOMATION_ROOT = REPO.parent
 sys.path.insert(0, str(SKILL_DIR))
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import feeds  # noqa: E402
+import ideas  # noqa: E402
 import render  # noqa: E402
 import score  # noqa: E402
 import sources  # noqa: E402
@@ -142,6 +147,13 @@ def select_new(results: List[feeds.SourceResult], seen: Dict[str, str]) -> Tuple
     return list(new.values()), dropped
 
 
+def _known_repo(name: str) -> str:
+    """The model's suggested repo when it is a fleet repo on this machine, else empty (it may invent one)."""
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name or ""):
+        return ""
+    return name if (AUTOMATION_ROOT / name / ".fleet.toml").is_file() else ""
+
+
 def rank(scored: List[score.Scored], top_n: int) -> Tuple[List[score.Scored], List[score.Scored]]:
     kept = sorted((s for s in scored if s.score is not None and s.score >= MIN_SCORE),
                   key=lambda s: s.score or 0, reverse=True)[:top_n]
@@ -206,7 +218,13 @@ def cmd_run(today: _dt.date) -> int:
 
     root = sources.state_root()
     seen = prune_seen(load_seen(root / "seen.json"), today)
-    new, dropped = select_new(results, seen)
+    try:
+        decided = ideas.ledger_ids(root)
+        ideas.read_ideas(root)
+    except ideas.IdeasError as exc:
+        raise SystemExit(f"ideas state unreadable ({exc}); fix or move it in {root}") from exc
+    # An id the owner already decided on never comes back, whatever seen.json has aged out.
+    new, dropped = select_new(results, {**seen, **{i: today.isoformat() for i in decided}})
     deferred = max(0, len(new) - settings.max_scored)
     scored, errors = score.score_items(new[:settings.max_scored], score.fleet_profile(AUTOMATION_ROOT),
                                        config.likes, settings.model)
@@ -219,6 +237,9 @@ def cmd_run(today: _dt.date) -> int:
     digest_dir.mkdir(parents=True, exist_ok=True)
     digest = digest_dir / f"{today.isoformat()}.html"
     atomic_write_text(digest, render.render(today.isoformat(), results, top, unscored, dropped, errors))
+    for entry in top:
+        entry.suggested_repo = _known_repo(entry.suggested_repo)
+    idea_count = ideas.write_ideas(root, [ideas.build_idea(e, today.isoformat()) for e in top], set(decided), today)
     atomic_write_text(root / "seen.json", json.dumps(seen, indent=0, sort_keys=True))
 
     for line in _manifest(results):
@@ -227,6 +248,7 @@ def cmd_run(today: _dt.date) -> int:
           f"|unscored={len(unscored)}|deferred={deferred}|kept={len(top)}")
     for error in errors:
         print(f"SCORING_ERROR={error}")
+    print(f"IDEAS={idea_count}")
     print(f"DIGEST={digest}")
     healthy = not errors and all(r.status == feeds.STATUS_OK for r in results)
     print(f"STATUS={'ok' if healthy else 'degraded'}")
@@ -262,7 +284,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     run.add_argument("--date", help="run date YYYY-MM-DD (default: today)")
     sub.add_parser("init", help="create the source list from the example")
     sub.add_parser("login-x", help="log into X once in the dedicated Chrome profile")
+    ideas.add_parser(sub)
     args = parser.parse_args(argv)
+    if args.command == "ideas":
+        return ideas.run_command(args, sources.state_root())
     if args.command == "init":
         return cmd_init()
     if args.command == "login-x":
