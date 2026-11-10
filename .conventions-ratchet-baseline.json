@@ -4,7 +4,6 @@
     {"key": ".claude/skills/context-purge/digest_model.py", "counts": {"state-literal": 1}},
     {"key": ".claude/skills/fleet-health/capture.py", "counts": {"state-literal": 1}},
     {"key": ".claude/workflows/cleanup-fleet-all.js", "counts": {"state-literal": 2}},
-    {"key": "hooks/backup/cli.py", "counts": {"state-literal": 4}},
     {"key": "skills/_lib/scheduled/runner_adapters.py", "counts": {"state-literal": 8}}
   ]
 }

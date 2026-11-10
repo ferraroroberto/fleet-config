@@ -45,6 +45,8 @@ from .config import (
     RUNTIME_DATA_GROUP,
     RUNTIME_DATA_LEG,
     BackupConfig,
+    LegStatus,
+    leg_status,
     load_backup_config,
     load_repo_overrides,
 )
@@ -124,7 +126,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         "groups": {},
         "totals": {},
         "verification": {},
-        "status": "unknown",
+        "status": LegStatus.UNKNOWN,
         "recovered_marker": None,
         "skipped_interrupted": [],
     }
@@ -155,7 +157,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     manifest["totals"] = _leg_totals(manifest, total_files, linked, copied)
 
     if dry_run:
-        manifest["status"] = "dry-run"
+        manifest["status"] = LegStatus.DRY_RUN
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
         return manifest
 
@@ -164,16 +166,11 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     manifest["regressions"], manifest["regression_warnings"] = check_zero_file_regressions(
         manifest, prev_manifest, cfg.deny_dirs)
     failed_groups = [
-        name for name, payload in manifest["groups"].items() if payload["status"] == "failed"
+        name for name, payload in manifest["groups"].items() if payload["status"] == LegStatus.FAILED
     ]
-    manifest["status"] = "ok" if (
-        manifest["verification"]["status"] in {"pass", "empty"}
-        and not manifest["regressions"]
-        and not failed_groups
-    ) else "failed"
     manifest["archive"] = reconcile_session_archive(dest_root, snapshot_dir, manifest)
-    if manifest["archive"] and manifest["archive"].get("status") != "pass":
-        manifest["status"] = "failed"
+    manifest["status"] = leg_status(manifest["verification"]["status"], manifest["regressions"],
+                                    failed_groups, manifest["archive"])
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
     runtime_files.save_text(snapshot_dir / MANIFEST_NAME,
@@ -219,7 +216,7 @@ def _snapshot_groups(groups: Dict[str, Selection], manifest: Dict[str, Any], sna
             linked += group_linked
             copied += group_copied
         manifest["groups"][name] = {
-            "status": "failed" if errors else "ok",
+            "status": LegStatus.FAILED if errors else LegStatus.OK,
             "files": entries,
             "bytes": sum(entry["size"] for entry in entries),
             "bulk_excluded": selection.bulk_excluded,
@@ -367,7 +364,7 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
             if dry_run:
                 # A dry run takes the real SQLite snapshots (see above), so a
                 # database it could not snapshot must not exit green.
-                if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
+                if any(payload["status"] == LegStatus.FAILED for payload in manifest["groups"].values()):
                     codes.append(EXIT_REPO_FAILURE)
                 continue
             if manifest["verification"]["status"] == "fail":
@@ -376,7 +373,7 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                 codes.append(EXIT_VERIFY_FAILED)
             if manifest.get("regressions"):
                 codes.append(EXIT_ZERO_FILES_REGRESSION)
-            if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
+            if any(payload["status"] == LegStatus.FAILED for payload in manifest["groups"].values()):
                 codes.append(EXIT_REPO_FAILURE)
 
     exit_code = _worst(codes)

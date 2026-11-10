@@ -159,6 +159,14 @@ name   = "probe-status"
 module = "skills/_lib/discovery_probe.py"
 type   = "ProbeStatus"
 
+# How one backup leg (and each group in it) ended; leg_status() is the only place a finished leg's
+# facts become a status, and the freshness check reads the stored manifest through it.
+[[state_machines]]
+name   = "backup-leg-status"
+module = "hooks/backup/config.py"
+type   = "LegStatus"
+derive = "leg_status"
+
 [runtime_write_ratchet]
 enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"
