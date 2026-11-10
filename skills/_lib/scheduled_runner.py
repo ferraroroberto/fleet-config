@@ -29,39 +29,65 @@ from scheduled.process_scope import (  # noqa: E402
     PipeReader,
     ProcessScope,
 )
+
+# Re-exported for callers of the compatible `claude_progress` facade.
+from scheduled.progress import (
+    AUTH_UNAVAILABLE_EXIT_CODE as AUTH_UNAVAILABLE_EXIT_CODE,
+)
+from scheduled.progress import (
+    BACKGROUND_KILL_EXIT_CODE as BACKGROUND_KILL_EXIT_CODE,
+)
+from scheduled.progress import (
+    BG_WAIT_CEILING_ENV as BG_WAIT_CEILING_ENV,
+)
 from scheduled.progress import (  # noqa: E402
-    AUTH_UNAVAILABLE_EXIT_CODE,
-    BACKGROUND_KILL_EXIT_CODE,
     CANCEL_POLL_SECONDS,
-    CANCELLATION_UNCONFIRMED_EXIT_CODE,
-    CANCELLED_EXIT_CODE,
     DEFAULT_STALL_TIMEOUT_SECONDS,
     DELIVERY_CHECK_FLAG,
     DELIVERY_CHECK_TIMEOUT_SECONDS,
-    DELIVERY_NOT_CONFIRMED_EXIT_CODE,
-    INCOMPLETE_WORK_EXIT_CODE,
-    MISSING_TOOLS_EXIT_CODE,
-    MODEL_UNAVAILABLE_EXIT_CODE,
-    NO_TOOL_USE_EXIT_CODE,
-    SELF_REPORTED_FAILURE_EXIT_CODE,
-    STALL_EXIT_CODE,
     STALL_FLAG,
     STALL_POLL_MAX_SECONDS,
     STALL_POLL_MIN_SECONDS,
     TRANSIENT_API_BACKOFF_SECONDS,
     TRANSIENT_API_EXIT_CODE,
     TRANSIENT_API_MAX_ATTEMPTS,
-    TRUNCATED_STREAM_EXIT_CODE,
     ProgressFormatter,
     _configure_output,
     _elapsed,
     _one_line,
 )
 from scheduled.progress import (
-    BG_WAIT_CEILING_ENV as BG_WAIT_CEILING_ENV,
+    CANCELLATION_UNCONFIRMED_EXIT_CODE as CANCELLATION_UNCONFIRMED_EXIT_CODE,
+)
+from scheduled.progress import (
+    CANCELLED_EXIT_CODE as CANCELLED_EXIT_CODE,
+)
+from scheduled.progress import (
+    DELIVERY_NOT_CONFIRMED_EXIT_CODE as DELIVERY_NOT_CONFIRMED_EXIT_CODE,
+)
+from scheduled.progress import (
+    INCOMPLETE_WORK_EXIT_CODE as INCOMPLETE_WORK_EXIT_CODE,
+)
+from scheduled.progress import (
+    MISSING_TOOLS_EXIT_CODE as MISSING_TOOLS_EXIT_CODE,
+)
+from scheduled.progress import (
+    MODEL_UNAVAILABLE_EXIT_CODE as MODEL_UNAVAILABLE_EXIT_CODE,
+)
+from scheduled.progress import (
+    NO_TOOL_USE_EXIT_CODE as NO_TOOL_USE_EXIT_CODE,
+)
+from scheduled.progress import (
+    SELF_REPORTED_FAILURE_EXIT_CODE as SELF_REPORTED_FAILURE_EXIT_CODE,
 )
 from scheduled.progress import (
     SELF_REPORTED_FAILURE_MARKER as SELF_REPORTED_FAILURE_MARKER,
+)
+from scheduled.progress import (
+    STALL_EXIT_CODE as STALL_EXIT_CODE,
+)
+from scheduled.progress import (
+    TRUNCATED_STREAM_EXIT_CODE as TRUNCATED_STREAM_EXIT_CODE,
 )
 from scheduled.progress import (
     UNKNOWN_BURST_THRESHOLD as UNKNOWN_BURST_THRESHOLD,
@@ -71,6 +97,15 @@ from scheduled.progress import (
 )
 from scheduled.progress import (
     _is_transient_api_error as _is_transient_api_error,
+)
+from scheduled.run_outcome import (  # noqa: E402
+    RunEvidence as RunEvidence,
+)
+from scheduled.run_outcome import (
+    RunOutcome,
+    RunState,
+    apply_delivery_check,
+    decide,
 )
 from scheduled.runner_adapters import (  # noqa: E402
     RESERVED_FLAGS as RESERVED_FLAGS,
@@ -361,7 +396,7 @@ def _pump(
                 # stopped them; an unconfirmed reap marks the run unverified there.
                 if ((active != 0 and outcome["reap_names"] is None)
                         or not all(reader.eof for reader in readers)):
-                    progress._mark_unverified("drain/deadline-reached")
+                    progress.mark_unverified("drain/deadline-reached")
                 outcome["drain_message"] = (
                     f"owned scope drain deadline reached · active processes "
                     f"{active if active is not None else 'unknown'} · "
@@ -392,48 +427,21 @@ def _verdict(
             f"({', '.join(outcome['reap_names'])}) still running after the provider exited · "
             "terminated, not counted toward this run's outcome"
         )
-    exit_code = outcome["exit_code"]
-    if exit_code is None:
-        exit_code = CANCELLATION_UNCONFIRMED_EXIT_CODE
-    if stall_state["cancelled"]:
-        confirmed = stall_state["cancel_confirmed"] and all(reader.eof for reader in readers)
-        cancelled_code = CANCELLED_EXIT_CODE if confirmed else CANCELLATION_UNCONFIRMED_EXIT_CODE
-        progress.finish(cancelled_code)
-        return cancelled_code
-    if stall_state["stalled"]:
-        exit_code = STALL_EXIT_CODE
-    elif outcome["orphaned"] and not reaped and exit_code == 0:
-        progress.emit_best_effort("unfinished owned descendants after provider exit")
-        # Handed to the formatter as well as the log: the verdict line is what
+    if outcome["orphaned"] and not reaped:
+        progress.mark_owned_orphans(outcome["orphan_count"])
+    confirmed = stall_state["cancel_confirmed"] and all(reader.eof for reader in readers)
+    evidence = progress.evidence(
+        child_exit=outcome["exit_code"], stalled=stall_state["stalled"],
+        cancelled=stall_state["cancelled"], cancel_confirmed=confirmed,
+    )
+    decided = decide(evidence)
+    if decided.state is RunState.INCOMPLETE_WORK and evidence.owned_orphans and evidence.child_exit == 0:
+        # Logged as well as handed to the formatter: the verdict line is what
         # the job card and the Telegram alert carry, and a breadcrumb printed
         # three lines above it is not in either.
-        progress._mark_owned_orphans(outcome["orphan_count"])
-        exit_code = INCOMPLETE_WORK_EXIT_CODE
-    elif exit_code != 0 and progress.saw_transient_api_error:
-        # Only ever over a child that already failed — this renames a failure,
-        # it never creates one. A run that hit a 5xx, recovered on its own and
-        # exited 0 succeeded, and saying otherwise would invent a red job.
-        exit_code = TRANSIENT_API_EXIT_CODE
-    elif progress._provider_error and (exit_code != 0 or progress._result_error):
-        exit_code = {"auth": AUTH_UNAVAILABLE_EXIT_CODE, "model": MODEL_UNAVAILABLE_EXIT_CODE, "tools": MISSING_TOOLS_EXIT_CODE}[progress._provider_error]
-    elif progress.saw_kill_signature and exit_code == 0:
-        exit_code = BACKGROUND_KILL_EXIT_CODE
-    elif progress.saw_self_reported_failure and exit_code == 0:
-        exit_code = SELF_REPORTED_FAILURE_EXIT_CODE
-    elif progress._result_error and exit_code == 0:
-        exit_code = 1
-    elif progress.unfinished_work and exit_code == 0:
-        exit_code = INCOMPLETE_WORK_EXIT_CODE
-    elif progress.unverified_stream and exit_code == 0:
-        # Last, and only over a clean exit: the specific detectors above name
-        # the cause, this one only knows the stream stopped mid-conversation.
-        exit_code = TRUNCATED_STREAM_EXIT_CODE
-    elif not progress.saw_tool_use and exit_code == 0:
-        # Last of all, and only over a clean exit. Every detector above names a
-        # cause; this one only knows the run touched nothing.
-        exit_code = NO_TOOL_USE_EXIT_CODE
-    progress.finish(exit_code, stalled=stall_state["stalled"])
-    return exit_code
+        progress.emit_best_effort("unfinished owned descendants after provider exit")
+    progress.finish(decided)
+    return decided.exit_code
 
 
 def run_process(
@@ -490,13 +498,13 @@ def run_process(
             terminated = scope.terminate()
             if outcome["reap_names"] is not None and not terminated:
                 outcome["reap_names"] = None
-                progress._mark_unverified("drain/reap-unconfirmed")
+                progress.mark_unverified("drain/reap-unconfirmed")
         scope.close()
         if process.poll() is None:
             try:
                 process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                progress._mark_unverified("process/exit-wait-timeout")
+                progress.mark_unverified("process/exit-wait-timeout")
         if outcome["exit_code"] is None:
             outcome["exit_code"] = process.poll()
         process.stdout.close()
@@ -589,13 +597,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         if flags.delivery_check and not run_delivery_check(flags.delivery_check, progress):
             # Runs whatever the child reported, and outranks a clean exit only:
             # a child that already failed keeps the code naming *why* it failed.
-            final_code = exit_code if exit_code != 0 else DELIVERY_NOT_CONFIRMED_EXIT_CODE
-            progress.emit(f"❓ final outcome · delivery not confirmed · exit {final_code}")
-            return final_code
+            ran = progress.outcome or RunOutcome(
+                RunState.COMPLETED if exit_code == 0 else RunState.FAILED, exit_code)
+            final = apply_delivery_check(ran, False)
+            progress.emit(f"❓ final outcome · delivery not confirmed · exit {final.exit_code}")
+            return final.exit_code
         return exit_code
     except OSError as exc:
         progress.emit(f"❌ {progress.adapter.label} failed to start: {_one_line(exc)}")
-        progress.finish(127)
+        progress.finish(RunOutcome(RunState.START_FAILED, RunState.START_FAILED.exit_code))
         return 127
 
 

@@ -17,6 +17,15 @@ import time
 from collections.abc import Callable
 from typing import Any, Optional
 
+from scheduled.run_outcome import (
+    SELF_REPORTED_FAILURE_MARKER,
+    RunEvidence,
+    RunOutcome,
+    RunState,
+    incomplete_cause,
+    safe_to_retry,
+    status_line,
+)
 from scheduled.runner_adapters import ClaudeAdapter, CodexAdapter, ProgressEvent
 
 MAX_SUMMARY_CHARS = 180
@@ -46,7 +55,7 @@ STALL_FLAG = "--stall-timeout"
 # fifth pattern-matcher for the fifth variant.
 DELIVERY_CHECK_FLAG = "--delivery-check"
 DELIVERY_CHECK_TIMEOUT_SECONDS = 120.0
-DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
+DELIVERY_NOT_CONFIRMED_EXIT_CODE = RunState.DELIVERY_UNCONFIRMED.exit_code
 
 # A wedged run is worse than a failed one: it holds the job slot, reports
 # nothing, and is only noticed when a human looks (a stalled run once sat idle
@@ -54,7 +63,7 @@ DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
 # Bash/PowerShell call is itself bounded by the context-filter wrapper's own
 # timeout, and observed gaps between stream events run to a few minutes at most.
 DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
-STALL_EXIT_CODE = 124
+STALL_EXIT_CODE = RunState.STALLED.exit_code
 # Stall-watchdog poll interval. A cancellable run is polled every 0.1 s so a
 # cancel request kills the tree promptly. Otherwise the poll is a tenth of the
 # stall timeout, clamped: never faster than 1 s (nothing gains from sub-second
@@ -71,7 +80,7 @@ STALL_POLL_MAX_SECONDS = 30.0
 # than an exact-wording regex so a ceiling/wording tweak upstream doesn't
 # silently stop tripping this.
 KILL_SIGNATURE_TERMS = ("background tasks still running", "terminat")
-BACKGROUND_KILL_EXIT_CODE = 125
+BACKGROUND_KILL_EXIT_CODE = RunState.BACKGROUND_KILLED.exit_code
 
 # Detection is not prevention: spotting the kill makes it visible, but the
 # sub-agents' work is still lost. The CLI's own stderr names the cure — "Set
@@ -94,8 +103,7 @@ BG_WAIT_CEILING_UNLIMITED = "0"
 # asserts its own delivery and prints this marker when the assertion fails;
 # the adapter owns turning that into a non-zero exit.
 # Deliberately not 124/125/127 — those already name stall/kill/spawn-failure.
-SELF_REPORTED_FAILURE_MARKER = "SCHEDULED-RUN-FAILED"
-SELF_REPORTED_FAILURE_EXIT_CODE = 123
+SELF_REPORTED_FAILURE_EXIT_CODE = RunState.SELF_REPORTED_FAILURE.exit_code
 
 # A burst of unknown-typed stream records right at shutdown means the stream
 # stopped mid-conversation: the child was cut off, and whether it delivered
@@ -131,7 +139,7 @@ SELF_REPORTED_FAILURE_EXIT_CODE = 123
 # So an unknown record is counted, named and logged, and decides nothing by
 # itself. What stays verdict-bearing is evidence a fact was never *established*:
 # a missing terminal result, a malformed record, a burst near shutdown, and the
-# records `ProgressFormatter._mark_unverified` counts -- see its docstring for
+# records `ProgressFormatter.mark_unverified` counts -- see its docstring for
 # why those three call sites are a different thing from schema drift.
 UNKNOWN_BURST_WINDOW_SECONDS = 15.0
 UNKNOWN_BURST_THRESHOLD = 3
@@ -140,7 +148,7 @@ UNKNOWN_BURST_THRESHOLD = 3
 # long tail, so a short list is the whole diagnosis; the cap only stops a
 # genuinely corrupt stream from pasting itself into the log.
 UNKNOWN_LABEL_SUMMARY_LIMIT = 6
-TRUNCATED_STREAM_EXIT_CODE = 122
+TRUNCATED_STREAM_EXIT_CODE = RunState.STREAM_UNVERIFIED.exit_code
 
 # The fifth shape, and the one none of the four above can see: a run that
 # starts, answers in prose, and ends its turn normally -- never having invoked a
@@ -159,7 +167,7 @@ TRUNCATED_STREAM_EXIT_CODE = 122
 # 121-125 is a crowded namespace by now; this one takes the last free rung
 # below the four symptom detectors and the delivery post-condition, so all
 # six stay tellable apart from each other and from a child's own code.
-NO_TOOL_USE_EXIT_CODE = 120
+NO_TOOL_USE_EXIT_CODE = RunState.NO_TOOL_USE.exit_code
 
 # The sixth shape, and the only one so far that is nobody's fault: the upstream
 # API answered `529 Overloaded` three minutes into a run, the CLI printed its own
@@ -191,7 +199,7 @@ NO_TOOL_USE_EXIT_CODE = 120
 # 120-125 is full and 126/127 carry their own shell meanings (`cannot execute` /
 # `not found`, and 127 is already this adapter's spawn failure), so this takes
 # the next rung *below* the block rather than crowding into either.
-TRANSIENT_API_EXIT_CODE = 119
+TRANSIENT_API_EXIT_CODE = RunState.TRANSIENT_API.exit_code
 TRANSIENT_API_MAX_ATTEMPTS = 3
 # 60s then 180s. The failing run had burned 3m23s of a weekly window, so there is
 # room to spare; the point is to outlast a blip, not to hammer a struggling API.
@@ -310,12 +318,12 @@ def _tool_summary(tool_input: object) -> str:
 # shows something, and nothing about the detection changes: the drain deadline,
 # the orphan count and the pre-effect retry gate this same evidence closes are
 # all exactly as they were.
-INCOMPLETE_WORK_EXIT_CODE = 118
-AUTH_UNAVAILABLE_EXIT_CODE = 117
-MODEL_UNAVAILABLE_EXIT_CODE = 116
-MISSING_TOOLS_EXIT_CODE = 115
-CANCELLATION_UNCONFIRMED_EXIT_CODE = 114
-CANCELLED_EXIT_CODE = 130
+INCOMPLETE_WORK_EXIT_CODE = RunState.INCOMPLETE_WORK.exit_code
+AUTH_UNAVAILABLE_EXIT_CODE = RunState.AUTH_UNAVAILABLE.exit_code
+MODEL_UNAVAILABLE_EXIT_CODE = RunState.MODEL_UNAVAILABLE.exit_code
+MISSING_TOOLS_EXIT_CODE = RunState.TOOLS_UNAVAILABLE.exit_code
+CANCELLATION_UNCONFIRMED_EXIT_CODE = RunState.CANCELLATION_UNCONFIRMED.exit_code
+CANCELLED_EXIT_CODE = RunState.CANCELLED.exit_code
 
 
 class ProgressFormatter:
@@ -354,6 +362,7 @@ class ProgressFormatter:
         self._saw_transient_api_error = False
         self._burst_count: Optional[int] = None
         self._owned_orphans = 0
+        self.outcome: Optional[RunOutcome] = None
 
     @property
     def saw_kill_signature(self) -> bool:
@@ -411,18 +420,43 @@ class ProgressFormatter:
     def retryable_transient_failure(self) -> bool:
         """True only for a transient failure that is *safe* to start over.
 
-        The tool-use guard is the whole safety argument for retrying at all: a
-        session that already ran a tool may have edited files, pushed a branch
-        or posted a digest, and replaying it from the top would do that twice.
-        A run that died before touching anything has, by definition, nothing to
-        duplicate. `saw_tool_use` already tracks both shapes the stream reports
-        (an assistant `tool_use` block and a `task_started` sub-agent event), so
-        it is exactly the right question to ask here.
+        The rule lives in `run_outcome.safe_to_retry`; this reads it over the
+        formatter's current evidence.
         """
-        return (self.adapter.retry_before_tools and self._saw_transient_api_error
-                and not self._saw_tool_use and not self._unknown and not self._malformed
-                and not self._unverified and not self._children
-                and not self._saw_kill_signature)
+        return safe_to_retry(self._evidence())
+
+    def evidence(self, *, child_exit: Optional[int] = None, stalled: bool = False,
+                 cancelled: bool = False, cancel_confirmed: bool = False) -> RunEvidence:
+        """Everything this run has established, as one read-only record.
+
+        The stream facts come from the formatter; the runner passes the facts
+        only it holds (how the child exited, whether the watchdog or a cancel
+        stopped it). `run_outcome.decide` is the one reader that orders them.
+        Settles the shutdown burst count, like `stream_truncated`.
+        """
+        return self._evidence(child_exit, stalled, cancelled, cancel_confirmed, settle_burst=True)
+
+    def _evidence(self, child_exit: Optional[int] = None, stalled: bool = False,
+                  cancelled: bool = False, cancel_confirmed: bool = False,
+                  *, settle_burst: bool = False) -> RunEvidence:
+        # Readers that never look at the burst (the retry gate, the unfinished
+        # and unverified checks) must not fix its value early: the first call
+        # to `truncated_stream_burst` caches it, and a later read at a later
+        # clock would otherwise disagree with the verdict line.
+        return RunEvidence(
+            child_exit=child_exit, stalled=stalled, cancelled=cancelled,
+            cancel_confirmed=cancel_confirmed, owned_orphans=self._owned_orphans,
+            transient_api_error=self._saw_transient_api_error,
+            retry_before_tools=self.adapter.retry_before_tools,
+            provider_error=self._provider_error, kill_signature=self._saw_kill_signature,
+            self_reported_failure=self._saw_self_reported_failure,
+            result_error=self._result_error, saw_result=self._saw_result,
+            saw_tool_use=self._saw_tool_use,
+            stream_truncated=self.stream_truncated if settle_burst else False,
+            burst=self.truncated_stream_burst() if settle_burst else 0,
+            malformed=self._malformed, unknown=self._unknown, unverified=self._unverified,
+            open_tools=len(self._tools), open_children=len(self._children),
+        )
 
     def reset_for_retry(self) -> None:
         """Clear per-attempt state, keeping the run-level clock.
@@ -453,6 +487,7 @@ class ProgressFormatter:
         self._saw_tool_use = False
         self._saw_transient_api_error = False
         self._burst_count = None
+        self._owned_orphans = 0
         self._touch()
 
     def truncated_stream_burst(self) -> int:
@@ -535,14 +570,14 @@ class ProgressFormatter:
 
         Counted, named, logged -- and, since fleet-config#810, not a verdict.
         A record this parser has never seen is evidence about the parser, not
-        about the run; `_mark_unverified` is where a record that genuinely
+        about the run; `mark_unverified` is where a record that genuinely
         leaves the outcome unestablished goes.
         """
         self._unknown += 1
         self._unknown_labels[label or "unlabelled"] += 1
         self._unknown_timestamps.append(self._clock())
 
-    def _mark_unverified(self, label: str = "") -> None:
+    def mark_unverified(self, label: str = "") -> None:
         """Count one fact this run left unestablished. Verdict-bearing.
 
         The other half of the split fleet-config#810 drew. Three call sites
@@ -627,7 +662,7 @@ class ProgressFormatter:
         if event.kind == "unknown":
             self._mark_unknown(event.name)
         elif event.kind == "unverified":
-            self._mark_unverified(event.name)
+            self.mark_unverified(event.name)
         elif event.kind == "malformed":
             self._malformed += 1
         elif event.kind == "start":
@@ -679,11 +714,11 @@ class ProgressFormatter:
         `_unverified` counts the surfaces that named themselves unprovable.
         An unknown record is none of those and is deliberately absent here.
         """
-        return bool(not self._saw_result or self._malformed or self._unverified)
+        return self._evidence().unverified_stream
 
     @property
     def unfinished_work(self) -> bool:
-        return bool(self._tools or self._children)
+        return self._evidence().unfinished_work
 
     @property
     def owned_orphans(self) -> int:
@@ -696,21 +731,13 @@ class ProgressFormatter:
         """
         return self._owned_orphans
 
-    def _mark_owned_orphans(self, count: int) -> None:
+    def mark_owned_orphans(self, count: int) -> None:
         """Record that the owned job outlived the provider, and by how many."""
         self._owned_orphans = max(0, int(count))
 
     def incomplete_work_cause(self) -> str:
         """Which half (or both) of the 118 evidence this run actually carries."""
-        parts = []
-        if self.unfinished_work:
-            parts.append("unfinished tools or children")
-        if self.owned_orphans:
-            parts.append(
-                f"{self.owned_orphans} owned descendant(s) still running after "
-                "the provider exited"
-            )
-        return " and ".join(parts)
+        return incomplete_cause(self._evidence())
 
     def _emit_assistant_text(self, value: object, from_model: bool = True) -> None:
         if not isinstance(value, str):
@@ -741,14 +768,15 @@ class ProgressFormatter:
         self._assistant_texts.add(text)
         self.emit(f"{self.adapter.label}:\n{_redact(text)}")
 
-    def finish(self, exit_code: int, stalled: bool = False) -> None:
-        recent_unknown = self._emit_record_warnings()
-        status = self._final_status(exit_code, stalled, recent_unknown)
+    def finish(self, outcome: RunOutcome) -> None:
+        """Print the run's verdict line for an outcome `run_outcome.decide` made."""
+        self._emit_record_warnings()
+        self.outcome = outcome
         result_note = " · no terminal result event" if not self._saw_result else ""
-        self.emit(f"{status} · exit {exit_code}{result_note}")
+        self.emit(f"{status_line(outcome)} · exit {outcome.exit_code}{result_note}")
 
-    def _emit_record_warnings(self) -> int:
-        """One line per kind of record that did not count; returns the unknown burst size."""
+    def _emit_record_warnings(self) -> None:
+        """One line per kind of record that did not count."""
         if self._malformed or self._unknown:
             breakdown = self.unknown_summary()
             self.emit(
@@ -778,75 +806,8 @@ class ProgressFormatter:
                 f"⚠ background task(s): {counts} — recorded, not counted toward "
                 "this run's outcome"
             )
-        recent_unknown = self.truncated_stream_burst()
         if self.stream_truncated:
             self.emit(
-                f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
+                f"⚠ burst of {self.truncated_stream_burst()} unknown stream record(s) near shutdown "
                 "— possible truncated/killed stream"
             )
-        return recent_unknown
-
-    def _final_status(self, exit_code: int, stalled: bool, recent_unknown: int) -> str:
-        failed = (stalled or exit_code != 0 or self._result_error
-                  or self._saw_kill_signature or self._saw_self_reported_failure)
-        if stalled:
-            status = "⏱ stalled"
-        elif exit_code == TRANSIENT_API_EXIT_CODE:
-            # Placed here so this chain mirrors `run_process`'s precedence
-            # exactly. Those branches test formatter flags while the code was
-            # already decided, so any disagreement in ordering prints a verdict
-            # that contradicts the exit code beside it — a run that both
-            # self-reported and hit a 5xx would exit 119 under a line reading
-            # "delivered no work". Reading the code first keeps the two honest.
-            status = (
-                "❌ failed · transient upstream API error (5xx) — the run never got "
-                "going; this is an API-side fault, not a fault in the skill"
-            )
-        elif exit_code == CANCELLATION_UNCONFIRMED_EXIT_CODE:
-            status = "❓ cancellation not confirmed · owned descendants could not be verified"
-        elif exit_code == CANCELLED_EXIT_CODE:
-            status = "❌ cancelled · owned process tree stopped"
-        elif ((self.unfinished_work or self.owned_orphans)
-              and exit_code in {0, INCOMPLETE_WORK_EXIT_CODE}):
-            # Both halves of 118 land here and the cause names which fired; see
-            # the constant's own comment for why they share a rung and why the
-            # shape is `❓` rather than `❌`. Guarded on the evidence rather
-            # than on the code alone so a child that exits 118 natively — which
-            # neither detector produced — is never handed a cause this adapter
-            # did not establish.
-            status = f"❓ not confirmed · {self.incomplete_work_cause()}"
-        elif exit_code in {AUTH_UNAVAILABLE_EXIT_CODE, MODEL_UNAVAILABLE_EXIT_CODE, MISSING_TOOLS_EXIT_CODE}:
-            status = f"❌ failed · {self._provider_error} unavailable"
-        elif self._saw_kill_signature:
-            status = (
-                "❌ failed · background tasks killed after timeout — orchestrator "
-                "likely ended its turn with agents in flight"
-            )
-        elif self._saw_self_reported_failure:
-            status = (
-                "❌ failed · the run reported it delivered no work "
-                f"({SELF_REPORTED_FAILURE_MARKER}) — see its final report for which "
-                "delivery assertion failed"
-            )
-        elif self.stream_truncated:
-            # Not "failed" — unconfirmed. The stream stopped mid-conversation,
-            # so whether the run delivered anything is a fact nobody
-            # established, and folding that into ✅ is what let a zero-repo
-            # audit report success.
-            status = (
-                f"❓ not confirmed · stream truncated near shutdown ({recent_unknown} "
-                "unknown record(s)) — the run was cut off mid-flight and delivery "
-                "was never verified"
-            )
-        elif exit_code == NO_TOOL_USE_EXIT_CODE:
-            # Its own state rather than folded into the passing one: a scheduled
-            # skill that invoked no tool did not run, and saying so beats green.
-            status = (
-                "❌ failed · the run invoked no tools at all — the skill never "
-                "started (check that the prompt asks for it, not just names it)"
-            )
-        elif self.unverified_stream and exit_code in {0, TRUNCATED_STREAM_EXIT_CODE}:
-            status = "❓ not confirmed · missing, malformed or unverifiable completion stream"
-        else:
-            status = "❌ failed" if failed else "✅ completed"
-        return status

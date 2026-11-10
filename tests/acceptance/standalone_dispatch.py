@@ -161,6 +161,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("claude_progress_retry", "claude_progress/test_retry.py",
      "a transient upstream 5xx is retried under the retry policy and each "
      "attempt is judged on its own evidence"),
+    ("claude_progress_run_outcome", "claude_progress/test_run_outcome.py",
+     "a scheduled run ends in one declared RunState: the golden exit-code table "
+     "over every combination of outcome facts, the evidence table, the refused "
+     "illegal transitions and the documented exit codes"),
     ("cpu_burn", "repo/test_cpu_burn.py",
      "the load-proof helper runs its burners and the command under proof "
      "below normal priority, so a burn can't starve scheduled jobs, and "

@@ -195,9 +195,9 @@ class ScheduledRunnerTests(unittest.TestCase):
                                           "is_error": False, "result": "done"}))
         formatter.handle_line(json.dumps({"type": "future_event"}))
         self.assertFalse(formatter.unverified_stream, "drift alone is not evidence")
-        formatter._mark_unverified("drain/deadline-reached")
+        formatter.mark_unverified("drain/deadline-reached")
         self.assertTrue(formatter.unverified_stream)
-        formatter.finish(runner.TRUNCATED_STREAM_EXIT_CODE)
+        formatter.finish(runner.decide(formatter.evidence(child_exit=runner.TRUNCATED_STREAM_EXIT_CODE)))
         text = "\n".join(lines)
         self.assertIn("1 record(s) left this run unverified", text)
         self.assertIn("drain/deadline-reached \u00d71", text)
@@ -473,7 +473,7 @@ class ScheduledRunnerTests(unittest.TestCase):
     def test_both_halves_of_incomplete_work_are_named_together(self):
         formatter = runner.ProgressFormatter(emit=lambda _: None)
         formatter._children.add("child-1")
-        formatter._mark_owned_orphans(3)
+        formatter.mark_owned_orphans(3)
         self.assertEqual(
             formatter.incomplete_work_cause(),
             "unfinished tools or children and 3 owned descendant(s) still "
@@ -486,7 +486,7 @@ class ScheduledRunnerTests(unittest.TestCase):
         lines = []
         formatter = runner.ProgressFormatter(emit=lines.append)
         formatter._saw_result = True
-        formatter.finish(runner.INCOMPLETE_WORK_EXIT_CODE)
+        formatter.finish(runner.decide(formatter.evidence(child_exit=runner.INCOMPLETE_WORK_EXIT_CODE)))
         self.assertEqual(lines[-1], "[00:00] ❌ failed · exit 118")
 
     def test_explicit_selection_no_guessed_flags_or_fallback(self):
