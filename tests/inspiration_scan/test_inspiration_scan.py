@@ -24,6 +24,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -194,6 +195,18 @@ handles = [_src("x", "@a", "a"), _src("x", "@b", "b")]
 missing = scan.read_x(handles, sources.Settings(x_python=str(REPO / "no-such-python.exe")), SINCE)
 check([r.status for r in missing] == ["unknown", "unknown"] and "no Playwright" in missing[0].reason,
       "scan: an absent Playwright Python makes every X source unknown, not empty")
+check("fleet_core" in scan._start_failure("Traceback (most recent call last):\n  File \"x\"\n"
+                                           "ModuleNotFoundError: No module named 'fleet_core'\n", 1)
+      and scan._start_failure("", 3).endswith("no output"),
+      "scan: a reader that prints no reply is reported with its last stderr line, as its own reason")
+# The way scan.py spawns the reader: a bare interpreter whose path holds neither fleet_core nor the
+# skill folder (-I drops PYTHONPATH and the script directory), run from an unrelated folder.
+_bare_env = {k: v for k, v in os.environ.items() if k.upper() != "PYTHONPATH"}
+_spawned = subprocess.run([sys.executable, "-I", str(scan.SKILL_DIR / "x_reader.py"), "read"], input="{}",
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+                          cwd=tempfile.gettempdir(), env=_bare_env, creationflags=scan.NO_WINDOW)
+check("ModuleNotFoundError" not in _spawned.stderr and _spawned.stdout.strip().startswith("{"),
+      "x_reader: spawned under an interpreter without fleet_core on its path, it starts and answers in JSON")
 mapped = scan._x_results(handles, {"sources": [
     {"handle": "a", "status": "ok", "items": [{"link": "https://x.com/a/status/9", "text": "hi",
                                                 "published": "2026-11-06T09:00:00+00:00"}]}]})

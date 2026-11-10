@@ -75,6 +75,12 @@ def _x_results(x_sources: List[sources.Source], reply: Dict[str, object]) -> Lis
     return results
 
 
+def _start_failure(stderr: str, returncode: int) -> str:
+    """One line naming why the reader printed no reply: its last stderr line (the traceback's error)."""
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    return f"reader failed to start (exit {returncode}): {lines[-1][:200] if lines else 'no output'}"
+
+
 def read_x(x_sources: List[sources.Source], settings: sources.Settings,
            since: _dt.datetime) -> List[feeds.SourceResult]:
     """Run the X reader under its Playwright Python; every failure is a named state."""
@@ -92,6 +98,8 @@ def read_x(x_sources: List[sources.Source], settings: sources.Settings,
                               capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=timeout, creationflags=NO_WINDOW)
         reply = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else {}
+        if not reply:
+            reply = {"error": _start_failure(proc.stderr, proc.returncode)}
     except subprocess.TimeoutExpired:
         reply = {"error": "timeout"}
     except (OSError, ValueError):
