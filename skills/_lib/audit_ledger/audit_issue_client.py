@@ -1,4 +1,4 @@
-"""Shared subprocess wrapper for shelling out to `audit_issue.py` (fleet-config#817).
+"""Shared subprocess wrapper for shelling out to `audit_issue.py`.
 
 `.claude/skills/context-purge/gate.py`, `digest.py`, and
 `.claude/skills/learning-log/gather.py` each drive `audit_issue.py`'s full
@@ -29,8 +29,8 @@ DEFAULT_TIMEOUT = 120.0
 def run_audit_issue(audit_issue_path: Path, *args: str, timeout: float = DEFAULT_TIMEOUT) -> str:
     """Run `audit_issue.py <args>` and return stdout; raise `RuntimeError` on
     a non-zero exit. `audit_issue_path` is passed explicitly rather than
-    resolved here -- each caller already computes it repo-relative to itself
-    (fleet-config#502), which matters from a linked `<repo>-wt-N` worktree."""
+    resolved here -- each caller already computes it repo-relative to itself,
+    which matters from a linked `<repo>-wt-N` worktree."""
     res = subprocess.run(
         [sys.executable, str(audit_issue_path), *args],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,

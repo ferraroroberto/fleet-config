@@ -1,4 +1,4 @@
-"""Deterministic entry-point inventory and dead-code verdict for one repo (fleet-config#961).
+"""Deterministic entry-point inventory and dead-code verdict for one repo.
 
 A research spike: "is this code used?" answered with no LLM anywhere. Static
 analysis decides what is dead *inside* an entry point; runtime evidence decides
@@ -10,7 +10,7 @@ which entry points are *alive*.
   last-run time converted to UTC. A source that can't be read is recorded as an
   error, and every entry point it would have covered becomes `unknown`.
   It also summarises the interpreter-start beacon's ledger when the repo has one
-  (`start_beacon.py`, fleet-config#1114): the last hit per script and how much
+  (`start_beacon.py`): the last hit per script and how much
   of the window the beacon covered.
 - `verdict <repo>` is a pure function of the git tree (`git ls-files`), that
   snapshot, `--as-of` and `--window-days`: the same inputs give byte-identical
@@ -145,7 +145,7 @@ def collect_tasks(repo: Path) -> List[Dict[str, Any]]:
 
 
 def collect_beacon(repo: Path, venv: Path, ledger: Optional[Path] = None) -> Dict[str, Any]:
-    """The interpreter-start ledger (fleet-config#1114) summarised: coverage and last hit per target.
+    """The interpreter-start ledger summarised: coverage and last hit per target.
 
     `state`: `absent` (no ledger, no `.pth`: the repo has no beacon), `active`
     (installed and the `.pth` still present), `uninstalled` (coverage ended at

@@ -1,4 +1,4 @@
-"""Deterministic dead-code leads for `/codebase-audit` bucket 2 (fleet-config#1527).
+"""Deterministic dead-code leads for `/codebase-audit` bucket 2.
 
 `leads <repo>` runs vulture over the repo's tracked Python and keeps only the
 hits ruff cannot see: an unused function, class, method or property. They are

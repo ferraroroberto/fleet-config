@@ -1,9 +1,9 @@
-"""Shared measurement of a SKILL.md frontmatter `description:` (fleet-config#626).
+"""Shared measurement of a SKILL.md frontmatter `description:`.
 
 A skill's `description:` is always-on in every session of its repo — only the
-body loads on invocation — which makes the ~50-prose-word cap (#137) the single
+body loads on invocation — which makes the ~50-prose-word cap the single
 highest-leverage context control the fleet has. Two skills need the same
-primitives over that one line and had drifted apart:
+primitives over that one line, so they share them here:
 
   * `/context-audit`'s `audit.py` counts the prose words against the cap, with
     quoted trigger phrases exempt (they are the routing surface and must stay

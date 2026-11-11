@@ -1,4 +1,4 @@
-"""Deterministic half of `/prompt-audit` (fleet-config#831, #832).
+"""Deterministic half of `/prompt-audit`.
 
 The skill audits every fleet instruction file against the vendors' current
 prompting guidance. "The helper measures, the orchestrator judges": this module
@@ -38,7 +38,7 @@ State lives in `~/.claude/prompt-audit/state.json` (override the directory with
 is the audit-managed `kind=prompt-audit` issue on fleet-config.
 
 The code lives in the `prompt_audit/` package beside this file, one module per
-concern (layout in its `__init__.py`, fleet-config#931); this file is only the
+concern (layout in its `__init__.py`); this file is only the
 entry point the skill invokes.
 
 stdlib + `skills/_lib` only. Run with the repo venv from the fleet-config root:

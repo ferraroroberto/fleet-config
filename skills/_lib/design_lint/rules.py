@@ -1,4 +1,4 @@
-"""Design-rule parameters shared by the static and rendered legs (fleet-config#1062).
+"""Design-rule parameters shared by the static and rendered legs.
 
 `design_lint` (`/design-sync`, reads source) and `design_review`
 (`/design-review`, reads the rendered page) each check the same design rules,

@@ -159,7 +159,7 @@ def fleet_repos(projects_toml: Path = PROJECTS_TOML) -> dict[str, Path]:
 def _git(repo_dir: Path, *args: str) -> subprocess.CompletedProcess:
     """Bytes-mode `git -C <repo_dir> <args>`.
 
-    Via `git_run.run_git_bytes` (fleet-config#677) rather than a hand-rolled
+    Via `git_run.run_git_bytes` rather than a hand-rolled
     spawn: callers below decode with their own `errors="replace"`, but the
     wrapper is where `git_env()`'s `GIT_OPTIONAL_LOCKS=0` and `NO_WINDOW` live.
     """
@@ -320,7 +320,7 @@ def _parse_wiring(path: Path) -> list[tuple[str, str, str]]:
 
 def _hook_names_from_command(command: str) -> list[str]:
     """The hook modules one command runs: Claude's shim form, the one-process
-    ``hook_dispatch.py <hook> ...`` form (fleet-config#1274), or Codex's
+    ``hook_dispatch.py <hook> ...`` form, or Codex's
     direct-Python form."""
     m = re.search(r"-Hook\s+(\w+)", command)
     if m:

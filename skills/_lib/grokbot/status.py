@@ -1,6 +1,6 @@
 """Is the Grok Bot desktop app running and signed in, and bring it back when it is not.
 
-Grok Bot is the owner's phone front door to the chief (fleet-config#1741): its
+Grok Bot is the owner's phone front door to the chief: its
 iPhone app drives commands that run on this PC through the desktop app, so the
 desktop app being down means the front door is shut. Two commands:
 

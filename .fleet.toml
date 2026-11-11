@@ -63,8 +63,10 @@ enabled  = true
 baseline = ".structure-ratchet-baseline.json"
 
 [comment_ratchet]
-enabled  = true
-baseline = ".comment-ratchet-baseline.json"
+enabled         = true
+baseline        = ".comment-ratchet-baseline.json"
+docstrings      = true
+history_phrases = true
 
 [instruction_ratchet]
 enabled     = true

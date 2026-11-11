@@ -1,4 +1,4 @@
-"""`python -m perf_review measure|file <repo>` — the deterministic half of /perf-review (fleet-config#1121).
+"""`python -m perf_review measure|file <repo>` — the deterministic half of /perf-review.
 
 measure  resolve the target's loopback URL, refuse a dead port (never start
          anything), run the Playwright phone-load leg under the target's own
@@ -8,7 +8,7 @@ measure  resolve the target's loopback URL, refuse a dead port (never start
          (dead port, no Playwright, an unreadable leg).
 sweep    measure and file every fleet web app one at a time (exclusive box lock per app), print one digest.
          `--detach` spawns it as an independent process and publishes the result to `--out` (or a generated
-         path) for a caller to poll instead of waiting on this call (fleet-config#1558; see sweep.py).
+         path) for a caller to poll instead of waiting on this call (see sweep.py).
 file     apply the latest run to the repo's one managed `perf-review` issue — open or update it while a budget is
          broken or a Fixes item is open, close it on a green run, leave it alone on an unmeasured one. A dry run
          unless `--apply`.
@@ -99,7 +99,7 @@ def run_load(python: str, base_url: str, run_dir: Path, block: dict, budgets: di
 
 
 def deploy_state(root: Optional[Path], live: Optional[str]) -> dict:
-    """Whether the build the app serves is the checkout's HEAD (fleet-config#1180, facilitation-suite#164).
+    """Whether the build the app serves is the checkout's HEAD.
 
     A fix that merged while a session held the app was never restarted, so the re-run measured the old build and
     `DIFF` could not tell "not deployed" from "not fixed". `live` is the `git_sha` the app reports; `state` is

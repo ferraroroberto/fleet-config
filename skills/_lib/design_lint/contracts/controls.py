@@ -278,7 +278,7 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
 
 
 def _storage_key_re(markup: str, suffix: str, const_re: str) -> str:
-    """A localStorage key naming `<app>.<suffix>`, in any shape the fleet writes it (#1087).
+    """A localStorage key naming `<app>.<suffix>`, in any shape the fleet writes it.
 
     A literal (`'app.theme'`, `` `${app}.theme` ``), a concatenation
     (`app + '.theme'` — the scaffold's own boot script), a `const_re`-named

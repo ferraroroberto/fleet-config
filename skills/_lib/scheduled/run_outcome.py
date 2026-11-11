@@ -91,7 +91,7 @@ class RunEvidence:
         """Something about the run's outcome was never established.
 
         Not "something was unfamiliar": an unknown record is evidence about the
-        parser, not the run, and is deliberately absent here (fleet-config#810).
+        parser, not the run, and is deliberately absent here.
         """
         return bool(not self.saw_result or self.malformed or self.unverified)
 

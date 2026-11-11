@@ -1,10 +1,10 @@
-"""Shared primitives for the repo-root config writers (fleet-config#928).
+"""Shared primitives for the repo-root config writers.
 
 `codex_model_policy.py`, `session_retention.py` and `codex_statusline.py` each
 edit a user-level config file in place. They share the atomic-write sequence
 and the line-oriented TOML table/assignment regexes, so both live here once —
 the third-caller rule from the global CLAUDE.md. The one quote- and
-comment-aware TOML scanner lives here too (fleet-config#1062), and so does
+comment-aware TOML scanner lives here too, and so does
 the `CODEX_HOME`-aware Codex config path all three resolve.
 """
 

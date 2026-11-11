@@ -5,10 +5,10 @@ How much of the stylesheet actually goes through tokens, split by family
 ratio down.
 
 App-authored CSS only, the same exclusion the contracts apply
-(`files.is_third_party`, fleet-config#940). A vendored library will never use
+(`files.is_third_party`). A vendored library will never use
 our tokens and we will never repaint it, so counting it measures something we
 do not control — and because the escapee list is capped, a single bundled
-library crowds the real findings out of it (home-automation#738: all 30 color
+library crowds the real findings out of it (in one app all 30 color
 escapees and all 4 radius escapees were Leaflet's).
 """
 from __future__ import annotations

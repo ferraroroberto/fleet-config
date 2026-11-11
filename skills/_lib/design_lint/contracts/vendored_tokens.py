@@ -1,11 +1,11 @@
-"""Vendored-component token needs vs what the app defines (fleet-config#1290).
+"""Vendored-component token needs vs what the app defines.
 
 A vendored component is byte-identical across the fleet, but the tokens it
 reads come from the adopting app. When the app never defines one, nothing
 catches it until a gate goes red or the control renders wrong:
 `icon-button.css` reads `var(--icon-inline)` with no fallback, so an app
-without the token draws a zero-size glyph (home-automation#828), and its
-`--hit-min` falls back to 44px silently (app-launcher#1417). The `vendored`
+without the token draws a zero-size glyph, and its
+`--hit-min` falls back to 44px silently. The `vendored`
 lens only byte-compares and the `tokens` lens only compares values the app
 does define, so neither sees a token that is simply absent.
 

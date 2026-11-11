@@ -30,7 +30,7 @@ THIRD_PARTY_DIR_PARTS = {"vendor", "vendors"}
 def is_third_party(path: Path) -> bool:
     """True for a bundled third-party library under `vendor/`.
 
-    **The rule every lens inherits** (fleet-config#940): a check that judges
+    **The rule every lens inherits**: a check that judges
     what the *app authored* — its button tiers, its touch targets, its token
     adoption — must not read third-party bytes. We did not write them, we will
     never restyle them, and a finding against them has no available fix, so it
@@ -51,7 +51,7 @@ def is_third_party(path: Path) -> bool:
 def repo_files(root: Path, suffixes: Tuple[str, ...]) -> List[Path]:
     """Tracked files by suffix — `git ls-files` when available, rglob fallback.
 
-    The `git` shell-out is `git_run.run_git` (fleet-config#561); only the rglob
+    The `git` shell-out is `git_run.run_git`; only the rglob
     fallback is local. The wrapper it used to hand-roll had already been
     factored out into that shared helper, which owns the explicit UTF-8 decode
     and `NO_WINDOW`.
@@ -92,13 +92,13 @@ def find_vendored_root(root: Path) -> Optional[Path]:
     project-scaffolding's own `app/webapp/static/` is one layout among several
     the fleet actually uses (`app/static/` — grocery; `app_web/static/` —
     local-llm-hub), so this searches rather than hardcoding the scaffold's
-    path (fleet-config#291, #292). Bounded to two path segments ahead of
+    path. Bounded to two path segments ahead of
     `static/_vendored` — deeper nesting isn't a layout seen in the fleet.
 
     With more than one copy (a second front end's `app/player/static/_vendored`),
     the app's is the scaffold's `app/webapp/static` layout, else one whose
     `static/` holds the app shell (`index.html`), else the shallowest, then by
-    name (#1087) — never simply the alphabetically first.
+    name — never simply the alphabetically first.
     """
     candidates = [p for pattern in ("*/static/_vendored", "*/*/static/_vendored")
                   for p in root.glob(pattern)

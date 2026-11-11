@@ -1,4 +1,4 @@
-"""Typography contracts (fleet-config#969).
+"""Typography contracts.
 
 Form controls inheriting the body font, uppercase only through the spec's
 legal caps role, and `word-break: break-all` only on opaque strings. All three

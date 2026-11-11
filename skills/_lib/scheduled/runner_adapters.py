@@ -3,10 +3,10 @@
 Adapters emit evidence, never schedule, retry, run checks, or decide success.
 
 An unknown record names what it was, so the next schema drift is diagnosable
-from the run log instead of being a bare count (fleet-config#841). It is a
+from the run log instead of being a bare count. It is a
 statement about this parser, not about the run, and carries no verdict: a
 record type the CLI added last week says nothing about whether the run
-delivered (fleet-config#810). An adapter that recognises a surface and knows it
+delivered. An adapter that recognises a surface and knows it
 cannot confirm that surface finished emits `unverified` instead -- the kind
 that does still decide the outcome.
 """

@@ -1,7 +1,7 @@
 """Deterministic measurement of the fleet's always-on context surface.
 
 The `/context-audit` skill enforces the single-home-by-altitude standard
-(ferraroroberto/project-scaffolding#68). This helper does the *measuring* — word
+(the fleet's context-budget standard). This helper does the *measuring* — word
 counts, file sizes, duplication, header inventory — so the numbers are exact and
 the orchestrating session never invents them (same discipline as
 `learning-log/gather.py`). The LLM orchestrator reads this manifest and supplies
@@ -14,8 +14,7 @@ Measured surfaces:
      Trigger examples are exempt, so the prose count is the one that matters.
      A description that cannot be measured is reported as `unmeasured`, and a
      frontmatter a YAML loader would reject (or silently truncate) as
-     `unparseable` — neither is ever folded into the compliant count
-     (fleet-config#626, #845).
+     `unparseable` — neither is ever folded into the compliant count.
   2. Always-on budget    — bytes / words / est-tokens of `global-CLAUDE.md` and
      every project `CLAUDE.md` under the fleet root, plus a fleet total. Dormant
      repos (`docs/fleet-scope.md`) are not measured and are listed as such,
@@ -28,7 +27,7 @@ Measured surfaces:
   5. Bootstrap loads      — per skill, the files a declaring repo's bootstrap
      auto-loads on every invocation: est tokens, over-cap (a single Read returns
      a partial view), missing, unmeasured, and credential-shaped hits by count
-     (`bootstrap_loads.py`, fleet-config#1014). Contents are never printed.
+     (`bootstrap_loads.py`). Contents are never printed.
 
 stdlib only. Run from the `fleet-config` repo root: `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit/audit.py`.
 """
@@ -81,7 +80,7 @@ def _read_or_none(path: Path) -> Optional[str]:
     """`_read`, but distinguishing "could not read" from "read an empty file".
 
     The skill scan must never treat an unreadable file as measured-and-empty —
-    that is the silent-working-set shrink fleet-config#626 is about.
+    that is the silent-working-set shrink.
     """
     try:
         return path.read_text(encoding="utf-8")
@@ -116,10 +115,9 @@ def skill_roots(
 
     Membership comes from `fleet_repos()` — the same `hooks/projects.toml` list
     `/system-map` and `/config-map` read — so a repo added there is cap-checked
-    the day it lands, with no second registry to keep in sync. Before
-    fleet-config#626 this was a two-entry constant naming only *this* repo's two
-    tiers, so ~20 sister-repo descriptions were never measured at all, while the
-    audit still printed `over_cap=0`.
+    the day it lands, with no second registry to keep in sync. A
+    constant naming only *this* repo's two tiers would leave ~20 sister-repo
+    descriptions unmeasured while the audit still printed `over_cap=0`.
 
     `user_tier_repo` carries a second, `skills/` tier junctioned into every agent
     home: those descriptions are always-on in every repo's sessions, so they are
@@ -147,7 +145,7 @@ def scan_skills(
     read, or whose frontmatter carries no `description:`, lands in
     `unmeasured`; one whose frontmatter does not parse as written lands in
     `unparseable` with the reason — a regex still finds its description line,
-    but the harness does not (fleet-config#845). Neither lands in `rows`, and
+    but the harness does not. Neither lands in `rows`, and
     neither is ever counted compliant. A repo directory that is missing
     entirely is one `unmeasured` entry for the repo. A repo that simply has no
     skills at a tier is not unmeasured: there is nothing there to measure.
@@ -229,14 +227,14 @@ def find_project_claude_mds(fleet_root: Optional[Path] = None) -> List[Tuple[str
     `claude_mds`, and the header-drift block with phantom rows — and because
     worktrees appear and vanish with whatever sessions are running, the totals
     moved between runs with no file changed, corrupting the week-over-week
-    trend this block exists to produce (fleet-config#629).
+    trend this block exists to produce.
 
     Only the worktree guard, via `fleet_repo_scan`'s shared
     `is_linked_worktree` rather than a fourth copy of the rule. Membership is
     not `fleet_repos()`: a repo the list does not declare still costs context,
     so it is measured. The caller removes the dormant repos (`docs/fleet-scope.md`)
     and reports them as not measured, because a budget scan that quietly stops
-    measuring part of the budget is the failure class of #626's `over_cap=0`.
+    measuring part of the budget is the failure class of a false `over_cap=0`.
     """
     root = FLEET_ROOT if fleet_root is None else fleet_root
     out: List[Tuple[str, Path]] = []

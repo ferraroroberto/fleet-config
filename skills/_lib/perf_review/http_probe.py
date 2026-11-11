@@ -1,6 +1,6 @@
-"""The server-side leg of /perf-review: GET-only endpoint timing (fleet-config#1121).
+"""The server-side leg of /perf-review: GET-only endpoint timing.
 
-Generalizes app-launcher's `scripts/probe_endpoint_timing.py` (#1345): every
+Generalizes app-launcher's `scripts/probe_endpoint_timing.py`: every
 endpoint gets its own thread and its own spacing — the poll interval the page
 itself was seen using — so the probe loads the app the way one phone does,
 never harder. The first request per endpoint is the cold one: reported apart,
@@ -39,7 +39,7 @@ _CTX = _tls()
 
 
 def percentile(values: List[float], pct: float) -> Optional[float]:
-    """Nearest-rank percentile (the #1345 definition); `None` on no samples."""
+    """Nearest-rank percentile; `None` on no samples."""
     if not values:
         return None
     ordered = sorted(values)

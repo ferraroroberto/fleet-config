@@ -1,6 +1,6 @@
 """The per-repo `audit: prompt-drift findings` issue merge/backlog engine.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def drift_items(findings: List[dict], rules: Dict[str, dict], texts: Dict[str, s
     `findings` is every judged finding (considers included, so a shared line's
     `propagate to` names every repo carrying it); only a line whose strongest
     verdict is in DRIFT_VERDICTS is filed. `texts` maps a finding path to its bytes.
-    A rule in `provisional` cites a guide that changed this run (fleet-config#1132).
+    A rule in `provisional` cites a guide that changed this run.
     """
     master_key = f"{MASTER_REPO}/CLAUDE.md"
     grouped: Dict[Tuple[str, str, str], dict] = {}
@@ -119,7 +119,7 @@ def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = 
 
 def _drift_comment(item_id: str, tier: str, path: str, rule: str, propagate: str, seen: str,
                    rubric: Optional[str] = None, sha: Optional[str] = None) -> str:
-    """`rubric`/`sha` stamp what the item was last checked against (fleet-config#1477); legacy items lack them."""
+    """`rubric`/`sha` stamp what the item was last checked against; legacy items lack them."""
     stamp = (f" rubric={rubric}" if rubric else "") + (f" sha={sha}" if sha else "")
     return (f"<!-- prompt-drift: id={item_id} tier={tier} path={path} rule={rule} "
             f"propagate={propagate} last-seen={seen}{stamp} -->")
@@ -145,7 +145,7 @@ def merge_drift(existing: str, fresh: List[dict], judged: set, unmeasured: set, 
     `unmeasured`: (path, rule) pairs not established this run (their items are kept as-is).
     Items for files not judged this run (unchanged, so their verdicts still stand) are kept verbatim.
     `shas`: path -> the sha12 of the bytes judged this run. A gone item filed under another rubric whose file
-    is not known to have changed is tagged `rule changed`, not gone: the rule set moved, no fix landed (#1477).
+    is not known to have changed is tagged `rule changed`, not gone: the rule set moved, no fix landed.
     """
     old, runs = parse_drift_body(existing)
     fresh_by_id = {i["id"]: i for i in fresh}

@@ -1,4 +1,4 @@
-"""Mechanical check that an audit finding quotes the line it is about (fleet-config#960 A).
+"""Mechanical check that an audit finding quotes the line it is about.
 
 `/codebase-audit` requires every finding to cite a real `file:line`, but a
 `file:line` can be hallucinated and still look valid. So a finding now carries

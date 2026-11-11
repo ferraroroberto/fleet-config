@@ -1,7 +1,7 @@
 """Component contracts for transient feedback: the neutral frosted toast.
 
 design.md's `toast` is the nav-bar's glass; only a real error tints, a success
-never does (fleet-config#1200). The rendered twin is `/design-review`'s
+never does. The rendered twin is `/design-review`'s
 COLOR-05, which can only judge a toast that happens to be on screen; this scan
 reads the app's own CSS, so it decides without one.
 """

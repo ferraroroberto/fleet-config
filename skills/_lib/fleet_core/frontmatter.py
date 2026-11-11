@@ -1,4 +1,4 @@
-"""Shared read of one field out of a SKILL.md YAML frontmatter block (fleet-config#615).
+"""Shared read of one field out of a SKILL.md YAML frontmatter block.
 
 Three call sites parsed a `---`-delimited frontmatter block for a single field's
 value independently: `skills/_lib/fleet_core/skill_description.py`'s `frontmatter_description()`
@@ -8,7 +8,7 @@ value independently: `skills/_lib/fleet_core/skill_description.py`'s `frontmatte
 `/context-audit` and `/context-purge` depend on, `_frontmatter_field()` for the
 Path-reading, `Optional[str]`-returning contract `/config-map` depends on.
 
-`frontmatter_error()` is the other half (fleet-config#845): `frontmatter_field()`
+`frontmatter_error()` is the other half: `frontmatter_field()`
 is a line regex, so it happily extracts a value from a block no YAML loader
 accepts. A real parse is what the agent harness does, and a block that fails it
 loses its `description:` — the skill's whole routing surface — silently.

@@ -1,6 +1,6 @@
 """Let Grok Bot talk to launcher sessions: send text in, read recent output back.
 
-Grok Bot is the owner's phone front door (fleet-config#1741). Its local commands run on "Always allow",
+Grok Bot is the owner's phone front door. Its local commands run on "Always allow",
 so no human tap guards a call and everything below is the guard. Two verbs:
 
     relay.py send <session> --file <path>   deliver the file's text to a live session

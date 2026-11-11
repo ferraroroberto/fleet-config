@@ -1,4 +1,4 @@
-"""Budgets, verdict, the managed-issue body and the local ledger of /perf-review (fleet-config#1121).
+"""Budgets, verdict, the managed-issue body and the local ledger of /perf-review.
 
 Pure stdlib, no browser, no network. Every check is `pass`, `fail` or
 `unmeasured` — a number the run could not establish is never folded into a
@@ -116,7 +116,7 @@ def bytes_split(leg: dict) -> Optional[dict]:
 
     A relaunch that fails its transfer budget has two different problems: assets that missed the HTTP cache
     (a stamping / ETag fix) and live `/api/` data it must re-fetch (a payload fix). After task-os's fixes its
-    warm transfer was all data, and a cache fix would have been the wrong advice (#1151).
+    warm transfer was all data, and a cache fix would have been the wrong advice.
     """
     if leg.get("api_bytes") is None or leg.get("asset_bytes") is None:
         return None
@@ -126,7 +126,7 @@ def bytes_split(leg: dict) -> Optional[dict]:
 def poll_summary(leg: dict) -> Optional[dict]:
     """`{requests, kb}` of the periodic polls a leg left out of its boot figures, or None when it recorded none.
 
-    A poll is steady-state traffic, not the cost of opening the app, so `load.py` counts it apart (fleet-config#1218);
+    A poll is steady-state traffic, not the cost of opening the app, so `load.py` counts it apart;
     the budget and the split read the boot figures and this keeps the excluded traffic visible.
     """
     if not leg.get("poll_requests"):
@@ -159,7 +159,7 @@ def ready_selector_state(cold: dict, warm: dict) -> Optional[dict]:
     """`{measured, status}` for a declared `ready_selector`, or None when none was declared (ready = FCP).
 
     A selector that never shows leaves "ready" `unmeasured` on both legs, which on its own reads as a slow
-    or unreachable app; this names the real cause (home-automation declared a card on another tab, #776).
+    or unreachable app; this names the real cause (e.g. an app that declares a card on another tab).
     """
     if cold.get("status") != "ok" or cold.get("ready_by") not in ("selector", "selector-not-visible"):
         return None

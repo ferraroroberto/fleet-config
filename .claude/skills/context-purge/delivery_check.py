@@ -1,4 +1,4 @@
-"""Post-condition for the scheduled `/context-purge fleet` job (fleet-config#627).
+"""Post-condition for the scheduled `/context-purge fleet` job.
 
 `claude_progress.py --delivery-check` runs this after the child exits, whatever
 the child's exit code was, and turns a non-zero exit here into
@@ -30,7 +30,7 @@ Exit 0 = a complete run delivered a digest and pinged it. Non-zero = it did
 not, or the question could not be answered; both are "not confirmed", which is
 the whole reason this exists.
 
-The shared predicate lives in `skills/_lib/audit_ledger/digest_delivery.py` (fleet-config#627),
+The shared predicate lives in `skills/_lib/audit_ledger/digest_delivery.py`,
 with `/audit-fleet`'s lenient check. Behaviour pinned by
 `tests/audit/test_delivery_check_contract.py`.
 

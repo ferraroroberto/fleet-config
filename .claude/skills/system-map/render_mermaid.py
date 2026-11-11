@@ -13,8 +13,8 @@ Deterministic by construction, same discipline as ``build_data.py``:
   derived from anything that varies run-to-run.
 
 ``architecture/system-map.mmd`` is the fleet-map doc agents open on demand —
-``global-CLAUDE.md`` only points at it (moved out of always-on context under the
-200-line cap, fleet-config#897). Kept deliberately lean: nodes carry **icon + name
+``global-CLAUDE.md`` only points at it (kept out of always-on context to respect the
+200-line cap). Kept deliberately lean: nodes carry **icon + name
 only**, never the ``ds`` description prose (the priciest field, and already
 redundant with what an agent reads once it's actually inside a given repo).
 ``access``/``edge``/``compute``/``external``/``principles`` are skipped entirely — narrative already covered in ``ARCHITECTURE.md``, not

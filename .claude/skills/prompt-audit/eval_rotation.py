@@ -1,4 +1,4 @@
-"""Run fleet skills' eval cases through `claude plugin eval` on each model tier (fleet-config#1130).
+"""Run fleet skills' eval cases through `claude plugin eval` on each model tier.
 
 A skill opts in by carrying `evals/<case>/` (a `prompt.md` plus `graders/*.md`, plugin
 eval's own case format) next to its `SKILL.md`. For each picked skill this builds a
@@ -15,7 +15,7 @@ aggregate: skill x model x case -> pass / fail / error, notional cost, seconds.
 - Under `--ablation none` (every case slash-invoked) a `tool_used: Skill` grader is
   informational: a slash command expands inline and never calls the Skill tool, so it
   could only ever read 0x and fail every case. Its result stays in the row's `reason`
-  but is left out of the pass decision (fleet-config#1238).
+  but is left out of the pass decision.
 - Credentials: by default the child sessions use the CLI's own credential, which is
   plugin eval's design. `--hub URL` routes them through a local Anthropic-shape
   gateway instead (thinking off, a dummy key); tier ids then come from its

@@ -88,7 +88,7 @@ _VAR_REF_RE = re.compile(r"var\(\s*(--[\w-]+)")
 
 
 def _spec_refs(value: str, spec_name: Dict[str, str]) -> str:
-    """`value` with each `var(--x)` renamed to the spec role the app's `--x` maps to (#1087).
+    """`value` with each `var(--x)` renamed to the spec role the app's `--x` maps to.
 
     A derived token is written against the app's own names — `color-mix(… var(--muted) …)`
     where `--muted` is the app's fg-muted — while the spec writes `var(--fg-muted)`.

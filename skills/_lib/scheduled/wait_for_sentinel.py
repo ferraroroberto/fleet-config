@@ -1,14 +1,13 @@
 """Foreground blocking wait for a sentinel file.
 
 Replaces a model-composed `Monitor` until-loop for `/audit-fleet` step 2's
-sweep wait (fleet-config#609, reopened). The prior design told the
+sweep wait. A model-composed wait told the
 orchestrator to drive `Monitor` with a shell until-loop; in the observed
 failure the run invoked `Monitor`, it returned in about a second instead of
 actually blocking on the sentinel, and the model then narrated "I'll wait for
 the sentinel file notification" and ended its turn -- under `claude -p`
 nothing ever wakes it back up, so the CLI exited 0 having delivered no digest.
-Prose already forbade ending the turn to "wait for it" (fleet-config#314,
-#519) and the model quoted that rule before failing anyway, so this removes
+Prose already forbade ending the turn to "wait for it" and the model quoted that rule before failing anyway, so this removes
 the model's role in composing the wait rather than asking it to compose the
 wait more carefully: it blocks synchronously in a real sleep loop inside one
 tool call and returns only with an unambiguous, machine-checkable answer.

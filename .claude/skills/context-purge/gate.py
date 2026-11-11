@@ -33,7 +33,7 @@ CLI (run from anywhere; `reconcile` also shells out to `gh`):
                                     scanned surface are preserved), upsert
   reconcile [--fleet] [--dry-run] [--json]
       — sync the ledger against every `chore/context-purge-*` PR's actual
-        outcome (fleet-config#757): a merged PR's files get re-hashed to
+        outcome: a merged PR's files get re-hashed to
         their content *at that PR's own merge commit* (never `main`'s
         ever-moving tip); a closed-unmerged PR's files have their
         (never-landed) ledger entry dropped so they re-enter `to_purge`;
@@ -185,12 +185,12 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
 
     `surface`, when given, restricts every file-level update to ledger keys
     gate.py actually tracks (`surface_files()`'s keys). A purge PR's diff can
-    include files outside that surface — project-scaffolding PR #251 also
-    touched `docs/agents/CLAUDE.master.md`, which isn't a `CLAUDE.md`/
+    include files outside that surface — a scaffold purge PR can also
+    touch `docs/agents/CLAUDE.master.md`, which isn't a `CLAUDE.md`/
     `SKILL.md` the gate scans at all — and `advance --only` already refuses
     an unknown path outright (`select_assessed`); reconcile must hold the
     same line rather than quietly inventing a ledger entry `gate`/`advance`
-    would never have created on their own (fleet-config#757).
+    would never have created on their own.
 
     `prs` — one dict per PR, already scoped to `is_purge_branch`-matching
     branches: `{"repo": <ledger-key repo segment>, "number", "title", "url",
@@ -213,15 +213,15 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
 
     - **Same file, one merged + one closed** — the merged result always
       wins, independent of fetch/iteration order (an abandoned attempt, e.g.
-      fleet-config PR #702 closed-unmerged on `CLAUDE.md`, does not get to
-      erase a later successful merge, e.g. PR #754, of the same file).
+      a PR closed unmerged on `CLAUDE.md`, does not get to
+      erase a later successful merge of the same file).
     - **Same file, two merged PRs** — the *chronologically later* merge
       wins (a second, more recent purge legitimately supersedes an earlier
       one's hash). `prs` is sorted by `mergedAt`/`created_at` before
       processing so plain dict-overwrite resolves this correctly.
 
     Both orderings were real bugs caught by running this against live fleet
-    data before shipping it (fleet-config#757) — the second is exactly why
+    data before shipping it — the second is exactly why
     `main_hashes` must be commit-anchored rather than tip-anchored: three
     sister repos each had an old (2026-08-15) *merged* purge alongside a
     newer (2026-08-22) *abandoned* one for the same `CLAUDE.md`, and a
@@ -329,8 +329,8 @@ def _commit_hashes(repo_dir: Path, commit_sha: str, relpaths: list[str]) -> dict
     unrelated edits happened to land on it afterward, silently marking a
     since-drifted file "unchanged" (caught live: several fleet-config files
     the ledger already had correct hashes for showed as "changed" against
-    `origin/main` purely because unrelated PRs — #760/#761/#762/#763 — merged
-    in between, fleet-config#757). The merge commit itself is the one point
+    `origin/main` purely because unrelated PRs merged
+    in between). The merge commit itself is the one point
     in history that's actually provable as "this is what got assessed".
 
     **Also deliberately not `git show <sha>:<path>`** (the raw blob): a repo
@@ -412,7 +412,7 @@ def reconcile(fleet: bool, dry_run: bool = False) -> dict:
     they re-enter `to_purge` instead of staying silently suppressed). An
     open PR touches nothing — it is reported in `backlog` instead, the
     "safe default is to re-offer, so don't touch it while a human might
-    still be reviewing it" middle state (fleet-config#757).
+    still be reviewing it" middle state.
     """
     ledger = read_ledger()
     surface = set(surface_files(fleet))

@@ -374,14 +374,14 @@ class ProgressFormatter:
         full digest, ledger and Telegram ping and was reported `❌ failed ·
         exit 125` because it had cancelled one mis-targeted disk scan and had
         one backgrounded PowerShell exit non-zero after a 90s `docker system
-        df` timeout — both recovered from, neither a fault (fleet-config#808).
+        df` timeout — both recovered from, neither a fault.
 
         Two things were wrong and both are fixed here. A failed child *created*
         a failure, which is precisely what the sibling comment on
         `TRANSIENT_API_EXIT_CODE` forbids ("this renames a failure, it never
         creates one"); and it borrowed 125's name, which means one specific
         thing — the CLI's own background-task ceiling killed sub-agents that
-        were still in flight (#506) — destroying the tellability the rest of
+        were still in flight — destroying the tellability the rest of
         the constant block exists to preserve.
 
         No new rung was minted for a failed child, and that is a decision
@@ -514,7 +514,7 @@ class ProgressFormatter:
         cut-off stream when the terminal `result` event never arrived. A run
         that delivered its result event proved the opposite — the burst is
         just the normal end-of-run sub-agent flush — so `_saw_result` overrides
-        the burst count rather than being folded into it (fleet-config#608).
+        the burst count rather than being folded into it.
         """
         if self._saw_result:
             return False
@@ -547,7 +547,7 @@ class ProgressFormatter:
         Used only *after* the stall watchdog has killed the child, where the
         thing most likely to be jammed is this adapter's own stdout — a
         backpressured downstream consumer is what wedged the 2026-07-30
-        scheduled run (fleet-config#514). Taking ``_emit_lock`` here would park
+        scheduled run. Taking ``_emit_lock`` here would park
         it inside a blocked write, and the main thread's own ``finish()`` emit
         would then deadlock on it, so this deliberately writes unlocked and
         swallows whatever the write does. Interleaving with a concurrent
@@ -562,13 +562,13 @@ class ProgressFormatter:
     def _mark_unknown(self, label: str = "") -> None:
         """Count one unrecognised record, and remember what shape it was.
 
-        The count alone is what made fleet-config#841 invisible for weeks: a
+        The count alone hides a failing run: a
         healthy run and a truncated one both read "N unknown stream record(s)",
         so the number stopped being actionable and started being wallpaper. The
         label is a shape descriptor only (see `runner_adapters.describe_record`)
         -- never payload.
 
-        Counted, named, logged -- and, since fleet-config#810, not a verdict.
+        Counted, named, logged -- and not a verdict.
         A record this parser has never seen is evidence about the parser, not
         about the run; `mark_unverified` is where a record that genuinely
         leaves the outcome unestablished goes.
@@ -580,7 +580,7 @@ class ProgressFormatter:
     def mark_unverified(self, label: str = "") -> None:
         """Count one fact this run left unestablished. Verdict-bearing.
 
-        The other half of the split fleet-config#810 drew. Three call sites
+        The other half of the split between informational and verdict-bearing counts. Three call sites
         reach here, and none of them is schema drift:
 
         * a native delegated child whose completion this parser cannot read,
@@ -708,7 +708,7 @@ class ProgressFormatter:
     def unverified_stream(self) -> bool:
         """True when something about this run's outcome was never established.
 
-        Not "something was unfamiliar" -- that was the fleet-config#810 bug.
+        Not "something was unfamiliar" -- an unfamiliar record says nothing about the run.
         A missing terminal result means delivery was never confirmed; a
         malformed record means the adapter could not parse what it was sent;
         `_unverified` counts the surfaces that named themselves unprovable.
@@ -727,7 +727,7 @@ class ProgressFormatter:
         The OS-level half of `INCOMPLETE_WORK_EXIT_CODE`. `run_process` knows
         this and `finish()` did not, which is the whole reason an orphaned run
         used to fall through the status chain to a bare `❌ failed · exit 118`
-        with no cause named at all (fleet-config#811).
+        with no cause named at all.
         """
         return self._owned_orphans
 

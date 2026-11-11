@@ -1,4 +1,4 @@
-"""Per-run digest for `/context-purge` — render, publish, ping (fleet-config#627).
+"""Per-run digest for `/context-purge` — render, publish, ping.
 
 A `/context-purge fleet` run used to end as 15 open draft PRs and a job log:
 no single artifact said what the run did, and reviewing it meant opening every
@@ -39,9 +39,8 @@ Every published comment carries a machine-readable stamp:
 are both caught by the same post-condition rather than exiting 0 having half
 delivered.
 
-**Naming note (fleet-config#740):** this field and the CLI flags below used to
-be named after Slack, the transport #540 replaced with Telegram. The rename is
-not backward-compatible on purpose -- an older comment's `slack=` field simply
+**Naming note:** this field and the CLI flags below are named after Telegram, the
+delivery transport. The naming is not backward-compatible on purpose -- an older comment's `slack=` field simply
 reads as `delivery=unknown` (unestablished, never a false pass), and every
 such comment ages out of `delivery_check.py`'s freshness window within one
 weekly cycle, so no transition-window shim was worth carrying.
@@ -56,7 +55,7 @@ stdlib only. CLI:
     digest.py publish  <run.json> --md P [--delivery-state posted|failed|unknown]
     digest.py merge-check <repo.json>   # exit 0 = may merge, 2 = blocked
 
-**The run merges its own validated rewrites** (fleet-config#1312), so the digest
+**The run merges its own validated rewrites**, so the digest
 is the review surface: per file the token and line delta and who loads it
 (`blast_radius`), per repo the merged PR/SHA with its one-line `git revert`, and
 whether the live checkout was fast-forwarded. `merge_blockers` is the single
@@ -64,7 +63,7 @@ go/no-go -- `merge-check` runs it before `gh pr merge` and `validate` re-applies
 it to every repo recorded as merged, so an unvalidated rewrite cannot be merged
 and still publish a clean digest.
 
-`--reconcile-json` (fleet-config#757) points at `gate.py reconcile --json`'s
+`--reconcile-json` points at `gate.py reconcile --json`'s
 output -- a standing fact about open `chore/context-purge-*` PRs, not run
 data, so it is supplied at render time rather than carried in `run.json`.
 Omitted (or unreadable), the "Open purge PR backlog" section renders `None`
@@ -178,7 +177,7 @@ def merge_line(s: dict) -> str:
 
 
 def _applied_lines(run: dict) -> list[str]:
-    """What the run changed on `main`: per file, then per repo (fleet-config#1312).
+    """What the run changed on `main`: per file, then per repo.
 
     The run merges its own validated rewrites, so nothing waits on a reviewer;
     this section is what makes the after-the-fact review possible -- what
@@ -209,7 +208,7 @@ def _applied_lines(run: dict) -> list[str]:
 
 
 def _backlog_lines(backlog: "list[dict] | None") -> list[str]:
-    """Markdown lines for the standing open-purge-PR backlog (fleet-config#757).
+    """Markdown lines for the standing open-purge-PR backlog.
 
     A draft PR nobody promotes silently suppresses its files from every
     future gate forever — this section is what makes that backlog visible
