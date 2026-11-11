@@ -1,6 +1,6 @@
-"""Send a file to the owner's chat view from any coding agent (fleet-config#1376).
+"""Send a file to the owner's chat view from any coding agent.
 
-The agent half of app-launcher#1530. Claude has a native `SendUserFile` tool;
+The agent half of the launcher's send-file outbox. Claude has a native `SendUserFile` tool;
 Codex, Grok, Pi and Copilot do not, but every harness can run a shell command.
 This script POSTs the path to the launcher's loopback-only outbox endpoint for
 the caller's own session -- or, inside a scheduled launcher Job (no session),

@@ -1,10 +1,10 @@
-"""Deploy-coverage declaration parsing for /issue-finish (fleet-config#459).
+"""Deploy-coverage declaration parsing for /issue-finish.
 
-`project-scaffolding#199`/`#200` established the convention: a change is not
+project-scaffolding's deploy-coverage convention: a change is not
 shipped merely because it merged. A repo whose standard restart/deploy does
 not reach every runtime component it owns (an out-of-tree target, or an
 in-tree process deliberately excluded from the restart — e.g. app-launcher's
-`:8446` session-host, `app-launcher#611`/`#615`) declares each such component
+`:8446` session-host) declares each such component
 in its own `CLAUDE.md`, `## <component name>` heading, four bullets:
 
     ## <component name>
@@ -20,9 +20,9 @@ inferred from backtick-quoted path-looking tokens in the `what/why` and
 oversight: a future reword of either bullet can silently change what this
 detects. When a declared component yields zero parseable path tokens — **or
 when the diff itself could not be taken at all** (`git_run.changed_files()`
-returning `None`; fleet-config#681) — this module reports `TOUCHED=unknown`
+returning `None`) — this module reports `TOUCHED=unknown`
 rather than `no`: a flow that cannot tell whether it was touched must not
-silently assume it wasn't (the exact failure shape `project-scaffolding#199`
+silently assume it wasn't (the exact failure shape the convention
 exists to close).
 
 Subcommand:

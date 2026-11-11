@@ -1,4 +1,4 @@
-"""Post-flight dirty-tree check for fan-out skills (fleet-config#247).
+"""Post-flight dirty-tree check for fan-out skills.
 
 Why this exists
 ----------------
@@ -33,8 +33,8 @@ Subcommand
 `UNKNOWN` means the facts could not be gathered -- a path that doesn't exist,
 a directory that isn't a repo, a `git` that failed. It is a third state on
 purpose: a failed probe used to yield empty strings that read as facts, so a
-repo that was never inspected got a confident `DIRTY` (fleet-config#570, five
-repos at once, all five actually clean) and, in `built` mode, silently
+repo that was never inspected got a confident `DIRTY` (five repos at
+once, all five actually clean) and, in `built` mode, silently
 satisfied the "is the tree clean" half of the did-the-agent-save-anything
 test. Callers must render `UNKNOWN` as `❓` and never fold it into `✅`/`❌`.
 

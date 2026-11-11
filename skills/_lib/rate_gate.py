@@ -6,11 +6,11 @@ Why this exists
 the shared weekly Claude Code rate limit. `statusline-command.ps1`
 caches `rate_limits.seven_day` (`used_percentage` + `resets_at`)
 plus a `captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on every
-statusline render (fleet-config#259 / app-launcher#326) — so a skill can read the
+statusline render — so a skill can read the
 live weekly usage % and pause dispatch *before* hitting the wall, wait until the
 window resets, then resume in the same still-alive process. The gate reads no
 five-hour window: the owner's plan reports weekly limits only. This replaces the
-older "dead-man's switch" (`audit_retry.py`, retired in fleet-config#261), which
+older "dead-man's switch" (`audit_retry.py`, since retired), which
 armed an OS-level scheduled relaunch because there was no way to read the live %
 from a headless `claude -p` run. See `docs/rate-gate.md` for the full design.
 
@@ -26,7 +26,7 @@ Subcommand
            WAIT_SECONDS=<float|null>
            WATCHDOG_SECONDS=<float|off|unknown|null>
 
-Unattended mode (fleet-config#825, #891)
+Unattended mode
 ----------------------------------------
 The statusline only renders in an interactive session, so a scheduled
 `claude -p` run with no session open on the machine never has a fresh cache.

@@ -1,4 +1,4 @@
-"""Visual-verification backend selection + Playwright fallback plan (fleet-config#351).
+"""Visual-verification backend selection + Playwright fallback plan.
 
 Single source of truth for *how the issue-* visual gate gets a real browser
 render when Codex's in-app `iab` backend isn't live* — so `/issue-finish` and

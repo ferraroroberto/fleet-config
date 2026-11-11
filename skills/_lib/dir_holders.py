@@ -1,11 +1,11 @@
-"""Generic "is any live process holding this directory?" probe (fleet-config#571).
+"""Generic "is any live process holding this directory?" probe.
 
 Why this exists
 ----------------
 `/cleanup-fleet-all`'s teardown may treat a leftover `<repo>-wt-<N>` directory
 as inert rather than as residue, but only after proving five conditions, one of
-which is "no live holder". The only sanctioned proof used to be a repo's own
-`tests/e2e/_browser_sweep.py` — which exists in **4 of 14 fleet repos**. In the
+which is "no live holder". A repo's own
+`tests/e2e/_browser_sweep.py` cannot be the proof — it exists in **4 of 14 fleet repos**. In the
 other ten the condition was unprovable by construction, so any leftover
 directory was guaranteed RESIDUE and guaranteed to halt the run, whatever was
 actually in it. The exception written specifically to stop inert shells halting
@@ -143,8 +143,8 @@ def _query() -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
     Every error names enough to diagnose it from the one REASON line alone:
     elapsed time against the timeout, the exit code in hex too (a Windows
     launch failure such as 0xC0000142 only reads as a huge signed decimal
-    otherwise), and whichever stream actually said something. The
-    fleet-config#952 gate flake failed with the reason never captured.
+    otherwise), and whichever stream actually said something, so a gate
+    failure never loses its reason.
     """
     if sys.platform != "win32":
         return None, None, f"process table probe is Windows-only (running on {sys.platform})"
@@ -177,7 +177,7 @@ def _query() -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
 def parse_table(out: str) -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
     """(processes, powershell pid, why unreadable) from the query's JSON output.
 
-    `strict=False` (fleet-config#991): PowerShell 5.1's `ConvertTo-Json` leaves a
+    `strict=False`: PowerShell 5.1's `ConvertTo-Json` leaves a
     control character in a command line (a tab, an ESC) unescaped. Strict
     parsing rejected the whole table, so one such process anywhere on the
     machine made every probe UNKNOWN. Anything else malformed still fails here.

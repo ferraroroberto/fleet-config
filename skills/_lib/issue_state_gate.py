@@ -1,4 +1,4 @@
-"""Pre-dispatch issue-state gate for fleet-wide cleanup fan-out (fleet-config#623).
+"""Pre-dispatch issue-state gate for fleet-wide cleanup fan-out.
 
 Why this exists
 ----------------
@@ -20,7 +20,7 @@ stale list in the first place.
 A check that cannot establish state is its own outcome, never a passing
 one (global CLAUDE.md's "any check that can fail to establish a fact must
 report that as its own state" -- this fleet has hit the collapsed-into-a-
-passing-state failure shape before, #560, #612, and this issue). Concretely:
+passing-state failure shape before). Concretely:
 a network error, a rate limit, or an unreadable repo produces `unknown`,
 sorted into its own bucket, dispatched exactly like a run that surfaced
 zero results -- never silently dropped, never silently treated as open.
@@ -39,7 +39,7 @@ Subcommands
         unchanged). `repo` must be a bare name (e.g. "task-os"), never
         "owner/name" -- `check()` prepends the owner itself, so a prefixed
         repo produces a doubled-owner `gh` argv that fails with a
-        network-sounding error unrelated to the network (fleet-config#706).
+        network-sounding error unrelated to the network.
         Runs one `check` per element and prints a JSON object
         to stdout:
           {"dispatch": [...], "skipped_closed": [...], "unresolved": [...]}
@@ -96,7 +96,7 @@ def validate_bare_repo(repo: str) -> str:
     reading, and the shape `gh` itself takes everywhere else -- would otherwise
     produce `--repo ferraroroberto/owner/name`, which `gh` misparses (the leading
     segment reads as a hostname) and fails with a network-sounding error that has
-    nothing to do with the network (fleet-config#706). Returns a non-empty detail
+    nothing to do with the network. Returns a non-empty detail
     string naming the actual problem when `repo` is malformed, empty string when
     it's fine -- checked before any `gh` subprocess is spawned, so a bad `repo`
     never spends a doomed call.

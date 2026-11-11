@@ -1,4 +1,4 @@
-"""Deterministic front-end for the `/e2e` skill (fleet-config#556).
+"""Deterministic front-end for the `/e2e` skill.
 
 Single source of truth for the mechanically-checkable half of "what e2e work
 does this repo/diff need?" — so the skill (and the issue-* flows that delegate
@@ -9,8 +9,8 @@ The routing *mechanism* itself is project-scaffolding's: each repo's own
 `scripts/classify_e2e.py` reads that repo's `.fleet.toml` `[e2e]` table and
 maps the diff to a tier (`skip` / `static` / `full`, fail-safe to `full` —
 see project-scaffolding `docs/e2e-routing.md`), plus `surface`: a narrowing of
-`full` to one declared `[[e2e.surface]]`'s space-separated targets
-(project-scaffolding#258). This module never re-implements
+`full` to one declared `[[e2e.surface]]`'s space-separated targets.
+This module never re-implements
 the classification; it locates, runs, boots, and reports around it.
 
 Subcommands:
@@ -30,9 +30,9 @@ Subcommands:
         GATE_ROUTING_REASON=<short>
       WEB_* drives the skill's "no suite at all — worth adding one?"
       evaluation, which applies to web-surfaced repos only. GATE_ROUTING is
-      the gate contract (fleet-config#1134): whether the repo's own gate
+      the gate contract: whether the repo's own gate
       scripts run the classifier at all, and split its space-joined
-      `E2E_PYTEST_TARGET` before pytest (home-automation#784 did not).
+      `E2E_PYTEST_TARGET` before pytest (not every repo's gate does).
 
   route <repo-root> [files...] [--scaffold <path>]
       Run the repo's own classifier (cwd = repo root, this interpreter — the
@@ -44,7 +44,7 @@ Subcommands:
       escalates, never narrows. So does a verdict this helper cannot vouch
       for: a tier outside `skip`/`static`/`full`/`surface`, a `surface`
       with no `E2E_SURFACE` name or an empty target list, or any `E2E_*` key
-      printed twice (fleet-config#902).
+      printed twice.
 
   bootstrap <repo-root> [--scaffold <path>] [--force]
       Self-healing adoption: copy the scaffold's parameterized
@@ -225,7 +225,7 @@ def target_split(text: str) -> Optional[str]:
     The classifier prints several targets space-joined (a declared surface,
     or two lone e2e modules a diff touched), so a gate that passes the value
     as one pytest argument exits 4 on every multi-module branch:
-    home-automation#784, while app-launcher's gate split it all along. `yes`:
+    some gates do this, others split it. `yes`:
     the line reading the key splits it, or the variable it lands in is split
     later; `no`: it lands in a variable that is never split; `unknown`: the
     file reads the key in a shape this check cannot follow.

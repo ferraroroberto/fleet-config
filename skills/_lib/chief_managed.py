@@ -1,4 +1,4 @@
-"""Chief-managed session marker (fleet-config#443).
+"""Chief-managed session marker.
 
 `chief_ops.py dispatch` writes a marker here immediately after spawning a
 worker session, so `hooks/notify_on_idle.py` can tell a chief-dispatched
@@ -22,7 +22,7 @@ This module is the **writer only**. The one reader is
 `block_askuserquestion_chief`), which keeps its own read logic per the
 hooks/skills_lib tree-independence convention and returns a reason alongside
 the verdict so "not managed" and "could not tell" stay distinct. A second
-reader here was removed as dead (fleet-config#850) — query the marker through
+reader here was removed as dead — query the marker through
 that function, not by adding one back.
 """
 
@@ -56,7 +56,7 @@ def mark(
 ) -> Dict[str, Any]:
     """Record `sid` as chief-managed. Returns the row written.
 
-    `dispatch_id` (fleet-config#1455) is the per-dispatch handle
+    `dispatch_id` is the per-dispatch handle
     `hooks/chief_inbox.py` copies into every mailbox event; a row without
     one (a launcher-direct dispatch) yields `dispatch_id: null` events.
     """
@@ -82,7 +82,7 @@ def _main(argv: Optional[list[str]] = None) -> int:
     """Minimal CLI so a caller outside this tree (app-launcher, a different
     repo) can write a marker via subprocess instead of importing across the
     repo boundary -- the same hooks/skills_lib tree-independence convention
-    the module docstring describes for the read side (fleet-config#474).
+    the module docstring describes for the read side.
 
     ``mark <sid> <repo> <number>`` is the only subcommand; it mirrors
     `chief_ops.py cmd_dispatch`'s existing best-effort call so both the CLI

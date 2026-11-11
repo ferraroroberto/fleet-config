@@ -1,16 +1,14 @@
 """Shared `git`/`gh` subprocess wrappers for skills/_lib helpers.
 
 Every helper here needs the same three lines — shell out to `git`, capture
-stdout/stderr as UTF-8, never crash on an undecodable byte — but before this
-module existed each of `audit_issue.py`, `cert_drift.py`,
-`dirty_tree_check.py`, `ux_surface.py`, and `worktree_claim.py` hand-rolled
-its own copy, with inconsistent error handling and `dirty_tree_check.py`'s
-copy the one that had drifted (missing `errors="replace"`, so a non-ASCII
-commit message could raise `UnicodeDecodeError` mid-run). One place now owns
-the subprocess plumbing; each call site keeps whatever return shape (`str` vs
+stdout/stderr as UTF-8, never crash on an undecodable byte (`errors="replace"`,
+so a non-ASCII commit message cannot raise `UnicodeDecodeError` mid-run).
+Hand-rolled copies in `audit_issue.py`, `cert_drift.py`, `dirty_tree_check.py`,
+`ux_surface.py` and `worktree_claim.py` drift apart in error handling, so one
+place owns the subprocess plumbing; each call site keeps whatever return shape (`str` vs
 `CompletedProcess`) and failure behavior (raise vs swallow) it needs on top.
 
-`run_gh` (fleet-config#728) is the same fix for the `gh` CLI: `audit_issue.py`,
+`run_gh` is the same fix for the `gh` CLI: `audit_issue.py`,
 `chief_ops.py`, `issue_state_gate.py`, and `gh_issue_fetch.py` each hand-rolled
 an identical `capture_output=True, text=True, encoding="utf-8",
 errors="replace", creationflags=NO_WINDOW` `gh` spawn before this existed, and
@@ -50,16 +48,16 @@ def git_env(base: Optional[dict] = None) -> dict:
     nothing else touched. That is what happened fleet-wide on 2026-08-01:
     nine repos, nine 0-byte locks, all stamped the same second, and every one
     of those repos was silently unable to `git add`/`commit`/`pull`/`stash`
-    for **fifteen days** (fleet-config#667).
+    for **fifteen days**.
 
     Fifteen days, because a stale lock is invisible to a read: `git status
     --porcelain`, `git fetch`, `git rev-list`, and an up-to-date `git pull
     --ff-only` **all exit 0 and print the right answer** with the lock
-    sitting there — so `#570`'s raise-on-non-zero never fires and no sweep
+    sitting there — so the raise-on-non-zero guard never fires and no sweep
     ever reports `UNKNOWN`. Detection is `index_lock.py`'s job; this is the
     half that stops them being created at all.
 
-    Measured, and narrower than "and friends" suggested (fleet-config#939):
+    Measured, and narrower than "and friends" suggested:
     of `status --porcelain=v2 --branch`, `diff --name-only HEAD`,
     `diff --name-only --cached HEAD`, `ls-files --others`,
     `rev-parse --verify` and `symbolic-ref`, **only `status` takes the
@@ -94,12 +92,11 @@ def run_git(
     `creationflags=NO_WINDOW` is what makes this the *only* place most helpers
     need to think about console suppression: a scheduled `claude -p` job has no
     console of its own, so every unsuppressed `git` spawn beneath it flashes a
-    window on screen (fleet-config#412). `env=git_env()` is the same
-    one-place-fix argument for optional index locks — see that function
-    (fleet-config#667).
+    window on screen. `env=git_env()` is the same
+    one-place-fix argument for optional index locks — see that function.
 
     `extra_env` layers variables that have no `-c` equivalent (e.g.
-    `GIT_INDEX_FILE`, fleet-config#957) over the ambient environment;
+    `GIT_INDEX_FILE`) over the ambient environment;
     `git_env()` is applied last, so no caller can drop `GIT_OPTIONAL_LOCKS=0`.
     """
     base = {**os.environ, **extra_env} if extra_env else None
@@ -116,9 +113,9 @@ def run_gh(
 ) -> subprocess.CompletedProcess:
     """Run `gh <args>`, UTF-8 decoded with undecodable bytes replaced.
 
-    The `gh`-CLI sibling of `run_git` (fleet-config#728). `text=True` alone
+    The `gh`-CLI sibling of `run_git`. `text=True` alone
     falls back to cp1252 on Windows, which raises `UnicodeDecodeError` on a
-    non-ASCII issue title or body (fleet-config#679) — every prior call site
+    non-ASCII issue title or body — every prior call site
     repeated that comment along with the identical spawn. `timeout` stays a
     parameter rather than a forced constant: call sites had already drifted
     (`issue_state_gate` 30s, `gh_issue_fetch` 60s, `audit_issue`/`chief_ops`
@@ -129,8 +126,7 @@ def run_gh(
     `chief_ops.fetch_issue_state`, which passes `subprocess.DEVNULL` to keep a
     scheduled run from ever blocking on stdin.
 
-    `creationflags=NO_WINDOW` is the same one-place fix as `run_git` —
-    (fleet-config#412).
+    `creationflags=NO_WINDOW` is the same one-place fix as `run_git`.
     """
     return subprocess.run(
         ["gh", *args], capture_output=True, text=True,
@@ -152,7 +148,7 @@ def run_git_bytes(
     byte before it was hashed. Those call sites used to hand-roll their own
     `subprocess.run(["git", …])` to get bytes, which also opted them out of
     `git_env()` — the wrapper is the *only* thing that had to be given up, so
-    now it isn't (fleet-config#677).
+    now it isn't.
     """
     return subprocess.run(
         ["git", *args], capture_output=True, check=check, timeout=timeout,
@@ -167,11 +163,10 @@ class Unreadable(Exception):
     empty string that then reads as a fact: empty porcelain reads as *clean*
     and an empty branch name is unequal to `main`, so a repo that was never
     inspected would otherwise be reported as available, or dispatched, or
-    called DIRTY — all of them inventions (fleet-config#570: five repos
-    reported DIRTY at once, all five clean).
+    called DIRTY — all of them inventions.
 
-    One class for both `dirty_tree_check` and `repo_preflight`
-    (fleet-config#677). They used to carry byte-identical private copies under
+    One class for both `dirty_tree_check` and `repo_preflight`.
+    They used to carry byte-identical private copies under
     a comment claiming a shared raiser could not satisfy both "different
     vocabularies" — untrue: the vocabularies differ in how each *caller*
     renders the caught exception, not in the raising, and both re-exported
@@ -204,7 +199,7 @@ def run_git_checked(args: Sequence[str]) -> str:
     The convenience wrapper every call site actually wants on top of
     `run_git` — most fleet code doesn't want to inspect `.returncode` itself,
     it wants "give me the output or blow up with a clear message." Was
-    `audit_issue.py`'s private `_git`, promoted here (fleet-config#502) so
+    `audit_issue.py`'s private `_git`, promoted here so
     `design_sweep_scan.py` / `fleet_audit_scan.py` reach a real public entry
     point instead of a sibling module's underscore-prefixed name.
     """
@@ -225,10 +220,10 @@ def changed_files(repo_path: Path, base: str) -> Optional[List[str]]:
     verbatim copy of this helper that swallowed the non-zero exit and returned
     an empty list, rendering as `TOUCHED=no` / `STALE=` / `UNMAPPED=`: a failed
     probe indistinguishable from a clean diff, in the very machinery those
-    gates exist to make honest (fleet-config#681). `deploy_coverage`'s own
+    gates exist to make honest. `deploy_coverage`'s own
     module docstring already spelled out the rule its `_changed_files` broke —
     "a flow that cannot tell whether it was touched must not silently assume it
-    wasn't" (`project-scaffolding#199`). Callers turn `None` into their own
+    wasn't". Callers turn `None` into their own
     `unknown` state; none of them may turn it back into `no`.
     """
     res = run_git(["-C", str(repo_path), "diff", "--name-only", f"{base}...HEAD"])
@@ -276,7 +271,7 @@ def resolve_default_branch_ref(
     probes `candidates` in order via `rev-parse --verify --quiet` and returns
     the first that resolves; if none do (or `candidates` is empty), returns
     `final_fallback`. `candidates`/`final_fallback` are parameterized so a
-    caller with different fallback semantics (fleet-config#485) can reproduce
+    caller with different fallback semantics can reproduce
     its own exact behavior on top of this one implementation.
     """
     res = run_git(["-C", str(repo_path), "symbolic-ref", "refs/remotes/origin/HEAD"])

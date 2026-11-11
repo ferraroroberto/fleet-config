@@ -1,6 +1,6 @@
-"""The chief's structured backlog plan -- the writer (fleet-config#1034).
+"""The chief's structured backlog plan -- the writer.
 
-The Board's "Chief's plan" card (app-launcher#1279) renders what the chief
+The Board's "Chief's plan" card renders what the chief
 intends to do next: the live lanes, the ordered queue and what is waiting on
 Roberto. The handover log (`chief-handover.md`) carries the same intent as
 prose for the chief itself; this file carries it as data for a parser. The
@@ -233,7 +233,7 @@ def _check_dispatch_fields(errors: List[str], where: str, row: Dict[str, Any]) -
 
 
 def _check_waiting(errors: List[str], where: str, row: Dict[str, Any], ids: set) -> None:
-    """One waiting item: v1's `text`/`ref` plus the structured question (fleet-config#1049)."""
+    """One waiting item: v1's `text`/`ref` plus the structured question."""
     _check_text(errors, f"{where}.text", row.get("text"), required=True)
     ref = row.get("ref", "")
     ref_match = _QUALIFIED_REF.fullmatch(ref) if isinstance(ref, str) else None
@@ -344,7 +344,7 @@ def update(
 # ---- mutations (pure, on a loaded document) ----------------------------------
 
 def split_ref(ref: str) -> Tuple[str, str]:
-    """`app-launcher#1273` -> (`app-launcher`, `#1273`)."""
+    """`repo#N` -> (`repo`, `#N`)."""
     match = _QUALIFIED_REF.fullmatch(ref.strip())
     if not match:
         raise ValueError(f"expected <repo>#<number>, got {ref!r}")
@@ -377,7 +377,7 @@ def set_lane(doc: Dict[str, Any], repo: str, status: str,
     """Upsert the lane for `repo` (one lane per repo).
 
     `item` and `session` are replaced with the row; the lane's model outlives a
-    status change, so an omitted `model` keeps it and `""` clears it (#1101).
+    status change, so an omitted `model` keeps it and `""` clears it.
     """
     existing = next((i for i, lane in enumerate(doc["lanes"]) if lane["repo"] == repo), None)
     lane: Dict[str, Any] = {"repo": repo, "status": status}
@@ -402,7 +402,7 @@ def drop_lane(doc: Dict[str, Any], repo: str) -> None:
 
 
 def _require_question(doc: Dict[str, Any], ref: str) -> None:
-    """A row may wait on Roberto only while an open `plan ask` question names it (#1102).
+    """A row may wait on Roberto only while an open `plan ask` question names it.
 
     A bare `waiting-roberto` status renders on the Board as "waiting on you" with
     nothing to answer. Enforced by the mutations, not `validate()`, so a plan file
@@ -418,7 +418,7 @@ def _require_question(doc: Dict[str, Any], ref: str) -> None:
 
 
 def parse_after(spec: str) -> str:
-    """`"fleet-config#1911 no-lane:fleet-config"` -> the conditions, single-space separated.
+    """`"repo#N no-lane:repo"` -> the conditions, single-space separated.
 
     Each condition is `repo#N` (that issue is merged or closed) or `no-lane:<repo>`
     (no live worker session in that repo). Commas also separate. All must hold.
@@ -652,8 +652,8 @@ def _next_id(doc: Dict[str, Any]) -> str:
 def add_waiting(doc: Dict[str, Any], text: str, ref: Optional[str] = None) -> str:
     """`plan wait`: the text becomes an answerable question; returns its id.
 
-    A plain waiting line had nothing for Roberto to answer on the Board's sheet
-    (#1102), so `wait` is now the shortest `plan ask`. Prefer `ask` with
+    A plain waiting line had nothing for Roberto to answer on the Board's sheet,
+    so `wait` is now the shortest `plan ask`. Prefer `ask` with
     `--detail` and `--recommend` for a real decision.
     """
     return add_question(doc, text, ref=ref)

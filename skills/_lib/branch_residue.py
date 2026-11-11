@@ -1,9 +1,9 @@
-"""Report a repo's leftover branches and orphan worktree folders at teardown (fleet-config#1516).
+"""Report a repo's leftover branches and orphan worktree folders at teardown.
 
 Why this exists
 ----------------
 Teardown deletes only the lane's own branch and, by design, reports nothing
-about anyone else's (fleet-config#572), so branches from closed issues pile up.
+about anyone else's, so branches from closed issues pile up.
 This module judges whether one is safe to drop (a hand-run `gh pr list` /
 `git diff` lookup otherwise) as a deterministic, read-only report.
 
@@ -45,7 +45,7 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
 `--delete` acts on `landed` and `superseded` only: neither holds unshipped work.
 The merge proof needs a closed issue too, or it would call a fresh empty branch
 landed. `git branch --merged` is never used: the fleet squash-merges, so a
-landed tip is never an ancestor (fleet-config#567). Local and remote tips are
+landed tip is never an ancestor. Local and remote tips are
 judged independently.
 
 The own-PR route covers a branch that squash-merged before the default branch
@@ -123,7 +123,7 @@ The report exits 0 -- it reports, the caller decides. The decision core
 `delete_landed` take the issue, open-PR, closing-PR and own-PR lookups as
 injected callables so tests never touch `gh` or the network. The tip proof is
 cached per sha and the `gh` and merge-tree lookups run on a small pool: serial,
-a 62-ref repo took 72 s (fleet-config#1528). stdlib only.
+a 62-ref repo took 72 s. stdlib only.
 """
 
 from __future__ import annotations

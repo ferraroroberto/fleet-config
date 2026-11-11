@@ -13,8 +13,8 @@ print one JSON object bucketing every repo into `to_audit` / `unchanged` /
 `self_fix` / `below_threshold` / `skipped` / `stale_lock` / `errors`.
 `stale_lock` is a repo carrying a stranded `.git/index.lock` (`index_lock.py`)
 — frozen against every write while every read still exits 0, so it has to be
-checked for rather than inferred from the reads that keep passing
-(fleet-config#667). `below_threshold` is a repo whose organic (non-self-fix)
+checked for rather than inferred from the reads that keep passing.
+`below_threshold` is a repo whose organic (non-self-fix)
 change since its last audit hasn't yet
 crossed `audit_issue.py`'s weighted-LOC significance threshold — it carries
 the same `significance`/`threshold` numbers `evaluate_repo` returns, so the
@@ -23,8 +23,8 @@ no per-repo `git`/`gh` tool calls needed for the gating step at all.
 
 The output also carries `enumerated` (repos walked) and an `accounting` block
 asserting the buckets sum back to it, so a repo can never silently drop out of
-every bucket the way an unresolvable ledger baseline used to
-(fleet-config#567). `broken_ledgers` lists the `to_audit` entries forced by an
+every bucket the way an unresolvable ledger baseline used to.
+`broken_ledgers` lists the `to_audit` entries forced by an
 unreadable ledger, so the orchestrator reads the filter instead of re-deriving it.
 
 CLI
@@ -38,7 +38,7 @@ writes to GitHub (`evaluate_repo(..., dry_run=True)` computes and reports
 SKIP_SELF_FIX but skips the ledger upsert/comment). Safe to re-run any time to
 preview "which repos would you audit right now."
 
-`--detach` (fleet-config#609): historic sweep durations range from 345s to
+`--detach`: historic sweep durations range from 345s to
 1460s+ and keep growing with the fleet, well past the Bash tool's 600s
 ceiling — pinning `/audit-fleet` step 2 to one synchronous call that spans the
 whole sweep is what let the harness auto-background that single call and
@@ -92,7 +92,7 @@ def _default_branch(repo_path: str) -> str | None:
     """Bare branch name (e.g. ``main``), no candidate probing on failure --
     routed through the shared `git_run.resolve_default_branch_ref` resolver
     with `candidates=()` to reproduce that pre-existing symbolic-ref-only
-    contract (fleet-config#500)."""
+    contract."""
     ref = git_run.resolve_default_branch_ref(Path(repo_path), candidates=(), final_fallback="")
     if not ref:
         return None
@@ -115,7 +115,7 @@ def accounting(results: dict) -> dict:
     `enumerated` is counted at the top of the walk, before any decision; the
     buckets are counted after. A repo that falls through every branch — the
     2026-07/08 failure where an unresolvable baseline raised past all of them
-    (fleet-config#567) — shows up here as a non-zero `unaccounted`, so the
+    shows up here as a non-zero `unaccounted`, so the
     digest header's counts can never quietly fail to add up. Pure: takes the
     scan result, touches no git.
     """
@@ -134,7 +134,7 @@ def broken_ledgers(results: dict) -> list[dict]:
 
     The plan line and the digest read this rather than re-deriving the filter
     in prose — a full whole-repo audit bought by a parse failure has to be
-    visible *as* a parse failure (fleet-config#566). Pure: takes the scan
+    visible *as* a parse failure. Pure: takes the scan
     result, touches no git.
     """
     return [e for e in results.get("to_audit", []) if e.get("reason") in audit_issue.BROKEN_LEDGER_REASONS]

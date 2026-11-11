@@ -2,7 +2,7 @@
 
 Why this exists
 ----------------
-`/design-sweep` (fleet-config#180) is the fleet-wide, unattended half of
+`/design-sweep` is the fleet-wide, unattended half of
 `/design-sync`: one weekly run sweeps every FastAPI + static-PWA web app and
 files/refreshes its `design-drift` issue. Before dispatching a per-repo
 sub-agent, the orchestrator needs to know *which* fleet repos are actually

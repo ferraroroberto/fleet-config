@@ -1,8 +1,8 @@
-"""Classify a repo's extra registered worktrees for `/cleanup-fleet-all` teardown (fleet-config#1077).
+"""Classify a repo's extra registered worktrees for `/cleanup-fleet-all` teardown.
 
 Why this exists
 ----------------
-Teardown's check 1 used to be one line of prompt prose: `git worktree list`
+Teardown's check 1 is not the bare rule "`git worktree list`
 must show the primary only, anything else is residue, and residue halts the
 whole run. That rule exists to stop the run building on its *own* dirt, and it
 is right for that. It was wrong for a worktree the run never created.
@@ -44,7 +44,7 @@ makes proof harder, which only makes the verdict more conservative):
      `origin/<default>`'s own tree -- merging it would change nothing, which
      is what a squash-merged branch looks like. (`git branch --merged` is
      useless here: the fleet squash-merges, so the original tip is never an
-     ancestor -- fleet-config#567.)
+     ancestor.)
 
 Neither proof → `foreign-unmerged`, i.e. today's halt. A branch whose squash
 was later edited on the same lines conflicts in step 2 and halts too; that is
