@@ -38,7 +38,7 @@ def _normalize_newlines(text: str) -> str:
 
     Applied at the reader boundary so every consumer (capture, index, search)
     sees the same line endings regardless of which harness or OS wrote the
-    stored transcript (fleet-config#785).
+    stored transcript.
     """
     return text.replace("\r\n", "\n").replace("\r", "\n")
 

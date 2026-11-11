@@ -10,9 +10,9 @@ the five common drifts:
   3. Bare `python <file>` / `pip install ...` when a project `.venv` exists
                               — would hit the system Python instead
   4. A recursive delete, or a venv (re)creation, whose target resolves through
-     a **`.venv` junction** — fleet-config#847
+     a **`.venv` junction**
   5. A recursive delete aimed straight at a **primary checkout's real `.venv`**
-     — fleet-config#828; `git clean -x|-X` counts as one (fleet-config#867)
+      (`git clean -x|-X` counts as one)
 
 Rules 4 and 5 are the destructive ones, and they are the same loss by two
 routes. A worktree's `.venv` is a *junction* to the primary checkout's real
@@ -27,7 +27,7 @@ remove-worktree` is safe: it strips the junction with a bare `rmdir`
 Rule 5 closes the other route. `email-archiver`'s venv was emptied during an
 unattended `/cleanup-fleet-all` run and the evidence could not distinguish a
 delete that walked *through* a junction from one aimed at the primary's own
-`.venv` (fleet-config#828), because rule 4 answers only the first. Both end
+`.venv`, because rule 4 answers only the first. Both end
 identically: `.venv` is machine-local, gitignored and **not recoverable from
 git**, so the only repair is recreate-and-reinstall by hand. A worktree's *own*
 real (non-junctioned) `.venv` is deliberately not covered — that one is the
@@ -35,17 +35,17 @@ worktree's to dispose of, and `git worktree remove` is entitled to it.
 
 Both rules resolve an operand against the directory its clause actually runs
 in, not only the payload cwd: `cd <primary> && git clean -xfd` is judged in
-`<primary>` (fleet-config#871). `cd`/`chdir`/`Set-Location`/`sl`,
+`<primary>`. `cd`/`chdir`/`Set-Location`/`sl`,
 `pushd`/`popd` carry across `&&`, `;` and newlines; any target the command
 string cannot pin down keeps the previous directory.
 
 Every clause either rule classifies as destructive is appended to the
 `destructive-actions.jsonl` audit trail under `state_dir()`, blocked or not.
-That file is the answer to #828's third acceptance criterion: the run that
+That file exists because the run that
 emptied the venv retained only per-sub-agent progress markers, so the command
 was never identifiable at all. A refusal only the agent sees is not a record.
 
-What the trail deliberately does *not* cover (fleet-config#867, decided): a
+What the trail deliberately does *not* cover (decided): a
 delete inside a script — `python tidy.py` calling `shutil.rmtree` — shows the
 hook no verb and no target. Recording every out-of-repo `python <script>` was
 the cheap partial step on offer, and was rejected: it would flood the trail
@@ -74,8 +74,8 @@ Allow-listed:
 Heredoc bodies that the consuming command can only *write* — `cat`/`tee` into
 a file, or `--body-file -` — are stripped before any matching: that text is
 documentation, not a command. This guard refused the very issue that asked for
-rule 4 to exist, because the issue body quoted the hazard it describes
-(fleet-config#847). Bodies that are executed (`python - <<'PY'`, `cat <<'EOF'
+rule 4 to exist, because the issue body quoted the hazard it describes.
+Bodies that are executed (`python - <<'PY'`, `cat <<'EOF'
 | sh`) are left intact, redirect or no redirect.
 """
 
@@ -546,9 +546,9 @@ def _chain(cmd: str) -> List[Tuple[str, str, bool, bool]]:
     `_SEGMENT_SPLIT_RE` segment.
 
     `quoted` is True when the segment starts or ends inside a quoted string;
-    `starts_quoted` only when it starts inside one (rule 3, fleet-config#885).
+    `starts_quoted` only when it starts inside one (rule 3).
     The scan ignores escapes: a misread can only mark a segment quoted, and a
-    quoted segment keeps the pre-#871 base.
+    quoted segment leaves the base unchanged.
     """
     parts = _CHAIN_SPLIT_RE.split(cmd)
     out: List[Tuple[str, str, bool, bool]] = []
@@ -571,13 +571,13 @@ def _is_quoted_alternative(chain: List[Tuple[str, str, bool, bool]],
                            index: int) -> bool:
     """True when segment `index` is one branch of an `a|b` alternation in quotes.
 
-    fleet-config#885: `-match 'msedge|python|tray'`, `grep -E 'foo|pip|bar'`
+    Examples: `-match 'msedge|python|tray'`, `grep -E 'foo|pip|bar'`
     and a title like `'fix: python|pip regex'` are text, but the naive split
     hands rule 3 a bare `python` / `pip` clause. Only a segment that opens
     inside quotes right after a lone `|`, with no whitespace in between, is
     read this way: a quoted string that a shell will run (`bash -c "a; python
     x"`, `ssh host 'a | pip install b'`) spaces or `;`/`&&`-joins its clauses,
-    and keeps the pre-#885 reading. Accepted residual: a glued pipe in a
+    and keeps the plain reading. Accepted residual: a glued pipe in a
     string a shell runs (`sh -c "cat r|pip install -r -"`, `"$(cat f|python
     -)"`) now reads as text too, as does one after a quote the escape-blind
     scan misreads. Rule 3 is a nudge, and it already missed `$(python x)`.
@@ -652,8 +652,7 @@ def destructive_clauses(cmd: str, base: Path) -> List[Clause]:
     Both hazard routes are judged here rather than in two parallel scanners:
     they share the clause split, the operand resolution and the audit record,
     and differ only in which predicate answers. `base` starts at the payload
-    cwd and follows every directory change the chain knowably makes
-    (fleet-config#871).
+    cwd and follows every directory change the chain knowably makes.
     """
     out: List[Clause] = []
     stack: List[Path] = []
@@ -713,7 +712,7 @@ def record_destructive_action(payload: Dict[str, Any], cmd: str,
                               clause: Clause, verdict: str) -> None:
     """Append one audit line. Never raises, never blocks the hook.
 
-    fleet-config#828: a `/cleanup-fleet-all` lane emptied a primary checkout's
+    Motivating case: a `/cleanup-fleet-all` lane emptied a primary checkout's
     `.venv` and the command was never identified, because the only retained
     artifact of that run was a per-sub-agent progress marker — no transcript,
     no commands. `ALLOW` records matter as much as `BLOCK` ones: a refusal the

@@ -1,4 +1,4 @@
-"""Shared normalized edit view + ``apply_patch`` envelope parsing (fleet-config#819).
+"""Shared normalized edit view + ``apply_patch`` envelope parsing.
 
 Split out of ``_lib.py`` so the edit-event concern — turning a native
 Edit/Write/MultiEdit or a Codex ``apply_patch`` ``PreToolUse``/``PostToolUse``

@@ -11,7 +11,7 @@ Generic + ``projects.toml``-driven: it indexes only if the session's project
 opted into capture (``capture = true``); otherwise a silent no-op. Detached and
 fail-open — it spawns the indexer in the background so session start is never
 delayed by hub latency, and never blocks or errors out. Never spawns inside a
-scheduled run, whose owned job would count the detached child (fleet-config#911).
+scheduled run, whose owned job would count the detached child.
 
 Wired by the ``SessionStart`` hook in a project's ``.claude/settings.json``.
 """

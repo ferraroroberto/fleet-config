@@ -180,7 +180,7 @@ def resolve_mode() -> str:
     The env var is the explicit per-process override and kill switch (any
     non-empty value that isn't a valid mode reads as an "off" attempt, matching
     the pre-mode-file behavior). The machine-wide switch is mode.json, written
-    by the app-launcher toggle (fleet-config#541); absent or malformed degrades
+    by the app-launcher toggle; absent or malformed degrades
     to "off" — the filter must fail dormant, never fail active.
     """
     env = os.environ.get("FLEET_CONTEXT_FILTER_MODE", "").strip().lower()
@@ -198,7 +198,7 @@ def resolve_mode() -> str:
 
 def _prune_old_blobs(target_dir: Path) -> None:
     """Best-effort GC: rewrite mode caches one raw blob per wrapped call with a
-    unique key, so without a TTL the cache grows forever (fleet-config#541)."""
+    unique key, so without a TTL the cache grows forever."""
     cutoff = time.time() - BLOB_TTL_SECONDS
     try:
         entries = list(os.scandir(target_dir))
@@ -239,8 +239,8 @@ def append_shadow_log(record: dict[str, Any]) -> None:
     The row's *output*-derived fields already pass through `SECRET_RE` on the
     compression path, but `command` was written verbatim — so a
     `gh auth login --with-token ghp_…` row landed half-filtered, the secret
-    stripped from one field of the record and preserved in the other
-    (fleet-config#681). Redacting here rather than at the call site keeps the
+    stripped from one field of the record and preserved in the other.
+    Redacting here rather than at the call site keeps the
     two fields symmetric for every future writer too. The caller's dict is
     copied, never mutated — it is the same object the caller may still read.
 
@@ -361,7 +361,7 @@ def redact_secret_markers(text: str) -> str:
 def _collapse_identical_runs(lines: Iterable[str]) -> list[str]:
     """Collapse runs of *byte-identical* adjacent lines into one ``[xN]`` row.
 
-    Lines that differ in any way are never merged (fleet-config#837). The former
+    Lines that differ in any way are never merged. The former
     implementation keyed each run on a *template* of the line with timestamps,
     uuids, hex digests, paths and numbers masked out — so two distinct worktree
     paths rendered as a single ``[x2]`` row and the second path was simply gone,
@@ -552,10 +552,9 @@ def _verbatim(safe_raw: str, total_lines: int, max_chars: int) -> str:
     """Return content output unsummarised, byte-truncated at the budget.
 
     Truncation is announced with the numbers that make the loss legible and
-    bounded, so it can never be read as "that was the whole file"
-    (fleet-config#837). Characters as well as lines: one long line cut at the
-    budget is "first 1 of 1 lines", which alone says nothing was withheld
-    (fleet-config#1269).
+    bounded, so it can never be read as "that was the whole file".
+    Characters as well as lines: one long line cut at the
+    budget is "first 1 of 1 lines", which alone says nothing was withheld.
     """
     body = safe_raw.rstrip("\n")
     if len(body) <= max_chars:

@@ -1,4 +1,4 @@
-"""Run several hook modules in one process and answer once (fleet-config#1274).
+"""Run several hook modules in one process and answer once.
 
 Claude Code starts every matching hook as its own process, in parallel. Through
 `run-hook.ps1` that is a PowerShell 5.1 start (~160 ms, ~250 ms with the shim's
@@ -12,7 +12,7 @@ launcher. This module is one Python process that runs the named hooks'
 The settings.json command points the venv interpreter straight at this file,
 the way Codex already calls its hook modules (`codex-hooks.json`). No shim
 sits in between, so stdin reaches `read_stdin_json()` as the harness's own
-UTF-8 bytes (fleet-config#912).
+UTF-8 bytes.
 
 What each hook sees and says is unchanged:
 

@@ -88,8 +88,7 @@ def _skill_path_re(skills_dir: str) -> "re.Pattern":
     one pass (the previous approach) leaves a literal ``[/\\]`` in the escaped
     text, and a second blanket substitution over that same string then matches
     its own inserted backslashes and nests the class again — a real bug that
-    left this regex, and everything reading its match, permanently dead
-    (fleet-config#785).
+    left this regex, and everything reading its match, permanently dead.
     """
     parts = [p for p in re.split(r"[/\\]+", skills_dir.strip("/\\")) if p]
     escaped = r"[/\\]".join(re.escape(p) for p in parts)
@@ -121,7 +120,7 @@ def infer_skill_from_transcript(
     turn's plain text — the shape Codex naturally produces when a skill names
     itself by path ("Use the journal-daily skill from
     .claude/skills/journal-daily/SKILL.md."), with no command tags or
-    ``tool_input`` to inspect (fleet-config#785).
+    ``tool_input`` to inspect.
     """
     skill_path_re = _skill_path_re(skills_dir)
     for entry in transcript.entries:
@@ -187,7 +186,7 @@ def marker_is_current(written_at: float, transcript: Transcript) -> bool:
     A skill's Step 0 writes the marker from inside its own session, and that
     session's own Stop hook consumes it a turn later. So a marker predating this
     session's first recorded turn belongs to an *earlier* session whose Stop hook
-    never fired, and describes a skill this session never ran (fleet-config#784).
+    never fired, and describes a skill this session never ran.
     A source with no timestamps at all cannot prove provenance either way; bound
     it by age instead, which still catches the interrupted-session leftover.
     """
@@ -299,8 +298,8 @@ def conversation_slug(messages: list[tuple[str, str]]) -> str:
 
     Counts significant words across every non-preamble user/assistant turn and
     keeps the three most frequent — the recurring topic words a conversation
-    keeps returning to, rather than the vague line it happened to open with
-    (issue #84). Ties break by first appearance, so the result is deterministic
+    keeps returning to, rather than the vague line it happened to open with.
+    Ties break by first appearance, so the result is deterministic
     and stable. Falls back to the first-turn heuristic when the conversation
     holds no significant words yet (e.g. a cold-start readiness-ack capture)."""
     counts: dict[str, int] = {}
@@ -361,8 +360,8 @@ def render_markdown(
     header: str = "",
     agent: str = "",
 ) -> str:
-    """Render one capture body. Preamble/command-tag handling is harness-agnostic
-    (fleet-config#785): the same rules strip a Claude skill-loading injection and
+    """Render one capture body. Preamble/command-tag handling is harness-agnostic:
+    the same rules strip a Claude skill-loading injection and
     a Codex "Use the X skill from .../SKILL.md" opener alike, so two captures of
     the same conversation differ only in the ``agent`` attribute and speaker label.
     """
@@ -401,15 +400,15 @@ def _trigger_delayed_index(project_name: str) -> None:
     run against a capture that hasn't settled, or hasn't changed, a near-instant
     no-op). The one delayed run that lands after the conversation has genuinely
     stopped producing new turns is the one that actually digests it — near the
-    close, instead of waiting for the next ``SessionStart`` (fleet-config#673).
+    close, instead of waiting for the next ``SessionStart``.
 
     Detached and fail-open, same shape as ``session_index.py``'s own trigger:
     never blocks or delays the ``Stop`` hook, never raises.
 
     Skipped inside a scheduled run: the delayed child would outlive the
     provider inside the runner's owned job, turning a delivered run into exit
-    118, and be killed by its teardown before indexing anything
-    (fleet-config#911). The next interactive ``SessionStart`` indexes the
+    118, and be killed by its teardown before indexing anything.
+    The next interactive ``SessionStart`` indexes the
     settled capture instead.
     """
     if _lib.is_scheduled_run():
@@ -508,21 +507,21 @@ def write_capture(
     which is correct for a live Stop-hook write. A backfill of a session that
     ended in the past passes the transcript's own recorded start instead, so a
     recovered conversation sorts and files under its real date rather than the
-    recovery run's (fleet-config#785). The header's own ``updated`` attribute is
+    recovery run's. The header's own ``updated`` attribute is
     unaffected — it always records when this capture was actually written.
 
     ``dry_run`` runs the exact same identity/digest lookup and returns whether a
     write *would* happen, touching no disk — so a caller reporting "would
     capture" can never disagree with what a real run actually does (a naive
     dry-run that skips the dedup lookup entirely would report every already-
-    captured session as new, fleet-config#785).
+    captured session as new).
 
     ``outcome``, when given, receives the result for the breadcrumb log:
     ``result`` (captured / unchanged / retained_shrunk / would_capture), the
     ``path`` updated or kept, and ``duplicates`` -- other captures of the same
     session in other routing folders. Only the first match (routing-folder
     order) is ever updated, so a duplicate goes stale silently; that is what
-    left a resumed session's skill-folder capture weeks old (#983).
+    left a resumed session's skill-folder capture weeks old.
     """
     note = outcome if outcome is not None else {}
     identity = transcript.session_id or str(source.resolve())

@@ -1,7 +1,6 @@
-"""``projects.toml`` registry + notify-target routing (fleet-config#819).
+"""``projects.toml`` registry + notify-target routing.
 
-Split out of ``_lib.py`` (formerly ~1300 lines covering a dozen unrelated
-concerns) so the project-registry concern — load ``projects.toml``, match a
+Kept apart from ``_lib.py``'s dozen unrelated concerns so the project-registry concern — load ``projects.toml``, match a
 ``cwd`` against a project's ``cwd_prefix``, resolve which Telegram chat and
 which Fleet Board URL a ping should use — lives in one focused module instead
 of being one more section in the file every hook imports. No hook's import
@@ -171,7 +170,7 @@ def _strip_worktree_suffix(normalized_path: str) -> str:
 
     `worktree_claim.py`'s sibling-worktree naming (`<repo>-wt-<N>`) has no
     path separator before the suffix, so it never prefix-matches the
-    primary checkout's `cwd_prefix` as-is (fleet-config#471).
+    primary checkout's `cwd_prefix` as-is.
     """
     return "/".join(_WORKTREE_SUFFIX_RE.sub("", segment) for segment in normalized_path.split("/"))
 
@@ -228,7 +227,7 @@ def resolve_notify_target(
     ``notify_complete`` (the skill-completion helper) so both resolve the chat
     and project name identically.
 
-    ``category`` ("attention" / "log", issue #139) routes the ping to a
+    ``category`` ("attention" / "log") routes the ping to a
     dedicated chat: the per-category key is tried first (project override, then
     ``[global]``); when it is unset the chat **falls back to ``telegram_chat``**.
     That fallback is what keeps a single-chat setup working unchanged and lets
@@ -237,7 +236,7 @@ def resolve_notify_target(
     No mention/user leg: Slack needed an ``<@user>`` tag to guarantee a mobile
     push, so this returned a user id too. Telegram pushes every message to a
     chat you are a member of, which made the whole mention path dead weight —
-    dropped in fleet-config#540 rather than ported.
+    dropped rather than ported.
     """
     reg = registry or load_registry()
     project = detect_project(cwd_path, reg)
@@ -279,14 +278,14 @@ def _dotenv_value(key: str) -> Optional[str]:
 
 def resolve_board_url(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[str]:
     """Resolve the app-launcher Fleet Board base URL for a ``?board=<sid>`` deep
-    link (fleet-config#242). Precedence: a project's own ``board_url`` override,
+    link. Precedence: a project's own ``board_url`` override,
     then the ``FLEET_BOARD_URL`` environment variable, fleet-config's ignored
     root ``.env``, then committed ``[global] board_url``. ``None`` means the
     caller must omit the link line, never guess a URL.
 
     The real value (a Tailscale hostname) is set via ``FLEET_BOARD_URL``, not
     ``[global] board_url``, because fleet-config is a **public** repo
-    (fleet-config#271) — same reasoning as ``TELEGRAM_BOT_TOKEN`` staying out of
+    — same reasoning as ``TELEGRAM_BOT_TOKEN`` staying out of
     ``projects.toml``. Claude Code always injects its ``env`` block into hook
     subprocesses. The ignored ``.env`` fallback makes the same private value
     available to Codex and other launchers that do not inject Claude settings.

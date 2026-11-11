@@ -1,4 +1,4 @@
-"""Refuse `git commit` on a repo's default branch (fleet-config#1916).
+"""Refuse `git commit` on a repo's default branch.
 
 `global-CLAUDE.md` says never commit to `main` directly, with two sanctioned
 exceptions. This is the wire that holds the rule for a commit; `branch_before_edit_guard`

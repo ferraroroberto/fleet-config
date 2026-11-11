@@ -1,4 +1,4 @@
-"""Block `AskUserQuestion` from a chief-managed worker (fleet-config#463).
+"""Block `AskUserQuestion` from a chief-managed worker.
 
 `AskUserQuestion` renders only in the calling session's own PTY. For a normal
 interactive session that's fine -- a human is sitting there. For a worker
@@ -10,7 +10,7 @@ in the chain chose it. Worse than invisible, in fact: the rendered modal puts
 the PTY into a state that rejects further input, so `chief_ops.py say` -- the
 documented fallback for relaying a decision -- stops working precisely when it
 is needed, and the only recovery is killing the worker and re-dispatching it
-from scratch (fleet-config#835).
+from scratch.
 
 This is the enforcement: refuse the tool outright for a chief-managed
 session, before it ever renders, so the worker falls back to stating the
@@ -24,7 +24,7 @@ is about the hooks/skills_lib boundary, not imports within hooks/ itself;
 `notify_on_idle.py` already imports its own sibling `session_state` the same
 way). That helper keys on the **launcher** session id from the environment,
 not the hook payload's `session_id`: keying on the payload is what left this
-guard inert from the day it shipped (fleet-config#835).
+guard inert from the day it shipped.
 """
 
 from __future__ import annotations

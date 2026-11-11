@@ -37,7 +37,7 @@ the hooks state dir debounce it to one hold per window so it can never loop:
 `chief_ops.py self-compact`; the compaction runs when the turn ends, while the
 percentage is still over the threshold).
 
-The idle-slot gate (fleet-config#1941) comes right after it: `chief_ops.py slots-idle` prints
+The idle-slot gate comes right after it: `chief_ops.py slots-idle` prints
 `SLOTS_IDLE=<n|unknown|0|off>` (the last drain's line when under two minutes old, else a live
 count) and `SLOTS_COVERED=<id>` when an open `plan ask --id slots-idle` answers for it. A count
 above zero, or `unknown`, with no cover holds the turn end once per ten minutes

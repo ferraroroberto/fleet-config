@@ -16,7 +16,7 @@ Config via env so a backend swap needs no code change:
                          is loaded). Deliberately the hub's stable *alias*, not
                          a versioned id: the hub runs a latest-only policy, so a
                          copied ``claude-haiku-4-5`` stops resolving the day the
-                         row flips to haiku-5 (fleet-config#679)
+                         row flips to haiku-5
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Human-readable run report (logged per leg) and the summary ping.
 
-Split out of `hooks/backup_private.py` (fleet-config#731). Works purely off
+Split out of `hooks/backup_private.py`. Works purely off
 already-built manifest dicts, so its only sibling dependency is `config.py`
 (for `EXIT_OK`).
 """
@@ -31,8 +31,8 @@ def _leg_duration_seconds(manifest: Dict[str, Any]) -> Optional[float]:
 
     Logged per leg (rather than only the overall run total `main()` already
     prints) so the transcripts leg's contribution to total runtime stays
-    visible night over night — the trend that walked fleet-config#720 into a
-    watchdog kill in the first place (fleet-config#721).
+    visible night over night — the trend that walks a leg into a
+    watchdog kill.
     """
     started, finished = manifest.get("started_at"), manifest.get("finished_at")
     if not started or not finished:
@@ -118,7 +118,7 @@ def report(manifest: Dict[str, Any]) -> None:
 
 
 def _notify_summary(manifests: Sequence[Dict[str, Any]], exit_code: int) -> str:
-    """One ASCII-only line per leg (fleet-config#507: a Windows command line is
+    """One ASCII-only line per leg (a Windows command line is
     not a UTF-8-safe channel, and this text also reaches the chat via argv)."""
     icon = "OK" if exit_code == EXIT_OK else "FAILED"
     parts = []

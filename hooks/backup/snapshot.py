@@ -1,7 +1,7 @@
 """Writing and verifying snapshot files: hardlink-vs-copy, sample re-hash,
 zero-file-regression detection, and SQLite's online-backup snapshotting.
 
-Split out of `hooks/backup_private.py` (fleet-config#731). Consumes plain
+Split out of `hooks/backup_private.py`. Consumes plain
 tuples/dicts (never a `Selection` from `select.py`, never anything from
 `retention.py`) so it has no sibling dependency but `config.py` -- `select.py`
 imports `snapshot_sqlite`/`is_sqlite_sidecar` from here for the runtime-data
@@ -92,7 +92,7 @@ def snapshot_sqlite(src: Path, dst: Path,
     The copy runs in bounded steps and is abandoned once it has made no forward
     progress for `timeout` seconds — a held lock (every step returns BUSY) or a
     writer that keeps restarting the copy. `Connection.backup` alone retries
-    BUSY forever and ignores the connect timeout (fleet-config#1422). A large
+    BUSY forever and ignores the connect timeout. A large
     database that keeps advancing is never cut off; only a stalled one is.
 
     Raises `OSError` when neither attempt works — locked, corrupt, stalled, or

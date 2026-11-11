@@ -75,7 +75,7 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
     A bare ``Popen.kill()`` only reaps the direct child. Any grandchild that
     inherited the stdout/stderr pipes keeps their write handles open, and the
     post-kill collection then blocks on a pipe that never reaches EOF — which is
-    exactly how a scheduled run wedged for eight hours (fleet-config#411).
+    exactly how a scheduled run wedged for eight hours.
     """
     if sys.platform == "win32":
         try:
@@ -153,14 +153,14 @@ def _log_row(
 ) -> None:
     """Append one telemetry row for a compressed command, in either agent path.
 
-    Written in BOTH shadow and rewrite (fleet-config#541): rewrite rows are what
-    the app-launcher stats panel reads after the #392 flip, so a shadow-only
+    Written in BOTH shadow and rewrite: rewrite rows are what
+    the app-launcher stats panel reads after the flip to rewrite, so a shadow-only
     writer would go dark the moment the filter starts earning its keep.
 
     One writer for `run_wrapped` (Claude/agy/Copilot) and `run_compress` (Pi), because
     the panel reads both agents' rows out of the same log and therefore needs
     one payload shape — two hand-kept copies could only ever drift into a
-    half-readable log (fleet-config#677).
+    half-readable log.
     """
     context_filter.append_shadow_log(
         {
@@ -207,9 +207,9 @@ def _retrieve_footer(compressed: Any) -> str:
     """A one-line escape hatch when lines were withheld, or "" when none were.
 
     The header already carried `raw_key=`, but nothing said what to do with it,
-    so the full output was cached and unreachable in practice (fleet-config#837).
+    so the full output was cached and unreachable in practice.
     Keyed on what was withheld, not on the line count, which cannot drop for a
-    single long line (fleet-config#1269).
+    single long line.
     """
     if not compressed.raw_key or not compressed.withheld:
         return ""
@@ -228,7 +228,7 @@ def _shown(compressed: Any) -> str | None:
 
     Output that came back whole and unredacted needs no banner: it would only
     cost ~30 tokens per call, and once most commands are wrapped that overhead
-    outweighed everything the filter saved (fleet-config#1268).
+    outweighed everything the filter saved.
     """
     if not compressed.withheld and not compressed.secret_like:
         return None
@@ -389,7 +389,7 @@ def run_eval(args: argparse.Namespace) -> int:
 
 
 def run_compress(args: argparse.Namespace) -> int:
-    """Compress an already-captured tool output (fleet-config#545).
+    """Compress an already-captured tool output.
 
     The Pi port's entry: Pi's ``tool_result`` extension middleware already has
     the real output, so unlike ``run`` there is nothing to execute — no wrapper

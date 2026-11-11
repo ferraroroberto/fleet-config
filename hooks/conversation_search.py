@@ -1,4 +1,4 @@
-"""Ranked full-text search over captured conversations (fleet-config#586).
+"""Ranked full-text search over captured conversations.
 
 ``conversation_capture`` writes one markdown capture per conversation and
 ``conversation_index`` digests each into ``index.md`` / ``index.json``. Those
@@ -181,7 +181,7 @@ def _capture_paths(conv_dir: Path) -> "list[Path]":
     ``archive/`` is where an index decay (life-os ``_recap``) parks old captures
     so the indexer stops re-digesting them. They stay full-text searchable and
     resumable — only ``conversation_index.index_dir`` skips them, which is what
-    keeps them out of the LLM digest (fleet-config#1346). One level only: no
+    keeps them out of the LLM digest. One level only: no
     deeper nesting is scanned.
     """
     paths = list(conv_dir.glob("*.md"))
@@ -232,7 +232,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
     """Bring the search db in line with the captures on disk. Returns # upserted.
 
     Incremental: a conversation is re-read only when its mtime moved or its user
-    title (``titles.json``, fleet-config#1348) changed. Rows whose
+    title (``titles.json``) changed. Rows whose
     capture has disappeared are dropped, so the db can't accumulate ghosts of
     deleted conversations. Archived ones (``archive/``) are kept — see
     :func:`_capture_paths`.
@@ -389,7 +389,7 @@ def _looks_like_fts5(query: str) -> bool:
     The gate that keeps two audiences apart. Anyone reaching for an operator
     gets their query untouched; everyone else — the overwhelming majority,
     typing words into a search box — is routed through ``_quote_terms`` so an
-    unfinished word can still match (#935).
+    unfinished word can still match.
     """
     return bool(_FTS5_SYNTAX.search(query))
 
@@ -404,7 +404,7 @@ def _quote_terms(query: str) -> str:
     The trailing ``*`` is what makes an in-progress word findable: FTS5 matches
     a bare term as a *complete token*, so ``head`` matched nothing until
     ``headphones`` was finished and the search read as broken for every
-    keystroke of every word (#935). Only the **last** term is a prefix — it
+    keystroke of every word. Only the **last** term is a prefix — it
     models the word under the cursor, while every earlier term keeps its exact
     meaning, so finishing a query never silently widens what came before.
 

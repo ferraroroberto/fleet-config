@@ -1,4 +1,4 @@
-"""Refuse `gh pr merge` on a UX diff that has no `.proof/<PR>/index.html` (fleet-config#1768).
+"""Refuse `gh pr merge` on a UX diff that has no `.proof/<PR>/index.html`.
 
 `/issue-finish` asks every lane to run `ui_proof check . --pr <PR>` before it
 merges, and that command refuses a UI diff with no proof page. A lane that

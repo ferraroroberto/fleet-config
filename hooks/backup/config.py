@@ -1,12 +1,12 @@
 """Backup engine configuration: exit/freshness/name constants, `BackupConfig`,
 per-repo `RepoOverrides`, and their projects.toml loaders.
 
-The lowest module in `hooks/backup/` (fleet-config#731) -- every sibling
+The lowest module in `hooks/backup/` -- every sibling
 module imports constants and/or `BackupConfig`/`RepoOverrides` from here, and
 this module imports nothing from them. Split out of the former 1768-line
 `hooks/backup_private.py` alongside `select.py`, `snapshot.py`, `retention.py`,
 `report.py`, and the thin `cli.py` orchestrator -- the same shape `design_lint`
-was split into (fleet-config#564).
+was split into.
 """
 
 from __future__ import annotations

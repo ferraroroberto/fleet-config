@@ -3,12 +3,12 @@
 Disabled by default. The machine-wide switch is `~/.fleet-context-filter/
 mode.json` (`off | shadow | rewrite`, written by the app-launcher toggle);
 the `FLEET_CONTEXT_FILTER_MODE` env var overrides it per process and doubles
-as the kill switch (fleet-config#541). `shadow` collects real command metrics
+as the kill switch. `shadow` collects real command metrics
 without changing returned output; `rewrite` returns the compressed output to
 the agent. In both modes the original command is executed by
 `context_filter_cli.py run`, so unsafe/streaming commands are skipped. Codex
 is deliberately fail-open because it misattributes a replacement command's
-ordinary failure to the hook (fleet-config#755).
+ordinary failure to the hook.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def _invoking_agent(payload: dict) -> str:
     APP_LAUNCHER_AGENT: env stamps inherit across process trees, so a codex
     session spawned from inside a launcher-spawned Claude session reports
     "claude" — which mis-shaped the wrap into a PowerShell ParserError in a
-    live probe (fleet-config#541).
+    live probe.
     """
     hinted = _lib.payload_agent(payload)
     if hinted:

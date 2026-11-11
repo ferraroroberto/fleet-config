@@ -1,5 +1,5 @@
 """SessionStart hook — report any fleet repo sitting on a stranded
-``.git/index.lock`` before the session does anything (fleet-config#939).
+``.git/index.lock`` before the session does anything.
 
 Why a session-start tripwire at all
 -----------------------------------
@@ -7,7 +7,7 @@ A stale lock is **invisible to a read**. ``git status --porcelain``,
 ``git fetch``, ``git rev-list`` and an already-up-to-date
 ``git pull --ff-only`` all exit 0 with correct output while the repo cannot
 ``add``, ``commit``, ``pull`` or ``stash``. That is the whole reason
-fleet-config#667 went unnoticed for **fifteen days** across nine repos, and
+a stranded lock went unnoticed for **fifteen days** across nine repos, and
 why the 2026-09-20 recurrence — 23 repos locked at 13:57:41 — still did real
 damage in its first thirty minutes: two ``git merge --ff-only`` calls printed
 ``Updating <old>..<new>`` and *failed*, the next command in the chain read the
@@ -16,7 +16,7 @@ old HEAD, and two tray restarts then verified and reported the **old**
 deployed when they were not.
 
 ``/audit-fleet``'s weekly ``stale_lock`` bucket is the right *report* and the
-wrong *cadence*: a week of invisible breakage is most of a #667. This hook is
+wrong *cadence*: a week of invisible breakage is most of a fifteen-day outage. This hook is
 the short-interval half — it fires at the one moment that reliably precedes an
 agent writing to a repo, which is an agent session starting.
 

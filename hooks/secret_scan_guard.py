@@ -15,8 +15,8 @@ and for Claude's `Read`/`Grep`, on the first alone:
   command string itself for a real credential.
 - **`gh issue|pr create|comment|edit` and `gh pr review`** — scans the command
   string (inline `--body`/`-b`/`--title`) plus the contents of every file named
-  by `--body-file`/`-F`, resolved against the payload `cwd` (fleet-config#959)
-  as moved by any leading `cd`/`Set-Location`/`pushd` (fleet-config#1054).
+  by `--body-file`/`-F`, resolved against the payload `cwd`
+  as moved by any leading `cd`/`Set-Location`/`pushd`.
   Reading the file the command names is what makes the bytes scanned the bytes
   published. Issue and PR bodies on a public repo are world-readable and indexed
   the moment they post, and `gh_body_file_guard` steers bodies into exactly the
@@ -28,7 +28,7 @@ and for Claude's `Read`/`Grep`, on the first alone:
 On the commit side, the one pattern that matters across this fleet is a
 Telegram **bot token** and Slack `xoxb-…` alike: the user keeps creds in a secret-managed
 location (`.env` / `TELEGRAM_BOT_TOKEN`), never in a tracked file. This is the wire
-that catches the mistake before a token lands in `git log` (fleet-config#74).
+that catches the mistake before a token lands in `git log`.
 
 Why scan the staged diff, not just the command string: the no-AI-trailer guard
 only needs the commit *message*, which lives in the command. A leaked secret
@@ -40,10 +40,9 @@ legitimately contain the *placeholder* forms `xoxb-…` and `xoxb-<token>`: a re
 token has a long secret body and the placeholders do not.
 
 What counts as a credential is **not** decided here — `_lib.SECRET_PATTERNS` is
-the one definition for this tier, shared with `context_filter`'s redactor
-(fleet-config#561). This module used to carry its own one-family copy, which had
-drifted strictly narrower than the redactor's four, so the guard blocked a Telegram
-token and waved through an OpenAI key, a GitHub PAT, and an AWS access key id.
+the one definition for this tier, shared with `context_filter`'s redactor.
+A separate one-family copy here would be strictly narrower than the redactor's four,
+so the guard would block a Telegram token and wave through an OpenAI key, a GitHub PAT, and an AWS access key id.
 """
 
 from __future__ import annotations
@@ -72,12 +71,12 @@ def _staged_diff(repo_cwd: Path) -> str:
     falls back to scanning just the command string and never blocks spuriously.
 
     Routed through :func:`_lib.run_git` rather than a hand-rolled
-    ``subprocess.run(["git", …])`` (fleet-config#677): this fires on **every
+    ``subprocess.run(["git", …])``: this fires on **every
     commit in every repo in the fleet**, and a raw spawn silently opts out of
     ``GIT_OPTIONAL_LOCKS=0`` — the one-line fix that exists precisely because
     ``git diff`` takes ``.git/index.lock`` to write back a refreshed stat cache,
     and a hook killed mid-refresh strands a 0-byte lock that blocks every write
-    in that repo while every read keeps exiting 0 (fleet-config#667).
+    in that repo while every read keeps exiting 0.
     """
     try:
         res = _lib.run_git(["-C", str(repo_cwd), "diff", "--cached"], timeout=STAGED_DIFF_TIMEOUT_S)
@@ -106,7 +105,7 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
     `grep -F` elsewhere in the chain never names a file to scan.
 
     ``base`` starts at the payload cwd and follows every `cd`/`Set-Location`/
-    `pushd`-style segment before the gh one (fleet-config#1054): `cd dir && gh
+    `pushd`-style segment before the gh one: `cd dir && gh
     issue create --body-file rel.md` publishes `dir/rel.md`. A directory the
     hook cannot read literally (`cd $X`, `cd -`, `popd`) makes the base
     ``None`` until a later absolute `cd`.

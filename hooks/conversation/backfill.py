@@ -1,4 +1,4 @@
-"""Recover a stored transcript no live Stop hook ever captured (fleet-config#785).
+"""Recover a stored transcript no live Stop hook ever captured.
 
 A session is lost forever when its Stop hook never fires, or fires against a
 hosting process that had not yet loaded the capture hook — the concrete cause

@@ -2,7 +2,7 @@
 `latest/` mirror (full rebuild and incremental reconcile), the restore note,
 and the retention/freshness state machine.
 
-Split out of `hooks/backup_private.py` (fleet-config#731). Depends only on
+Split out of `hooks/backup_private.py`. Depends only on
 `config.py` and the hooks' shared `_lib` -- nothing here reaches into `select.py` or `snapshot.py`, so
 `cli.py` (the orchestrator) is the only module that has to know both this
 module's bookkeeping and `snapshot.py`'s file-writing exist.
@@ -86,8 +86,8 @@ def read_run_marker(snapshot_dir: Path) -> Dict[str, Any]:
 
 def write_run_marker(snapshot_dir: Path, leg: str) -> None:
     """Write `.run-in-progress` before the first file, so a death mid-write leaves
-    a torn tree unambiguously marked (fleet-config#607). Failure to write it must
-    never fail the backup itself — it degrades to the pre-#607 behaviour.
+    a torn tree unambiguously marked. Failure to write it must
+    never fail the backup itself — it degrades to running without a marker.
     """
     marker = {
         "leg": leg,
@@ -446,7 +446,7 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
     The repair path, kept reachable for the cases `reconcile_latest` below
     cannot handle safely (no `latest/` yet, or no readable previous manifest to
     diff against) and for `--rebuild-latest-full` — never the nightly default
-    once a previous manifest exists (fleet-config#721).
+    once a previous manifest exists.
 
     A mirror rather than a junction to the newest dated directory: hardlinks keep
     `latest/` valid after retention prunes the snapshot it was built from, and cost
@@ -455,7 +455,7 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
     the retired tree moved *after* the swap. An interrupt can only ever land
     before the swap (untouched `latest`) or after it (fully-rebuilt `latest`,
     `latest.old` just garbage the next run sweeps) — never mid-delete, so
-    `latest/` is never left half-deleted (fleet-config#720).
+    `latest/` is never left half-deleted.
     """
     latest = dest_root / LATEST_DIR
     staging = dest_root / (LATEST_DIR + ".new")
@@ -518,7 +518,7 @@ def _previous_snapshot(
     A snapshot still carrying `.run-in-progress` was left mid-write by a run that
     never reached `manifest.json` — its tree is torn, so it is skipped rather than
     hardlinked against or trusted for content. Skipped names are returned so the
-    caller can report the interrupted predecessor (fleet-config#607).
+    caller can report the interrupted predecessor.
     """
     skipped: List[str] = []
     for snapshot in sorted(dated_snapshots(dest_root), key=lambda p: p.name, reverse=True):
@@ -545,7 +545,7 @@ def _index_manifest(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, Any],
                      prev_manifest: Dict[str, Any]) -> Tuple[int, int, int]:
     """Update `latest/` to match `snapshot_dir`'s manifest, touching only the
-    files that changed since `prev_manifest` (fleet-config#721).
+    files that changed since `prev_manifest`.
 
     `rebuild_latest` re-links every file in the tree every night regardless of
     how much actually changed — ~14.7k `os.link()` calls for a delta of a few

@@ -30,7 +30,7 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind design  --summary "8 swept | 3 drifted | 11 findings filed"
 
 Keep every ``--summary`` **pure ASCII**: a Windows command line is not a
-UTF-8-safe channel (fleet-config#507 — a literal ``·`` reached the chat as ``??``),
+UTF-8-safe channel (a literal ``·`` reached the chat as ``??``),
 so spell a multi-part summary's separator with the ASCII token ``|`` and let
 :func:`normalize_summary` render it as ``·`` from a Python literal. Mojibake that
 is still recoverable is repaired on the way in; a boundary that already replaced
@@ -209,7 +209,7 @@ def build_message(
     Leads with a glanceable status mark. A missing ``title`` or ``url`` is
     dropped cleanly — no dangling " · " or double spaces. ``summary`` is passed
     through :func:`normalize_summary` first, so an argv-mangled or ASCII-token
-    separator renders as a real ``·`` (fleet-config#507).
+    separator renders as a real ``·``.
     """
     summary = normalize_summary(summary)
     name = f" {title}" if title else ""
