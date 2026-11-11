@@ -61,7 +61,7 @@ def _source_unavailable(board: Dict[str, Any], source: str) -> Optional[str]:
 
 def _format_rate_limit_line(board: Dict[str, Any]) -> str:
     """Claude's weekly window from `quota_lines` — `?` with the row's reason when
-    there is no reading, never `None%` (fleet-config#840)."""
+    there is no reading, never `None%`."""
     row = next(
         (line for line in board.get("quota_lines") or []
          if isinstance(line, dict) and line.get("harness") == "claude"),

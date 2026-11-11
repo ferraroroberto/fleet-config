@@ -1,4 +1,4 @@
-"""Where a suite pays wall time without doing anything (fleet-config#1134): sleeps and waits in the
+"""Where a suite pays wall time without doing anything: sleeps and waits in the
 test tree, slow nodes, app timers, slow fixtures, and runtime claims that drifted from the measurement.
 
 Part of the `e2e_value` package; see its `__init__` for the reports and their shapes.
@@ -105,7 +105,7 @@ def _poll_loops(text: str) -> List[Tuple[int, int]]:
     A loop whose test is not a bare `True`, or whose body can `break`, `return`
     or `raise`, stops as soon as the condition it waits for holds. A bounded
     `for _ in range(40)` retry loop is a poll too when an `if` inside it
-    `break`s or `return`s (app-launcher#1375: its `_wait_for_calls` was priced at
+    `break`s or `return`s (a `_wait_for_calls` helper is priced at
     the 40-iteration ceiling); a `for` loop over taps and an endless `while True`
     with no exit are not polls.
     """
@@ -133,7 +133,7 @@ def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
     `sleep` (`wait_for_timeout`, `time.sleep`) is paid in full on every run,
     except one inside a condition loop: that is `poll-sleep`, which ends when
     the condition holds and costs its interval at most per check
-    (facilitation-suite#165: 6 of 11 listed sleeps, the saving overstated 1.75x);
+    (counting them overstates the saving);
     `page-timer` (a `setTimeout` in an init script or evaluated JS) is paid
     whenever a test waits for its effect; `poll-constant` (`POLL_MS = 15_000`)
     and `long-timeout` (`timeout=` of 10 s or more) mark a test that may wait
@@ -174,7 +174,7 @@ _APP_SLEEP_RE = re.compile(r"\bsleep\(\s*([\d_]+)\s*\)")
 
 
 def slow_nodes(nodes: Dict[str, float]) -> List[Dict[str, object]]:
-    """Executed nodes far above the suite's median: the `find the wait` candidates (fleet-config#1157).
+    """Executed nodes far above the suite's median: the `find the wait` candidates.
 
     A wait that lives in app source (a 1 s status poll in `poll.js`, waited out
     twice by one test) is invisible to the test-tree scan; the per-node seconds
@@ -202,11 +202,11 @@ def app_timers(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
     resolves through `const NAME = <ms>` in the same file, else in another
     module's `export const`, and carries its `name`; a name declared nowhere, or
     with different values in other files and none in this one, is left out
-    rather than guessed (app-launcher#1375: the 3 s and 4 s polls the slowest
+    rather than guessed (the 3 s and 4 s polls the slowest
     tests waited out were all named constants). Tests, vendored copies,
     `node_modules` and minified files are left out. A hint to confirm by
     reading, never a cost: only the test's own stubbed endpoints decide
-    whether the timer runs (fleet-config#1157).
+    whether the timer runs.
     """
     skip = {str((repo_root / d.strip("/")).resolve()) for d in test_dirs}
     sources: List[Tuple[str, str]] = []
@@ -274,7 +274,7 @@ def _fixture_info(fn) -> Optional[Tuple[Optional[str], bool]]:
 
 
 def slow_fixtures(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
-    """Fixtures and helpers (never tests) holding a seconds-valued timeout of 30 s or more (fleet-config#1170).
+    """Fixtures and helpers (never tests) holding a seconds-valued timeout of 30 s or more.
 
     local-llm-hub's biggest cost was a session fixture: `httpx.get(...,
     timeout=_WARMUP_TIMEOUT)` with `_WARMUP_TIMEOUT = 90.0`, a cold scan of the
@@ -380,10 +380,10 @@ def runtime_claims(text: str, file: str) -> List[Dict[str, object]]:
     threshold ("investigate if a run exceeds ~7 min"), a history ("the
     previous ~10 min") or a setting ("default 5 min"). home-automation's
     audit took those, an iCloud `expired after 10 min` and a telemetry cadence
-    as runtime claims (fleet-config#1134). On one line only the first figure (its
+    as runtime claims. On one line only the first figure (its
     headline) and a figure with a gate/suite/browser word in the `SPAN_WORD_WINDOW`
     characters before it count: a history list, a worker-count scenario and a
-    phase with no span in the log are noise (app-launcher#1375).
+    phase with no span in the log are noise.
     """
     out = []
     for i, line in enumerate(text.splitlines(), 1):

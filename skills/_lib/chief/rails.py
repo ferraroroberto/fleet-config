@@ -72,7 +72,7 @@ def caller_session_id(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     *inside* a launcher session can name its own board card without being
     told which one it is — the same id space the card's `session_id` field
     reports, and the same one `hooks/_lib.launcher_session_id()` resolves
-    identity from since fleet-config#848.
+    identity from.
 
     Deliberately not the card's `label`: `label == "chief"` is assigned by
     the launcher's chief-spawn path, but `/api/board` also re-derives it on
@@ -95,17 +95,17 @@ def _holds_a_live_pty(card: Dict[str, Any]) -> bool:
     `external` (state-file-only, unverifiable) card. Kept in one place so the
     occupancy gate and the worker cap can't disagree about whether a card is
     real — they once did, and an alive external card read "repo free" and
-    "cap full" in the same dispatch (fleet-config#932)."""
+    "cap full" in the same dispatch."""
     return bool(card.get("alive")) and card.get("kind") != "external"
 
 
 def _is_channel_session(card: Dict[str, Any]) -> bool:
     """A standing Telegram channel session: the launcher's session-host tags
     each with a `telegram:<profile>` board label (app-launcher
-    `channel_profiles.py`, app-launcher#1389). Always-on by design, never a
+    `channel_profiles.py`). Always-on by design, never a
     worker: it does not claim a checkout, and a dispatched lane builds in its
     own worktree regardless. Shared by the occupancy gate and the worker cap so
-    the two can't disagree about it (fleet-config#932, #1212)."""
+    the two can't disagree about it."""
     return str(card.get("label") or "").startswith(CHANNEL_SESSION_LABEL_PREFIX)
 
 
@@ -122,12 +122,12 @@ def repo_occupancy(
 
     A standing `telegram:*` channel session (`_is_channel_session`) is skipped
     too: three of them run permanently in life-os, so counting them made
-    every life-os dispatch refuse (fleet-config#1212).
+    every life-os dispatch refuse.
 
     `exclude_sid` drops one card by session id: the caller's own. The standing
     chief runs as an ordinary launcher PTY with cwd `E:/automation/fleet-config`,
     so counting its card made this repo permanently occupied and chief could
-    never dispatch its own queue (fleet-config#838). Chief is not a worker — it
+    never dispatch its own queue. Chief is not a worker — it
     never runs `git`, never edits files, never claims a checkout — so its cwd
     is where it happens to run, not a claim on the tree. Excluding *the caller*
     rather than "the chief" keeps the rule one a card cannot lie its way out
@@ -168,9 +168,9 @@ def alive_worker_count(
 ) -> int:
     """Alive, non-external session cards, excluding the caller's own and the
     standing chief's — the same liveness test as `repo_occupancy`
-    (`_holds_a_live_pty`, fleet-config#932).
+    (`_holds_a_live_pty`).
 
-    `exclude_sid` drops the caller's own card here too (fleet-config#838):
+    `exclude_sid` drops the caller's own card here too:
     the count and the occupancy map are read from the same card list in the
     same dispatch, and a caller that excused itself from one but not the other
     would still be capped out by its own presence. The `label` test stays as
@@ -179,11 +179,11 @@ def alive_worker_count(
     It excuses *any* caller, not only chief, which is the honest reading of
     "a session is not one of the workers it is counting" — and safe past
     chief because a launcher-dispatched session is forced onto a worktree
-    regardless (`worktree_claim.py`, fleet-config#525), so the checkout
+    regardless (`worktree_claim.py`), so the checkout
     collision the cap is a proxy for is prevented downstream either way.
 
     Standing `telegram:*` channel sessions are not workers either
-    (`_is_channel_session`, fleet-config#1212): three always-on ones would
+    (`_is_channel_session`): three always-on ones would
     otherwise hold three lane slots forever.
 
     `managed_sids` is the `chief` cap scope: only cards whose session id the
@@ -211,7 +211,7 @@ def find_chief_session(columns: Dict[str, Any]) -> Optional[str]:
     report `project == "fleet-config"`), so only the `label == "chief"`
     card is actually chief. Used by `chief-sid` so `hooks/notify_on_idle.py`
     can push a chief-managed worker's blocked-on-input notification into
-    chief's own session instead of the human ping (fleet-config#443).
+    chief's own session instead of the human ping.
     """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     for card in cards:
@@ -225,7 +225,7 @@ def resolve_session_id(sid: str, columns: Dict[str, Any]) -> Tuple[Optional[str]
     """Resolve `sid` against the full ids of every live session card the
     board currently reports, so `exchange` accepts the 8-char prefix
     `board`/`sessions` actually print instead of requiring the full
-    32-character id neither of those commands ever emits (fleet-config#613).
+    32-character id neither of those commands ever emits.
 
     Returns `(resolved_id, reason)`:
       - an exact match, or an unambiguous prefix match -> `(full_id, None)`.

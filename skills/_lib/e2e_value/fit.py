@@ -1,4 +1,4 @@
-"""Second-projection fit (fleet-config#1026): which modules need a second browser engine.
+"""Second-projection fit: which modules need a second browser engine.
 
 Part of the `e2e_value` package; see its `__init__` for the reports and their shapes.
 """
@@ -55,9 +55,9 @@ def projection_fit(nodes: Dict[str, float], repo_root: Path) -> Dict[str, object
     """Tests paying for a second browser projection, split by whether the engine or viewport matters.
 
     Per test (its body plus the module helpers it calls), the shape of
-    app-launcher#1220's option 1: a test showing a geometry, touch, input,
+    the fit check: a test showing a geometry, touch, input,
     engine-branch, nav or composer signal is `kept`; one showing none is a
-    Chromium-only `candidate` under the fleet rule (#1026: functional tests
+    Chromium-only `candidate` under the fleet rule (functional tests
     run on one engine). A static read: the judgment layer confirms each
     candidate and states what moving it gives up. A module-level signal (a
     fixture setting the viewport) keeps every test in the module.

@@ -190,7 +190,7 @@ def checkout_of(path: Path) -> Dict[str, object]:
 
     A run measured in a linked worktree can differ from the primary in what
     skips and how it boots: gitignored runtime files (certificates, `.env`)
-    are not there (fleet-config#1157, photo-ocr#127). Outside any checkout
+    are not there. Outside any checkout
     both answers are `None`: unknown, never a guess.
     """
     here = path.resolve()

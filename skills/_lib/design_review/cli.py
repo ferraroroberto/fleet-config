@@ -58,7 +58,7 @@ resolved or a rubric that does not validate. `probe` exits 0 with its verdict
 on the `PROBE=` line (the skill's pre-flight; it never starts anything).
 `evaluate` prints the JSON document on stdout and exits 0; with `--out` it
 writes the document there and prints the `render`-style summary lines
-instead. `judge-prompt` writes the deterministic judge prompt (#973) beside
+instead. `judge-prompt` writes the deterministic judge prompt beside
 `metrics.json`; `judge-merge` validates one or more judge answer files,
 merges them, and writes the `judgment` document into the run's
 `evaluate.json` (evaluated from `metrics.json` first if absent) — an
@@ -66,7 +66,7 @@ merges them, and writes the `judgment` document into the run's
 Python side spawns no agent: the skill does. `render` accepts either an
 evaluate document (with or without `judgment`) or a raw `metrics.json`
 (evaluated first, and the evaluate document written beside the report so
-#974 can diff runs), and writes `report.html` into the run directory by
+the ledger can diff runs), and writes `report.html` into the run directory by
 default.
 
 Deliberately the only module that knows argparse and file locations —

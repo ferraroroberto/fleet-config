@@ -1,4 +1,4 @@
-"""Stage 6 of /design-review — findings -> one managed GitHub issue per repo (fleet-config#974).
+"""Stage 6 of /design-review — findings -> one managed GitHub issue per repo.
 
 Opt-in (`file`), never the default: the report is the product, the issue is
 the hand-off. One `design-review` issue per repo through `audit_issue.py`
@@ -147,7 +147,7 @@ def route(doc: dict, accepted: Dict[str, dict], promoted: Optional[set] = None) 
     fail nowhere this run; `promoted` = app-owned ids fleet mode lifted to the
     scaffold list (left off this app's issue); `adopt` = failing spec- or
     scaffold-owned rules whose fix already ships (the rubric's `adopt` hint),
-    which the app can apply today (fleet-config#1163, photo-ocr#129): they are
+    which the app can apply today: they are
     also on their owner's list, so the fleet digest still reads them there. Accepted wins over promoted:
     a repo that accepted a rule is not listed under it anywhere.
     """

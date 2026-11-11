@@ -13,11 +13,11 @@ What it does, per device x theme, and nothing else:
   1. `goto` the base URL (loopback, certificate errors ignored);
   2. click each primary tab (`[role=tablist] [role=tab]`, first tablist),
      wait for its requests to go quiet (bounded) and read the glance card
-     tracker (#1354), screenshot, set every `details.open` in the visible
+     tracker, screenshot, set every `details.open` in the visible
      pane, full-page screenshot, run the measurement script;
   3. `showModal()` each `dialog[id]`, screenshot, set every `details.open`
      in the dialog, measure, `close()`;
-  4. the Settings gear (#1217): after a fresh `goto`, click the header button named "Settings" -- the vendored
+  4. the Settings gear: after a fresh `goto`, click the header button named "Settings" -- the vendored
      `home-head` gear, found by role and accessible name, never a per-app selector -- screenshot the pane it
      opens, set every `details.open` in it, measure. The one click the walk makes without a declaration:
      it only switches a view and writes nothing. Refused when the gear sits inside a `no_go` selector; an app
@@ -26,19 +26,19 @@ What it does, per device x theme, and nothing else:
      one declared `open` details, then each `clicks` selector in turn (or
      the single `click`), screenshot, set every `details.open` in the open
      dialog or else the page, measure. Every click is vetoed when the
-     element about to be clicked sits inside a `no_go` selector (#995).
+     element about to be clicked sits inside a `no_go` selector.
 
 Disclosures are opened on every screen kind so folded content is measured
-open (fleet-config#995). One that stays closed -- an exclusive accordion
+open. One that stays closed -- an exclusive accordion
 closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
-(#998). A popover-shaped disclosure (its body positioned over the page) opens
+. A popover-shaped disclosure (its body positioned over the page) opens
 only as the first of its family -- the row menus of a list never coexist in the
-app (#1155). A screen that opened any also gets a full screenshot of that state.
+app. A screen that opened any also gets a full screenshot of that state.
 
-The glance tracker is an init script that only reads the first card's height every frame, and the idle wait only listens to request events (#1354).
+The glance tracker is an init script that only reads the first card's height every frame, and the idle wait only listens to request events.
 
 No submit, no fill, no session attach, no navigation away from the base URL. The only click beyond the
-primary tabs that needs no declaration is the Settings gear (#1217).
+primary tabs that needs no declaration is the Settings gear.
 
 Output: `<out>/screens.json` — a list of screen records
 `{id, device, theme, view, kind, status, reason, error, screenshot,
@@ -48,12 +48,12 @@ distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
 `BROWSER_FAILED`, `NO_GO`, `TOUCH_LOST`); its rules evaluate to `unmeasured`, never pass.
 A step whose target never attaches (a menu on an empty list) is `status:
 "absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
-this app state, so it leaves unrelated rules alone (#995). The Settings step
-does the same with `reason: "SETTINGS_GEAR_ABSENT"` when no Settings button exists (#1217).
+this app state, so it leaves unrelated rules alone. The Settings step
+does the same with `reason: "SETTINGS_GEAR_ABSENT"` when no Settings button exists.
 `theme_applied` is whether the page rendered the theme the leg asked for (`false` when the app re-applied
 its own after the stamp, `null` when it could not be read); `theme_observed` is `{attr, luminance, rendered}`.
-The walk records it and never fights the app for it (#1216).
-A full-page capture never fails its screen (#1085): a page over the
+The walk records it and never fights the app for it.
+A full-page capture never fails its screen: a page over the
 engines' 32767 device-px limit is captured clipped to it, any other
 capture error skips it, and the screen keeps its metrics with a `note`.
 
@@ -160,7 +160,7 @@ class TargetAbsent(Exception):
 
 
 def bounded_wait_ms(value: object, default: int) -> int:
-    """A declared wait in ms: `default` when absent or not a positive integer, capped at WAIT_MS_MAX (#1385)."""
+    """A declared wait in ms: `default` when absent or not a positive integer, capped at WAIT_MS_MAX."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         return default
     return min(value, WAIT_MS_MAX)
@@ -183,7 +183,7 @@ def load_geometry_js(scaffold_root: Optional[str]) -> Optional[str]:
     venv) and not in `measure.py`. Returns `None` when the file is absent or
     the constant is gone (a rename upstream surfaces as `GEOMETRY_MISSING`).
     The public `EFFECTIVE_RECT_JS` name is preferred; the underscored one is
-    what the scaffold ships today (project-scaffolding#269 asks for the alias).
+    what the scaffold ships today.
     """
     if not scaffold_root:
         return None
@@ -273,7 +273,7 @@ def _shot(page, shots: Path, name: str) -> str:
 
 def _full_shot(page, shots: Path, name: str,
                after_full: Optional[Callable[[], None]] = None) -> Tuple[Optional[str], Optional[str]]:
-    """The full-page capture and a note; never fatal to the screen, whose metrics don't need it (#1085).
+    """The full-page capture and a note; never fatal to the screen, whose metrics don't need it.
 
     A page over the engine's SCREENSHOT_MAX_PX limit is captured clipped to its first
     SCREENSHOT_MAX_PX device px; a capture that still fails is skipped. The note says which.
@@ -314,14 +314,14 @@ ms => Promise.race([
 
 
 def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[[], None]]:
-    """Re-enable touch emulation after a Chromium full-page screenshot (#1017).
+    """Re-enable touch emulation after a Chromium full-page screenshot.
 
     A `full_page=True` capture resizes the Chromium viewport and drops the
     device descriptor's touch emulation: `(pointer: coarse)` turns into
     `(pointer: fine)` and `maxTouchPoints` into 0 until the page is closed,
     reloads included, so every later screen measures the desktop layout.
     CDP `Emulation.setTouchEmulationEnabled` puts it back, and the transitions that flip starts are let to finish
-    so the next measure reads their end values (#1895). `None` for WebKit (unaffected) and for a context without
+    so the next measure reads their end values. `None` for WebKit (unaffected) and for a context without
     touch (desktop).
     """
     if engine != "chromium" or not ctx_args.get("has_touch"):
@@ -400,7 +400,7 @@ class _Leg:
         self.page.evaluate("t => { document.documentElement.dataset.theme = t; }", self.theme)
 
     def theme_fields(self) -> Dict[str, object]:
-        """Which theme this screen actually rendered (#1216); unknown when the page cannot be read.
+        """Which theme this screen actually rendered; unknown when the page cannot be read.
 
         The app owns its theme, so a mismatch is recorded and never fought: no re-stamping here.
         """
@@ -436,7 +436,7 @@ class _Leg:
         """Wait up to READY_WAIT_MS for a tab's declared `ready` selector to attach; never clicks, never retries.
 
         A selector that never attaches does not fail the screen: the tab is captured as it stands and the record
-        says `met: false`, so a loading state is named, not scored as the app (#1385).
+        says `met: false`, so a loading state is named, not scored as the app.
         """
         try:
             self.page.locator(selector).first.wait_for(state="attached", timeout=READY_WAIT_MS)
@@ -449,7 +449,7 @@ class _Leg:
         return {"selector": selector, "wait_ms": READY_WAIT_MS, "met": met}
 
     def read_glance(self) -> Dict[str, object]:
-        """The tab's first card at first paint against now, once the late reads have landed (#1354).
+        """The tab's first card at first paint against now, once the late reads have landed.
 
         Read before anything opens a disclosure, which would change the card itself. A page whose requests never go
         quiet within the bound is `not_idle` whatever the card showed: its reads may still be landing.
@@ -503,7 +503,7 @@ class _Leg:
     def guarded(self, selector: str, wait_ms: int = STEP_TARGET_WAIT_MS):
         """The first match for `selector`: absent when it never attaches in `wait_ms`, refused inside a no_go selector.
 
-        The wait only polls for the element; the one click that follows is never retried (#1385).
+        The wait only polls for the element; the one click that follows is never retried.
         """
         loc = self.page.locator(selector).first
         try:
@@ -557,7 +557,7 @@ def _walk_dialogs(leg: _Leg) -> None:
 
 
 def _walk_settings_gear(leg: _Leg) -> None:
-    """The Settings pane behind the header gear: reviewed on every app, with no declaration (#1217)."""
+    """The Settings pane behind the header gear: reviewed on every app, with no declaration."""
     page = leg.page
     gear_view = plan.SETTINGS_GEAR_VIEW
     gear_sid = leg.sid(gear_view)

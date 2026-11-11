@@ -44,7 +44,7 @@ def is_e2e(nodeid: str, test_dirs: Sequence[str]) -> bool:
 
 
 def executed_e2e(run: Dict[str, object], test_dirs: Sequence[str]) -> Dict[str, float]:
-    """The run's e2e nodes that actually ran: a skipped node costs no browser time (fleet-config#1134)."""
+    """The run's e2e nodes that actually ran: a skipped node costs no browser time."""
     skipped = set(run.get("skipped") or ())  # type: ignore[arg-type]
     return {n: s for n, s in run["nodes"].items() if is_e2e(n, test_dirs) and n not in skipped}  # type: ignore[union-attr]
 
@@ -101,13 +101,13 @@ def cost_drivers(text: str, shared_loaders: frozenset = frozenset(),
     A page load reached through a helper (`boot_home(page)`) or a fixture
     (`def test_x(authed_page)`) counts once per test that reaches it, and the
     helper's own `goto` is not counted again: home-automation's modules that
-    boot through a helper read 0 before (fleet-config#1134). `shared_loaders`
+    boot through a helper read 0 before. `shared_loaders`
     are the conftest/helper-module loaders the module can call or request.
     `shots` counts screenshots the same way: a call to a helper that
     screenshots (`shot(page, "x")`, `shared_shot_helpers` from the conftest)
     counts once per call site, a direct `.screenshot(` once. Call sites, not
     executions: a shot in a loop is a lower bound. It is context, never a fold
-    target (task-os#278: about 195 shots, a third or more of the wall time).
+    target (one suite took about 195 shots, a third or more of the wall time).
     """
     import ast
     drivers = {"pty_refs": len(re.findall(r"\bpty\b", text, re.I)),
@@ -164,11 +164,11 @@ def first_node(nodes: Dict[str, float], earlier: Sequence[Dict[str, float]] = ()
     """The first executed e2e node and the suite's median: the session app boot lands on it.
 
     In a surface slice that node is the touched file, so a per-module
-    before/after comparison must discount it (fleet-config#1134).
+    before/after comparison must discount it.
 
     `earlier` is the executed nodes of earlier completed runs in the same
     log (one checkout, so a later run is warm), newest first. `boot` says
-    whether the excess is a measured cost (fleet-config#1157, photo-ocr#127:
+    whether the excess is a measured cost (for example
     a 7 s first node was one cold run in a fresh worktree, under 0.3 s warm):
     `single-run` (nothing to compare: cold, unconfirmed), `repeated` (this and
     the previous run both carry 1 s or more over the median) or `not-repeated`.

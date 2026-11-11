@@ -1,4 +1,4 @@
-"""The now-vs-proposed mock-up library keyed to the rubric's `mockup` ids (fleet-config#972).
+"""The now-vs-proposed mock-up library keyed to the rubric's `mockup` ids.
 
 Each template is a parametrized HTML/CSS partial with a **Now** variant drawn
 from the app's measurements and a **Proposed** variant drawn from the rule's

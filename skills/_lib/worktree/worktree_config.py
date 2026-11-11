@@ -2,28 +2,25 @@
 removal of repo-declared secret keys, and the machine-global port reservation
 those ports are handed out under.
 
-Split out of `worktree_claim.py` (fleet-config#731) -- port allocation and
+Split out of `worktree_claim.py` -- port allocation and
 config blanking share no state with the claim FSM, junction teardown, or the
 primary-landing guard that module owns, and are exercised by their own tests.
-Same shape `design_lint` was split into at a lower line-count threshold
-(fleet-config#564), and the `steer_delivery.py` extraction out of
-`chief_ops.py` (fleet-config#680).
 
 `git worktree add` populates tracked files only, so a repo's own gitignored
 runtime config (`config/*.json`, root-level `*.json` such as
 `accounting-quarterly`'s `config.json`, and `.env`) never makes it into a
 fresh worktree. Left unfixed, an e2e suite that boots a disposable
 webapp+session-host hits its own missing-config guard for nearly every test
-and mass-skips silently -- the pre-ship gate still reports green
-(fleet-config#470, fleet-config#714). `copy_runtime_config` / `copy_root_config`
-/ `copy_env_file` close that gap; `worktree_claim.setup_worktree` calls all
+and mass-skips silently -- the pre-ship gate still reports green.
+`copy_runtime_config` / `copy_root_config` / `copy_env_file` close that gap;
+`worktree_claim.setup_worktree` calls all
 three right after the checkout is created.
 
 A byte-verbatim copy is not safe by itself: a repo's config can point at a
 real, machine-bound sink outside the worktree -- a synced mirror/backup
 folder, an index path, another repo's database -- and a worktree instance
 booted for a "ready to validate" handoff then reads and writes the owner's
-**real** data (`task-os#80`, fleet-config#713). `blank_machine_bound_config`
+**real** data. `blank_machine_bound_config`
 blanks those values right after the port rewrite. A repo declares exactly
 which dotted keys are machine-bound in its own `.fleet.toml`:
 
@@ -38,7 +35,7 @@ any string value, anywhere in the config, that looks machine-bound -- an
 list entries filtered the same way.
 
 "Byte-verbatim apart from the rewrites" is therefore no longer the whole
-contract (fleet-config#839): a repo can also declare keys whose values must
+contract: a repo can also declare keys whose values must
 never be reproduced in a worktree copy at all -- a live credential, a secrets
 sub-table:
 
@@ -58,7 +55,7 @@ blunt: every machine-bound-looking value goes, including the ones the app only
 ever *reads*, and a lane standing a side instance up then has to put some back
 by hand. Which ones are safe to restore was per-lane judgement, and restoring
 a **write** path silently points a test instance at the owner's live state --
-the exact failure blanking exists to prevent (fleet-config#937). A repo now
+the exact failure blanking exists to prevent. A repo now
 declares the read-only ones itself:
 
     [worktree]
@@ -76,12 +73,12 @@ the exemption only ever modulates the heuristic.
 Carrying the primary's port across into a copied config is what made every
 worktree lane's e2e suite report a collision with the user's live tray and
 refuse to run -- a false positive, since the suite boots its own disposable
-instance on a free port and never touches the tray's (fleet-config#537).
+instance on a free port and never touches the tray's.
 `worktree_port` deterministically assigns each copied config its own port in
 the `8500-8999` band, seeded from the issue number so re-running setup for
 the same lane reproduces the same port.
 
-Deterministic-and-probed was still not exclusive (fleet-config#937): the probe
+Deterministic-and-probed was still not exclusive: the probe
 only sees a port something is **listening** on, and at provisioning time
 nothing has booted yet, so two worktrees set up back to back could be written
 the same port and collide later as a bind error that never mentions the other
@@ -397,7 +394,7 @@ def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
 
     `wt` is the worktree root itself (not `dst`'s parent) so the issue number
     seeding `worktree_port` is read from `wt.name` directly — correct whether
-    `dst` sits under `config/` or right at the worktree root (fleet-config#714).
+    `dst` sits under `config/` or right at the worktree root.
     """
     raw = _load_json_object(dst)
     port_value = raw.get("port") if raw is not None else None
@@ -417,7 +414,7 @@ _WIN_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
 def _looks_machine_bound(value: str) -> bool:
     """True if a string value plausibly points at a real, non-worktree path.
 
-    Two shapes cover every case seen so far (fleet-config#713): a template
+    Two shapes cover every case seen so far: a template
     placeholder a repo's own config layer resolves against a real synced
     folder (`{onedrive}/...`), and a plain Windows absolute path (a drive
     letter into the primary checkout, another repo's data dir, or a synced
@@ -568,7 +565,7 @@ def worktree_secret_config_keys(repo: Path) -> list:
         [worktree]
         secret_config_keys = ["auth.token", "credentials"]
 
-    Additive and opt-in (fleet-config#839): unlike `blank_config_keys` this
+    Additive and opt-in: unlike `blank_config_keys` this
     never selects a blanking mode, so undeclared, malformed and empty all mean
     the same thing -- remove nothing -- and the result is always a list.
     """
@@ -583,8 +580,8 @@ def worktree_read_safe_config_keys(repo: Path) -> list:
 
     Values under these keys survive the default blanking heuristic, because a
     side instance that only *reads* them needs them to boot usefully, and
-    blanking them made standing an instance up a judgement call
-    (fleet-config#937). Additive and opt-in like `secret_config_keys`: it never
+    blanking them made standing an instance up a judgement call.
+    Additive and opt-in like `secret_config_keys`: it never
     selects a blanking mode, so undeclared, malformed and empty all mean the
     same thing -- exempt nothing -- and the result is always a list.
 
@@ -604,7 +601,7 @@ def worktree_primary_instance_ok(repo: Path) -> bool:
         primary_instance_ok = true
 
     The repo-owned half of the side-instance refusal (`worktree_claim`'s
-    `side_instance_state`, fleet-config#937). Some repos' operational lanes
+    `side_instance_state`). Some repos' operational lanes
     genuinely must run in the primary -- `life-os`, whose gitignored identity,
     context and state exist only in the primary clone -- and until now that
     exception was expressed solely as a `WORKTREE_CLAIM_ALLOW_PRIMARY=1`
@@ -711,7 +708,7 @@ def _config_dir_candidates(repo: Path) -> list:
     """`config/*.json` under `repo`, minus `*.sample.json` templates, sorted.
 
     The one candidate-discovery rule `copy_runtime_config` and
-    `provisioned_configs` both need (fleet-config#1065) -- kept as a single
+    `provisioned_configs` both need -- kept as a single
     function so a lane preflighting an already-provisioned worktree can never
     see a different candidate set than the one a real `copy_runtime_config`
     call would have copied.
@@ -739,8 +736,8 @@ def provisioned_configs(checkout: Path) -> list:
     `copy_runtime_config` / `copy_root_config` (`_config_dir_candidates` /
     `_root_config_candidates`) so there is exactly one place that decides
     which files a worktree's runtime config actually is; a preflight and a
-    real setup could otherwise silently drift apart on what counts
-    (fleet-config#1065). Called on the checkout itself (not the primary): the
+    real setup could otherwise silently drift apart on what counts.
+    Called on the checkout itself (not the primary): the
     candidates it finds are already destination paths.
     """
     return _config_dir_candidates(checkout) + _root_config_candidates(checkout)
@@ -750,7 +747,7 @@ def _unsafe_config_keys(raw: object, declared_keys: Optional[list],
                         read_safe_keys: list) -> list:
     """Dotted keys in a provisioned config that still hold a machine-bound value.
 
-    The check that makes incident 2 of fleet-config#937 impossible to repeat:
+    The check that makes a repeat of that incident impossible:
     a lane that hand-restored a path to make its instance boot has no way to
     know whether that path is read or written, and restoring a written one
     points the test instance at the owner's live state. Anything the
@@ -786,7 +783,7 @@ def check_provisioned_configs(checkout: Path, declared_keys: Optional[list],
     `worktree_claim.py` for why observing alone is not enough). Every
     `CONFIG_UNSAFE=`/`PORT=` line this prints is the one the CLI has always
     printed; only the discovery and the check itself moved here, next to
-    `provisioned_configs` and the blanking helpers they share (fleet-config#1065).
+    `provisioned_configs` and the blanking helpers they share.
     """
     failures: List[str] = []
     unknowns: List[str] = []
@@ -854,14 +851,14 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
     ...) never lands in the new worktree. An e2e suite that boots a disposable
     webapp+session-host then hits its own missing-config guard for nearly
     every test and mass-skips silently, while the pre-ship gate still reports
-    green (fleet-config#470). `*.sample.json` templates are already tracked
+    green. `*.sample.json` templates are already tracked
     and excluded; a destination file that already exists (e.g. a prior partial
     setup) is left alone rather than overwritten. No-op if the repo has no
     `config/` dir. Returns the list of copied destination paths.
 
     The copy is byte-verbatim **except for a top-level `port`**, which is
-    repointed into the `8500-8999` band (fleet-config#537), and any
-    machine-bound path values, which are blanked (fleet-config#713, see
+    repointed into the `8500-8999` band, and any
+    machine-bound path values, which are blanked (see
     `blank_machine_bound_config`). Carrying the primary's port across is what
     made every worktree lane's e2e suite report a collision with the user's
     live tray and refuse to run — a false positive, since the suite boots its
@@ -869,15 +866,14 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
     also left a worktree that actually boots the app trying to bind the
     primary's port. Every other field -- secrets included, unless the repo
     declares them in `[worktree] secret_config_keys`, which are removed
-    (fleet-config#839, see `remove_secret_config`) -- copies across untouched:
+    (see `remove_secret_config`) -- copies across untouched:
     the worktree must stay a faithful runtime twin, differing only where
     sharing (a live port, a real synced folder, a declared secret) is itself
     the bug.
 
     `assigned` collects ports handed out in this call; pass in a set shared
     with a sibling call (e.g. `copy_root_config` on the same worktree) so two
-    ported configs in different locations can't compute the same port
-    (fleet-config#714 review).
+    ported configs in different locations can't compute the same port.
     """
     copied = []
     candidates = _config_dir_candidates(repo)
@@ -909,7 +905,7 @@ def copy_env_file(repo: Path, wt: Path) -> Optional[Path]:
     from `.env` at startup (e.g. `local-llm-hub`'s `LOCAL_LLM_HUB_SSH_KEY`)
     then stalls on its own missing-value path until an unrelated timeout
     fires, and the e2e stage of a pre-ship gate goes red for a reason that
-    has nothing to do with the diff (fleet-config#698). No-op, never a setup
+    has nothing to do with the diff. No-op, never a setup
     failure, if the primary has no `.env`. A destination file that already
     exists (e.g. a prior partial setup) is left alone rather than
     overwritten, same as `copy_runtime_config`. Returns the copied
@@ -943,8 +939,8 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
     Some repos keep their runtime config at the repo root instead of under
     `config/` (`accounting-quarterly`'s `config.json`, `home-automation`'s
     `devices.json`) -- `copy_runtime_config` doesn't reach those, so a
-    worktree for one of these repos was missing its config entirely
-    (fleet-config#714). Which root-level `*.json` files matter is asked of
+    worktree for one of these repos was missing its config entirely.
+    Which root-level `*.json` files matter is asked of
     git itself (`git check-ignore`) rather than hardcoded, so a repo that
     adds a new one is covered with no code change here; a tracked
     `*.sample.json` template is excluded up front as belt-and-braces, though

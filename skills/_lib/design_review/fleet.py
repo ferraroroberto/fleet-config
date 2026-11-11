@@ -1,4 +1,4 @@
-"""Fleet mode of /design-review — every declared web app, serially, one digest (fleet-config#974).
+"""Fleet mode of /design-review — every declared web app, serially, one digest.
 
 `run_fleet` walks every `hooks/projects.toml` table with a `webapp_port`
 that is not dormant (`[global] architecture_ignore`, `docs/fleet-scope.md`),
@@ -36,7 +36,7 @@ scaffold-owned rules are deduped by id with the failing apps listed.
 removes that app from a rule everywhere, so an accepted rule failing in
 one other app is not promoted.
 
-Inventory (fleet-config#1500): after the walks, the newest `inventory`
+Inventory: after the walks, the newest `inventory`
 per app is compared across apps (`inventory.compare`). A divergence only
 one app has is filed on that app's issue beside its rules. A cross-app
 divergence goes in the digest's `inventory` section and on fleet-config's

@@ -1,4 +1,4 @@
-"""Stage 1 of /design-review — the capture plan (fleet-config#971).
+"""Stage 1 of /design-review — the capture plan.
 
 Resolves *what* the walk visits and *where* it runs, from data no session
 has to re-derive:
@@ -14,22 +14,22 @@ has to re-derive:
     crossed with `light` and `dark`.
 
 Read-only by construction: the walk only clicks primary tabs and the header
-Settings gear (a button that switches a view and writes nothing, #1217), sets
+Settings gear (a button that switches a view and writes nothing), sets
 `details.open`, and calls `dialog.showModal()` / `close()`. Anything else
 must be declared in `[design.review].extra_steps` — and even those are
 limited to opening one `details` and clicking selectors; there is no `fill`,
 no `submit`, and every click is refused when its element sits inside a
-`no_go` selector (checked with `closest()` at click time, #995).
+`no_go` selector (checked with `closest()` at click time).
 
 `[design.review]` keys (all optional):
 
     theme_storage_key = "app-launcher.theme"   # localStorage key the app's theme boot reads
     tab_selector      = "[role=tab]"             # override primary-tab discovery -- resolved
                                                  # *inside* the first [role=tablist], so never
-                                                 # prefix it with "[role=tablist]" (#995)
+                                                 # prefix it with "[role=tablist]"
     no_go             = ["#dangerZone"]          # never clicked, nor anything inside it
     exclude_selectors = [".preview-frame"]       # embedded content (not the app's own UI): nothing
-                                                 # inside it is measured or scored (#1185)
+                                                 # inside it is measured or scored
     tab_ready         = {machines = ".row"}      # tab id -> selector the walk waits for (attached, up to
                                                  # 15 s) after opening that tab; never met -> the tab is
                                                  # still captured and its record says `ready.met = false`
@@ -59,12 +59,12 @@ no `submit`, and every click is refused when its element sits inside a
 
 `measure <repo> --e2e` also runs that suite with `DESIGN_SURFACE_CAPTURE` set, so
 every `surface(page, name)` call in it (project-scaffolding's vendored
-`tests/e2e/_surface.py`) becomes a screen of the same run (#1498, `capture.py`).
+`tests/e2e/_surface.py`) becomes a screen of the same run (`capture.py`).
 
 `measure <repo> --synthetic` boots the declared command instead of probing
 the live app, walks the URL it prints (steps marked `synthetic = true`
 included, the synthetic `no_go` in force), then closes its stdin and waits
-for it to exit -- killing its process tree only if it does not (#995). A
+for it to exit -- killing its process tree only if it does not. A
 live walk never runs a `synthetic = true` step: those may open surfaces,
 such as a session, that must not be attached to on the live app.
 """
@@ -218,7 +218,7 @@ def load_review_block(root: Optional[Path]) -> Dict[str, object]:
 
 
 def load_no_chat_surface(root: Optional[Path]) -> tuple:
-    """`(declared, error)` for `[design] no_chat_surface` in the target's `.fleet.toml` (#1443).
+    """`(declared, error)` for `[design] no_chat_surface` in the target's `.fleet.toml`.
 
     Absent file, table or key is the normal case: `(False, None)`. Anything but a TOML boolean, or an unparseable
     file, is `(False, reason)` -- a typo must not turn COMP-18 into an opt-out.
@@ -273,9 +273,8 @@ def resolve_target(
     path whose directory name is one. `url_override` (tests, a static fixture
     page) skips the port lookup entirely but keeps the name/root resolution.
     A repo with no `webapp_port` in projects.toml falls back to the `port` its own
-    `.fleet.toml` declares, the scheme probed on that loopback port (fleet-config#1180:
-    facilitation-suite declared only the latter and `measure <name>` stopped with
-    BAD_TARGET). Raises `PlanError` when neither declares a port and no override was
+    `.fleet.toml` declares, the scheme probed on that loopback port, so a repo that declares
+    only the latter still measures instead of stopping with BAD_TARGET). Raises `PlanError` when neither declares a port and no override was
     given — the walk must never fall back to a guessed port. Raises `BadFleetToml` when the
     target's `.fleet.toml` does not parse: its `no_go` guard would read as empty.
     """

@@ -1,9 +1,8 @@
-"""Did a steer sent to a live session actually land? (fleet-config#680, lifted
-out of `chief_ops.py`.)
+"""Did a steer sent to a live session actually land?
 
 `chief_ops say --verify` exists because the session-input endpoint reported
-`{"ok": true}` on 2026-07-27 for two messages that were never submitted
-(fleet-config#453). Everything needed to turn "I posted it" into an evidenced
+`{"ok": true}` on 2026-07-27 for two messages that were never submitted.
+Everything needed to turn "I posted it" into an evidenced
 verdict grew inside that CLI module: the exchange-marker parser, the
 four-verdict classifier and its precedence rules, the output-age measurement
 those rules rest on, and the operator-facing reason/verdict rendering. That is
@@ -20,7 +19,7 @@ delivery lattice unit-testable without a live launcher
 here needs a network call, the call belongs in `chief_ops` and its *result*
 belongs in an argument.
 
-The four verdicts (fleet-config#643) and the precedence between them are
+The four verdicts and the precedence between them are
 documented on `finalize_delivery`, which is the one place the decision is
 made. Only DELIVERED exits 0 at the call site, and **no verdict ever triggers
 a resend** -- a resent steer can double-execute a shipping command, so that
@@ -78,7 +77,7 @@ def deferred_submit_outcome(
     post_reason: Optional[str], last_input: Optional[Dict[str, Any]]
 ) -> Optional[str]:
     """Where a deferred submit stands, read from the watcher's own report on
-    `last_input` (fleet-config#856): "confirmed", "failed", "in_flight", or
+    `last_input`: "confirmed", "failed", "in_flight", or
     None when the send was not deferred at all.
 
     A send is deferred *because* the target is mid-turn, so its exchange keeps
@@ -126,7 +125,7 @@ def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetim
     """"delivered" if the exchange carries a parseable assistant timestamp
     newer than `send_time`; "pending" otherwise. An unreadable exchange
     (unavailable, or a source with no timestamp) must never read as
-    delivered — it just means the poll keeps waiting (fleet-config#453)."""
+    delivered — it just means the poll keeps waiting."""
     if not available:
         return DeliveryState.PENDING
     parsed = parse_exchange_timestamp(timestamp)
@@ -140,8 +139,8 @@ def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetim
 def last_output_age_seconds(last_output_at: Any, now: Optional[float] = None) -> Optional[float]:
     """Seconds since the target last emitted output, or None when
     `last_output_at` is missing/unparseable — an age that cannot be read is
-    its own state, never a large number standing in for "long ago"
-    (fleet-config#662). This is a classifier input, not just a display value:
+    its own state, never a large number standing in for "long ago".
+    This is a classifier input, not just a display value:
     `finalize_delivery` uses it as evidence the target is mid-turn."""
     try:
         stamp = float(last_output_at)
@@ -154,7 +153,7 @@ def last_output_age_seconds(last_output_at: Any, now: Optional[float] = None) ->
 
 def recent_output_window(poll_interval: float) -> float:
     """How fresh output has to be to count as "the target is still talking",
-    derived from the poll budget rather than picked by feel (fleet-config#662).
+    derived from the poll budget rather than picked by feel.
 
     Two poll intervals: the classifier runs after the poll loop ends, and the
     age is read from a session card fetched *after* that — one more board call
@@ -174,7 +173,7 @@ def format_output_age(age: Optional[float]) -> str:
     and never silently omitted.
 
     Takes the already-measured age rather than the raw stamp so the verdict
-    line and the classifier read the same single measurement (fleet-config#662)
+    line and the classifier read the same single measurement
     instead of each taking its own `time.time()`."""
     if age is None:
         return "unknown"
@@ -199,7 +198,7 @@ def finalize_delivery(
     output_window: float = DEFAULT_RECENT_OUTPUT_WINDOW,
 ) -> DeliveryState:
     """The caller-facing verdict once the poll budget is exhausted: one of
-    "delivered", "pending", "stranded", "unknown" (fleet-config#643).
+    "delivered", "pending", "stranded", "unknown".
 
     `UNKNOWN` used to carry two unrelated meanings at once — "the worker is
     mid-turn so the exchange hasn't moved yet" and "the exchange could not be
@@ -210,10 +209,10 @@ def finalize_delivery(
     1. The endpoint's immediate negative (`not_ingested`/`dropped`) —
        "stranded". It said outright the input never landed; an exchange that
        moved anyway only shows the target talking.
-    2. `deferred` (app-launcher#763): the payload is in the composer and its
+    2. `deferred`: the payload is in the composer and its
        submitting CR is with a background watcher. Decided **only** by the
-       watcher's record on `last_input` (`deferred_submit_outcome`,
-       fleet-config#856): a confirmed submit → "delivered"; a terminal
+       watcher's record on `last_input` (`deferred_submit_outcome`): a confirmed
+       submit → "delivered"; a terminal
        failure (`defer_timeout`/`defer_vanished`/`defer_unclear`/`defer_failed`) →
        "stranded"; anything else, unreadable included → "pending", with no
        verdict reached. Exchange movement is not consulted — a send is
@@ -227,14 +226,13 @@ def finalize_delivery(
     5. A busy target: mid-turn, so non-movement is not proof of loss →
        "pending". Busy is read from **two** independent signals, either one
        sufficient — the board's `status == "working"`, *or* output emitted
-       within `output_window` seconds. The second was added by
-       fleet-config#662: the board's status field is demonstrably unreliable,
+       within `output_window` seconds. The second signal exists because
+       the board's status field is demonstrably unreliable,
        reading `awaiting-input` for sessions the exchange showed mid-turn, and
        trusting it alone produced a confident `STRANDED` for a steer that had
        been delivered and acted upon. A target that emitted output a second
-       ago is not idle, whatever the label says — and #643 was already
-       collecting that figure, printing it on the same line as the verdict it
-       refuted, purely for display.
+       ago is not idle, whatever the label says, so the output age
+       is part of the verdict rather than a display-only figure.
     6. An exchange that could not be **read** (transport error, or the
        launcher reporting it unavailable) → "unknown". This is the narrow,
        genuinely-unresolvable case, per the fleet rule that a check which
@@ -251,11 +249,11 @@ def finalize_delivery(
     land in `unknown`, or the narrowing exists only in this docstring.
 
     `stranded` is now reached only on **positive** grounds — an authoritative
-    negative, or measured silence — never by fallthrough (fleet-config#662).
+    negative, or measured silence — never by fallthrough.
     The asymmetry justifies it: a false `pending` costs a second look, while a
     false `stranded` invites a resend, and a resent steer can double-execute a
-    shipping command. `delivered` is held to the same bar from the other side
-    (fleet-config#856): only a confirmed submit, or an exchange that advanced
+    shipping command. `delivered` is held to the same bar from the other side:
+    only a confirmed submit, or an exchange that advanced
     past a send that was not deferred — a false `delivered` leaves a worker
     running without the brief it was sent.
 
@@ -298,7 +296,7 @@ def format_verdict_line(
 ) -> str:
     """One self-contained line per verdict. Every non-`DELIVERED` result
     carries the target's status and last-output age so the operator can judge
-    without a second round of calls (fleet-config#643)."""
+    without a second round of calls."""
     parts = [
         verdict.upper(), f"sid={sid}", f"chars={chars}",
         f"status={target_status or 'unknown'}",

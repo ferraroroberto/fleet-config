@@ -1,8 +1,8 @@
 """Is a fleet repo's declared long-running service listening right now, and at
-which commit? (fleet-config#680, lifted out of `worktree_claim.py`.)
+which commit?
 
-The capability grew inside the worktree-claim FSM because `land-primary`'s
-fourth guard needed it first (fleet-config#665): fast-forwarding a checkout a
+The capability sits apart from the worktree-claim FSM because `land-primary`'s
+fourth guard is only one of its callers: fast-forwarding a checkout a
 tray/webapp is *serving* leaves static assets on disk ahead of the Python
 holding them in memory, so the claim lifecycle had to ask whether anything was
 up before landing a merge. Nothing about the question is worktree-specific --
@@ -64,9 +64,9 @@ def live_service_check(
 ) -> Tuple[bool, str]:
     """Decide whether a long-running process forbids fast-forwarding this tree.
 
-    Pure half of the fourth `land-primary` guard (fleet-config#665). `#647`
-    asked three questions -- is the claim mine, is the tree clean, is it on its
-    default branch -- and all three were satisfied when the `app-launcher#773`
+    Pure half of the fourth `land-primary` guard. The first three guards
+    ask three questions -- is the claim mine, is the tree clean, is it on its
+    default branch -- and all three were satisfied when an app-launcher
     lane fast-forwarded a primary whose tray was *serving* it, leaving two
     static files on disk ahead of the Python holding them in memory.
 
@@ -114,14 +114,13 @@ def declared_service(
     """Read `repo`'s service declaration from `hooks/projects.toml`.
 
     Returns `(declares_tray, webapp_port, api_version_path, detail)`. The
-    fleet's existing membership table already separates exactly the right set
-    (fleet-config#665): a `tray_cmd` is the declaration that a long-running
+    fleet's existing membership table already separates exactly the right set:
+    a `tray_cmd` is the declaration that a long-running
     process serves that tree, so no new configuration file is introduced --
     adding one would be the wrong move.
 
-    Three states, not two (fleet-config#686 -- the first cut conflated the
-    last two under one `False`, so a repo that was simply never entered in
-    the table landed exactly like one that declares no tray on purpose):
+    Three states, not two (one `False` for the last two would treat a repo
+    that was never entered in the table like one that declares no tray on purpose):
 
     - **registered, with a `tray_cmd`**: `True`, with the port/api path to
       probe.
@@ -173,7 +172,7 @@ def listening_ports() -> Optional[set]:
 
     Decoded as `oem`, never `text=True`: this process sets PYTHONUTF8, and a
     console tool's OEM output decoded as UTF-8 comes back empty rather than
-    raising (global CLAUDE.md, app-launcher#743).
+    raising (global CLAUDE.md).
     """
     try:
         proc = subprocess.run(
@@ -229,8 +228,8 @@ def running_sha(port: int, api_path: Optional[str]) -> Optional[str]:
 
     Most fleet apps serve HTTPS with a self-signed cert; a few (local-llm-hub)
     serve plain HTTP -- so HTTPS first, then HTTP. Decoration only: a failure
-    here costs the refusal message its commit, never its verdict. Public since
-    fleet-config#974: `design_review.ledger` records it as `live_build`, the
+    here costs the refusal message its commit, never its verdict. Public because
+    `design_review.ledger` records it as `live_build`, the
     one place a run's target commit and the served build are kept apart.
     """
     if not api_path:

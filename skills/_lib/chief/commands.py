@@ -123,7 +123,7 @@ def effort_outcome(requested: Optional[str], result: dict) -> Optional[str]:
 def load_dispatch_brief(path: str) -> str:
     """A `--brief-file`'s text, or ValueError naming why it can't be one.
     Checked before any board read, so a bad brief never spawns a lane that
-    would then start on the bare issue alone (fleet-config#944)."""
+    would then start on the bare issue alone."""
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as exc:
@@ -259,7 +259,7 @@ def cmd_self_compact(args: argparse.Namespace) -> int:
 
     Targets only the caller's own session, and only when the caller is the
     live chief. Posts `/compact <focus>` to its own input: mid-turn the submit
-    is deferred until the turn ends (app-launcher#763), so the chief ends its
+    is deferred until the turn ends, so the chief ends its
     turn and the compaction runs. Never involved in an operator-typed
     `/compact`, which goes straight to the session ungated.
     """
@@ -726,7 +726,7 @@ def _stop_after_timeout(base_url: str, sid: str, mode: str) -> int:
 
 def cmd_escalate(args: argparse.Namespace) -> int:
     """Post a visibly distinct, higher-priority Telegram ping — "chief needs
-    Roberto specifically", never a routine worker status (fleet-config#443).
+    Roberto specifically", never a routine worker status.
 
     Shells to the existing `hooks/notify_send.py` transport (its own
     module docstring documents exactly this standalone-CLI usage) rather
@@ -737,7 +737,7 @@ def cmd_escalate(args: argparse.Namespace) -> int:
     It used to force `--mention` so the ping would *sound* different from a
     routine one. Telegram has no mention machinery to force — every message to
     a chat you are in pushes — so the distinction is carried entirely by the
-    🚨 banner in the message text (fleet-config#540).
+    🚨 banner in the message text.
     """
     text = read_brief(args.file)
     message = f"🚨 CHIEF ESCALATION 🚨\n{text}"
