@@ -12,8 +12,8 @@ through the hub at `http://127.0.0.1:8000` via the standard Anthropic/OpenAI
 SDKs, not re-roll a `claude -p` subprocess wrapper.
 
 Reads every surviving target from disk after a confirmed successful edit, matching
-`py_syntax_check.py`. Comments and docstrings are dropped before matching
-(fleet-config#1289): prose *about* `claude -p` is not a spawn, and a nudge that
+`py_syntax_check.py`. Comments and docstrings are dropped before matching:
+prose *about* `claude -p` is not a spawn, and a nudge that
 fires on prose trains lanes to ignore it. Ordinary string literals stay, since
 `"claude -p ..."` as a command string is exactly the real case.
 """

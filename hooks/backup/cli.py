@@ -2,9 +2,9 @@
 
 The thin CLI entry point: preflight, per-leg orchestration, exit-code
 aggregation, and argument parsing. `main`'s `--help` description is this
-docstring's first line, same contract as before the split (fleet-config#590).
+docstring's first line, same contract as before the split.
 
-Split out of `hooks/backup_private.py` (fleet-config#731) -- everything below
+Split out of `hooks/backup_private.py` -- everything below
 is orchestration wiring `config.py`, `select.py`, `snapshot.py`,
 `retention.py`, and `report.py` together; none of the actual selection,
 snapshotting, or retention logic lives here. `hooks/backup_private.py` is now
@@ -87,7 +87,7 @@ def _same_volume(a: Path, b: Path) -> bool:
     """True when two paths sit on the same volume.
 
     Drive-letter comparison on Windows, device id elsewhere. Used to enforce
-    #590's hard constraint — a snapshot on the source volume dies with it.
+    The hard constraint: a snapshot on the source volume dies with it.
     """
     if sys.platform == "win32":
         return os.path.splitdrive(str(a.resolve()))[0].lower() == \

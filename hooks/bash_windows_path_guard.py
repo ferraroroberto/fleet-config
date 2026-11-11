@@ -27,7 +27,7 @@ Detection:
 Known, accepted limitation: this is a heuristic quote/heredoc scanner, not a
 full shell parser (process substitution, arrays not modeled) — it fails open
 on anything missed. The one fail-closed case: heredocs are found with the
-shared `_lib.HEREDOC_RE` (fleet-config#1304), which skips a delimiter that
+shared `_lib.HEREDOC_RE`, which skips a delimiter that
 starts with a digit (`<<1`), so a backslash path in such a body is refused.
 
 Allow-listed (passes through silently): a forward-slash path, a double-quoted
@@ -145,7 +145,7 @@ def _trailing_backslash_count(s: str) -> int:
 
 def find_broken_quote_path(cmd: str) -> "re.Match[str] | None":
     """Find a drive-letter path immediately followed by a literal `"`, where
-    the path itself ends in an ODD number of backslashes (fleet-config#800).
+    the path itself ends in an ODD number of backslashes.
 
     Inside a double-quoted string, backslashes are consumed in escaping pairs
     (`_safe_mask()` above does the same) -- `\\\\"` (an even count) is a

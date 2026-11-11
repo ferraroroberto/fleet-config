@@ -12,10 +12,10 @@ such env var and is never touched.
 Why: `global-CLAUDE.md`'s "never commit to `main` directly" rule already
 exists; this closes the enforcement gap that let two launcher-dispatched
 workers start editing files on the default branch without cutting a branch
-first (fleet-config#442, fleet-config#464).
+first.
 
-**Take 2.** The first attempt (PR #472) resolved the branch from the
-session's `cwd` and was reverted the same evening (PR #477) for two live
+**Take 2.** The first attempt resolved the branch from the
+session's `cwd` and was reverted the same evening for two live
 fleet-wide false positives: it judged a worktree worker by the *primary*
 checkout's branch, and it blocked writes to paths entirely outside any repo
 (e.g. the standing chief writing scratch files under `E:\\tmp\\chief`) because
@@ -25,7 +25,7 @@ a worktree's own directory naturally resolves that worktree's own HEAD, and a
 non-repo target naturally fails the git call and allows, with no
 special-casing for either failure mode.
 
-**Take 2's own false positive (fleet-config#489).** Resolving from the target
+**Take 2's own false positive.** Resolving from the target
 directory fixed writes *outside* a repo but still blocked writes *inside* one
 that git deliberately ignores — `life-os`'s `/journal-daily` could not write
 its gitignored `.active-skill` marker, and the standing chief could not write
@@ -43,9 +43,9 @@ Git access is `_lib.run_git` / `_lib.resolve_default_branch_ref`, i.e. this
 hook's *own* tree. It used to `sys.path`-insert `../skills/_lib` and import
 `git_run` directly, which broke the convention every other hook here states —
 the two trees install independently, so a hook must stay importable with
-nothing but its own directory on `sys.path` (fleet-config#564).
+nothing but its own directory on `sys.path`.
 
-Tool-id vocabulary stays in `_lib.edit_event()` (fleet-config#1558): this hook
+Tool-id vocabulary stays in `_lib.edit_event()`: this hook
 used to branch on a local `GUARDED_TOOLS` tuple naming Codex's own
 `apply_patch` id directly, instead of asking `edit_event()` (which already
 recognizes it) whether the payload is edit-shaped at all.
@@ -106,7 +106,7 @@ def _is_ignored(target: Path) -> bool:
     is matched lexically against the worktree root, so the junction spelling
     `C:\\Users\\rober\\.claude\\hooks\\state\\chief-handover.md` exits 128 with
     "is outside repository at 'E:/automation/fleet-config'" — the fail-closed
-    path, which would have left fleet-config#489's second live repro blocked.
+    path, which would leave that second live repro blocked.
     """
     res = _lib.run_git(["-C", str(_existing_ancestor(target.parent)), "check-ignore", "-q", str(target)])
     return res.returncode == 0

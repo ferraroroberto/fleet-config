@@ -16,7 +16,7 @@ ways:
       import notify_send
       notify_send.notify("done", chat="-1001234567890")
 
-Replaces the Slack transport this repo carried until fleet-config#540. The
+Replaces the retired Slack transport. The
 contract is deliberately unchanged - never raises, reports failure as ``False``
 / a non-zero exit, stdlib ``urllib`` only (hooks run on system Python with no
 venv, so there is no ``requests`` to rely on).
@@ -124,7 +124,7 @@ def _token_from_dotenv() -> Optional[str]:
     ``settings.json`` sibling above has an override: this reads the file
     **straight off disk**, so stripping ``TELEGRAM_BOT_TOKEN`` from a
     subprocess's env dict does not close this source. Missing that is exactly
-    how the acceptance suite kept posting real pings (fleet-config#813).
+    how the acceptance suite kept posting real pings.
     """
     path = Path(os.environ.get(DOTENV_PATH_ENV_VAR) or DOTENV_PATH)
     try:
@@ -234,7 +234,7 @@ def _urlopen(request: "urllib.request.Request", timeout: int):
     """The single place this module opens a connection.
 
     Both send paths route through here so the block is one check rather than one
-    per call site — the shape that let #813 happen was a guarantee that had to
+    per call site — a guarantee that had to
     be re-established at every new place it mattered.
     """
     if network_blocked():
@@ -270,7 +270,7 @@ def _log_rejection(method: str, body: dict) -> None:
     A basic group that Telegram upgrades to a supergroup gets a **new** chat id
     and every send to the old one fails from then on. Surfacing
     ``migrate_to_chat_id`` here is what makes that a one-line fix instead of a
-    silent, permanent outage (fleet-config#540).
+    silent, permanent outage.
     """
     logger.error("[X] Telegram %s rejected: %s", method, body.get("description", "unknown"))
     migrated = (body.get("parameters") or {}).get("migrate_to_chat_id")
@@ -298,7 +298,7 @@ def notify(text: str, chat: str, token: Optional[str] = None, *,
     """Post ``text`` to ``chat`` as the Telegram bot. Return True on success.
 
     ``sent_ids``, when given, collects the ``message_id`` of every chunk that
-    landed - so a caller can later delete what it sent (automation#135).
+    landed - so a caller can later delete what it sent.
 
     Bodies over :data:`MESSAGE_LIMIT` are split into numbered messages rather
     than rejected. Returns True only if **every** chunk was accepted, so a
@@ -617,7 +617,7 @@ def _read_text(arg_text: Optional[str]) -> str:
 
     ``--text`` is decoded by the time argv reaches Python, but *what* it was
     decoded from is not ours to trust - the harness -> shell -> CreateProcess leg
-    can hand us an already-mangled string (fleet-config#507), so it goes through
+    can hand us an already-mangled string, so it goes through
     :func:`_lib.repair_mojibake` for the recoverable half of exactly the same
     corruption. No separator-token expansion here: a ``--text`` body carries
     markdown, where a literal ``|`` is a table cell, not a separator.

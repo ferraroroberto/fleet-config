@@ -1,9 +1,9 @@
-"""Chief inbox: a chief-managed worker's turn-end becomes a wake event (fleet-config#999).
+"""Chief inbox: a chief-managed worker's turn-end becomes a wake event.
 
 The chief used to learn that a dispatched worker finished, asked a question,
 or gave up only on its next timed poll -- up to ten minutes later. Workers
 already emit the exact signal: their turn ending. `AskUserQuestion` is blocked
-in chief-managed sessions (#463), so a worker asks in plain output and then
+in chief-managed sessions, so a worker asks in plain output and then
 ends its turn; `Stop` covers finished, question and gave-up alike, and the
 chief tells them apart by reading the exchange.
 
@@ -11,7 +11,7 @@ chief tells them apart by reading the exchange.
 (`session_state`, `session_state_codex`, `session_state_pi`), each already
 wired on its harness, so no hook registration changes. A worker blocked on a
 permission gate writes a ``needs-input`` event the same way, through
-``notify_on_idle.chief_needs_input`` (fleet-config#1456). It writes one small
+``notify_on_idle.chief_needs_input``. It writes one small
 event file per event into ``state_dir()/chief-inbox/``; the chief's
 ``chief_ops.py inbox`` claims them by rename, and the doorbell (or a waiter's exit)
 wakes the chief (a background task's exit is the one wake it trusts).
@@ -21,7 +21,7 @@ process holds open for append cannot be renamed, so a single shared log would
 make "claim atomically" and "append concurrently" fight. One file per event,
 published by temp-file-then-rename, makes claim-exactly-once a plain rename.
 
-Mailbox v2 (fleet-config#1455) adds a stable ``id`` (also the file name's
+Mailbox v2 adds a stable ``id`` (also the file name's
 suffix: ``<published_ms>-<id>.json``), a ``kind``, the dispatch's
 ``dispatch_id`` and a bounded ``excerpt`` of the worker's final reply, so a
 re-delivered event can be deduped and the chief rarely needs ``exchange``.
@@ -30,12 +30,12 @@ the pending rule a second reader counts by -- is ``docs/chief-mailbox.md``.
 
 Cheap and fail-open by construction: a session without
 ``APP_LAUNCHER_SESSION_ID`` (every human-started one), or a print-mode child
-that only inherited it (fleet-config#1281), returns before any I/O;
+that only inherited it, returns before any I/O;
 the worker path is one small file write -- no subprocess, no network -- plus,
 only when the payload carries no reply text, one bounded transcript tail read
 (``TRANSCRIPT_TAIL_BYTES``). An
 unreadable registry is logged as undetermined and writes nothing: "could not
-tell" is never folded into "not managed" (#835).
+tell" is never folded into "not managed".
 """
 
 from __future__ import annotations
@@ -213,7 +213,7 @@ def _pending_calls(path: Path, who: str, skip_tools: Tuple[str, ...] = ()) -> li
 
 
 def pending_call_line(payload: Dict[str, Any], fallback: str) -> str:
-    """The needs-input excerpt line naming the tool call a permission gate is on (fleet-config#1510).
+    """The needs-input excerpt line naming the tool call a permission gate is on.
 
     The newest pending ``tool_use`` across the parent transcript and the
     sub-agent transcripts under ``<session_id>/subagents/`` touched in the last

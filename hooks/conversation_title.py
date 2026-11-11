@@ -1,4 +1,4 @@
-"""Set or clear the owner's title on one captured conversation (fleet-config#1348).
+"""Set or clear the owner's title on one captured conversation.
 
 The shown name of a conversation is otherwise its digest ``topic``, which the
 indexer rewrites whenever the capture changes. A title set here lives in the

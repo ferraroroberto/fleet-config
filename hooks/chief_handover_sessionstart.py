@@ -1,10 +1,9 @@
 """SessionStart hook — hand the standing fleet chief its last written run log
-back on every session start (fleet-config#442).
+back on every session start.
 
-Chief used to be killed and respawned fresh daily, discarding everything it
+A chief killed and respawned fresh daily would discard everything it
 had learned about how a run was going — which workers stall, which decisions
-are already settled, which issues are deliberately parked. The insight behind
-#442: chief doesn't want to be killed and restarted, it wants to be
+are already settled, which issues are deliberately parked. The insight behind this hook: chief doesn't want to be killed and restarted, it wants to be
 *compacted and continued* — context is finite and must be shed, but the
 *state of the run* should survive the shedding.
 
@@ -30,7 +29,7 @@ harmless for an ordinary dev session (one extra FYI paragraph it can
 ignore). No network call, no LLM call, no session-identity detection: cheap
 and cwd-gated only.
 
-Chief skill refresh (fleet-config#1102): a chief that loaded ``/chief``
+Chief skill refresh: a chief that loaded ``/chief``
 days ago keeps running on that copy across compactions, so a rule added to
 ``.claude/skills/chief/SKILL.md`` since never reaches it. On any non-startup
 start (``compact``, ``resume``, ``clear``) of the chief's own session -- its
@@ -71,8 +70,7 @@ MAX_INLINE_CHARS = 8000
 def handover_path() -> Path:
     """Resolve the handover-log path at call time so tests can override its
     root (mirrors ``session_state.py``'s ``state_file()`` pattern). Lands
-    under ``hooks/state/`` (gitignored, machine-local — fleet-config#442's
-    "the log is gitignored and machine-local" criterion, for free)."""
+    under ``hooks/state/`` (gitignored, machine-local)."""
     return _lib.state_dir() / "chief-handover.md"
 
 
@@ -120,7 +118,7 @@ def is_chief_session(payload: Dict[str, Any]) -> Optional[bool]:
 
 
 def skill_refresh(payload: Dict[str, Any]) -> Optional[str]:
-    """The re-read instruction for a compacted/resumed chief, or None (#1102)."""
+    """The re-read instruction for a compacted/resumed chief, or None."""
     source = str(payload.get("source") or "")
     if source in ("", "startup"):
         return None  # a fresh chief loads the current skill through /chief itself

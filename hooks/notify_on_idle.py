@@ -9,8 +9,7 @@ uses its native ``PermissionRequest`` and ``Stop`` events through the separate
 It pings only on the ``permission_prompt`` sub-type (a permission gate or an
 ``AskUserQuestion`` — the "come look, I'm blocked" push) and **no-ops on**
 ``idle_prompt`` (the 💤 "gone idle" nag is noise) **and on the background
-sub-agent types** ``agent_needs_input`` / ``agent_completed`` (fleet-config#274
-— fired per Task/Agent-tool spawn since a Claude Code update added them; a
+sub-agent types** ``agent_needs_input`` / ``agent_completed`` (fired per Task/Agent-tool spawn since a Claude Code update added them; a
 fan-out skill like ``/issue-batch`` or ``/cleanup-fleet`` spawns many of these,
 and only the parent session's own prompt is worth a phone push). It rides the
 `notify_send` transport, so an AFK human gets a real phone notification
@@ -21,7 +20,7 @@ instead of a desktop toast nobody sees.
 telegram_chat`` fallback is set). That keeps notification noise off by
 default and lets you flip it on per project. See `docs/telegram-workflow.md`.
 
-**Board deep link (fleet-config#242).** When ``board_url`` is also configured,
+**Board deep link.** When ``board_url`` is also configured,
 the ping appends a second line linking straight to the session's Fleet-Board
 card (`?board=<transcript_uuid>`) — see `board_link()` and
 `docs/telegram-workflow.md`. Unset by default, so this is a no-op until you
@@ -127,16 +126,16 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
 
     Needs both the payload's ``session_id`` (Claude's transcript UUID —
     ``session_state.py`` persists the same id as the board row's key) and a
-    configured ``board_url`` (fleet-config#242, resolved via
+    configured ``board_url`` (resolved via
     ``_lib.resolve_board_url`` — the real value comes from the
     ``FLEET_BOARD_URL`` env var, not `projects.toml`, since this repo is
-    public — see fleet-config#271) — absent either, this is a silent no-op so
+    public) — absent either, this is a silent no-op so
     the ping stays byte-identical to today.
 
     ``board_url`` may already carry its own query string — e.g. a bearer
     ``?token=...`` baked in the same way app-launcher's tray "Copy Tailscale
     URL" menu item does, so the tapped link authenticates without a login
-    overlay (fleet-config#273). ``board=<session_id>`` is merged in via
+    overlay. ``board=<session_id>`` is merged in via
     ``urllib.parse`` rather than concatenated, so an existing query string
     survives intact.
     """
@@ -172,7 +171,7 @@ def chief_managed_state(path: Optional[Path] = None) -> Tuple[bool, str]:
     `chief-sid` lookup that finds nothing.
 
     **The key is the launcher session id, never the harness's own
-    `payload["session_id"]`** (fleet-config#835). `chief_ops.py dispatch` marks
+    `payload["session_id"]`**. `chief_ops.py dispatch` marks
     the sid the app-launcher API hands back; the hook payload carries Claude
     Code's transcript uuid. They are different id spaces and never equal, so
     keying this on the payload made every lookup return False -- a guard that
@@ -195,8 +194,8 @@ def chief_managed_row(path: Optional[Path] = None) -> Tuple[Optional[dict], str]
     """This session's `chief-managed.json` row (`repo`, `number`,
     `dispatched_at`) -> `(row, reason)`; `row` is `None` unless `reason` is
     `CHIEF_MANAGED`. The one reader behind `chief_managed_state`, split out so
-    `chief_inbox` can carry the dispatched issue into its event
-    (fleet-config#999). Same keying and the same three non-managed reasons."""
+    `chief_inbox` can carry the dispatched issue into its event.
+    Same keying and the same three non-managed reasons."""
     sid = _lib.launcher_session_id()
     if not sid:
         return None, CHIEF_NOT_LAUNCHER
@@ -289,14 +288,14 @@ def chief_live() -> bool:
 def chief_needs_input(payload: dict, text: str, default_agent: str = "claude") -> bool:
     """Hand a chief-managed worker's "blocked, needs input" to the chief's mailbox.
 
-    Writes one `needs-input` event (fleet-config#1456) whose excerpt is
+    Writes one `needs-input` event whose excerpt is
     `text`, the classified one-line prompt. Nothing is typed into the chief's
     terminal: that is the human's input channel, and worker-derived text in it
-    was the injection surface #622 is about. The chief's `inbox` read
+    was an injection surface. The chief's `inbox` read
     claims it like any other event, so it never interrupts a busy chief turn.
 
     True only when a chief is live and the event file was published. On False
-    the caller pings the human instead -- never retry (fleet-config#443: a
+    the caller pings the human instead -- never retry (a
     retry would mask a real delivery defect rather than surface it).
     """
     if not chief_live():
@@ -321,7 +320,7 @@ def chief_needs_input(payload: dict, text: str, default_agent: str = "claude") -
 
 
 def chief_pending_text(payload: dict, fallback: str) -> str:
-    """The chief-mailbox line for a Claude permission gate: the pending tool call (fleet-config#1510).
+    """The chief-mailbox line for a Claude permission gate: the pending tool call.
 
     Replaces `classify()`'s fixed text for the chief only -- the human ping
     keeps it. A lookup that raises degrades to `fallback`, never fails the hook.

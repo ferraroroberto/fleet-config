@@ -2,7 +2,7 @@
 
 Three layers (git-ignored set, deny-list + size cap, bulk-directory guard) --
 see the package docstring in `__init__.py` for the full rationale. Split out
-of `hooks/backup_private.py` (fleet-config#731). Needs `snapshot.py` for the
+of `hooks/backup_private.py`. Needs `snapshot.py` for the
 runtime-data leg's SQLite side (`snapshot_sqlite`, `is_sqlite_sidecar`):
 selecting a database *is* snapshotting it, via SQLite's online backup API,
 because a live WAL-mode file cannot be enumerated as an ordinary byte copy.
@@ -33,7 +33,7 @@ logger = logging.getLogger("backup_private")
 def is_reparse_point(path: Path) -> bool:
     """True if `path` is a symlink **or a Windows junction**.
 
-    The distinction is the whole point (#590's "never follow junctions" constraint,
+    The distinction is the whole point (the "never follow junctions" constraint,
     and the `_strip_junction` history in `skills/_lib/worktree_claim.py`): on
     Windows, `Path.is_symlink()` and `os.path.islink()` both return **False** for a
     directory junction, so a symlink-only guard descends into every sibling
@@ -71,8 +71,7 @@ def _denied(rel: str, cfg: BackupConfig, overrides: Optional["RepoOverrides"] = 
 
     `overrides.include_globs`, when given, exempts a basename match from both
     checks — the repo-scoped opt-back-in for an otherwise-denied name, e.g. a
-    `*.log` file that is actually security-relevant automation state
-    (fleet-config#722).
+    `*.log` file that is actually security-relevant automation state.
     """
     parts = rel.rstrip("/").split("/")
     name = parts[-1].lower()
@@ -142,7 +141,7 @@ def walk_files(base: Path, rel_prefix: str, cfg: BackupConfig, errors: List[str]
 def _forced_include(rel: str, overrides: RepoOverrides) -> bool:
     """True if `rel` is exempted from the size cap or the deny-list by name.
 
-    Such a file is also exempt from the bulk-directory guard (fleet-config#722):
+    Such a file is also exempt from the bulk-directory guard:
     the whole point of `backup_always_include`/`backup_include_globs` is "back
     this up no matter what", so a sibling's bulk crossing must not undo it, and
     its own bytes must not count toward pushing that sibling over the threshold.
@@ -230,10 +229,10 @@ def git_ignored_entries(repo_dir: Path) -> List[str]:
     single `dir/` entry, which is what keeps this fast on a repo with a 40k-file
     `node_modules`.
 
-    Via `_lib.run_git` (fleet-config#677): this walks *every repo in the fleet*
+    Via `_lib.run_git`: this walks *every repo in the fleet*
     on the nightly backup, so a hand-rolled spawn would strand a 0-byte
     `index.lock` in any of them if the run were killed mid-refresh — the exact
-    failure `GIT_OPTIONAL_LOCKS=0` exists to prevent (fleet-config#667).
+    failure `GIT_OPTIONAL_LOCKS=0` exists to prevent.
     """
     result = _lib.run_git(
         ["-c", "core.quotePath=false", "-C", str(repo_dir), "ls-files",
@@ -419,7 +418,7 @@ def select_runtime_data(cfg: BackupConfig, staging: Path) -> Selection:
     leg drops an oversize file and reports it; on this leg that would silently
     drop exactly what the leg exists for — home-automation's `telemetry.sqlite3`
     is already 18 MB against a 10 MB cap, and a service database only ever grows.
-    Losing it to a size threshold is the same defect fleet-config#722 fixed on
+    Losing it to a size threshold is the same defect already fixed on
     the repos leg, and re-introducing it here would just move that bug.
 
     A database that cannot be snapshotted lands in `errors`, which makes its

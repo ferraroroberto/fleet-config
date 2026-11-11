@@ -1,14 +1,14 @@
-"""Persist per-session state for the Fleet Board (fleet-config#91).
+"""Persist per-session state for the Fleet Board.
 
 Maintains ``sessions-state.json`` — one row per recent Claude Code session
 (``project``, ``status``, ``transcript_path``, ``cwd``, ``updated_at``, explicit
 ``agent``, optional ``launcher_session_id``, plus the live session
 ``name``/``name_source`` when available — see below) keyed by the
-hook payload's ``session_id`` — so the app-launcher Board tab (app-launcher#164)
+hook payload's ``session_id`` — so the app-launcher Board tab
 can render a "what needs me now" column without owning any hook plumbing. The
 board only *reads* the file; this module is the only writer.
 
-**Session name (fleet-config#302).** Claude Code maintains a live per-process
+**Session name.** Claude Code maintains a live per-process
 registry file at ``~/.claude/sessions/<pid>.json`` (one per running ``claude``
 process), whose ``sessionId`` field is the exact same UUID as the hook
 payload's ``session_id``. On each write this module scans that directory for
@@ -27,14 +27,14 @@ Wired into three Claude Code events (``settings.template.json``):
 * ``SessionEnd`` → **deletes** the row (the session is gone, not waiting on
   anyone). Fires on clean exit (``/exit``, ``clear``, ``logout``, prompt-input
   exit); a hard kill (taskkill, crash) never fires it, so those rows still age
-  out via the 24h prune below (#241). A 24-hour tombstone in
+  out via the 24h prune below. A 24-hour tombstone in
   ``sessions-ended.json`` keeps a late observational event from recreating the
   removed row; a new prompt clears it because that proves a genuine resume.
 
 ``notify_on_idle`` (the ``Notification`` hook) additionally upserts
 ``needs-you`` on a permission prompt, so a blocked session surfaces even
 mid-turn. It deliberately does **not** write anything for the periodic
-``idle_prompt`` re-announcement (fleet-config#354) — that sub-type fires
+``idle_prompt`` re-announcement — that sub-type fires
 ~60s after ``Stop`` already recorded ``needs-you`` with nothing having
 changed, so writing ``idle`` there silently downgraded an already-correct
 row until the user replied or a fresh ``permission_prompt`` fired. Telegram
@@ -50,12 +50,12 @@ launcher session-host id. App Launcher injects its exact identity as inherited
 writer persists them for an exact agent-aware consumer join. External sessions
 have no launcher id and retain the normalized-cwd fallback; so does a
 print-mode ``claude -p`` child of a lane, which inherits the stamp but is not
-the lane (``_lib.own_launcher_session_id``, fleet-config#1281).
+the lane (``_lib.own_launcher_session_id``).
 
 Like every hook here this is advisory-only: any failure is swallowed and the
 hook exits 0. Advisory is not silent, though — a state write that never
-committed is logged and returned as ``False`` by every writer below
-(fleet-config#816), so a caller that cares can tell stale Board state from
+committed is logged and returned as ``False`` by every writer below,
+so a caller that cares can tell stale Board state from
 fresh instead of having no way to ask. The state file lives under
 ``~/.claude/hooks/state/`` (a junction into this repo's working tree — the
 directory is gitignored);
@@ -116,7 +116,7 @@ def sessions_registry_dir() -> Path:
 
 def _lookup_session_name(session_id: str) -> "tuple[Optional[str], Optional[str]]":
     """Best-effort ``(name, name_source)`` for ``session_id`` from the live
-    per-process session registry (fleet-config#302). Scans every
+    per-process session registry. Scans every
     ``<pid>.json`` file in ``sessions_registry_dir()`` for the entry whose
     ``sessionId`` matches; returns ``(None, None)`` on any miss — missing
     directory, unreadable/malformed file, or no matching session — never
@@ -191,7 +191,7 @@ def _write_rows(path: Path, rows: Dict[str, Any]) -> bool:
     exhausted retry loop used to fall out of the ``for`` and return ``None``,
     indistinguishable from a committed write: no exception, no log line, no
     return value, so a caller could not tell fresh Board state from state that
-    was silently discarded (fleet-config#816). That is the shape
+    was silently discarded. That is the shape
     ``global-CLAUDE.md`` forbids — a write acknowledged is not an outcome
     confirmed — so the failure is now both logged and returned.
     """
@@ -227,12 +227,12 @@ def upsert(
     ``job_run`` marks a session a scheduled job spawned; the key is written
     only when true, so every other row stays byte-identical.
 
-    ``name``/``name_source`` (fleet-config#302) are the live Claude Code
+    ``name``/``name_source`` are the live Claude Code
     session title looked up from ``~/.claude/sessions/<pid>.json``, when a
     caller has one; both default to ``None`` so existing callers are unaffected.
 
     Returns ``True`` when every state write this call needed actually
-    committed (fleet-config#816). A deliberate no-op — a tombstoned session
+    committed. A deliberate no-op — a tombstoned session
     with ``allow_reopen`` unset — needed no write and is ``True``; only a
     discarded write is ``False``. Advisory as ever: existing callers ignore
     the return and the hook still exits 0, but the fact is now available
@@ -281,14 +281,14 @@ def upsert_from_payload(
 ) -> bool:
     """Upsert straight from a hook payload; silent no-op without a session_id.
 
-    ``default_agent`` (fleet-config#349) is the agent to record when the
+    ``default_agent`` is the agent to record when the
     process carries no ``APP_LAUNCHER_AGENT`` — true for a Codex/Pi session
     opened outside App Launcher, which would otherwise misreport as
     ``claude`` (the historical default, kept for Claude's own callers).
 
-    Attribution precedence (fleet-config#491):
+    Attribution precedence:
     ``APP_LAUNCHER_AGENT`` → the payload's own harness hint → ``default_agent``.
-    The launcher-injected value still always wins (#345). The middle term is new:
+    The launcher-injected value still always wins. The middle term is new:
     a Grok session reaches this module through Claude's *own* hook wiring (Grok
     scans ``~/.claude/settings.json`` by default), so without it every Grok row
     would be stamped ``claude`` — fabricating an agent identity, exactly the
@@ -330,7 +330,7 @@ def remove(session_id: str) -> bool:
     """Delete one row and suppress late observational events for 24 hours.
 
     Returns ``True`` when every write this call needed committed, on the same
-    contract as :func:`upsert` (fleet-config#816).
+    contract as :func:`upsert`.
     """
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)

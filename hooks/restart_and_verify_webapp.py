@@ -11,8 +11,8 @@ Two restart strategies, chosen per project:
 * **`restart_cmd` (tray-owned apps — app-launcher / home-automation / photo-ocr / voice-transcriber / grocery-shopping-automation).**
   Their webapp runs as a uvicorn *child* of a long-lived `launcher.py tray`.
   An idempotent `tray.bat` no-ops while that tray lives, so it never respawns
-  the webapp — the old "kill PID + run tray_cmd" sequence left the webapp dead
-  (issue #51). When `restart_cmd` is set we run it instead: it respawns a fresh
+  the webapp — the old "kill PID + run tray_cmd" sequence left the webapp dead.
+  When `restart_cmd` is set we run it instead: it respawns a fresh
   uvicorn through the app's `WebappManager`, which the tray adopts. It never
   touches the `:8446` session-host (unlike `tray.bat --restart`, which cascades
   a `/T` kill onto live PTY sessions). A just-killed port can linger in
@@ -37,7 +37,7 @@ Exit codes:
     3 the webapp is up but its build identity is **unconfirmed** — HEAD could
       not be read, or `<api_version_path>` reported no `git_sha`. Distinct from
       both 0 and 2 on purpose: a check that could not establish the fact must
-      say so rather than fold into the passing state (fleet-config#562).
+      say so rather than fold into the passing state.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _run_ps(
 ) -> subprocess.CompletedProcess:
     """Run a PowerShell one-liner via the absolute Windows PowerShell 5.1 path.
 
-    Resolution is `_lib.powershell_exe()` (fleet-config#561): this used to
+    Resolution is `_lib.powershell_exe()`: this used to
     hardcode the literal with no existence check, so a machine without Windows
     PowerShell 5.1 hard-failed `/restart-webapp` where the sibling copy in
     `context_filter_cli` degraded through `shutil.which`.
@@ -141,10 +141,10 @@ def _wait_port_listening(port: int, deadline: float) -> bool:
 def _git_head(cwd: Path) -> Optional[str]:
     """HEAD sha for the checkout at ``cwd``, or None when it can't be read.
 
-    Via :func:`_lib.run_git` (fleet-config#677) so this inherits
+    Via :func:`_lib.run_git` so this inherits
     ``GIT_OPTIONAL_LOCKS=0`` like every other git read in the tree — a raw
     ``subprocess.run(["git", …])`` here would quietly opt back out of the
-    stranded-``index.lock`` fix (fleet-config#667).
+    stranded-``index.lock`` fix.
     """
     try:
         res = _lib.run_git(["-C", str(cwd), "rev-parse", "HEAD"], timeout=5)
@@ -158,10 +158,10 @@ def _git_head(cwd: Path) -> Optional[str]:
 def sha_matches(expected: str, got: str) -> bool:
     """True only when **both** shas are non-empty and one prefixes the other.
 
-    The emptiness guard is the whole point (fleet-config#562): the predicate
-    used to be a bare `got.startswith(expected[:7]) or expected.startswith(
+    The emptiness guard is the whole point: the predicate
+    must not be a bare `got.startswith(expected[:7]) or expected.startswith(
     got[:7])`, and `"anything".startswith("")` is unconditionally True — so a
-    `/api/version` payload with no `git_sha` (missing key, `null`, `""`) was
+    `/api/version` payload with no `git_sha` (missing key, `null`, `""`) would be
     reported as `OK  git_sha= (matches HEAD)`. A restart that proved nothing
     about which build is live must never read as a verified match.
     """

@@ -18,7 +18,7 @@ with ``capture = true`` and a ``capture_routing`` of ``"flat"`` (one
 conversations dir) or ``"skills"`` (per-skill dirs). Fail-open: if the hub is
 unreachable an entry is skipped and retried next run (see :mod:`hub_client`).
 
-Two triggers invoke this module (fleet-config#673): ``session_index.py``, on
+Two triggers invoke this module: ``session_index.py``, on
 ``SessionStart`` (the original, still the fallback/catch-up path), and
 ``conversation_capture.py``, detached, ~60s after a ``Stop`` write — so a
 closed conversation is digested near close rather than only the next time a
@@ -183,8 +183,7 @@ def parse_index(path: Path) -> "dict[str, Entry]":
 def _digest_fields(body: str) -> "dict[str, str]":
     """Split a rendered entry body back into its digest fields.
 
-    New entries carry ``topic`` + ``summary``; entries written before
-    fleet-config#1373 carry ``decisions`` + ``open_loops`` instead, so all four
+    New entries carry ``topic`` + ``summary``; older entries carry ``decisions`` + ``open_loops`` instead, so all four
     keys are always present and an entry only fills the ones it has.
 
     ``index.json`` carries them separately so a consumer can show just the topic
@@ -240,7 +239,7 @@ def index_json_payload(
 
     ``title`` is the owner's name for the conversation (``""`` when none); a
     consumer shows ``title or topic``, so the digest topic keeps updating
-    underneath a title (fleet-config#1348).
+    underneath a title.
     """
     titles = titles or {}
     rows = []
@@ -460,7 +459,7 @@ def apply_delay(seconds: float) -> None:
 
     Split out from :func:`main` so the acceptance suite can assert the delay is
     requested correctly (by stubbing :func:`time.sleep`) without an actual
-    multi-second sleep in the test run (fleet-config#673). A no-op for the
+    multi-second sleep in the test run. A no-op for the
     ``SessionStart`` trigger, which never passes ``--delay-seconds``.
     """
     if seconds > 0:

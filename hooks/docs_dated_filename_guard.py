@@ -12,7 +12,7 @@ Escape hatch: set `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1` for the rare intentional
 case (a genuine `docs/2026-Q2-roadmap.md`-style artifact). Edits to an existing
 file are unaffected — only `Write` (new-file / overwrite) is guarded.
 
-Tool-id vocabulary stays in `_lib.edit_event()` (fleet-config#1558): this used
+Tool-id vocabulary stays in `_lib.edit_event()`: this used
 to branch on Codex's own `apply_patch` id directly to tell a brand-new file
 from an update to an existing one. `EditTarget.operation` already carries that
 distinction uniformly across harnesses — `"add"`/`"write"` only ever name a

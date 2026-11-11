@@ -1,6 +1,6 @@
 """Daily snapshot of every fleet repo's gitignored-but-precious residue.
 
-fleet-config#590, filed after the 2026-08-10 incident (ferraroroberto/life-os#72)
+The 2026-08-10 incident
 permanently deleted life-os's gitignored personal content — `identity/`, per-skill
 `context/`/`memory/`/`conversations/`, `.env` — which by design exists in exactly
 one place. Recovery succeeded only by luck. Anything git *tracks* is already safe
@@ -21,7 +21,7 @@ Selection, in three layers
 2. **A deny-list + per-file size cap** drops the obvious rubbish (`.venv`,
    `node_modules`, caches, `*.log`, `*.pyc`, anything over `max_file_mb`).
 3. **A bulk-directory guard** drops what layers 1-2 cannot: the measurement behind
-   #590 found layers 1-2 alone still select **11.8 GB across 108k files**, ~200x
+   this guard found layers 1-2 alone still select **11.8 GB across 108k files**, ~200x
    the genuinely irreplaceable set, because gitignore is also where every repo
    parks its generated output (content-management `planning/` 2.8 GB,
    voice-transcriber `archive/` 2.5 GB, app-launcher `webapp/` 2.3 GB). So any
@@ -48,7 +48,7 @@ Dated snapshots `<dest>/<YYYY-MM-DD>/`, plus a `latest/` mirror. A file whose
 content is unchanged since the previous snapshot is **hardlinked** to it rather
 than copied (the `rsync --link-dest` shape), so every dated directory reads as a
 complete plain-file tree in Explorer while 14 dailies cost about one copy plus
-deltas. Plain files are deliberate: the #590 restore has to need zero tooling,
+deltas. Plain files are deliberate: the restore has to need zero tooling,
 because the incident restore was done by hand from plain sources.
 
 Four legs run each night, and every one of them crosses volumes, so each drive
@@ -57,12 +57,12 @@ transcripts (`~/.claude/projects/`, prunable by Claude Code itself) C: -> E:;
 Codex's allowlisted active/archived rollouts and safely-snapshotted thread
 databases C: -> E:; and the relocated runtime-data root C: -> E:.
 
-The third leg exists because `project-scaffolding#243` moved every always-on
+The third leg exists because project-scaffolding's convention moved every always-on
 service's SQLite database *out* of its repo's working tree, to `C:/sqlite/<app>/`
 (the SSD, so seven services fsync-ing at a poll interval stop hammering the
 spinning E: drive). Selection here is git-derived, and that root is outside every
 git working tree — so the relocation makes those databases invisible to layer 1
-entirely: not dropped-and-reported, just absent (fleet-config#724). Two things
+entirely: not dropped-and-reported, just absent. Two things
 about this leg are deliberate and must not be "tidied":
 
 - **No `max_file_mb` cap on session or runtime-data legs.** Those files are the
@@ -89,8 +89,8 @@ snapshot torn — half-rewritten but sitting next to a manifest that still
 describes the *previous* run. `run_leg` writes `<snapshot>/.run-in-progress`
 before the first file and clears it only after `manifest.json` lands, so
 `freshness` can tell a torn newest snapshot apart from a genuinely fresh one
-(`unknown`, never `ok`) and `_previous_snapshot` never hardlinks against one
-(fleet-config#607). A stale marker is self-healing: the next run for that same
+(`unknown`, never `ok`) and `_previous_snapshot` never hardlinks against one.
+A stale marker is self-healing: the next run for that same
 date overwrites the directory and clears it.
 
 stdlib only. Never follows a junction or symlink (see `is_reparse_point` — on
@@ -101,10 +101,8 @@ Run it as a **directory** -- `python <...>/hooks/backup_private.py` is a thin
 shim that imports `main` from `.cli` and keeps that invocation unchanged; the
 daily job (`hooks/run-backup-daily.bat`) and the docs need no edits.
 
-Layout (fleet-config#731 -- this was one 1768-line module carrying six largely
-independent concerns behind a single CLI, and the biggest file in the repo's
-runtime trees; the engine, the reporting, and the CLI are testable
-independently, so it only went one way):
+Layout (the engine, the reporting, and the CLI are testable independently,
+so each lives in its own module):
 
   config.py     BackupConfig / RepoOverrides, projects.toml loaders, every
                 exit/freshness/name constant. The bottom of the DAG -- every

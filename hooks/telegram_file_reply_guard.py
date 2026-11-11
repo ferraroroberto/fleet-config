@@ -1,8 +1,8 @@
-"""Refuse a Telegram file reply outside the sender's private chat (fleet-config#1478).
+"""Refuse a Telegram file reply outside the sender's private chat.
 
 A project can let its Telegram channel sessions send files without a
 permission prompt, through an allow rule on the channel plugin's ``reply``
-tool (life-os#265). An allow rule can't see arguments, so on its own nothing
+tool. An allow rule can't see arguments, so on its own nothing
 stops a ``reply`` carrying ``files`` from going to a group or to someone
 else's chat. This guard enforces the private-chat half: a ``reply`` with
 ``files`` passes only when its ``chat_id`` is a positive id equal to the

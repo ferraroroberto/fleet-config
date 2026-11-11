@@ -2,8 +2,7 @@
 
 Not a hook — a plain scheduled program (`run-backup-daily.bat` → an
 app-launcher Job → Task Scheduler). The engine itself lives in the
-`hooks/backup/` package (fleet-config#731; formerly this file's own
-1768 lines) — `hooks/backup/__init__.py` carries the full design-rationale
+`hooks/backup/` package — `hooks/backup/__init__.py` carries the full design-rationale
 docstring (selection layers, storage model, honesty rules). This file stays
 in place, unchanged in behaviour, so the daily job's invocation
 (`python hooks/backup_private.py [--dry-run|--check-freshness|...]`) and the

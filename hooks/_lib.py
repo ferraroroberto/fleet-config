@@ -55,7 +55,7 @@ def state_dir() -> Path:
     depend on it). Every hook that persists advisory state under
     ``~/.claude/hooks/state/`` derives its own filename from this rather than
     re-deriving the lookup itself -- eight independent copies of exactly this
-    (fleet-config#817) is the failure mode a ninth caller getting it wrong
+    is the failure mode a ninth caller getting it wrong
     guards against."""
     root = os.environ.get(STATE_DIR_ENV_VAR)
     return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
@@ -74,7 +74,7 @@ def atomic_tmp_prefix(path: Path) -> str:
 
     An orphan is then ``.<target>.<random>.tmp`` -- it names the file whose
     writer stranded it, instead of the anonymous ``tmp<8>.tmp`` that left six
-    accumulated temps in ``hooks/state/`` unattributable (fleet-config#816).
+    accumulated temps in ``hooks/state/`` unattributable.
     Pair with ``suffix=".tmp"``.
     """
     return f".{path.name}."
@@ -110,7 +110,7 @@ def atomic_write_text(
 ) -> None:
     """Replace ``path`` with ``text`` (UTF-8) so a reader never sees half a file.
 
-    The one body every state writer shares (fleet-config#1441): sweep the stem's
+    The one body every state writer shares: sweep the stem's
     stale orphans, ``mkstemp`` a sibling named by :func:`atomic_tmp_prefix`, write,
     ``os.replace``, and unlink the temp when any of that raises ``OSError`` --
     then re-raise, so each caller keeps its own failure policy. ``newline`` goes
@@ -166,7 +166,7 @@ def own_launcher_session_id() -> str:
     A ``claude -p`` that a launcher lane starts (skill evals, a design-review
     judge) inherits the lane's ``APP_LAUNCHER_SESSION_ID``, so without this its
     own ``Stop``/``SessionEnd`` reached the chief as the *lane's* turn and
-    session end, and its Board row hijacked the lane's card (fleet-config#1281).
+    session end, and its Board row hijacked the lane's card.
     Launcher lanes are interactive PTYs, never print mode, so an ``sdk-*``
     entrypoint marks a session the launcher did not start. Readers that
     attribute a session's *own* lifecycle use this; readers guarding the
@@ -190,7 +190,7 @@ def is_scheduled_run() -> bool:
 
     Such a run owns every descendant in a Windows job: a fire-and-forget child
     still alive when the provider exits turns a delivered run into exit 118 and
-    is then killed by the job teardown anyway (fleet-config#911). Hooks that
+    is then killed by the job teardown anyway. Hooks that
     would detach background work check this and skip it. Resolved at call time,
     like :func:`state_dir`.
     """
@@ -400,9 +400,9 @@ def powershell_exe() -> str:
     Probes for the absolute path first and degrades through ``shutil.which`` so a
     machine without it (a POSIX box, a trimmed Windows image) gets a best-effort
     fallback instead of a hard `FileNotFoundError`. Hoisted here from
-    `context_filter_cli` (fleet-config#561): `restart_and_verify_webapp` had
+    `context_filter_cli`: `restart_and_verify_webapp` had
     hardcoded the literal with no probe, so `/restart-webapp` hard-failed where
-    the wrapper degraded — two resolutions of one fact that had drifted in
+    the wrapper degraded — two resolutions of one fact that diverged in
     safety.
     """
     if Path(WINDOWS_POWERSHELL).exists():
@@ -417,7 +417,7 @@ def _is_wsl_launcher(path: str) -> bool:
 
 
 def git_bash_exe() -> Optional[str]:
-    """Resolve the Git Bash executable, never the WSL launcher (fleet-config#1399).
+    """Resolve the Git Bash executable, never the WSL launcher.
 
     A plain ``shutil.which("bash")`` answers with ``C:\\Windows\\System32\\bash.exe``
     (WSL) wherever Git's ``usr\\bin`` is missing from PATH, as in a
@@ -457,7 +457,7 @@ def git_env(base: Optional[dict] = None) -> dict:
     """``base`` (default ``os.environ``) plus ``GIT_OPTIONAL_LOCKS=0``.
 
     Hooks-tier copy of ``skills/_lib/git_run.git_env`` — see that function for
-    the full reasoning (fleet-config#667). Short version: ``git status`` takes
+    the full reasoning. Short version: ``git status`` takes
     ``.git/index.lock`` only to persist a refreshed stat cache, so killing one
     mid-refresh strands a 0-byte lock that then blocks every write in that repo
     while every *read* keeps exiting 0. This tier matters most, not least:
@@ -676,8 +676,8 @@ def run_git(
     Deliberately a **hooks-tier copy** of ``skills/_lib/git_run.run_git``, the
     same way :data:`NO_WINDOW` duplicates ``skills/_lib/no_window`` — see that
     constant's note. ``branch_before_edit_guard`` used to reach the skills-tier
-    module by inserting ``../skills/_lib`` onto ``sys.path`` at import time
-    (fleet-config#564), which breaks the rule the rest of the directory states
+    module by inserting ``../skills/_lib`` onto ``sys.path`` at import time,
+    which breaks the rule the rest of the directory states
     outright (``notify_on_idle``: the two trees are independent, so a sibling is
     reached by subprocess, never a Python import). The practical cost of the
     violation was unbounded: the import sat at module top with no guard, so a
@@ -700,12 +700,12 @@ def run_gh(
 ) -> subprocess.CompletedProcess:
     """Run ``gh <args>``, UTF-8 decoded with undecodable bytes replaced.
 
-    The ``gh``-CLI sibling of :func:`run_git` (fleet-config#728): before this
+    The ``gh``-CLI sibling of :func:`run_git`: before this
     existed, every ``gh`` call site hand-rolled the identical
     ``capture_output=True, text=True, encoding="utf-8", errors="replace",
     creationflags=NO_WINDOW`` combination — ``text=True`` alone falls back to
     cp1252 on Windows, which raises ``UnicodeDecodeError`` on a non-ASCII issue
-    title or body (fleet-config#679) — each restating the same two gotchas in
+    title or body — each restating the same two gotchas in
     its own comment. They had already drifted on ``timeout`` (some passed none,
     some 30s/60s/120s) before this wrapper existed to catch it; that spread is
     real call-site policy, so ``timeout`` stays a parameter here rather than a
@@ -765,7 +765,7 @@ def gh_json(args: Sequence[str], *, timeout: int = 20) -> Dict[str, Any]:
     to cp1252, which mis-decodes a UTF-8 title (em-dash — -> â€", emoji -> ðŸ§)
     before it ever reaches the chat. Mirrors ``notify_send._read_text``.
 
-    Lives here rather than in `notify_complete` (fleet-config#561) because
+    Lives here rather than in `notify_complete` because
     `work_summary` needed the identical helper and could not import it —
     `notify_complete` imports `work_summary`, so the obvious direction was an
     import cycle and the cycle was "resolved" by copying the body. `_lib` is
@@ -888,7 +888,7 @@ def is_reparse_point(path: Path, *, on_error: bool) -> bool:
     caller states its own policy: the backup walker fails closed (`True`,
     "unreadable is not safe to descend"), the venv guard fails open (`False`,
     a nudge must never fire on a path it can't read). One home so the next
-    reparse-point quirk is fixed once (fleet-config#928).
+    reparse-point quirk is fixed once.
     """
     try:
         st = os.lstat(path)

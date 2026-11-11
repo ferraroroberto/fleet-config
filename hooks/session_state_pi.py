@@ -1,4 +1,4 @@
-"""Pi adapter for the Fleet Board session-state writer (fleet-config#349).
+"""Pi adapter for the Fleet Board session-state writer.
 
 Small stdin-JSON CLI the Pi extension (``pi/extensions/session_state.ts``)
 shells out to on each lifecycle event it observes — keeps the one-writer,

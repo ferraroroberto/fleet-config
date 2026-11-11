@@ -1,4 +1,4 @@
-"""Codex adapter for the Fleet Board session-state writer (fleet-config#349).
+"""Codex adapter for the Fleet Board session-state writer.
 
 Wires Codex CLI's ``UserPromptSubmit`` / ``Stop`` / ``PermissionRequest`` /
 ``SessionEnd`` hooks

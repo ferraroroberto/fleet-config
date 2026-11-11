@@ -1,4 +1,4 @@
-"""The hooks' multi-harness wire protocol (split from `_lib.py`, fleet-config#931).
+"""The hooks' multi-harness wire protocol .
 
 Two halves of one subsystem, both keyed off which harness sent the payload:
 
@@ -439,7 +439,7 @@ def _print_text(text: str, stream: TextIO) -> None:
 
     Behind a pipe, Python encodes stdio with the ANSI code page (cp1252) unless
     `PYTHONUTF8` / `PYTHONIOENCODING` is set, so an em dash left as byte 0x97
-    and Claude Code, which decodes UTF-8, showed U+FFFD (fleet-config#924).
+    and Claude Code, which decodes UTF-8, showed U+FFFD.
     Re-encoding here, right before the process exits, leaves every other write
     and every hook's own streams alone. Newline translation and the stream's
     error handler are kept, so only the encoding of non-ASCII changes.
@@ -465,15 +465,14 @@ def block(reason: str) -> "NoReturn":
     grok 0.2.114 session showed the code arriving at its runner as ``1`` — which
     Grok treats as a *hook failure*, and hook failures fail open. The guard
     printed its refusal and the dangerous command ran anyway: the worst possible
-    shape, a block that reports success while protecting nothing
-    (fleet-config#491).
+    shape, a block that reports success while protecting nothing.
 
     Grok's documented escape hatch is that for ``PreToolUse`` a ``deny``
     decision on **stdout is honored regardless of exit code**, so a Grok-sourced
     payload also gets the JSON decision. Claude Code never reaches that branch —
     it is gated on the agent :func:`normalize_payload` identified — so Claude's
     stdout stays clean and its behaviour is byte-for-byte unchanged. Codex
-    PreToolUse uses its verified structured deny with exit 0 (fleet-config#759).
+    PreToolUse uses its verified structured deny with exit 0.
     """
     _collect(Verdict("block", reason))
     if _ACTIVE_AGENT == "pi":
@@ -543,13 +542,12 @@ def warn(message: str) -> "NoReturn":
     `UserPromptSubmit` / `UserPromptExpansion` and **nowhere else**, so the
     `PreToolUse` and `PostToolUse` nudges (`bash_cmdexe_syntax_guard`,
     `gh_body_file_guard`, `hub_bypass_warn`, `browser_stealth_lint`) went to
-    the debug log and no further (fleet-config#681). The channel is per-event,
+    the debug log and no further. The channel is per-event,
     so the dialect is too — same shape as :func:`block`:
 
       - ``PostToolUse`` / ``PostToolUseFailure`` / ``UserPromptSubmit`` /
         ``Stop`` / ``SessionStart`` → ``hookSpecificOutput.additionalContext``
-        (``chief_handover_sessionstart`` is the ``SessionStart`` caller,
-        fleet-config#818).
+        (``chief_handover_sessionstart`` is the ``SessionStart`` caller).
       - Claude ``PreToolUse`` (and any event without an
         ``additionalContext`` field) → the common ``systemMessage`` field.
       - Codex ``PreToolUse`` → ``hookSpecificOutput.additionalContext``; its
@@ -597,8 +595,7 @@ def rewrite_command(payload: Dict[str, Any], new_command: str, *, reason: str = 
     """Allow the call with its command replaced, in the calling harness's
     ``PreToolUse`` rewrite dialect. Exit 0; the tool runs with ``new_command``.
 
-    ``context_filter_hook`` is the one caller (fleet-config#818, extracted
-    from it): before this existed, the hook carried three harnesses' outbound
+    ``context_filter_hook`` is the one caller: before this existed, the hook carried three harnesses' outbound
     key names inline (``overwrite``/``CommandLine`` for Antigravity,
     ``modifiedArgs`` for Copilot, ``hookSpecificOutput.updatedInput`` for
     Claude) plus its own provenance sniff, so a fifth harness meant editing a
@@ -608,11 +605,11 @@ def rewrite_command(payload: Dict[str, Any], new_command: str, *, reason: str = 
 
       - Antigravity (``agy``): ``overwrite.CommandLine`` merges into the tool
         call's args before it runs — verified live, an overwritten
-        ``CommandLine`` actually executed (fleet-config#546).
+        ``CommandLine`` actually executed.
       - Copilot CLI: ``modifiedArgs`` is a JSON **string** replacing the whole
-        tool-args object — verified live on 1.0.77 (fleet-config#547) and
+        tool-args object — verified live on 1.0.77 and
         still honored on 1.0.83, where ``toolArgs`` itself arrives as an
-        object (fleet-config#918) — so
+        object — so
         ``payload``'s other ``tool_input`` keys (description, mode,
         initial_wait, ...) are echoed back with only ``command`` rewritten.
       - Claude Code (and any harness :func:`normalize_payload` doesn't name

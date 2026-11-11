@@ -6,8 +6,7 @@ conversion rewrites ``/c`` to ``C:/``, starts an interactive cmd prompt, and
 never executes the requested command. The other checks emit a one-line nudge
 on stdout (exit 0) and let the command run.
 
-Four independent checks, surfaced from the `/insights` friction data and
-fleet-config#385:
+Four independent checks, surfaced from the `/insights` friction data:
 
 1. **Native `cmd.exe /c` through Bash** — MSYS converts the single-slash
    switch to a drive path. Block it and direct the caller to the PowerShell
