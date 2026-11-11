@@ -1,8 +1,8 @@
-"""Per-criterion acceptance audit for `/issue-finish` (fleet-config#958).
+"""Per-criterion acceptance audit for `/issue-finish`.
 
 Why this exists
 ----------------
-Acceptance used to be one yes/no sentence, and fleet criteria very often live
+A single yes/no sentence is too coarse for acceptance: fleet criteria very often live
 *outside the diff* -- "the tray serves the new SHA", "works on the real
 iPhone", "the scheduled job fired". A single boolean lets those ride through
 as met when the truthful answer is "could not be established from here". The

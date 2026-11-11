@@ -1,4 +1,4 @@
-"""Always-on host stall probe (fleet-config#1106). stdlib only.
+"""Always-on host stall probe. stdlib only.
 
 Whole-box stalls of 7-25 s freeze every local server at once and turn whatever
 gate is running red. This probe catches the next one with timestamps:
@@ -12,14 +12,14 @@ gate is running red. This probe catches the next one with timestamps:
   the control) does a 4 KB `FILE_FLAG_NO_BUFFERING` read at a random offset of a 64 MB
   file once a second; a read slower than the threshold is `kind: disk` with the
   `volume` (the sleep and http legs never touch the SATA disk the fleet lives on, so
-  they were blind to a stall that only froze E: -- fleet-config#1106). Each `disk` record carries
+  they were blind to a stall that only froze E:). Each `disk` record carries
   `also_slow`, the other volumes slow over the same window (empty = this volume alone), and a read
   still stuck after `DISK_HUNG_S` is logged while in flight as `kind: disk-hung`, with evidence from
   during the stall -- a read that never returns is not a quiet log.
 
 A machine sleep looks like a stall to both legs (the monotonic clock runs through
 it) but is not one, so a gap that is mostly sleep is logged as `kind: suspend`
-instead and kept out of the stall count (fleet-config#1123). The test is the
+instead and kept out of the stall count. The test is the
 divergence between the monotonic clock and `QueryUnbiasedInterruptTime`, which
 does not tick while the machine sleeps. A suspend record carries the System log's
 Kernel-Power / Power-Troubleshooter events around it (sleep reason, wake source),
@@ -217,7 +217,7 @@ def memory_status() -> Dict[str, Any]:
 
 
 def tcp_states() -> Dict[str, Any]:
-    """Counts per TCP state from one `netstat -ano -p tcp` (port-exhaustion check, #440)."""
+    """Counts per TCP state from one `netstat -ano -p tcp` (port-exhaustion check)."""
     res = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True,
                          encoding="oem", errors="replace", timeout=NETSTAT_TIMEOUT_S, creationflags=NO_WINDOW)
     counts: Dict[str, int] = {}
@@ -639,7 +639,7 @@ def startup_dir() -> Path:
 def _logon_bat_content(python: Path, log: Path) -> bytes:
     """`start` is idempotent (ALREADY_RUNNING when a probe holds the lock), so a logon that
     races a probe started by hand is safe. Its output lands in `startup.log`: a logon
-    launch that dies silently is otherwise undiagnosable (cf. app-launcher#582)."""
+    launch that dies silently is otherwise undiagnosable."""
     script = Path(__file__).resolve()
     return (
         "@echo off\r\n"

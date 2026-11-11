@@ -1,4 +1,4 @@
-"""Deterministic operations helper for the fleet chief (fleet-config#445).
+"""Deterministic operations helper for the fleet chief.
 
 The chief's ~18h sweep (2026-07-25/26) re-hand-wrote the same handful of
 board/session/issue operations in inline shell + inline Python on every
@@ -19,7 +19,7 @@ issuing the POST that would launch a session. The same principle backs
 `verify`: during the same sweep a sub-agent overstepped a read-only brief
 and shipped a PR on its own initiative, discovered only because the parent
 worker happened to raise the alarm. `skills/_lib/dirty_tree_check.py`
-already existed for exactly this (fleet-config#247) and was already wired
+already existed for exactly this and was already wired
 into four fan-out skills, but not chief — `verify` closes that gap by
 wrapping it, so chief re-checks a worker's self-reported state instead of
 trusting it.
@@ -46,12 +46,11 @@ Subcommands
 -----------
   board [--base-url URL] [--json]
       The ~12-line phone-readable digest: column counts, one line per live
-      session, PR/job cards, running fleet-wide jobs (`/api/jobs`,
-      fleet-config#1078), the weekly rate-limit line, and a `grokbot=` token
+      session, PR/job cards, running fleet-wide jobs (`/api/jobs`),
+      the weekly rate-limit line, and a `grokbot=` token
       (`up` | `down` | `signed-out` | `unknown (reason)`; read-only, from
       `grokbot/status.py`). A count or reading that
-      can't be established prints `?` with its reason, never `0`/`None`
-      (fleet-config#840).
+      can't be established prints `?` with its reason, never `0`/`None`.
 
   sessions [--base-url URL] [--json]
       Repo occupancy — the "is this repo already busy" question asked
@@ -60,7 +59,7 @@ Subcommands
       `dispatch` asks — see `dispatch` below.
 
   inbox [--count [--older-than SECS]] [--stale-after SECS]
-      Mailbox v2 reader (fleet-config#1455; contract: docs/chief-mailbox.md).
+      Mailbox v2 reader (contract: docs/chief-mailbox.md).
       Moves stale claims (unacked for `--stale-after`, default 900 s) back to
       the inbox root, then claims every pending event into
       `chief-inbox/.claimed/<claimed_at_ms>-<id>.json` and prints the batch
@@ -76,7 +75,7 @@ Subcommands
       `ACKED=<n>`, plus `ACK_MISSING=<id>` and exit 1 for an id with no file.
 
   drain [--dry-run] [--plan-file PATH] [--base-url URL]
-      Run after `wake` every turn (fleet-config#1881; `chief/drain.py`). With
+      Run after `wake` every turn (`chief/drain.py`). With
       Settings' `auto_drain` on, queues open audit-managed issues that need no
       owner step and dispatches queued rows into free slots in plan order: its
       own with the per-kind brief, a hand-queued one only with its `brief` file,
@@ -86,7 +85,7 @@ Subcommands
 
   heal record|rerun|outcome|show <job_id> [--run RUN] [--cause C]
        [--issue R#N] [--pr R#N] [--base-url URL]
-      Job self-heal (fleet-config#1897; `chief/heal.py`). With Settings'
+      Job self-heal (`chief/heal.py`). With Settings'
       `chief_job_self_heal` on, `record` keeps a failed run's cause class and
       fix in the machine-local ledger (never job output) and prints
       `HEAL_REPEAT=` for a cause class seen again; `rerun` fires the job once,
@@ -116,9 +115,9 @@ Subcommands
       gate state refuses too). Then posts `/compact <focus>` to its own input.
 
   self-compact [--threshold N] [--focus TEXT] [--fresh-within S] [--base-url URL]
-      The chief's *automatic* compaction of itself (fleet-config#1052). The
-      threshold comes from app-launcher Settings (`/api/board/chief-settings`,
-      app-launcher#1298; 0 = off), else 30 with the fallback named. Refuses,
+      The chief's *automatic* compaction of itself. The
+      threshold comes from app-launcher Settings (`/api/board/chief-settings`;
+      0 = off), else 30 with the fallback named. Refuses,
       each with its own message, unless the caller is the live chief, the
       percentage is known and at/over the threshold, and the handover log and
       plan were both written within `--fresh-within` (600s). Then posts
@@ -130,7 +129,7 @@ Subcommands
       Last assistant text for a live session, tailed to N chars (default
       2000). `<sid>` accepts either a full session id or the 8-char prefix
       `board`/`sessions` actually print -- resolved against the board's live
-      session ids before the lookup (fleet-config#613). A prefix matching
+      session ids before the lookup. A prefix matching
       >=2 live sessions fails as `UNRESOLVABLE reason=...`, never a silent
       pick and never `session_not_found`; a prefix/id matching no live
       session passes through unchanged and still gets the real
@@ -158,16 +157,16 @@ Subcommands
       fleet-wide job (`FLEET_JOB_PATTERNS`), or `WARNING=fleet-jobs-unknown`
       when that can't be read. A fleet-wide brief (`/propagate-vendored`,
       `/cleanup-fleet`) is refused while one runs, or while that is unknown,
-      unless `--allow-during-fleet-job` (fleet-config#1078). Otherwise POSTs
+      unless `--allow-during-fleet-job`. Otherwise POSTs
       `/api/board/issues/start` and marks the new session chief-managed
-      (`skills/_lib/chief_managed.py`, fleet-config#443) with a fresh
+      (`skills/_lib/chief_managed.py`) with a fresh
       `dispatch_id`, printed as `DISPATCH_ID=` and carried by every
-      mailbox event that worker writes (fleet-config#1455), so
+      mailbox event that worker writes, so
       `hooks/notify_on_idle.py` can route its blocked-on-input
       notifications to chief instead of the human ping.
 
       Neither refusal counts the *calling* session, identified by the
-      launcher's own `APP_LAUNCHER_SESSION_ID` stamp (fleet-config#838).
+      launcher's own `APP_LAUNCHER_SESSION_ID` stamp.
       The standing chief runs as an ordinary PTY in `fleet-config`, so
       counting its card made that one repo — the repo the fleet's hooks,
       skills and runners live in — permanently undispatchable, and the only
@@ -175,11 +174,11 @@ Subcommands
       session still occupies its repo: a second worker is refused exactly as
       before.
 
-      `--brief-file` (fleet-config#944) carries the lane's scope, queue and
+      `--brief-file` carries the lane's scope, queue and
       constraints *in its launch command* — the one channel a lane trusts as
       coming from Roberto. The text rides the POST as `brief`; the launcher
       stores it in a file it owns and launches `/issue-<mode> <N> --brief
-      <path>` (app-launcher#1114), printed back as `LAUNCHED=`. A later `say`
+      <path>`, printed back as `LAUNCHED=`. A later `say`
       arrives as unsigned paste and can never grant shipping.
 
       `--effort low|medium|high|xhigh` rides the POST as `effort` and prints
@@ -195,22 +194,21 @@ Subcommands
       [--base-url URL]
       Sends `--file`'s content (or stdin) as session input. Never accepts
       prose as a bare CLI arg — `say` is a pure pipe, it never composes
-      the brief. `--verify` (fleet-config#453) polls the session's exchange
+      the brief. `--verify` polls the session's exchange
       after posting instead of trusting the endpoint's `{"ok": true}` — the
       endpoint reported success on 2026-07-27 for messages that were never
-      submitted, twice, in two different ways. Four verdicts
-      (fleet-config#643); only DELIVERED exits 0:
+      submitted, twice, in two different ways. Four verdicts; only DELIVERED exits 0:
 
         DELIVERED  positive evidence only: the exchange advanced past a send
                    that was submitted immediately, or — for a `deferred` send
                    — the watcher's `last_input` confirms the submit. A
                    deferred send's exchange movement is never proof: the
-                   target is mid-turn by definition (fleet-config#856).
+                   target is mid-turn by definition.
         PENDING    delivery likely, unconfirmed: the target is mid-turn
                    (board says `working`, *or* it emitted output in the last
-                   few seconds — fleet-config#662), its output age could not
+                   few seconds), its output age could not
                    be read at all, or the submit is with the deferred watcher
-                   (`deferred`, app-launcher#763) which has not reported
+                   (`deferred`) which has not reported
                    within `--timeout` — no verdict reached; re-read the
                    session's `last_input` later. Exits 1.
         STRANDED   positively not delivered — either the exchange never
@@ -238,18 +236,18 @@ Subcommands
 
   verify <repo> --expect merged|built [--branch NAME]
          [--default-branch NAME]
-      Post-flight dirty-tree check (wraps `skills/_lib/dirty_tree_check.py`,
-      fleet-config#247) — run by chief, never by the worker being checked,
+      Post-flight dirty-tree check (wraps `skills/_lib/dirty_tree_check.py`)
+      — run by chief, never by the worker being checked,
       right before a worker's self-reported "shipped ✅" is trusted onward.
       `<repo>` is a fleet-registry name (resolved via
       `skills/_lib/fleet_core/fleet_repo_scan.py`) or a literal path. Exits 1 on
       STATUS=DIRTY *and* on STATUS=UNKNOWN (the repo could not be read, so
       the self-report is unverified — relaying it as verified would be the
       same false pass) so a caller can gate on the exit code, not just parse
-      text. UNKNOWN is never reported as DIRTY (fleet-config#570).
+      text. UNKNOWN is never reported as DIRTY.
 
   sweep [--apply] [--root DIR]
-      The chief's worktree sweep (fleet-config#1496): one line per
+      The chief's worktree sweep: one line per
       `<repo>-wt-<N>` folder with its class and evidence -- `finished`
       (clean, nothing beyond the default branch or all of it in a merged PR),
       `in-use` (a live session's cwd or a live active-issue marker),
@@ -264,17 +262,16 @@ Subcommands
       Without `--root` it also lists every fleet primary behind
       `origin/<default>` (one `BEHIND`/`UNKNOWN` line each, fetched fresh) and a
       `STALE_PRIMARIES=` summary, so a primary left behind by a wave stays
-      visible until it is live (fleet-config#1798). Read-only; landing is
+      visible until it is live. Read-only; landing is
       `skills/_lib/vendored_wave/primaries.py land`.
 
   plan <show|lane|drop-lane|add|set|move|remove|wait|ask|unwait|clear> ...
       The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the
-      Board's "Chief's plan" card renders (fleet-config#1034,
-      app-launcher#1279). One line per update: `plan add app-launcher#1273
-      "title"`, `plan set app-launcher#1273 --status gate`, `plan lane
-      app-launcher gate --item "#1273"`, `plan wait "text" --ref repo#N`,
+      Board's "Chief's plan" card renders. One line per update: `plan add app-launcher#N
+      "title"`, `plan set app-launcher#N --status gate`, `plan lane
+      app-launcher gate --item "#N"`, `plan wait "text" --ref repo#N`,
       `plan ask "question" --ref repo#N --detail ... --recommend ... --option
-      "Label::desc" --recommended Label` (fleet-config#1049), `plan unwait <id>`.
+      "Label::desc" --recommended Label`, `plan unwait <id>`.
       Validates the whole v1 document and replaces it atomically, or writes
       nothing and exits 2. The logic lives in `skills/_lib/chief_plan.py`, the
       contract in `docs/chief-plan.md`.
@@ -282,7 +279,7 @@ Subcommands
 `--verify`'s four-verdict classification is **not** here: the exchange-marker
 parser, the precedence rules, the output-age measurement they rest on and the
 verdict/reason rendering are one self-contained subsystem, and they live in
-`skills/_lib/chief/steer_delivery.py` (fleet-config#680). This module fetches the
+`skills/_lib/chief/steer_delivery.py`. This module fetches the
 facts and prints the line; that one decides. Its names are re-exported here so
 every existing caller and test keeps reaching them through `chief_ops`.
 

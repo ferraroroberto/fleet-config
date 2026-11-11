@@ -5,8 +5,7 @@ Why this exists
 On 2026-08-01 a single crashed fleet-wide operation left a **0-byte**
 `.git/index.lock` in nine repos, all stamped the same second. Every one of
 those repos was then silently unable to `git add`, `git commit`, `git pull` or
-`git stash` — for **fifteen days**, until a lane happened to trip over one
-(fleet-config#667).
+`git stash` — for **fifteen days**, until a lane happened to trip over one.
 
 Fifteen days is the interesting number, and it is not a coverage gap: the
 2026-08-13 fleet sweep enumerated all 39 repos, visited all nine, and filed
@@ -19,8 +18,8 @@ every one of them as a healthy `below_threshold`. Zero errors, zero
     git rev-list --count     -> exit 0
 
 Nothing the gate runs writes to the index, so nothing the gate runs fails.
-`#570`'s raise-on-non-zero — the guard that stops an empty porcelain reading
-as clean — never fires, because the command genuinely succeeded. The lock only
+The raise-on-non-zero guard that stops an empty porcelain reading
+as clean never fires, because the command genuinely succeeded. The lock only
 bites the *next* write, which for an up-to-date repo may be weeks away.
 
 `git_run.git_env` stops this repo's own helpers creating such locks. This
@@ -126,7 +125,7 @@ def git_processes_running() -> Optional[bool]:
     code page (cp850 here), and this repo's skills run under `PYTHONUTF8=1`,
     where a plain `text=True` decodes the child as UTF-8 and hands back an
     empty string instead of raising — a dead query indistinguishable from a
-    quiet system (the global `CLAUDE.md` gotcha; `app-launcher#743`). It
+    quiet system (the global `CLAUDE.md` gotcha). It
     reproduces only inside the app: from a terminal there is no `PYTHONUTF8`
     and identical code looks healthy.
 

@@ -65,7 +65,7 @@ def pid_state(pid: int) -> Optional[bool]:
     """Tri-state pid probe for claim-owner liveness: True alive, False
     confirmed gone, None when the probe cannot tell.
 
-    A claim's ``dead`` needs positive evidence (fleet-config#852), so "could
+    A claim's ``dead`` needs positive evidence, so "could
     not open the process" stays ``None`` rather than folding into dead; the
     state lock reads ``pid_state(pid) is True``, where unknown counts as not
     alive because the lock's age must also exceed the stale horizon. Access

@@ -30,10 +30,10 @@ Subcommands (plus `gate` and `ledger-write`, documented on their functions):
          `--dry-run` prints the plan (`ACTION=edit|create ISSUE= DUPLICATES=`)
          and the marker-stamped body after `BODY:`, and writes nothing.
          `--verify-quotes` refuses the whole write when any finding's verbatim
-         quote is not in its file (`audit_quote.py`, fleet-config#960).
+         quote is not in its file (`audit_quote.py`).
 
          A snapshot-column bucket kind is also stamped with its recurrence
-         block (fleet-config#1513, see `recurrence`).
+         block (see `recurrence`).
 
   recurrence --repo OWNER/NAME [--json]
          Per bucket, whether the last two `<!-- audit-snapshot -->` ledger
@@ -178,7 +178,7 @@ MERGED_PR_FETCH_LIMIT = 100
 
 
 def gh(args: list[str], *, _retried: bool = False) -> str:
-    """The `gh` shell-out — public (fleet-config#502): sibling helpers
+    """The `gh` shell-out — public: sibling helpers
     (`design_sweep_scan.py`, `fleet_audit_scan.py`) already call across
     module boundaries for the git half via `git_run.run_git_checked`; this
     is the `gh` equivalent, promoted out of the module-private `_gh` so a
@@ -209,12 +209,12 @@ def _list_closed(repo: str, kind: str) -> list[dict]:
     `cleanup-deferred` is closed when a run ends with nothing deferred, so the
     *next* run that does have something to defer must find and reopen that same
     issue rather than filing a second one. Every other kind lives its whole life
-    open and never consults this (fleet-config#642).
+    open and never consults this.
 
     Filtered server-side on the marker rather than taking the N most recent
     closed issues: a busy repo closes more than any fixed window within weeks, so
     the unfiltered window slid past the managed issue and a duplicate was filed
-    instead of a reopen (fleet-config#1303). `plan` still re-checks each hit.
+    instead of a reopen. `plan` still re-checks each hit.
     """
     out = gh([
         "issue", "list", "--repo", repo, "--state", "closed",
@@ -244,7 +244,7 @@ def _ensure_label(repo: str, label: str) -> None:
 def get_managed(repo: str, kind: str) -> dict:
     """`{"number": N|None, "body": str, "duplicates": [n]}` for the managed issue of `kind`.
 
-    The Python entry point behind `get` (fleet-config#974): a caller that
+    The Python entry point behind `get`: a caller that
     merges a body in-process (`design_review.filing`) reads the existing one
     here instead of shelling out to its own CLI.
     """
@@ -260,7 +260,7 @@ def cmd_get(repo: str, kind: str) -> None:
 
 
 def upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False) -> str:
-    """The public upsert (fleet-config#974) — the same create / edit / collapse-strays path as `upsert`."""
+    """The public upsert — the same create / edit / collapse-strays path as `upsert`."""
     return _upsert_issue(repo, kind, title, body, label, reopen)
 
 
@@ -426,8 +426,7 @@ def dry_run_lines(repo: str, kind: str, title: str, body: str) -> list[str]:
     """What `upsert --dry-run` prints: the plan (which issue would be edited or
     created, which strays collapsed) and the marker-stamped body — the one
     read-only `gh` call is the open-issue listing. Nothing is written
-    (fleet-config#974: a filing path must be provable without touching a
-    real issue)."""
+    (a filing path must be provable without touching a real issue)."""
     keep, dupes = plan(_list_open(repo), kind)
     return [
         "DRY_RUN=1",
@@ -443,7 +442,7 @@ def dry_run_lines(repo: str, kind: str, title: str, body: str) -> list[str]:
 def cmd_close(repo: str, kind: str, comment: str) -> None:
     """Close the managed issue for `kind`, letting open/closed carry the signal.
 
-    Written for `cleanup-deferred` (fleet-config#642): a tracking issue that
+    Written for `cleanup-deferred`: a tracking issue that
     stays open saying "nothing to do" is a zombie, and it trains a reader to
     skim past exactly the issue that is supposed to catch their eye when it
     does have content. So an *open* `cleanup-deferred` issue always means
@@ -594,8 +593,8 @@ def cmd_ledger_write(repo: str, repo_path: str) -> None:
     """Compose *and* upsert the ledger — `/codebase-audit` step 9, entire.
 
     Deliberately the only ledger-writing entry point: the sha comes from
-    `recordable_ledger_sha` (squash-proof, fleet-config#567) and the block from
-    `render_ledger_body` (unhand-authorable, fleet-config#566). A subcommand
+    `recordable_ledger_sha` (squash-proof) and the block from
+    `render_ledger_body` (unhand-authorable). A subcommand
     that merely handed back the sha would have left the agent composing the
     block itself, which is the bug.
     """

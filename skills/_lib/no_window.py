@@ -1,7 +1,7 @@
 """Windows console-suppression flag for every `subprocess` spawn in the skill tier.
 
 The global `CLAUDE.md` convention ("Subprocess spawns must suppress the console
-window (Windows)", fleet-config#399): any spawn of an external executable must
+window (Windows)"): any spawn of an external executable must
 pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows, because a parent
 with no console of its own — pythonw, a tray app, a **scheduled task**, a daemon
 — otherwise gets a console window flashed on screen for every call. That case is
@@ -23,7 +23,7 @@ with nothing but its own directory on `sys.path`. `tests/run_acceptance.py`
 asserts the two definitions agree, so the duplication cannot drift.
 
 **Do not combine with `DETACHED_PROCESS`** — the two flags are mutually
-exclusive (`local-llm-hub`#282). A long-lived child that later needs
+exclusive. A long-lived child that later needs
 `CTRL_BREAK_EVENT` combines this with `CREATE_NEW_PROCESS_GROUP` instead.
 
 stdlib only.

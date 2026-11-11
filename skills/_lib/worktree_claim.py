@@ -2,7 +2,7 @@
 
 Two top-level agent sessions working the **same** repo used to collide because
 they shared one working directory — a `git checkout` in session B rewrote the
-tree under session A mid-build (fleet-config#143). The collision window is not
+tree under session A mid-build. The collision window is not
 branch-cut time; it is the minutes-long *study* phase before an agent writes
 anything. By the time the second agent cuts its branch, the damage is done.
 
@@ -20,7 +20,7 @@ included) via a temp-dir-then-`rename` under the repo's *common* git dir
 (`git rev-parse --git-common-dir`), which every worktree of the repo shares —
 so the claim is visible from the primary checkout and from every linked
 worktree (see `_publish_claim`; a bare `mkdir`-then-write-`meta.json` let two
-racers both win, fleet-config#334). Exactly one racer wins the rename; the
+racers both win). Exactly one racer wins the rename; the
 rest fall through to worktree mode. A crashed session's claim is reclaimed
 once it ages past the TTL (no fragile PID-liveness check on Windows).
 
@@ -30,13 +30,13 @@ untracked files, and a 24-repo fleet can't recreate heavy venvs per worktree.
 The teardown order is load-bearing: a junction MUST be stripped with
 `rmdir` (reparse-safe, no `/s`) BEFORE `git worktree remove`, or git's recursive
 delete follows the junction and wipes the *real* venv (proven the hard way; same
-junction footgun as uninstall.ps1, fleet-config#136).
+junction footgun as uninstall.ps1).
 
 `.venv` isn't always the only gitignored path a repo's own gate needs — a
 vendored install (`local-llm-hub`'s `vendor/comfyui/`), a model cache, and
 similar never make it into a fresh worktree either, so that repo's own test
-suite can never pass there even though the build itself succeeds
-(fleet-config#620). A repo declares extra ones in its own `.fleet.toml`:
+suite can never pass there even though the build itself succeeds.
+A repo declares extra ones in its own `.fleet.toml`:
 
     [worktree]
     extra_junctions = ["vendor/comfyui"]
@@ -54,20 +54,19 @@ runtime config (`config/webapp_config.json`, `config/apps.json`, ... whatever
 each repo's own `config.json`-pattern requires) never makes it into the new
 worktree. Left unfixed, an e2e suite that boots a disposable webapp+session-host
 hits its own missing-config guard for nearly every test and mass-skips silently
--- the pre-ship gate still reports green (fleet-config#470). `setup_worktree`
+-- the pre-ship gate still reports green. `setup_worktree`
 copies the primary's `config/*.json` (excluding `*.sample.json` templates) into
 the worktree right after the checkout is created. The primary's gitignored
 `.env` is mirrored the same way, right after `config/*.json`: a repo whose
 startup path reads a secret or setting from `.env` (e.g. `local-llm-hub`'s
 `LOCAL_LLM_HUB_SSH_KEY`) otherwise stalls on the missing value until an
-unrelated timeout trips the e2e stage red (fleet-config#698).
+unrelated timeout trips the e2e stage red.
 
 Some repos keep their runtime config at the repo **root** instead of under
 `config/` (`accounting-quarterly`'s `config.json` and
 `classification_rules.json`, `home-automation`'s `devices.json`). Neither
 `copy_runtime_config` nor `copy_env_file` covers that shape, so a worktree for
-one of these repos crashed on startup with no config at all, discovered the
-hard way mid-audit-rework on `accounting-quarterly#78` (fleet-config#714).
+one of these repos would crash on startup with no config at all.
 `copy_root_config` closes it right after `.env`: rather than hardcode which
 root filenames matter, it asks `git check-ignore` which of the repo's own
 root-level `*.json` files are gitignored, so a repo that adds a new one is
@@ -80,7 +79,7 @@ A byte-verbatim copy is not safe by itself: a repo's config can point at a
 real, machine-bound sink outside the worktree -- a synced mirror/backup
 folder, an index path, another repo's database -- and a worktree instance
 booted for a "ready to validate" handoff then reads and writes the owner's
-**real** data (`task-os#80`, fleet-config#713). `copy_runtime_config` blanks
+**real** data. `copy_runtime_config` blanks
 those values right after the port rewrite, the same way and in the same
 per-file loop. A repo declares exactly which dotted keys are machine-bound in
 its own `.fleet.toml`:
@@ -99,10 +98,10 @@ today); a repo whose own gate needs to keep a value opts out per key by
 declaring `blank_config_keys` explicitly (an empty list disables the default
 heuristic entirely). Independently of either mode, keys declared in
 `[worktree] secret_config_keys` are removed from the copy outright
-(fleet-config#839) -- see `worktree_config.py`'s docstring.
+ -- see `worktree_config.py`'s docstring.
 
 The port-allocation and config-blanking machinery behind the three `copy_*`
-functions above lives in `worktree_config.py` (fleet-config#731), imported
+functions above lives in `worktree_config.py`, imported
 and re-exported here so every existing caller keeps addressing it as
 `worktree_claim.<name>`.
 
@@ -120,11 +119,11 @@ Subcommands:
       Set `WORKTREE_CLAIM_ALLOW_PRIMARY=1` to defeat the environment trigger
       for a dispatched flow that genuinely must hold the primary; an explicit
       `--force-worktree` still wins over it. Enforcing this in the tool rather
-      than in skill prose is deliberate -- fleet-config#525 first shipped as a
-      SKILL.md instruction and a dispatched worker ignored it inside the hour.
+      than in skill prose is deliberate -- a SKILL.md instruction alone was ignored
+      by a dispatched worker inside the hour.
 
       `--force-worktree` skips the claim attempt entirely and always prints
-      `MODE=worktree` (fleet-config#515). The claim only protects against a
+      `MODE=worktree`. The claim only protects against a
       second *claiming session*; a live production process sitting in the same
       directory — the launcher webapp, home-automation's tray, or fleet-config's
       own hooks/ + skills/ junctioned into every live `~/.claude` — is not a
@@ -138,14 +137,14 @@ Subcommands:
   setup-worktree <repo-root> <issue-N> <branch>
       `git worktree add <repo>-wt-<N> <branch>` — created off the default
       branch, or off `origin/<branch>` when the branch is already pushed, or
-      checked out in place when it already exists locally (fleet-config#602) —
-      + junction `.venv` and any repo-declared `[worktree] extra_junctions` (fleet-config#620)
+      checked out in place when it already exists locally —
+      + junction `.venv` and any repo-declared `[worktree] extra_junctions`
       into it, then copy the primary's gitignored `config/*.json` runtime
       config (excluding `*.sample.json` templates, which are already tracked)
       into the worktree, blanking machine-bound path values along the way
       (repo-declared `[worktree] blank_config_keys`, or a conservative
-      default heuristic -- fleet-config#713) and removing any repo-declared
-      `[worktree] secret_config_keys` on top (fleet-config#839). Prints
+      default heuristic) and removing any repo-declared
+      `[worktree] secret_config_keys` on top. Prints
       `WORKTREE=<path>`.
 
   release <repo-root>
@@ -155,28 +154,28 @@ Subcommands:
       Guard before a primary-tree `git checkout <main>` (issue-finish step 5,
       issue-start step 4): refuses (exit 1) if the tree is dirty or the claim
       is held by a *different* issue; passes (exit 0) if the tree is clean and
-      the claim is free or already owned by <issue-N>. Fleet-config#473.
+      the claim is free or already owned by <issue-N>.
 
   land-primary <repo-root> <issue-N>
       Make a worktree lane's merge *live*: fast-forward the primary checkout,
       or report why it couldn't. Same guard as assert-owner (clean tree, claim
       free or owned by <issue-N>) plus "already on the default branch", then
       a guarded `merge --ff-only` (untrack_guard.py: every live file the merge
-      untracks is kept, fleet-config#1086) and a `rev-list --count
+      untracks is kept) and a `rev-list --count
       HEAD..origin/<default>` check. Prints one `PRIMARY=live behind=0` /
       `PRIMARY=stale reason=<why>` line in every outcome -- the line the finish
       summary quotes -- plus `RESTORED_UNTRACKED=` / `KEPT_ASIDE=` lines when
       the guard kept a file. Exit 0 only when
       live. Never checks out, stashes or forces the primary: a refusal is
-      reported, not recovered. Fleet-config#647.
+      reported, not recovered.
 
-      A fourth guard refuses a tree a **live process is serving**
-      (fleet-config#665): repos declaring `tray_cmd` in `hooks/projects.toml`
+      A fourth guard refuses a tree a **live process is serving**:
+      repos declaring `tray_cmd` in `hooks/projects.toml`
       run a long-lived server out of their checkout, and fast-forwarding one
       leaves static assets on disk ahead of the Python held in memory -- a UI
       served from two commits at once. `live_service_check` decides it,
       `probe_service` establishes it from the OS listener table -- both in
-      `skills/_lib/worktree/service_probe.py`, imported here (fleet-config#680: the
+      `skills/_lib/worktree/service_probe.py`, imported here (the
       question is generic, the claim FSM is just its first caller). (Port absent
       from it = safely idle; unreadable table, or no port to probe = refuse,
       an unestablished fact is never a pass). There is no "landed anyway"
@@ -185,8 +184,8 @@ Subcommands:
       unconditionally -- landing it is exactly what makes a merge live through
       the `~/.claude` junctions.
 
-      That guard asks its question *after* "is there anything to pull?"
-      (fleet-config#671): a tree already level with its remote is landed by
+      That guard asks its question *after* "is there anything to pull?":
+      a tree already level with its remote is landed by
       definition, so a service serving it is irrelevant and the answer is
       `PRIMARY=live behind=0`, exit 0 -- reporting `stale` for a demonstrably
       live deploy inverts the unknown-is-not-pass rule by downgrading an
@@ -197,8 +196,8 @@ Subcommands:
   remove-worktree <worktree-path> [--force-nonstandard-name]
       Reparse-safe teardown: strip the .venv junction, then
       `git worktree remove --force` + `git worktree prune`. Tolerates a
-      worktree that git already deregistered while its directory survived
-      (fleet-config#526) -- it resolves the primary by inverting the
+      worktree that git already deregistered while its directory survived:
+      it resolves the primary by inverting the
       `<repo>-wt-<N>` convention and falls back to a plain delete, always
       after the junction strip. Exits 1, naming the path, if the tree is
       still there afterwards (a live process is holding a file inside it);
@@ -211,9 +210,9 @@ Subcommands:
       is rejected outright, and a path whose basename doesn't match the
       `<repo>-wt-<N>` convention is rejected unless `--force-nonstandard-name`
       is passed. An agent that confuses this subcommand's `worktree_path` arg
-      with every sibling subcommand's `repo_root` arg previously got the
-      primary checkout `rmtree`'d -- fleet-config#589, which destroyed a
-      repo's gitignored personal data that existed nowhere else.
+      with every sibling subcommand's `repo_root` arg would have the
+      primary checkout `rmtree`'d, destroying a repo's gitignored personal
+      data that exists nowhere else.
 
   status <repo-root>
       Print the current claim holder (if any) and `git worktree list`.
@@ -351,8 +350,8 @@ def _resolve_path_arg(arg: str) -> Optional[Path]:
 
     Returns the resolved existing path, or None if nothing plausible exists.
     Three shapes are accepted: an ordinary relative/absolute path; the current
-    repo's own name from inside it (-> CWD, fleet-config#162); and a sibling
-    worktree name from the parent repo (-> CWD.parent/<name>, fleet-config#165 —
+    repo's own name from inside it (-> CWD); and a sibling
+    worktree name from the parent repo (-> CWD.parent/<name>,
     e.g. `remove-worktree fleet-config-wt-7` run from inside `fleet-config`).
     """
     repo = Path(arg).resolve()
@@ -388,8 +387,8 @@ def worktree_forced(argv_flag: bool, env: "Mapping[str, str]") -> Tuple[bool, st
         this session: a machine dispatched the work and no human chose the tree.
 
     The second trigger exists because the first one *did not hold* in practice.
-    fleet-config#525 originally shipped as a line of `/issue-start` SKILL.md
-    prose telling the agent to pass the flag, and within the hour a dispatched
+    A line of `/issue-start` SKILL.md prose telling the agent to pass the flag
+    was ignored: within the hour a dispatched
     worker landed in a primary checkout anyway with everything wired correctly —
     the variable set, the junctioned skill updated, the flow chained. A rule an
     agent has to read, recognise and choose to obey is advisory; every other
@@ -431,8 +430,8 @@ def side_instance_decision(is_primary: Optional[bool], env: "Mapping[str, str]",
     nothing ever asks. `branch_before_edit_guard` does not catch it either --
     it blocks edits on the *default branch*, and the lane is on a feature
     branch. So the live app served an hour of uncommitted JS and CSS to a
-    phone, with every guard intact and none of them consulted
-    (fleet-config#937). Booting is the one step a lane that wants a side
+    phone, with every guard intact and none of them consulted.
+    Booting is the one step a lane that wants a side
     instance cannot skip, so the check belongs here too.
 
     Two escapes, and both are deliberate rather than accidental:
@@ -626,7 +625,7 @@ def cmd_assert_owner(args: argparse.Namespace) -> int:
     """Refuse a `git checkout <main>` unless it's safe for `<issue>` to run it.
 
     Called immediately before the checkout in `/issue-finish` step 5 and
-    `/issue-start` step 4 (fleet-config#473) — the claim system routes a
+    `/issue-start` step 4 — the claim system routes a
     *second* session into a worktree, but says nothing about whether the
     process about to switch the primary tree's HEAD is actually the claim
     holder. Exits 0 (`ASSERT_OWNER=pass`) when the tree is clean and the claim
@@ -648,7 +647,7 @@ def cmd_assert_owner(args: argparse.Namespace) -> int:
 
 def cmd_land_primary(args: argparse.Namespace) -> int:
     """Fast-forward the primary checkout after a worktree lane's merge, or say
-    plainly that it didn't (fleet-config#647).
+    plainly that it didn't.
 
     Prints exactly one `PRIMARY=` line on stdout in every outcome -- that line
     is what the finish summary quotes. Exit 0 only for `PRIMARY=live behind=0`;
@@ -656,12 +655,12 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
     The distance from the remote is counted (against a fresh fetch) *before*
     the guards, because "there is nothing to pull" answers the whole question:
     a level tree lands as a no-op, service or no service, and the pull is
-    skipped entirely (fleet-config#671).
+    skipped entirely.
 
     Never checks out, stashes, forces, or otherwise "recovers" a tree it was
     refused: reporting stale *is* the correct outcome, and `--ff-only` fails
     safely rather than merging, so nothing here can lose work. Nor does it
-    restart anything for the repos the #665 guard refuses -- restarts on this
+    restart anything for the repos the live-service guard refuses -- restarts on this
     machine are confirmation-gated and operator-owned; this stops *creating*
     the skew and says what unblocks it.
     """
@@ -711,12 +710,12 @@ def cmd_mode(args: argparse.Namespace) -> int:
     """Print `primary` or `worktree` for the checkout the caller is *standing in*
     — the deterministic decision /issue-finish keys its teardown on.
 
-    The answer is about the **cwd**, never about `repo_root` (fleet-config#652).
+    The answer is about the **cwd**, never about `repo_root`.
     `repo_root` only *identifies* which repo the cwd is expected to belong to;
     it does not select a tree. That distinction is the entire bug: every skill
     documents the call as `mode <repo>` with a bare name, and from inside
-    `<repo>-wt-<N>` the sibling fallback in `_resolve_path_arg` (fleet-config#165,
-    right for `remove-worktree`) resolves that name to the *primary*. The old
+    `<repo>-wt-<N>` the sibling fallback in `_resolve_path_arg` (right for
+    `remove-worktree`) resolves that name to the *primary*. The old
     implementation then asked `is_primary_checkout` about the primary and
     truthfully answered `primary` — to a worktree lane. Silent, and always wrong
     in the dangerous direction: the primary teardown path runs `gh pr merge

@@ -1,4 +1,4 @@
-"""UX-surface trigger logic for the issue-* skills (fleet-config#195).
+"""UX-surface trigger logic for the issue-* skills.
 
 Single source of truth for "did this change touch the web app's UX, and does
 the design-conformance gate apply here?" — so `/issue-start`, `/issue-finish`,
@@ -7,7 +7,7 @@ glob match in prose. Same deterministic-not-LLM principle the gate itself rests
 on: the trigger is a glob intersection, not a per-run judgment call.
 
 A repo declares its surface in a `## UX surface` block in its own `CLAUDE.md`
-(convention: project-scaffolding#83):
+(project-scaffolding's UX-surface convention):
 
     ## UX surface
     - design spec applies: yes      # `web-page` for a public static site; `no` for spikes / non-web repos
@@ -35,7 +35,7 @@ Subcommands:
       to gate the design check on the actual diff. `--base` defaults to the
       repo's main branch. `TOUCHED=unknown` means the diff itself could not be
       taken (bad base ref, unreadable repo) — the gate treats it as touched,
-      never as a silent `no` (fleet-config#681).
+      never as a silent `no`.
 
 A repo with no `## UX surface` block (or `design spec applies: no`) yields
 `SPEC_APPLIES=no` / `TOUCHED=no`, so the gate is a permanent no-op there.

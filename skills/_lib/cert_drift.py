@@ -1,4 +1,4 @@
-"""Tailnet-cert drift detection for the web-app conformance sweep (fleet-config#210).
+"""Tailnet-cert drift detection for the web-app conformance sweep.
 
 Single source of truth for "is this a Tailscale-reachable app that still ships
 *only* the self-signed-CA + `/install-ca` mobileconfig trust dance, instead of
@@ -8,7 +8,7 @@ right after its pre-flight — reusing the web-app population it already enumera
 deterministic-not-LLM principle as `ux_surface.py`: the verdict is a fixed truth
 table over three file-presence signals, not a per-run judgment call.
 
-Canonical decision record for the standard: `ferraroroberto/project-scaffolding#89`.
+Canonical decision record for the standard: project-scaffolding's tailnet-cert ADR.
 Reference impl (migrated, must read CLEAN): `ferraroroberto/grocery-shopping-automation`
 (`scripts/gen_tailscale_cert.py` + webapp wire-up).
 
@@ -19,8 +19,8 @@ The three signals (gathered from the repo's tracked files):
     scope because a real target documents its tailnet exposure there, not in
     the README. A bare prose mention of the word "tailscale" — e.g. naming it
     as an incidental cause in a troubleshooting table — does NOT qualify on
-    its own (fleet-config#418: this false-positived voice-transcriber off a
-    `README.md` row about a dropped-connection bug, not a docs claim). A
+    its own: a `README.md` row about a dropped-connection bug is not a docs
+    claim of tailnet exposure. A
     genuinely LAN-only app has no real-exposure signal, so its self-signed
     path is legitimate and must NOT trip the check.
   - **self_signed_present** — a `gen_ssl_cert.py`-style provisioner, or an
@@ -117,7 +117,7 @@ TS_CERT_SCRIPT_RE = re.compile(
 
 def has_tailnet_signal(text: str) -> bool:
     """True for real tailnet-exposure evidence; a bare "tailscale" word mention
-    with no host/IP/command alongside it does NOT qualify (fleet-config#418)."""
+    with no host/IP/command alongside it does NOT qualify."""
     return bool(TAILNET_RE.search(text))
 
 

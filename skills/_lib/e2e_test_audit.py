@@ -1,16 +1,16 @@
-"""Deterministic e2e/regression test-suite inventory for the `/e2e-audit` skill (fleet-config#406).
+"""Deterministic e2e/regression test-suite inventory for the `/e2e-audit` skill.
 
 A suite like this doesn't just have to be *sufficient* — it also has to stay
 *small enough to stay reviewable*. project-scaffolding's `docs/playwright-ui-
 testing.md` states the target explicitly: "Keep it small. Target < 15 tests
-total. If tempted to add #20, delete two first." This module measures what a
+total. If tempted to add one more, delete two first." This module measures what a
 real suite actually looks like against that target, mechanically — file
 inventory, raw test-function counts, an optional true pytest node count
 (handles `@pytest.mark.parametrize` expansion), and two independent redundancy
 detectors — near-duplicate *name* clusters, and same-file tests sweeping the
 same parametrize *matrix* (differently-named tests over one shared `MATRIX`
 collide on neither name nor assertion text, so name clustering alone reported
-a confident zero over 32 collected nodes; fleet-config#602) — plus, when the
+a confident zero over 32 collected nodes) — plus, when the
 repo declares a `## UX surface` block (via `ux_surface.py`),
 views with no matching test as a coverage-gap signal. Same
 deterministic-not-LLM principle as `design_lint/` / `cert_drift.py`: every
@@ -26,7 +26,7 @@ falls back to `tests/e2e/` — the shared convention project-scaffolding's
 playwright-ui-testing.md already establishes fleet-wide, not a path this
 module invents per repo. Headings inside a fenced code block are ignored, so a
 repo that *documents* the block template verbatim is not mistaken for one that
-declares it (fleet-config#602).
+declares it.
 
 Subcommands:
 
@@ -39,14 +39,14 @@ Subcommands:
       coverage-gap candidates, `waits` (fixed sleeps, page timers, poll
       constants and long timeouts in the test tree, from `e2e_value`) and
       `vacuous_candidates` (negative assertions whose needle appears nowhere
-      else in the repo, fleet-config#1134). Always exits 0 — a missing test dir,
+      else in the repo). Always exits 0 — a missing test dir,
       unmeasurable node count, or absent UX-surface block are legitimate
       results (empty inventory / node_count=null / no gaps checked), never a
       crash. `test_dirs_resolved: false` is the one result a caller must not
       read as "no tests": it means the scan had nowhere to look.
 
   budget <repo-root>
-      The feature-driven trigger for `/e2e-audit` (fleet-config#901): `/e2e`
+      The feature-driven trigger for `/e2e-audit`: `/e2e`
       runs this on every finish. Prints `E2E_BUDGET=over|within|unmeasured|
       no-suite` plus `E2E_BUDGET_COUNT`, `E2E_BUDGET_COUNT_KIND`,
       `E2E_BUDGET_LIMIT`, `E2E_BUDGET_SOURCE` and `E2E_BUDGET_REASON`. The
@@ -57,7 +57,7 @@ Subcommands:
       after `e2e_route.py probe` prints `SUITE=present`): test dirs that
       resolve to nothing print `unmeasured`, not `no-suite`.
 
-      It also prints the time budget and the growth trigger (fleet-config#1018):
+      It also prints the time budget and the growth trigger:
       `E2E_TIME_BUDGET=within|over|unknown|undeclared` (+ `_SECONDS`, `_LIMIT`,
       `_REASON`) for the browser leg of the latest quiet full-tier run against
       `.fleet.toml` `[e2e] time_budget_s`; `E2E_GROWTH=+N|none-recorded` test
@@ -75,14 +75,14 @@ Subcommands:
   failures <repo-root> [--log <path>] [--prs N] [--no-gh]
   routing <repo-root> [--prs N] [--until <ISO>] [--config <toml>] [--proposed <toml>]
   parallel <repo-root> [--log <path>]
-      Where the suite's time goes and what its failures were (fleet-config#1018),
+      Where the suite's time goes and what its failures were,
       read from the last completed gate run's progress log (`.fleet.toml`
       `[e2e] progress_log`, else `[e2e] junit_xml`, else `--log`). JSON to
       stdout, always exit 0; no source, no completed run or no e2e node is
       `status: unknown` with the reason, never an estimate. `timing` holds the run
       to the suite's collected node count (`--suite-nodes`, else a best-effort
       `pytest --collect-only`): more than 10% apart is `status: stale`, and an
-      unmeasured count is `freshness: unchecked` (fleet-config#1175). `routing` imports
+      unmeasured count is `freshness: unchecked`. `routing` imports
       the repo's own `scripts/classify_e2e.py` read-only; `parallel` reads the
       test tree statically and projects serial durations. The logic lives in
       the `e2e_value` package (see its `__init__` docstring for the shapes); it
@@ -138,7 +138,7 @@ def find_ci_expectations_block(claude_md: str) -> Optional[str]:
     Stops at the next `## ` heading, same top-anchored-section convention as
     `ux_surface.py`'s block parser.
 
-    Headings inside a fenced code block are ignored (fleet-config#602).
+    Headings inside a fenced code block are ignored.
     project-scaffolding documents the `## CI expectations` template *verbatim
     inside a fence*, and matching that example made the audit resolve
     `test_dirs` to the template's bracketed placeholder text and report a
@@ -177,8 +177,7 @@ def filter_test_like_paths(paths: List[str]) -> List[str]:
 
     A span must look like a path — a `/` or `\\` separator, or a `.py` file —
     before its segments are checked, so a backticked command word such as
-    `pytest` in the same sentence is never read as a test dir
-    (fleet-config#906).
+    `pytest` in the same sentence is never read as a test dir.
     """
     out = []
     for p in paths:
@@ -330,13 +329,12 @@ def parametrize_signatures(source: str) -> Dict[str, str]:
 def matrix_candidates(files: List[Dict[str, object]]) -> List[Dict[str, object]]:
     """Tests in one file sweeping the same parametrize matrix, >=2 members.
 
-    The blind spot `cluster_candidates` cannot see (fleet-config#602): it
+    The blind spot `cluster_candidates` cannot see: it
     groups on *normalized names*, so four differently-named tests each
     decorated with the same 8-leg `MATRIX` never collide, and the audit
-    reported a confident "0 clusters" over 32 collected nodes. That verdict
-    was acted on — project-scaffolding#209 closed calling the sweep deliberate
-    breakpoint coverage, and was reopened after PR #219 collapsed those same
-    tests 32 nodes -> 8 with no coverage loss.
+    reported a confident "0 clusters" over 32 collected nodes. Read as proof,
+    that verdict would call the sweep deliberate breakpoint coverage, yet
+    collapsing those same tests from 32 nodes to 8 loses no coverage.
 
     Like every other signal here this is a *candidate*, not a verdict — a
     shared matrix across genuinely distinct assertions is legitimate. The
@@ -390,9 +388,9 @@ def coverage_gaps(key_views: List[str], all_test_text: str) -> List[str]:
     check a reported gap before filing it as a finding, per the skill's
     materiality bar.
 
-    The root view `/` is never a gap (fleet-config#1175): every test loads it,
+    The root view `/` is never a gap: every test loads it,
     and a single-page app declares it as its one key view, which the old
-    `home` token guess reported on every run (app-launcher#1375).
+    `home` token guess reported on every run.
     """
     gaps = []
     low_text = all_test_text.lower()
@@ -426,7 +424,7 @@ def vacuous_candidates(files: List[Dict[str, object]], texts: Dict[str, str]) ->
 
     home-automation's energy leak check asserted the UI never shows
     "192.0.2.90", but that IP had left the mocked 503 body when the
-    integration changed, so it passed whatever the UI rendered (#781). Before
+    integration changed, so it passed whatever the UI rendered. Before
     the fix the needle existed only in those two assertions. A candidate,
     not a verdict: the judgment layer proves it with a mutation (make the app
     leak, watch the assertion stay green). `texts` is every tracked text file,
@@ -465,7 +463,7 @@ def _repo_texts(repo_root: Path) -> Dict[str, str]:
 def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
     """`(existing, missing)` split of `test_dirs` against what's on disk.
 
-    The measurement behind `test_dirs_resolved` (fleet-config#602). A scan
+    The measurement behind `test_dirs_resolved`. A scan
     whose resolved dirs match nothing real found 0 files because it had
     nowhere to look — a different fact from "this repo has no e2e tests", and
     the fleet's rule is that an unestablished fact reports as its own state
@@ -487,10 +485,10 @@ def parse_collected_count(stdout: str) -> Optional[int]:
 
     The `N tests collected` total wins when present; under deselection pytest
     prints `N/M tests collected (K deselected)` and N, the selected count, is
-    the one budgeted (#1027). A repo whose `addopts`
+    the one budgeted. A repo whose `addopts`
     already carries `-q` runs at `-qq`, where pytest prints only per-file
     `tests/e2e/test_x.py: N` lines and no total — those are summed instead
-    (fleet-config#900: task-os and whatsapp-radar read "not measured"). Output
+    (a repo whose total line is absent would otherwise read "not measured"). Output
     with neither shape is None, never a guessed zero.
     """
     m = _COLLECTED_TOTAL_RE.search(stdout)
@@ -541,7 +539,7 @@ def budget_verdict(dirs_resolved: bool, files: int, node_count: Optional[int],
     what the gate pays for). When nodes cannot be measured, the raw function
     count is a lower bound: it can prove `over`, never `within`. Test dirs
     that resolve to nothing on disk are `unmeasured` — the scan had nowhere to
-    look, which is not the same fact as "no suite" (fleet-config#602).
+    look, which is not the same fact as "no suite".
     """
     if not dirs_resolved:
         return "unmeasured", 0, "unresolved-test-dirs"
@@ -602,8 +600,8 @@ def collect_pytest_node_count(repo_root: Path, test_dirs: List[str]) -> Optional
     Every `None` exit writes a one-line reason to stderr first. A silent
     `None` is indistinguishable from a genuinely tiny suite once `scan`
     substitutes the raw function count into `ratio`, so a repo whose pytest
-    collection is *broken* produced the same headline number as a healthy one
-    (fleet-config#679). `index_lock.git_processes_running` is the in-repo
+    collection is *broken* produced the same headline number as a healthy one.
+    `index_lock.git_processes_running` is the in-repo
     model for this shape.
     """
     python_exe = repo_root / ".venv" / "Scripts" / "python.exe"

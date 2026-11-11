@@ -1,4 +1,4 @@
-"""Gate evidence bound to a working-tree content hash (fleet-config#957).
+"""Gate evidence bound to a working-tree content hash.
 
 Why this exists
 ----------------
@@ -31,7 +31,7 @@ Subcommands
 
   check-red [--label red] [--repo <path>]
         Did the recorded run of ``L`` FAIL on a tree other than the current one (a bug fix's test seen red
-        before the fix, fleet-config#1915)? Prints exactly one of RED (exit 0), NOT_RED (the record passed or
+        before the fix)? Prints exactly one of RED (exit 0), NOT_RED (the record passed or
         never started), SAME_TREE, MISSING (exit 1) or UNKNOWN (exit 2).
 
 Tree hash = the content of the whole working tree, untracked-but-not-ignored

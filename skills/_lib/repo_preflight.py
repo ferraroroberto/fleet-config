@@ -1,4 +1,4 @@
-"""Re-runnable per-repo availability gate for `/cleanup-fleet-all` (fleet-config#642).
+"""Re-runnable per-repo availability gate for `/cleanup-fleet-all`.
 
 Why this exists
 ----------------
@@ -10,9 +10,8 @@ reported in one footnote line of one run's stdout and then forgotten. Its
 issues were not deferred, not retried at the end of the run, and not carried
 into the next one, while the run still reported itself complete.
 
-That is the same false-completeness shape the fleet keeps hitting (#560,
-#607, #612, #623): a process that could not finish something, whose report
-does not distinguish that from success. The contrast inside this very skill
+That is the same false-completeness shape the fleet keeps hitting: a process that could not finish something, whose
+report does not distinguish that from success. The contrast inside this very skill
 is instructive -- `issue_state_gate.py` produces three explicit counts
 precisely so a shrunken working set cannot read as "nothing to do", while the
 repo-skip path had no equivalent accounting. And a busy repo is not randomly
@@ -34,8 +33,8 @@ earlier, because the tree may have changed in either direction" -- is
 therefore structural rather than a line of prose an orchestrator has to
 remember to obey.
 
-**Leftover `<repo>-wt-*` directories git no longer knows about**
-(fleet-config#1082). `git worktree list` cannot see an unregistered sibling
+**Leftover `<repo>-wt-*` directories git no longer knows about**.
+`git worktree list` cannot see an unregistered sibling
 directory, but teardown check 2 globs `<repo>-wt-*` and halts the whole run on
 any hit it cannot prove inert. So a live-held leftover that already existed
 before the run was invisible here and halted the run hours later, after the

@@ -175,7 +175,7 @@ def run_delivery_check(script: str, formatter: "ProgressFormatter") -> bool:
     be run, or hangs past its timeout all mean the same thing here: delivery
     was not confirmed. That is the point — this check exists precisely because
     the child's own exit code cannot be trusted to reflect whether the run did
-    anything (fleet-config#560), so an inconclusive post-condition may not
+    anything, so an inconclusive post-condition may not
     resolve to "delivered" either.
     """
     try:
@@ -263,7 +263,7 @@ DESCENDANT_COMMAND_CHARS = 160
 def _owned_descendant_lines(members: Optional[list]) -> list[str]:
     """One breadcrumb per owned process still alive at the drain deadline.
 
-    The count alone left #911's three processes undiagnosable from the log. The
+    The count alone leaves the surviving processes undiagnosable from the log. The
     command line is truncated and secret-redacted like every other echoed
     value; ``None`` members (no job list, e.g. POSIX) say so rather than
     implying there was nothing to name.
@@ -456,7 +456,7 @@ def run_process(
 
     Returns ``STALL_EXIT_CODE`` instead if the watchdog had to kill the child for
     going silent — a wedged unattended run must surface as a failed job rather
-    than hold its slot indefinitely (fleet-config#411).
+    than hold its slot indefinitely.
     """
     progress = formatter or ProgressFormatter()
     scope, process = _launch(command, _child_environment(progress, stall_timeout, env))

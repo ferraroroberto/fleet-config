@@ -1,5 +1,5 @@
 """Direct-Issues-API fetch: the preferred replacement for `gh search issues
---owner ferraroroberto --state open ...` (fleet-config#623).
+--owner ferraroroberto --state open ...`.
 
 Why this exists
 ----------------
@@ -8,7 +8,7 @@ documented as eventually consistent and was observed reporting 23 issues as
 open for five-plus weeks after they had actually been closed. This module
 fetches the same information through the direct Issues REST API instead --
 one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated
-here -- because a repo-scoped smoke test in fleet-config#623 did not exhibit
+here -- because a repo-scoped smoke test did not exhibit
 the staleness where the owner-wide search did.
 
 Read that as "avoids a known-bad source", not as "proven immune". The

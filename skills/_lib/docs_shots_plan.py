@@ -1,10 +1,10 @@
-"""Deterministic discovery + diff-intersection for the `/docs-shots` skill (fleet-config#93).
+"""Deterministic discovery + diff-intersection for the `/docs-shots` skill.
 
 `/docs-shots` is the judgment/orchestration half of a visual-docs feature
 whose deterministic capture engine (Playwright, fail-safe masking, the
 manifest, the README generator) lives per-app — pinned against the shipped
-reference implementation, `content-management`'s `config/doc_capture/`
-(content-management#110). This module owns only the mechanical parts the
+reference implementation, `content-management`'s `config/doc_capture/`.
+This module owns only the mechanical parts the
 skill needs before it can ask a human anything:
 
   - **Discovery** — a repo opts in by having `docs/screenshots/manifest.json`;
@@ -37,7 +37,7 @@ Subcommands:
       Used by the `/issue-finish` Step 2 sub-step. When the diff itself fails
       (bad base ref, unreadable repo) both `STALE` and `UNMAPPED` are the
       literal `unknown`, never the empty value an actually-clean diff
-      produces (fleet-config#681).
+      produces.
 
 stdlib + the `git` CLI only (matches the `_lib` module contract); imports
 `ux_surface` for glob matching and `git_run` for the diff, no `gh` dependency.

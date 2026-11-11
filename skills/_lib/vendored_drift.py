@@ -1,4 +1,4 @@
-"""Drift detection for `/propagate-vendored`'s `[vendored]` manifest (fleet-config#338).
+"""Drift detection for `/propagate-vendored`'s `[vendored]` manifest.
 
 A `project-scaffolding` component (a `_vendored/<name>/` UI folder, or a
 machine-local single-file primitive like `tray_lifecycle.ps1`) is copied
@@ -8,9 +8,8 @@ where in its own `.fleet.toml`'s `[vendored]` table:
     [vendored]
     nav = { src = "app/webapp/static/_vendored/nav", sha = "<scaffold commit>", dest = "app/webapp/static/_vendored/nav" }
 
-This module answers, deterministically, the two questions that used to require
-a manual per-repo audit (`project-scaffolding#144`: six trays silently missed
-a fix for months):
+This module answers, deterministically, the two questions that otherwise need
+a manual per-repo audit (six trays once silently missed a fix for months):
 
   1. **local drift** — does the adopter's own copy still match the bytes it
      claims (`sha`) to have been vendored from? (a hand-edit, a partial copy,
@@ -20,24 +19,24 @@ a fix for months):
      "who needs a re-vendor wave" question)
 
 Both questions are about repos that *declared* the component. A third one is
-about the repos that didn't (project-scaffolding#230):
+about the repos that didn't:
 
   3. **undeclared carriers** — which repos hold a known component's files at
      the scaffold's own path while declaring nothing? They are invisible to
      `/propagate-vendored`, whose adopter list comes from `[vendored]` entries,
      so a wave re-vendors the declarers, reports success, and leaves the rest
-     stale with nobody told. `#228` reached one repo out of seven that way.
+     stale with nobody told. One repo out of seven was reached that way.
      Answering it needs the other half of the manifest picture: the scaffold's
      own `[components]` catalog, the canonical `key -> src` map of what it
      publishes (`parse_scaffold_catalog`).
 
-A fourth is about what a wave would *change* for a behind adopter (fleet-config#1227):
+A fourth is about what a wave would *change* for a behind adopter:
 
   4. **contract change** — between the adopter's pinned `sha` and the tip, did the
      component's CSS lose selectors, and did its README change? A byte-for-byte
      re-vendor is hash-verified, so nothing else notices that selectors an
-     adopter's markup relies on are gone: the `modal` split (project-scaffolding
-     #300) dropped the footer button and input/select recipe, a wave shipped it,
+     adopter's markup relies on are gone: a `modal` split
+     once dropped the footer button and input/select recipe, a wave shipped it,
      and two apps reached live builds with unstyled controls. A removed selector
      marks the adopter `breaking` and lands it in `coverage.contract_breaking`,
      which the skill treats as a stop for the wave.
@@ -48,7 +47,7 @@ A fifth is about what an adopter's agents search (`ignore_block`):
      its `[vendored]` dest paths, so a Grep of its own repo skips the copies? Reported
      per adopter in `ignore_blocks`; `coverage.ignore_drift` names every repo not `ok`.
 
-A sixth is about copies an adopter deliberately keeps different (fleet-config#1951):
+A sixth is about copies an adopter deliberately keeps different:
 
   6. **declared forks** — an adopter lists such a component in its `[vendored_forks]` table (shape:
      project-scaffolding's `docs/components.md`: `src`, `reason`, `upstream`). It reports as `fork` in `forks`, is
@@ -134,7 +133,7 @@ def parse_scaffold_catalog(toml_text: str) -> Dict[str, str]:
 
     The mirror image of `parse_vendored_manifest`: an adopter's `[vendored]`
     table declares what it *copied*, the scaffold's `[components]` table
-    declares what it *publishes* (project-scaffolding#230). Only the scaffold
+    declares what it *publishes*. Only the scaffold
     carries this table, and it is the sole machine-readable answer to "which
     paths are known components" — without it, a repo carrying an undeclared
     component is indistinguishable from one that never adopted it.
@@ -460,7 +459,7 @@ def hash_component_local(repo_dir: Path, relpath: str) -> Dict[str, str]:
 def _git_show_bytes(repo: Path, ref: str, relpath: str) -> Optional[bytes]:
     """Raw bytes of `relpath` as committed at `ref` — via `git_run.run_git_bytes`,
     the bytes-mode wrapper, so a hash comparison stays byte-exact *without*
-    hand-rolling a spawn that opts out of `git_env()` (fleet-config#677).
+    hand-rolling a spawn that opts out of `git_env()`.
     `None` on any git failure (bad ref, path absent at that commit, ...)."""
     proc = git_run.run_git_bytes(["-C", str(repo), "show", f"{ref}:{relpath}"])
     return proc.stdout if proc.returncode == 0 else None
@@ -527,7 +526,7 @@ def scan_fleet(
     mid-edit).
 
     Alongside the two per-adopter drift signals it answers a third question the
-    manifest alone cannot (project-scaffolding#230): **who carries a component
+    manifest alone cannot: **who carries a component
     without declaring it?** `/propagate-vendored` derives its adopter list from
     `[vendored]` entries, so a repo holding the files but no entry is invisible
     — the wave re-vendors whoever declared the component, reports success, and
@@ -794,7 +793,7 @@ def scan_undeclared_carriers(
     * `False` — present but different. "Never declared it" and "deliberately
                 forked it" are indistinguishable from the bytes alone, and only
                 a human knows which, so this reports and never rewrites
-                (project-scaffolding#230's explicit constraint).
+                (the scaffold's explicit constraint).
 
     An adopter that legitimately keeps the component somewhere other than the
     scaffold's path is found by its own `dest` instead, and is already covered
