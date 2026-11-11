@@ -1,4 +1,4 @@
-"""Stage 3c of /design-review — the bounded judgment checklist (fleet-config#973).
+"""Stage 3c of /design-review — the bounded judgment checklist.
 
 Some of the audit's most valuable findings were not metrics (lists built like
 spreadsheets, destructive actions as the loudest controls, every tab with a
@@ -29,16 +29,14 @@ Judge output schema (one JSON object, nothing else):
                        "detail": str, "owner": "spec" | "scaffold" | "app",
                        "proposed": {"metric": str, "threshold": str | number}}]}
 
-`validate_answers` keeps what is valid and drops what is not (fleet-config#1185,
-reversing the all-or-nothing contract of #973 on Roberto's decision of
-2026-10-03). Per answer: every seed id answered exactly once,
+`validate_answers` keeps what is valid and drops what is not, rather than
+rejecting the whole set. Per answer: every seed id answered exactly once,
 answers in the enum, `evidence` a real screen id inside the question's
 scope, every `no` either mapped to one of its question's rule ids or backed
 by an `uncatalogued` entry naming that question, `uncatalogued` only on a
 `no`. One alias is accepted: `<screen id>-full` (the filename stem of the
 screen's full-page PNG, which the prompt lists) reads as that screen's id,
-and every such reading is recorded in `normalized` (fleet-config#1158: five of
-seven recorded `unmeasured` judgments were only this). A violation drops only the answer or uncatalogued entry it sits on — an
+and every such reading is recorded in `normalized`, so the alias never turns a valid answer into `unmeasured`. A violation drops only the answer or uncatalogued entry it sits on — an
 answer left without its backing `no` entry goes too — and every drop is
 listed in `dropped` as `{id, reason}` (`status: "partial"`), never silent. A
 bad envelope (not one JSON object, an unknown top-level key, `answers` not a

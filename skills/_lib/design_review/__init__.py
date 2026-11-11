@@ -1,4 +1,4 @@
-"""Deterministic core of /design-review (fleet-config#970; steps #971 measure/evaluate, #972 render, #973 judgment, #974 ledger/filing/fleet).
+"""Deterministic core of /design-review (steps: measure/evaluate, render, judgment, ledger/filing/fleet).
 
 What `design_lint` structurally cannot see — rendered facts: computed font
 sizes, WCAG contrast against the composited background, effective hit
@@ -9,7 +9,7 @@ skill (`skills/design-review/SKILL.md`) orchestrates; this package probes,
 measures, evaluates, bounds the judgment stage as a file contract, and
 renders.
 
-Four legs, two interpreters (orchestrator decision, fleet-config#971):
+Four legs, two interpreters (orchestrator decision):
 
   measure   this repo's stdlib venv resolves the target and the run dir,
             probes the port, then spawns `walk.py` under the **target
@@ -30,7 +30,7 @@ Four legs, two interpreters (orchestrator decision, fleet-config#971):
             no screenshot embedded or linked.
   ledger    pure stdlib (one best-effort GET): a few-KB entry per run in a
             local state file, and the rule-id diff against the previous run
-            written into `evaluate.json["diff"]` (#974).
+            written into `evaluate.json["diff"]`.
   file      opt-in: app-owned findings -> the repo's one managed
             `design-review` issue through `audit_issue.py`; dry run by default.
   fleet     every declared web app serially, one digest, judgment skipped,
@@ -46,20 +46,20 @@ Modules:
   rubric.py    load/validate design.rubric.toml (rules + judgment checklist);
                thresholds + params from the spec
   evaluate.py  rule results, scoring formula, category + overall grades
-  judgment.py  judge prompt, answer schema validation, multi-judge merge (#973)
+  judgment.py  judge prompt, answer schema validation, multi-judge merge
   mockups.py   the mock-up library keyed to the rubric's `mockup` ids
   report.py    placeholder filling, section order, the HTML page
-  ledger.py    the per-target ledger.json, `previous`, `diff` (#974)
-  filing.py    accepted rules, routing by owner, issue-body merge, the upsert (#974)
-  fleet.py     the serial fleet sweep, promotion, fleet-digest.json/.html (#974)
-  inventory.py the cross-app comparison of each app's newest inventory, INV-01..04 (#1500)
+  ledger.py    the per-target ledger.json, `previous`, `diff`
+  filing.py    accepted rules, routing by owner, issue-body merge, the upsert
+  fleet.py     the serial fleet sweep, promotion, fleet-digest.json/.html
+  inventory.py the cross-app comparison of each app's newest inventory, INV-01..04
   cli.py       argparse: `probe <repo>` / `measure <repo>` / `evaluate <metrics.json>` /
                `judge-prompt <run_dir>` / `judge-merge <run_dir> <answers.json>...` /
                `ledger <run_dir>` / `render <evaluate.json|metrics.json>` /
                `file <run_dir> [--file]` / `fleet [--file]`
 
-Stable interfaces (#973 fills `judgment`; #974 fills `diff` and keeps the
-ledger — both slots are read by `report.py`, see its docstring):
+Stable interfaces (`judgment` is filled by the judgment step; `diff` and the
+ledger by the ledger step — both slots are read by `report.py`, see its docstring):
 
   metrics.json     schema_version, rubric_version, target, commit, generated_at,
                    base_url, run_dir, devices, review, params{script,resolved},
@@ -75,9 +75,9 @@ ledger — both slots are read by `report.py`, see its docstring):
                    [judgment{status: ok|partial|not_confirmed|unmeasured, reason, rubric_version, judges,
                              answers[{id, question, answer, evidence, maps_to, note}],
                              uncatalogued[{question, title, severity, detail, owner, proposed{metric, threshold}}],
-                             errors[], disagreements[], dropped[{id, reason}]}]      # #973, #1185
+                             errors[], disagreements[], dropped[{id, reason}]}]
                    [diff{previous_run|null, fixed[], regressed[], new[], unchanged[], unmeasured[],
-                         rubric_changed{from, to}|null}]                                          # #974
+                         rubric_changed{from, to}|null}]
   run dir          metrics.json, shots/<screen id>.png (+ -full.png), evaluate.json,
                    judge-prompt.md, judge-<n>.json (the skill saves each judge's reply), report.html,
                    issue-body.md (the `file` leg's merged body, dry run or not)

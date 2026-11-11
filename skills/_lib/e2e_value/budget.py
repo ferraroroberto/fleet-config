@@ -127,7 +127,7 @@ def growth(raw_tests: int, record: Optional[Dict[str, object]], threshold: int =
 
 
 def audit_trigger(node_verdict: str, time_verdict: str, grow: Dict[str, object]) -> Tuple[str, str]:
-    """`(yes|no|unknown, reason)`: whether `/e2e` 6b should run `/e2e-audit budget` (fleet-config#1018).
+    """`(yes|no|unknown, reason)`: whether `/e2e` 6b should run `/e2e-audit budget`.
 
     Any one of: over the node budget, over the time budget, or ~10 new test
     functions since the last audit. An unmeasured leg with nothing else firing

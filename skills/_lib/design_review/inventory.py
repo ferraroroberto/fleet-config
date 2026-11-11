@@ -1,7 +1,7 @@
-"""Cross-app inventory comparator for `/design-review fleet` (fleet-config#1500, Step 5/6 of #1383).
+"""Cross-app inventory comparator for `/design-review fleet`.
 
 Compares rather than measures. It reads the newest `inventory` section per app
-(Step 1/6, #1497: every screen of a walk, live, synthetic or e2e alike) and lists
+(every screen of a walk, live, synthetic or e2e alike) and lists
 every place the fleet renders one thing more than one way:
 
   INV-01  a text role rendered with more than one `{family, px, weight}`, or off design.md's value for it
@@ -22,12 +22,12 @@ component plus `/propagate-vendored`, never per-app restyling.
 
 **Normalising, DOM first.** It reads the control's `kind` and `component` from the inventory, then matches
 a short masked label against a fixed vocabulary (`ACTION_VOCAB`, `CHOICE_VOCAB`). A label longer than
-`ACTION_LABEL_MAX_WORDS` is a whole-row tap whose label is the row's own text (#1500's note on #1497), so it
+`ACTION_LABEL_MAX_WORDS` is a whole-row tap whose label is the row's own text, so it
 is never matched. A control whose component is `unknown` (an inventory taken with no catalog) is compared
 for nothing but its choice kind. A select or combobox counts its options only when the entry carries
-`options` (#1505); an inventory taken before that lists it as unclassified. A segmented or range-tab
+`options`; an inventory taken before that lists it as unclassified. A segmented or range-tab
 group's option count is its entries on that screen, one group per component and `group` key per screen
-(#1505; an inventory with no `group` merges them into one group per component, as before). Whatever the DOM cannot decide is listed
+(an inventory with no `group` merges them into one group per component). Whatever the DOM cannot decide is listed
 under `unclassified` for Step 6's per-app readers. This module never guesses.
 
 **Filing-safe.** A filing line carries finding ids, counts, app names, renderings (family, px, weight,

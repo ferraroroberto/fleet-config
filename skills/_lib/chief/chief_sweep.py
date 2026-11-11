@@ -1,4 +1,4 @@
-"""The fleet chief's worktree sweep (fleet-config#1496).
+"""The fleet chief's worktree sweep.
 
 Every `<repo>-wt-<N>` folder beside the fleet repos is a leftover of a
 chief-dispatched lane: the owner does not use worktrees himself. Until this

@@ -10,7 +10,7 @@ and owns everything that is *not* browser code:
     `CLAUDE_HOOKS_STATE_DIR` redirects it in tests). Screenshots land in
     `shots/` beside `metrics.json`; nothing is written into the target repo
     and nothing here can be committed. No retention sweep yet — a full
-    app-launcher run leaves ~144 PNGs; #972/#974 own the policy;
+    app-launcher run leaves ~144 PNGs; the report and ledger steps own the policy;
   * the **browser interpreter**: the target repo's own `.venv` python
     (`browser_verify.discover_venv_python`), probed with
     `browser_verify.playwright_probe_cmd`. This repo's venv is stdlib-only by
@@ -21,14 +21,14 @@ and owns everything that is *not* browser code:
     loopback port distinguishes `NOT_LISTENING` (refused) from `TIMEOUT`
     (no answer inside the deadline) — two different remediations, two
     different words;
-  * the **vendored-component catalog** (#1497): project-scaffolding's
+  * the **vendored-component catalog**: project-scaffolding's
     `.fleet.toml` `[components]` table, read once from the scaffold checkout
     (`fleet_toml`, no cross-repo import) and turned into each web component's
     root and part classes, which ride into the script's params so the
     `inventory` section can tell a vendored control from a bespoke one. No
     scaffold or no catalog → `componentsError`, and every control reads
     `unknown`, never `bespoke`;
-  * the **e2e leg** (`measure --e2e`, #1498): after the walk, the target's
+  * the **e2e leg** (`measure --e2e`): after the walk, the target's
     own e2e suite runs in the foreground under the same interpreter with
     project-scaffolding's vendored `surface()` hook armed, and every surface
     it captured is appended to `screens` as `<device>-<theme>-e2e-<surface>`
@@ -42,7 +42,7 @@ and owns everything that is *not* browser code:
     `{reason, detail}` when the whole run could not measure), and `screens`.
 
 Every spawn passes `creationflags=NO_WINDOW`; every git call goes through
-`git_run.run_git` (fleet-config#399, #677).
+`git_run.run_git`.
 
 stdlib only.
 """
@@ -265,8 +265,8 @@ def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[D
     """`{"script": <what the page script receives>, "resolved": <rubric params>}`.
 
     `review` is the target's `[design.review]` block: its `exclude_selectors` ride into the script's params,
-    so `metrics.json` records what a run left out of scoring (#1185). `catalog` is `vendored_components()`'s
-    result: its map rides in the same way, for the `inventory` section (#1497)."""
+    so `metrics.json` records what a run left out of scoring. `catalog` is `vendored_components()`'s
+    result: its map rides in the same way, for the `inventory` section."""
     resolved = resolve_params(rubric, spec_light)
     script = measure.default_params(
         hit_min=float(resolved.get("hit_min") or 44.0),
@@ -342,7 +342,7 @@ def kill_tree(proc: subprocess.Popen) -> None:
 
 
 class SyntheticInstance:
-    """A target's declared synthetic launcher (#995), run under the target interpreter.
+    """A target's declared synthetic launcher, run under the target interpreter.
 
     Contract: from the target root, `<python> <command...>` boots a throwaway
     instance with synthetic data, prints `URL=<base>` on stdout once it is
@@ -421,11 +421,11 @@ def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], d
     """The whole measure leg; returns the `metrics.json` document (also written to the run dir).
 
     `synthetic` walks the target's declared throwaway instance instead of the
-    live app (#995): the live port is never probed, the launcher is always
+    live app: the live port is never probed, the launcher is always
     stopped, and how it stopped is recorded under `synthetic.stop`.
 
     `e2e` then runs the target's e2e suite in surface-capture mode and appends
-    its screens (#1498, `measure_e2e`). Without it the document carries no
+    its screens (`measure_e2e`). Without it the document carries no
     `e2e` key at all, so a plain run's output is unchanged.
     """
     run_dir = run_dir or run_dir_for(target.name)
@@ -718,7 +718,7 @@ def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold:
     `E2E_FAILED` (past the timeout / a non-zero exit, before any capture) and `E2E_NO_SURFACES` (it ran and captured
     nothing). A suite that fails or times out after capturing keeps its screens, with a `note`, as the walk does.
 
-    Two more states ride beside that outcome, neither folded into it (#1507): `warning` (`E2E_THEME_MISMATCH`, with
+    Two more states ride beside that outcome, neither folded into it: `warning` (`E2E_THEME_MISMATCH`, with
     `theme_mismatch` listing the screens whose page kept another theme than the hook asked for) and `tree`, what
     `restore_tree` did to the target's working tree after the suite (`clean` / `restored` / `restore_failed` /
     `unchecked` when git could not be read).

@@ -1,9 +1,9 @@
-"""Stage 4 of /design-review — the evaluate document -> one self-contained HTML report (fleet-config#972).
+"""Stage 4 of /design-review — the evaluate document -> one self-contained HTML report.
 
 Pure: reads the JSON `evaluate.py` produced and returns a string. No browser,
 no LLM, no git, no network — the page carries its own CSS, requests nothing,
 embeds and links no screenshot (the JSON's `screenshot` paths are never
-read). Same document in, byte-identical page out, so #974 can diff reports
+read). Same document in, byte-identical page out, so the ledger can diff reports
 as well as JSON.
 
 Every sentence in a finding is the rule's `fix_template` with the measured
@@ -15,19 +15,19 @@ Section order (fixed; a slot whose data is absent is omitted cleanly):
 
     1. verdict      overall grade + score, target, commit, rubric version
     2. scorecard    one row per category: score, grade, failing, unmeasured
-    3. diff         reserved for #974 — rendered only when `doc["diff"]` exists
+    3. diff         reserved for the ledger step — rendered only when `doc["diff"]` exists
     4. method       screens measured, devices x themes, errors, caveats
     5. strong       rules that pass, per category
     6. findings     per category: failing rules by severity then id, then the
                     category's unmeasured rules with their reason
-    7. judgment     the checklist answers + uncatalogued findings (#973) — rendered
+    7. judgment     the checklist answers + uncatalogued findings — rendered
                     only when `doc["judgment"]` exists; outside the grade
     8. mockups      now-vs-proposed partials for failing rules with a template
     9. owners       where the fixes land: spec / scaffold / app
 
 Slots — the steps only add data, the template already reads:
 
-    doc["judgment"] = {                          # written by `judgment.py` (#973)
+    doc["judgment"] = {                          # written by `judgment.py`
         "status":       "ok" | "partial" | "not_confirmed" | "unmeasured",
         "reason":       str | None,              # shown beside the status
         "answers":      [{"id": "J-01", "question": str, "answer": str, "evidence": str,
@@ -35,7 +35,7 @@ Slots — the steps only add data, the template already reads:
         "uncatalogued": [{"title": str, "severity": "P0".."P3", "detail": str, "owner": str,
                           "proposed": {"metric": str, "threshold": str}}],
     }
-    doc["diff"] = {                              # written by `ledger.py` (#974)
+    doc["diff"] = {                              # written by `ledger.py`
         "previous_run": str | None,  # the run id compared against; None = first recorded run
         "fixed":        [rule id], "regressed": [rule id],
         "new":          [rule id], "unchanged": [rule id],

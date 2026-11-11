@@ -91,7 +91,7 @@ def xdist_state(repo_root: Path) -> Dict[str, object]:
 
 
 def parallel_blockers(repo_root: Path, test_dirs: Sequence[str]) -> Dict[str, object]:
-    """Static signs a suite would share state between xdist workers (app-launcher#1220 (c)).
+    """Static signs a suite would share state between xdist workers.
 
     Each entry is a candidate for the judgment layer, with the file and why.
     A worker-id reference or a retry beside the risky shape marks it
@@ -128,7 +128,7 @@ def parallel_blockers(repo_root: Path, test_dirs: Sequence[str]) -> Dict[str, ob
 
 
 def shared_state_evidence(logs: List[Tuple[Path, List[Dict[str, object]]]]) -> List[Dict[str, object]]:
-    """Tests red in a parallel run and green in a serial one: shared state, never a flake (app-launcher#1231)."""
+    """Tests red in a parallel run and green in a serial one: shared state, never a flake."""
     red_parallel: Dict[str, List[str]] = {}
     green_serial: set = set()
     for _path, runs in logs:

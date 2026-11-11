@@ -1,9 +1,9 @@
-"""Value-and-time measurements for the `/e2e-audit` skill (fleet-config#1018).
+"""Value-and-time measurements for the `/e2e-audit` skill.
 
 `e2e_test_audit.py` answers "is the suite too big?" by counting nodes. That
-misses where a gate's minutes go: app-launcher's #1215 trim cut nodes by 18%
+misses where a gate's minutes go: a trim of app-launcher's suite cut nodes by 18%
 and browser time by 3.5%, because the time is page loads and PTY spawns, and
-merging tests keeps both (app-launcher#1220). This module reads what a gate
+merging tests keeps both. This module reads what a gate
 already wrote down and reports time and failure history. It never starts a
 gate: a full run costs ~37 min and loads the box for everything else.
 
@@ -12,7 +12,7 @@ Timing source, in order (never estimated from node counts):
   1. `--log <path>` on the command line;
   2. `.fleet.toml` `[e2e] progress_log` (app-launcher: `webapp/verify-progress.log`),
      the per-test START/DONE/FAILED log app-launcher's `tests/_progress_log.py`
-     writes (#534, #943);
+     writes;
   3. `.fleet.toml` `[e2e] junit_xml`, a JUnit XML the gate writes.
 
 With none of them, every verdict is `unknown (no timing source)`.
@@ -41,7 +41,7 @@ With none of them, every verdict is `unknown (no timing source)`.
 
 The run measured is the latest completed full-tier run that executed e2e
 nodes; a later backend-only run or surface slice does not displace it, and
-when only a slice is on record `run.slice` says so (fleet-config#1134).
+when only a slice is on record `run.slice` says so.
 Skipped nodes are not executed nodes: they are counted apart.
 
 `load` compares this run's window with every other checkout of the repo
@@ -57,18 +57,18 @@ only cause), the paths that forced it most, unclassified paths, and paths a
 broad rule took although a later, more specific, lower-tier rule matches too
 (a README under a static prefix: a free fix). `--proposed` routes the same PRs
 through a candidate table and lists every PR whose tier changes; the counterfactual also re-runs `unclassified`, `shadowed` and `import_holes` against it (`holes_opened` / `holes_closed`). `import_holes`
-reads the other way (task-os#287): every file the suite loads (the test dirs,
+reads the other way: every file the suite loads (the test dirs,
 the conftest, `_*.py` plugins) or imports one level deep, routed through the
 same classifier, listing those the table sends to `none`: a diff touching only
 a shared fixture would run no browser suite. `gate` is
 `e2e_route.gate_contract`: whether the repo's gate runs the classifier at all
-and splits its multi-target output (fleet-config#1134). When the
+and splits its multi-target output. When the
 classifier exposes `changed_selectors` and either table declares
 `shared_stylesheets`, each PR's changed CSS rules per sheet (merge commit vs
 its first parent) ride into both `classify()` calls, so the counterfactual
 shows stylesheet narrowing, and each sheet's PRs are bucketed: owned by one
 surface, unmapped selector, spans surfaces, no rule changed, unsafe, or
-unreadable (fleet-config#1033). An older classifier keeps file-list routing.
+unreadable. An older classifier keeps file-list routing.
 
 `parallel <repo-root>` lists static signs that xdist workers would share
 state (a port picked and released, fixed log names, a file every process
@@ -78,7 +78,7 @@ serial run's per-test times onto 2/3/4/6 workers (LPT, x1.15/x1.3/x1.5 load
 inflation, per test and per module), and names tests red in a parallel run
 but green serially: shared state between tests, never a flake.
 
-`projection_fit` (in `timing`, fleet-config#1026) splits the modules that pay for a
+`projection_fit` (in `timing`) splits the modules that pay for a
 second browser projection into those where the engine or viewport matters
 (geometry, touch, input, nav, composer, safe-area) and Chromium-only candidates.
 
@@ -90,8 +90,8 @@ turns nodes, time and growth into one `yes|no|unknown`.
 
 `failures` is the raw material for the judgment layer's classing (real bug /
 race / test bug / flake-load / unknown). A test whose log failures stopped at
-two or more different steps is listed in `race_candidates`: the app-launcher
-#1222 lesson is that such a test is a race until someone proves otherwise,
+two or more different steps is listed in `race_candidates`: the lesson from app-launcher
+is that such a test is a race until someone proves otherwise,
 never a flake by default.
 
 stdlib only.

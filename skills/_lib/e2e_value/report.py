@@ -55,7 +55,7 @@ __all__ = [
 
 
 def race_candidates(failures: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    """Tests whose log failures stopped at two or more different steps (app-launcher#1222)."""
+    """Tests whose log failures stopped at two or more different steps."""
     by_test: Dict[str, List[Dict[str, object]]] = {}
     for f in failures:
         by_test.setdefault(str(f["test"]), []).append(f)
@@ -84,7 +84,7 @@ STALE_NODE_TOLERANCE = 0.10
 
 
 def stale_nodes(run_nodes: int, suite_nodes: Optional[int]) -> Dict[str, object]:
-    """Whether a run's e2e node count still matches the suite's collected node count (fleet-config#1175).
+    """Whether a run's e2e node count still matches the suite's collected node count.
 
     app-launcher's only timing log was a 612-node run from before the suite
     shrank to 485, and `timing` called it `ok`: every `paid_s` was doubled and

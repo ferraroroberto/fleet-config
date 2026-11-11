@@ -1,4 +1,4 @@
-"""Report what a verification run *stopped* running, not just that it passed (fleet-config#846).
+"""Report what a verification run *stopped* running, not just that it passed.
 
 Why this exists
 ----------------
@@ -12,10 +12,10 @@ the same green as a run that covered more.
 
 Measured on the 2026-09-12 app-launcher merge round: skips went 17 -> 19
 between the primary checkout and the scratch one, and the whole delta was the
-`#444` real-agent pin. Its residual cause is **agent folder trust**: a
+real-agent pin. Its residual cause is **agent folder trust**: a
 never-opened directory paints Claude Code's trust prompt instead of the
-composer, and `--dangerously-skip-permissions` does not clear it
-(app-launcher#932, PR #937). It is not the gitignored
+composer, and `--dangerously-skip-permissions` does not clear it. It is not
+the gitignored
 `config/webapp_config.json` registry. The lane's own words: *"a skip is not a
 pass."* Nothing in the gate output named the two tests that stopped running.
 

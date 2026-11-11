@@ -84,7 +84,7 @@ def self_compact_refusal(
     """Why the *automatic* trigger must not compact now, or `None` to proceed.
 
     Applies only to `self-compact`. An operator-typed `/compact` never passes
-    through here and is never gated (fleet-config#1052).
+    through here and is never gated.
     """
     if percent is None:
         return "context percentage unknown; not compacting on a guess"

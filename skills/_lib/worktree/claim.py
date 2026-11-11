@@ -54,7 +54,7 @@ def is_stale(
     one. When a claim records a `branch` and that branch is already
     merged-and-deleted, the claim is definitionally done — treat it as stale so a
     leaked claim self-heals on the next `acquire` instead of blocking for the
-    full TTL (fleet-config#174). A claim with no recorded branch, or when no
+    full TTL. A claim with no recorded branch, or when no
     predicate is supplied, falls back to the TTL alone.
     """
     if not meta:
@@ -85,12 +85,12 @@ def write_meta(lock_dir: Path, meta: dict) -> None:
 def _publish_claim(lock_dir: Path, meta: dict) -> bool:
     """Atomically create `lock_dir` **fully populated** with meta.json.
 
-    `mkdir` then a separate `write_meta` (the pre-#334 shape) leaves a window
+    `mkdir` then a separate `write_meta` (the racy shape) leaves a window
     where `lock_dir` exists but meta.json doesn't yet — a concurrent racer that
     hits `FileExistsError` on its own `mkdir` in that window reads `None` meta,
     treats it as stale, and reclaims (`rmtree` + re-`mkdir`) out from under the
     first winner, which then blindly overwrites meta and *also* returns
-    "primary" (fleet-config#334: two sessions both got MODE=primary on the same
+    "primary" (two sessions both got MODE=primary on the same
     repo, silently losing one session's uncommitted work).
 
     Fix: write meta into a private temp dir first (invisible to every other
@@ -114,7 +114,7 @@ def _publish_claim(lock_dir: Path, meta: dict) -> bool:
 def owner_check(holder: Optional[dict], issue: str, dirty: bool) -> Tuple[bool, str]:
     """Decide whether `issue` may switch this checkout's primary tree to main.
 
-    Pure decision for the `assert-owner` guard (fleet-config#473): a checkout
+    Pure decision for the `assert-owner` guard: a checkout
     that lands a merge (`/issue-finish` step 5) or syncs main (`/issue-start`
     step 4) must refuse rather than blindly `git checkout <main>` when either
     (a) the tree is dirty — uncommitted work that isn't this session's to
@@ -142,14 +142,14 @@ def land_primary_check(
 ) -> Tuple[bool, str]:
     """Decide whether it is safe to fast-forward the primary checkout.
 
-    Pure decision for the `land-primary` guard (fleet-config#647). A worktree
+    Pure decision for the `land-primary` guard. A worktree
     lane's merge is authoritative on the remote but *not live* until the
     primary tree is fast-forwarded -- acutely so in this repo, where `hooks/`
     and `skills/` reach `~/.claude` through junctions rooted at the primary, so
     a merged hook or skill change does nothing fleet-wide until that tree moves.
 
     The landing is a fast-forward and nothing else (guarded by
-    `untrack_guard`, fleet-config#1086). `owner_check` supplies
+    `untrack_guard`). `owner_check` supplies
     the "is this tree anyone else's to touch?" half; the branch check enforces
     the other half -- only ever pull a tree *already sitting on* its default
     branch, because a worktree lane must never `git checkout` the primary.
@@ -160,7 +160,7 @@ def land_primary_check(
 
     `behind` is how many commits the tree is behind its remote default branch,
     or `None` when that could not be counted. **Zero short-circuits the service
-    guard** (fleet-config#671): there is nothing to fast-forward, so no live
+    guard**: there is nothing to fast-forward, so no live
     process can be skewed by a landing that isn't going to happen, and the tree
     is already exactly what the merge produced. Refusing there reported `stale`
     for a demonstrably live deploy -- downgrading an established fact, the

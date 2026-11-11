@@ -1,4 +1,4 @@
-"""Stage 3a of /design-review — load and validate `design.rubric.toml` (fleet-config#971).
+"""Stage 3a of /design-review — load and validate `design.rubric.toml`.
 
 The rubric is data, not prompt: every rule has a stable `id`, the metric it
 reads, the comparison that makes it fail, a severity, the standard it cites,
@@ -10,7 +10,7 @@ hit-target minimum, the 48px primary-button height) resolve the same way
 through `[params]`.
 
 Rubric file shape (flat: `[[rules]]` is what the metrics decide, `[[judgment]]`
-is the bounded checklist a fresh-context judge answers — #973):
+is the bounded checklist a fresh-context judge answers):
 
     [meta]        version = "1.3.0"          # stamped on every metrics/evaluate output
     [weights]     <category> = <float>       # category weight in the overall score
@@ -37,7 +37,7 @@ computes (`targets.small_share`, `icons.off_step_count`, `spec.pairs_under_aa`).
 `devices` / `screens` restrict where a rule applies (`screens` matches on the
 screen `kind`: `tab`, `dialog`, `step`). `mockup` is `none` or a key of the
 now-vs-proposed library (`mockups.MOCKUP_IDS`); an unknown key is refused
-here so a renamed template can never silently drop a rule's mock-up (#972).
+here so a renamed template can never silently drop a rule's mock-up.
 
 stdlib only.
 """
@@ -117,7 +117,7 @@ class Rule:
 
 @dataclass
 class Judgment:
-    """One checklist question (#973): stable id, the question, where a `no` may land, its screen scope."""
+    """One checklist question: stable id, the question, where a `no` may land, its screen scope."""
     id: str
     question: str
     maps_to: List[str] = field(default_factory=list)

@@ -82,7 +82,7 @@ def resolve_sid_via_board(base_url: str, sid: str) -> Tuple[Optional[str], Optio
     `exchange` resolved it; `say` and `stop` did not, so `say <prefix>` POSTed
     to a session id that does not exist and `say --verify` then read the
     resulting empty card as **pending** — "delivery likely, unconfirmed" for a
-    steer that was never accepted at all (fleet-config#681).
+    steer that was never accepted at all.
 
     A board that cannot be read is not evidence that the prefix is wrong, so
     the id passes through unchanged and the real endpoint gets to answer —
@@ -114,7 +114,7 @@ def fetch_context(base_url: str, sid: str) -> Dict[str, Any]:
 
 
 def fetch_chief_settings(base_url: str) -> Tuple[Optional[Dict[str, Any]], str]:
-    """app-launcher#1298's `{"auto_compact_threshold": int}` -> `(settings, "")`,
+    """The launcher's `{"auto_compact_threshold": int}` -> `(settings, "")`,
     or `(None, why)` -- a launcher without the endpoint (404) is not the same
     fact as one that could not be reached."""
     try:
@@ -195,7 +195,7 @@ def fetch_exchange_marker(base_url: str, sid: str) -> Dict[str, Any]:
     A transport error or an unparseable response both collapse to
     `available: False` — the same "can't tell" outcome `classify_exchange_marker`
     treats as pending, never as delivered. The read-path itself has known
-    defects (app-launcher#610, #613: another session's content, raw frames,
+    defects (another session's content, raw frames,
     `capture_unparseable`); this wrapper doesn't try to detect those, it just
     refuses to promote an unreadable read into a delivery signal.
     """
@@ -218,7 +218,7 @@ def post_session_input(base_url: str, sid: str, text: str) -> Dict[str, Any]:
     "error": str|None}`.
 
     The session-host answers a *written but never echoed* payload with HTTP
-    502, and an already-exited session with 409 (app-launcher#607/#760).
+    502, and an already-exited session with 409.
     Both used to escape `urllib` as an unhandled `HTTPError` and crash the
     tool with a traceback — so the one case where the API states outright
     "this was NOT delivered" was the single input the verifier could not
@@ -259,7 +259,7 @@ def post_session_input(base_url: str, sid: str, text: str) -> Dict[str, Any]:
 def fetch_session_card(base_url: str, sid: str) -> Dict[str, Any]:
     """The session-host's own record for `sid` from the sessions list, or
     `{}` when it cannot be read. Source of `last_output_at` and — on hosts
-    new enough to have app-launcher#760 — `last_input`.
+    new enough to report `last_input`.
 
     An older host simply omits `last_input`; that is reported as unknown
     rather than guessed at, which is why the callers below print `unknown`

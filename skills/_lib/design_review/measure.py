@@ -1,4 +1,4 @@
-"""Stage 2 of /design-review — the in-page measurement script (fleet-config#971).
+"""Stage 2 of /design-review — the in-page measurement script.
 
 The 2026-09-21 app-launcher audit's `page.evaluate` snippet, promoted to a
 library: every rendered fact the rubric needs, computed inside the page from
@@ -54,16 +54,16 @@ present on a successful run:
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
-              DOM, open or not; walk coverage for the report, never a rule input (#1353)
+              DOM, open or not; walk coverage for the report, never a rule input
     inventory unmeasured (null, or why no component catalog was passed in), controls [{key, kind, component, role,
               label, family, px, weight, n, options?, group?}] (one entry per distinct rendering, `n` elements, capped at
               INVENTORY_CAP; `options` on a select or combobox is its option count -- a <select>'s, a datalist's or an
               aria-controls listbox's, absent when the DOM does not say; `group` on a segmented or range-tab control is the
-              key of its parent, `~N` in document order when several share one, #1505),
+              key of its parent, `~N` in document order when several share one),
               controls_count, kinds {kind: n}, components {component: n}, text [{role, runs, variants [{family, px,
               weight, runs}]}], text_count -- every visible control by kind and component and every text role by the
-              fonts it renders in; read only, never a rule input yet (#1497, for #1383's cross-app comparator)
-    glance   (tab screens only, added by walk.py from GLANCE_READ_JS, #1354) state (measured | no_card | not_idle |
+              fonts it renders in; read only, never a rule input yet; the cross-app comparator reads it
+    glance   (tab screens only, added by walk.py from GLANCE_READ_JS) state (measured | no_card | not_idle |
               card_gone | stopped | unavailable | error), card, first_px, settled_px, grew_px, below,
               changes [{ms, from_px, to_px, sel}] (sample of GLANCE_CHANGE_CAP), change_count, idle, idle_ms, pending [path]
     headings  ["H2:Title@16px", ...]

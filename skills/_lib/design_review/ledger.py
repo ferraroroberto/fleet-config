@@ -1,4 +1,4 @@
-"""Stage 5 of /design-review — the run ledger and the run-to-run diff (fleet-config#974).
+"""Stage 5 of /design-review — the run ledger and the run-to-run diff.
 
 Every run leaves a few-KB entry in a **local state file**,
 `<hooks state>/design-review/<target>/ledger.json` — never an issue
@@ -44,7 +44,7 @@ Public surface:
     load(target)                               -> [entry]
     entry_from_doc(doc, run_id, live_build)    -> entry
     record(run_dir, doc=None, live_build=None) -> entry     (appends / replaces same run_id, trims, atomic write)
-    previous(target, before_run_id, mode, e2e) -> entry | None   # same mode only: live vs synthetic (#995), --e2e vs not (#1498)
+    previous(target, before_run_id, mode, e2e) -> entry | None   # same mode only: live vs synthetic, --e2e vs not
     diff(current_doc, previous_entry)          -> diff_doc
     live_build(base_url, api_version_path)     -> str | None
 
@@ -167,9 +167,9 @@ def previous(target: str, before_run_id: Optional[str] = None, mode: str = "live
     runs before `record`) compares against the latest earlier entry; a run
     older than everything recorded has nothing to compare against (None),
     never a later run. Only runs of the same `mode` compare: a synthetic
-    instance's run is never diffed against the live app's (#995); entries
+    instance's run is never diffed against the live app's; entries
     written before modes existed are live. Likewise a `measure --e2e` run
-    (more screens) only against earlier `--e2e` runs (#1498).
+    (more screens) only against earlier `--e2e` runs.
     """
     entries = [e for e in load(target) if e.get("run_id") != before_run_id and (e.get("mode") or "live") == mode
                and bool(e.get("e2e")) == e2e]

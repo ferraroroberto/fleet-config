@@ -53,8 +53,8 @@ def lock_dir_for(repo: Path) -> Path:
 def main_ref(repo: Path) -> str:
     """origin's default branch, e.g. 'origin/main'. Falls back to origin/main.
 
-    Routed through the shared `git_run.resolve_default_branch_ref` resolver
-    (fleet-config#500); `candidates=()` + `final_fallback="origin/main"`
+    Routed through the shared `git_run.resolve_default_branch_ref` resolver;
+    `candidates=()` + `final_fallback="origin/main"`
     reproduce this helper's own pre-existing symbolic-ref-only contract.
     """
     return git_run.resolve_default_branch_ref(repo, candidates=(), final_fallback="origin/main")
@@ -64,7 +64,7 @@ def count_behind(repo: Path, ref: str, *, fetch: bool = True) -> Optional[int]:
     """How many commits `repo`'s HEAD is behind `ref`, or None if uncountable.
 
     `fetch=True` refreshes the remote ref first, because the pre-landing count
-    (fleet-config#671) decides whether the service guard is skipped: a stale
+    decides whether the service guard is skipped: a stale
     `origin/<default>` would read a tree that is genuinely behind as level, and
     a false `PRIMARY=live behind=0` is the one error direction this guard
     cannot afford. `land-primary` runs right after a `gh pr merge` that never
@@ -87,8 +87,8 @@ def count_behind(repo: Path, ref: str, *, fetch: bool = True) -> Optional[int]:
 def branch_exists_on_remote(repo: Path, branch: str) -> bool:
     """True if `branch` still exists on origin (or as a local ref).
 
-    Used to detect a leaked claim whose branch is already merged-and-deleted
-    (fleet-config#174). Shells to `git ls-remote` — stdlib + git CLI only, per
+    Used to detect a leaked claim whose branch is already merged-and-deleted.
+    Shells to `git ls-remote` — stdlib + git CLI only, per
     the module contract; no new dependency. On any git failure (offline, no
     remote, transient error) we return True: an inability to *prove* the branch
     is gone must never reclaim a possibly-live claim out from under a peer.
@@ -155,7 +155,7 @@ def worktree_add_args(
 ) -> List[str]:
     """The `git worktree add` argv tail for `branch`, by what already exists.
 
-    Pure decision half of `setup_worktree` (fleet-config#602). `-b` means
+    Pure decision half of `setup_worktree`. `-b` means
     *create*, so the original unconditional `-b <branch> <main>` had two
     failure modes on a branch that already existed: a raw
     `CalledProcessError` traceback when the branch was local, and — worse,
@@ -195,7 +195,7 @@ def _common_dir_or_none(path: Path) -> Optional[Path]:
 def mode_check(cwd_common: Optional[Path], arg_common: Optional[Path]) -> Tuple[bool, str]:
     """Can `mode` answer about the cwd checkout? Returns `(ok, reason)`.
 
-    Pure reconciliation half of `cmd_mode` (fleet-config#652). Both arguments
+    Pure reconciliation half of `cmd_mode`. Both arguments
     are shared-git-dir paths, so the comparison is at **repo** granularity, not
     tree granularity: a bare repo name resolved to the primary while the caller
     stands in `<repo>-wt-<N>` is a *match*, because the argument only says which
@@ -215,7 +215,7 @@ def mode_check(cwd_common: Optional[Path], arg_common: Optional[Path]) -> Tuple[
 def _is_primary_checkout_safe(path: Path) -> bool:
     """`is_primary_checkout`, tolerant of `path` not being a git checkout at all.
 
-    `remove_worktree`'s guard (fleet-config#589) must never itself explode on
+    `remove_worktree`'s guard must never itself explode on
     an unexpected target -- a path that isn't a git repo can't be a primary
     checkout either, so this returns False rather than raising, leaving the
     naming-convention guard to catch that case instead.
@@ -229,7 +229,7 @@ def _is_primary_checkout_safe(path: Path) -> bool:
 def _looks_like_worktree_name(name: str) -> bool:
     """True if `name` matches the `<repo>{WT_SEP}<N>` naming convention.
 
-    Belt-and-braces companion to the primary-checkout guard (fleet-config#589):
+    Belt-and-braces companion to the primary-checkout guard:
     a `remove-worktree` target whose basename doesn't look like a worktree at
     all is refused too, even if it somehow isn't detected as a primary
     checkout (e.g. not a git repo). Mirrors `primary_for_worktree`'s own
@@ -269,7 +269,7 @@ def worktree_junction_targets(repo: Path) -> list:
 
     No `.fleet.toml`, no `[worktree]` table, or a malformed value all degrade
     to the `.venv`-only default -- an undeclared repo behaves exactly as
-    before (fleet-config#620). Entries that aren't non-empty strings, that
+    before. Entries that aren't non-empty strings, that
     contain a `..` component, or whose components are not ordinary directory
     names (`_safe_relpath`) are silently dropped rather than junctioning
     outside the repo or being used unvalidated. Pure path/text logic --
@@ -329,7 +329,7 @@ def _strip_junction(path: Path) -> None:
     `rmdir` without `/s` removes an empty dir or a reparse point and refuses a
     non-empty real dir — so it can NEVER recurse into a junction's target. This
     is the load-bearing step: doing it before `git worktree remove` is what
-    keeps the primary's real .venv intact (fleet-config#136 / #143).
+    keeps the primary's real .venv intact.
     """
     if path.exists() or path.is_symlink():
         # encoding="oem" for the same reason as _junction: cmd's own error text
@@ -431,7 +431,7 @@ def primary_for_worktree(wt: Path) -> Optional[Path]:
     fails once the worktree has been **deregistered** but its directory still
     exists (its `.git` file is gone, so git exits 128) -- precisely the leftover
     a teardown is called to clean, and the state that used to crash
-    `remove_worktree` with an unhandled CalledProcessError (fleet-config#526).
+    `remove_worktree` with an unhandled CalledProcessError.
     So fall back to inverting `worktree_path`'s own `<repo>-wt-<N>` convention;
     that stays a single source of truth for the naming rather than a second
     hand-rolled guess. Returns None when neither route resolves, leaving the
@@ -453,7 +453,7 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     """Reparse-safe teardown. Returns 0 on success, 1 if the tree survived.
 
     Refuses (returns 2, deletes nothing) before touching anything if `wt`
-    isn't actually a linked worktree (fleet-config#589): a primary checkout
+    isn't actually a linked worktree: a primary checkout
     (`--git-common-dir` == `--git-dir`) is always rejected, and a basename
     that doesn't match the `<repo>{WT_SEP}<N>` convention is rejected too
     unless `force_nonstandard_name` is set. This is what stops a caller that
@@ -516,12 +516,12 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
 def _report_removal(wt: Path) -> int:
     """1 when the tree survived, naming its likely holder; else release its ports, 0.
 
-    **When the removal fails as "busy", suspect a leaked browser helper**
-    (project-scaffolding#203): a Playwright/WebKit helper left by an e2e run
+    **When the removal fails as "busy", suspect a leaked browser helper**:
+    a Playwright/WebKit helper left by an e2e run
     inherits pytest's cwd, so a run inside `<repo>-wt-<N>` leaves helpers whose
     **current working directory** is the worktree, and Windows will not delete
-    a live process's cwd. The holder may be genuinely **running**, or wedged mid-exit
-    (fleet-config#705): `ExitStatus` set so `GetExitCodeProcess`/`taskkill`
+    a live process's cwd. The holder may be genuinely **running**, or wedged mid-exit:
+    `ExitStatus` set so `GetExitCodeProcess`/`taskkill`
     report it gone, but `GetProcessTimes` shows no exit time, Toolhelp32 shows
     a live thread, and its cwd handle is still held. Windows keeps an
     already-exited process's object (and its `tasklist`/WMI row) alive only
@@ -538,14 +538,14 @@ def _report_removal(wt: Path) -> int:
     Pointer only -- the sweep reads each process's cwd from its PEB (Win32 has
     no accessor for it) and lives in `project-scaffolding`'s e2e harness, which
     reports a wedged holder as `wedged:pins-scope` and exits non-zero when the
-    path is pinned (project-scaffolding#236). Never reimplement it here.
+    path is pinned. Never reimplement it here.
 
     **A `wedged:pins-scope` verdict means retrying the teardown will not
     help** -- nothing can reap a wedged process. The directory is freed by
     closing the holder's cwd handle remotely (`RTL_USER_PROCESS_PARAMETERS
     .CurrentDirectory.Handle` from its PEB, then `NtDuplicateObject(...,
     DUPLICATE_CLOSE_SOURCE)`), not by killing or rebooting -- rebooting the
-    host was tried (home-automation#581) and the directories came straight
+    host was tried and the directories came straight
     back. Working implementation: `home-automation`'s `scripts/unpin_directory.py`.
     """
     if wt.exists():

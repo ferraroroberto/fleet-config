@@ -122,7 +122,7 @@ def pr_sheet_changes(mod, repo_root: Path, sha: str,
 
 
 def sheet_bucket(sels: object, surfaces: Sequence[object]) -> str:
-    """Why one PR's change to a shared sheet does or doesn't narrow (fleet-config#1033)."""
+    """Why one PR's change to a shared sheet does or doesn't narrow."""
     if sels is None:
         return "unsafe"
     if not sels:
@@ -139,7 +139,7 @@ def sheet_bucket(sels: object, surfaces: Sequence[object]) -> str:
 
 
 def _routes_sheets(mod) -> bool:
-    """Whether this classifier can narrow a shared stylesheet (project-scaffolding#289)."""
+    """Whether this classifier can narrow a shared stylesheet."""
     import inspect
     if not hasattr(mod, "changed_selectors"):
         return False
@@ -167,13 +167,13 @@ def shadow_entry(path: str, rules: list) -> Optional[Dict[str, object]]:
     """A shadowed path's lower-tier rules plus the rule that wins once the first one stops matching.
 
     The first-match-wins table can route a README full because a broad prefix
-    rule sits above the docs rule (app-launcher#1220 (b)). `shadowed` lists
+    rule sits above the docs rule. `shadowed` lists
     the later, lower-tier, more specific rules that also match; a general rule
     placed after a specific one (`tests/` after `tests/e2e/`) is the intended
     order and is not reported. Dropping the path from the first rule hands it to `hits[1]`, which can be
     a broad full rule in between rather than the shadowed one:
     home-automation's vendored READMEs went to `app/webapp/`, not `*.md`
-    (fleet-config#1134). `drop_safe` is true only when `hits[1]` is itself a
+. `drop_safe` is true only when `hits[1]` is itself a
     shadowed rule; otherwise the fix is an explicit rule, checked with
     `classify_cmd` on the candidate table.
     """
@@ -225,7 +225,7 @@ def _read_files(parsed, repo_root: Path) -> set:
     """Repo files (not `.py`) a parsed module names as a repo-relative path: `'a/b.json'` or `ROOT / 'a' / 'b.json'`.
 
     Only a path that exists under the repo counts, so a stray string or a path
-    built from a variable is skipped, never guessed (facilitation-suite#165).
+    built from a variable is skipped, never guessed.
     """
     import ast
 
@@ -272,7 +272,7 @@ def _module_hits(parsed, repo_root: Path) -> set:
 
 
 def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
-    """Files the e2e suite loads or imports that the routing table sends to `none` (task-os#287).
+    """Files the e2e suite loads or imports that the routing table sends to `none`.
 
     A diff touching only such a file runs no browser suite, though 12 of
     task-os's e2e modules imported `tests/fixtures/*.py` and `tests/conftest.py`.
@@ -287,7 +287,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     the repo's own classifier. The files that define routing itself (`.fleet.toml`
     and `scripts/classify_e2e.py`, the classifier's own `_ROUTING_SOURCES`) are
     listed too (`kind: routing-source`): a diff editing only the table reroutes
-    the suite without running it (facilitation-suite#165). A test-support helper (a `.py` under a `tests/` directory) is followed through its own imports, function bodies included, to any depth (parking-manager#58: `tests/mockup_seed.py` imported `tests/burst_fixture.py` inside a function); app source is never walked, and absolute imports only. Backend source
+    the suite without running it. A test-support helper (a `.py` under a `tests/` directory) is followed through its own imports, function bodies included, to any depth (for example `tests/mockup_seed.py` importing `tests/burst_fixture.py` inside a function); app source is never walked, and absolute imports only. Backend source
     the suite boots (`src/*.py` routed `none`) lands here too; whether that
     is a hole or a deliberate gate-time trade is the owner's call.
     """
@@ -338,7 +338,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
 def _counterfactual(repo_root: Path, mod, proposed, test_dirs: Sequence[str], path: str, narrowed: List[Dict[str, object]],
                     holes: List[Dict[str, object]], unclassified: List[Dict[str, object]],
                     shadowed: List[Dict[str, object]]) -> Dict[str, object]:
-    """What a candidate table changes: PR tiers, plus the findings re-run against it (facilitation-suite#165).
+    """What a candidate table changes: PR tiers, plus the findings re-run against it.
 
     `unclassified`, `shadowed` and `import_holes` are the declared table's
     findings recomputed with the candidate's rules, and `holes_opened` /

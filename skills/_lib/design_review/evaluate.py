@@ -1,8 +1,8 @@
-"""Stage 3b of /design-review — metrics + rubric -> rule results and grades (fleet-config#971).
+"""Stage 3b of /design-review — metrics + rubric -> rule results and grades.
 
 Pure: reads a `metrics.json` document and a `Rubric`, returns one JSON
 document. No browser, no LLM, no git. Same inputs give byte-identical
-`rules` / `categories` (only `generated_at` moves), which is what lets #974
+`rules` / `categories` (only `generated_at` moves), which is what lets the ledger
 diff two runs by rule id.
 
 Scoring (settled here, per the issue's proposal): each category starts at
@@ -20,11 +20,11 @@ Rule status lattice, most conservative wins:
 A screen the walk could not open, a section the script could not compute,
 a metric the rubric names but the script did not produce, and a target that
 was not listening at all each make the affected rules `unmeasured` with the
-concrete `reason` — never a pass. A screen whose app rendered another theme than the walk asked for (`theme_applied: false`, #1216)
+concrete `reason` — never a pass. A screen whose app rendered another theme than the walk asked for (`theme_applied: false`)
 is `unmeasured` for the rules the rubric marks `theme_dependent`, naming both themes -- never a pass and
 never a failure against the wrong palette -- while every other rule still scores it.
 A step screen whose target never appeared
-(`status: "absent"`, #995) is none of these: the surface does not exist in
+(`status: "absent"`) is none of these: the surface does not exist in
 this app state, so it is left out of every rule, named in the rule's reason
 and in `absent_screens` -- and a rule left with no other screen is still
 `unmeasured`, never a vacuous pass.
@@ -33,11 +33,11 @@ Output document:
 
     schema_version, rubric_version, target, commit, generated_at,
     metrics_generated_at, base_url, run_dir,
-    synthetic_declared: bool   # the target declares [design.review.synthetic]; the report's `states not walked` note reads it (#1163)
+    synthetic_declared: bool   # the target declares [design.review.synthetic]; the report's `states not walked` note reads it
     params:     {hit_min, primary_min, icon_steps}   # the resolved measurement floors
     screens:    [{id, device, theme, view, kind, status, reason}]
-    absent_screens: [id]   # step screens whose target never appeared (#995)
-    theme_mismatch_screens: [{id, requested, rendered}]   # screens whose app did not render the requested theme (#1216)
+    absent_screens: [id]   # step screens whose target never appeared
+    theme_mismatch_screens: [{id, requested, rendered}]   # screens whose app did not render the requested theme
     rules:      [{id, category, severity, owner, title, standard, fix_template,
                   mockup, params, status, reason, threshold: {value, source},
                   evidence: [{screen, value, items: [...], facts: {...}}],
@@ -51,7 +51,7 @@ files), so their `screen` keys are `spec-light` / `spec-dark`.
 `params` (per rule: the rubric's `params` table; per document: the resolved
 floors) and `evidence[].facts` (the numerator/denominator behind a share —
 `{count, total}` for `targets.small_share`, empty otherwise) are additive
-keys added for the renderer (#972): every `fix_template` placeholder must be
+keys added for the renderer: every `fix_template` placeholder must be
 fillable from this document alone, never from a re-read of `metrics.json`.
 
 stdlib only.
@@ -154,7 +154,7 @@ def _filtered_count(m: dict, section: str, key: str, rule: Rule, default_allow: 
 
 def _d_uppercase(m: dict, rule: Rule, ctx: dict) -> Derived:
     """TYPE-05: a run drawn in capitals outside the overline role, whether `text-transform` made it so or the
-    characters typed in the markup already are (#1365). A literal run is a button, tab, menu item or heading label
+    characters typed in the markup already are. A literal run is a button, tab, menu item or heading label
     with no lowercase letter whose every word is not on the rule's `acronyms` allow-list (an API, a PDF, a language
     chip). A run from before the `casing` section existed, or one whose section failed, is read as `text.uppercase` alone."""
     value, items, why = _filtered_count(m, "text", "uppercase", rule, r"overline")
@@ -190,7 +190,7 @@ def _casing_vocab(labels: List[dict]) -> set:
 def _casing_style(lab: dict, vocab: set) -> Optional[str]:
     """A label's style for the TYPE-06 comparison: the measured one, except that a `title` label resting on two or fewer
     capitalised words after the first is ambiguous (`None`, not compared): a language, a brand or a product name is
-    capitalised in a sentence ("Launch Docker + Langfuse", #1463). Three such words, or any word the run also writes in
+    capitalised in a sentence ("Launch Docker + Langfuse"). Three such words, or any word the run also writes in
     lowercase elsewhere, confirm title case."""
     style = lab.get("style")
     if style != "title":
@@ -228,7 +228,7 @@ def _casing_outliers(labels: List[dict]) -> Dict[str, Dict[str, str]]:
 
 
 def _d_casing_mixed(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """TYPE-06: a label cased unlike the rest of its class anywhere in the run (#1365).
+    """TYPE-06: a label cased unlike the rest of its class anywhere in the run.
 
     The class is a button, tab, menu item or heading, or a stat or label element named by one class. Casing is a
     choice the app makes for the whole class, so the comparison runs across every screen of the run and each
@@ -262,10 +262,10 @@ def _d_lists_tall(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """design.md's width rule (#996, #1113): width follows the shape of the view.
+    """design.md's width rule: width follows the shape of the view.
 
     A list-and-detail tab spans list + detail (`content_span`); a pane that
-    holds two regions side by side itself (`pane_split`, #1361) is
+    holds two regions side by side itself (`pane_split`) is
     two-dimensional the same way, declared or not. A view the app
     declares wide (`[design] wide_views`) must actually fill the window: its
     span is held to the same share floor, with no exemption for the centred
@@ -297,7 +297,7 @@ def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_no_text_size_control(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """A11Y-02: the app carries the vendored text-size control, whether or not its viewport locks zoom (fleet-config#1211).
+    """A11Y-02: the app carries the vendored text-size control, whether or not its viewport locks zoom.
 
     The control is the fact judged. `zoom_locked` is evidence only: a viewport that cannot pinch-zoom makes a missing
     control worse, but an app that allows pinch still owes the Settings control (Roberto's decision, 2026-10-03)."""
@@ -336,7 +336,7 @@ def _squash(text: object) -> str:
 
 
 def _d_home_title_is_app_name(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """NAV-04: the home tab's page-header title is the tab's name, never the app's (#1360).
+    """NAV-04: the home tab's page-header title is the tab's name, never the app's.
 
     Only the first tab's pane is judged; any other screen is n/a. The app's name is the web manifest `name` /
     `short_name`: a manifest that is missing, unreadable or nameless, or a header with no `.home-title`, leaves the fact
@@ -360,7 +360,7 @@ def _d_home_title_is_app_name(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _header_contexts(screens: List[dict]) -> Dict[str, List[dict]]:
-    """Per tab (`view`), the page-header context reading of every measured tab screen that carries one (#1395)."""
+    """Per tab (`view`), the page-header context reading of every measured tab screen that carries one."""
     out: Dict[str, List[dict]] = {}
     for s in screens:
         if not (isinstance(s, dict) and s.get("kind") == "tab" and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)):
@@ -372,7 +372,7 @@ def _header_contexts(screens: List[dict]) -> Dict[str, List[dict]]:
 
 
 def _d_header_context_static(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """NAV-05: a tab's page-header context line is the same fixed sentence in every state the walk captured (#1395).
+    """NAV-05: a tab's page-header context line is the same fixed sentence in every state the walk captured.
 
     The line is judged across all measured screens of one tab (devices, themes, seeded states), since one screen cannot
     show that a line never changes. A fixed line passes when it is a live shape (the rule's `live` pattern: a digit,
@@ -417,13 +417,13 @@ def _accent_colors(tokens: Dict[str, str]) -> List[tuple]:
 
 
 def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """COMP-09: an icon-only control with no label beside it whose accessible name is not a conventional glyph's (#1366).
+    """COMP-09: an icon-only control with no label beside it whose accessible name is not a conventional glyph's.
 
     The conventional glyphs are the rule's `conventional` pattern, matched on the control's name; a control with no
     name at all is A11Y-01's, not counted here. A run from before the metric existed is `unmeasured`.
 
     A row verb from the action-row glyph map (the rule's `verb_glyphs`: verb name -> glyph word, the one constant
-    design.md's map is tested against, #1428) is conventional when it carries its mapped glyph. A verb name whose
+    design.md's map is tested against) is conventional when it carries its mapped glyph. A verb name whose
     sprite glyph was read and is not a glyph of any verb the name carries still fails; a glyph that could not be read (an inline svg, an img)
     leaves the name to speak for it.
     """
@@ -445,7 +445,7 @@ def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_empty_state_no_action(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """Count of empty-state blocks that hold no button or link (#1367).
+    """Count of empty-state blocks that hold no button or link.
 
     A populated screen shows no block, and a block cannot be walked without a synthetic instance, so zero blocks is
     `unmeasured` with that reason, never a pass: this rule is the one that cannot be vacuous.
@@ -462,12 +462,12 @@ _NO_CHAT_CONFLICT = "app declares no chat surface, yet a chat transcript was rea
 
 
 def _d_repeated_turn_header(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
-    """COMP-18: count of runs of consecutive sibling blocks that repeat one speaker's who-when header (#1344).
+    """COMP-18: count of runs of consecutive sibling blocks that repeat one speaker's who-when header.
 
     The metric only reads blocks shaped like the chat-turn contract's header (see `measure.py`), so a screen that shows
     none says nothing. A walk that never reaches a rendered transcript on any screen is `unmeasured`, never a pass: the
     rule cannot be vacuous. Once any screen in the run showed one, the screens without a turn are n/a. An app that
-    declares `[design] no_chat_surface` (#1443) reads n/a on every screen without a turn, with the reason stated; a
+    declares `[design] no_chat_surface` reads n/a on every screen without a turn, with the reason stated; a
     declared app whose walk does reach a turn is still measured, and the rule says the declaration conflicts.
     """
     runs, count, heads = (measure.metric_value(m, "layout." + k) for k in ("repeated_headers", "repeated_header_count", "turn_headers"))
@@ -488,7 +488,7 @@ def _d_repeated_turn_header(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
 
 
 def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """Count of on switches whose track is not the theme's accent (#1200).
+    """Count of on switches whose track is not the theme's accent.
 
     The on-colour is one fact about the app, so an off-only screen defers to an on-state seen anywhere in
     the run; a run that never saw a switch on, or could not read its track, is `unmeasured`, never a pass.
@@ -521,7 +521,7 @@ def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_toast_tinted(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """Count of visible toasts drawn with a green (success) tint (#1200).
+    """Count of visible toasts drawn with a green (success) tint.
 
     A screen with no toast says nothing about toasts, so zero is not applicable here, never a measured pass.
     """
@@ -552,7 +552,7 @@ def _d_overlap_count(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_glance_card_growth(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """LAYOUT-10: px the tab's first card grew from its first paint to its height once the late reads landed (#1354).
+    """LAYOUT-10: px the tab's first card grew from its first paint to its height once the late reads landed.
 
     Negative when it only got shorter. A tab with no card under its header, a card with nothing under it in its column
     for a size change to move (a list that is the pane's last content fills without moving anything) and a card no
@@ -774,7 +774,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
 
 
 def _theme_reason(screen: dict) -> str:
-    """Why a palette rule cannot score a screen: it rendered another theme than the walk asked for (#1216)."""
+    """Why a palette rule cannot score a screen: it rendered another theme than the walk asked for."""
     seen = screen.get("theme_observed") if isinstance(screen.get("theme_observed"), dict) else {}
     return f"theme not applied (requested {screen.get('theme')}, rendered {seen.get('rendered') or 'another theme'})"
 
@@ -852,7 +852,7 @@ def score_overall(categories: Dict[str, dict], rubric: Rubric) -> Dict[str, obje
 
 
 def _settings_gear_state(screens: List[dict]) -> Optional[str]:
-    """What the built-in Settings step did across the walk (#1217): `ok` when any leg opened and measured the pane,
+    """What the built-in Settings step did across the walk: `ok` when any leg opened and measured the pane,
     else `absent` (no gear button), else `error` (refused by no_go, or the click failed); `None` when it never ran."""
     mine = [s for s in screens if isinstance(s, dict) and s.get("view") == plan.SETTINGS_GEAR_VIEW]
     for state, test in (("ok", lambda s: s.get("status") == "ok"), ("absent", lambda s: s.get("status") == ABSENT),
@@ -866,7 +866,7 @@ OVERLAY_SAMPLE = 8  # not-walked surfaces named in the report; `not_walked_count
 
 
 def overlay_coverage(screens: List[dict]) -> Dict[str, object]:
-    """The overlay surfaces no walked screen showed open (#1353): walk coverage for the report, never a rule input.
+    """The overlay surfaces no walked screen showed open: walk coverage for the report, never a rule input.
 
     `present` is every surface key a measured screen listed, `walked` those open on at least one screen. `unknown`
     when no measured screen carries the listing (metrics captured before it existed, or the section errored), so a

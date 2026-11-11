@@ -138,7 +138,7 @@ def _read_claimed(held: Path) -> Tuple[str, Optional[Any]]:
     opens the source by name and then moves it through that handle, so a
     claimer that opened it before our rename landed moves it again, out of our
     claim. Until it does, our read is a sharing violation; after, the file is
-    gone from our path and that claimer reads it (fleet-config#1465). So a
+    gone from our path and that claimer reads it. So a
     failed read is never junk, and the caller must never delete the file.
     """
     delay = CLAIM_READ_BACKOFF_SECONDS
@@ -378,10 +378,10 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
 def resolve_wake_mode(
     config: Optional[Dict[str, Any]], unread_reason: str = "launcher unreachable",
 ) -> Tuple[str, bool]:
-    """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch (fleet-config#1457).
+    """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch.
 
     A confirmed `true` rings the chief but still names a long fallback waiter
-    (#1938): a doorbell that fails silently otherwise leaves nothing to wake
+    A doorbell that fails silently otherwise leaves nothing to wake
     a chief that sits idle. An unread or non-boolean setting is `unknown` and
     says arm the full waiter, so a chief never ends a turn with no wake path.
     The line keeps its `WAKE=doorbell` prefix: `hooks/chief_waiter_stop.py`
