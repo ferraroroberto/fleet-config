@@ -22,6 +22,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/inspiration_scan
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
 import datetime as _dt
 import io
@@ -406,5 +407,25 @@ finally:
     feeds.fetch, score.call_hub = real_fetch, real_hub
     os.environ.pop(sources.STATE_ROOT_ENV_VAR, None)
     shutil.rmtree(tmp, ignore_errors=True)
+
+# The run date drives the lookback window: the wall clock is read in exactly one place, the CLI entry that
+# defaults `--date`. A `.now()`/`.today()` anywhere else makes `run --date` read a window it does not name.
+check(scan.window_start(_dt.date(2026, 11, 7), 7) == _dt.datetime(2026, 11, 1, tzinfo=_dt.timezone.utc),
+      "scan: the lookback window is the end of the run date's UTC day minus lookback_days")
+
+
+def _clock_reads(tree: ast.AST) -> dict:
+    """function name -> count of `.now()` / `.today()` / `.utcnow()` calls directly inside it."""
+    found: dict = {}
+    for fn in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr in ("now", "today", "utcnow")]
+        if calls:
+            found[fn.name] = len(calls)
+    return found
+
+
+scan_clock = _clock_reads(ast.parse((SKILL / "scan.py").read_text(encoding="utf-8")))
+check(scan_clock == {"main": 1}, f"scan: only main() reads the wall clock, to default --date (got {scan_clock})")
 
 _h.report_and_exit("test_inspiration_scan")

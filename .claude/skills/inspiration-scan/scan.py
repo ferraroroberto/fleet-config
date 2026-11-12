@@ -197,6 +197,14 @@ def _unfilled_sources_result(today: _dt.date, created: bool) -> int:
     return EXIT_NO_SOURCES
 
 
+def window_start(today: _dt.date, lookback_days: int) -> _dt.datetime:
+    """Start of the lookback window: the end of the run date's UTC day minus `lookback_days`.
+
+    Driven by the run date, never the wall clock, so `run --date` reads the same window it names."""
+    end_of_day = _dt.datetime.combine(today + _dt.timedelta(days=1), _dt.time.min, tzinfo=_dt.timezone.utc)
+    return end_of_day - _dt.timedelta(days=lookback_days)
+
+
 def cmd_run(today: _dt.date) -> int:
     target = sources.sources_path()
     if not target.exists():
@@ -212,7 +220,7 @@ def cmd_run(today: _dt.date) -> int:
         print("STATUS=bad-config")
         return EXIT_BAD_CONFIG
     settings = config.settings
-    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=settings.lookback_days)
+    since = window_start(today, settings.lookback_days)
     results = [feeds.read_source(s, since) for s in config.sources if s.kind != sources.KIND_X]
     results += read_x([s for s in config.sources if s.kind == sources.KIND_X], settings, since)
 
