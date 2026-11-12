@@ -1,6 +1,6 @@
 ---
 name: inspiration-scan
-description: Daily digest of ideas from the newsletters, YouTube channels and X accounts the owner follows — read each source, drop items seen before, score the rest through the local hub against what the fleet does, and deliver a small HTML report with an /issue-add line per idea. E.g. "/inspiration-scan", "scan my sources for ideas". Also runs daily unattended.
+description: Daily digest of ideas from followed newsletters, YouTube channels and X accounts — drop seen items, score the rest through the local hub against what the fleet does, deliver an HTML report with an /issue-add line per idea. E.g. "/inspiration-scan", "scan my sources for ideas". Also runs daily unattended.
 ---
 
 # inspiration-scan
