@@ -193,6 +193,44 @@ check(
     "custom max_age tolerates an older cache",
 )
 
+# ---- pause budget: can this PAUSE clear within N capped wait cycles? (fleet-config#2012) ----
+# A weekly reset hours or days out cannot be reached by three ~22-minute cycles;
+# waiting then only turns a correct "not today" into a 75-minute red run.
+CYCLES = 3
+CAP = rg.max_silent_wait(scheduled_runner.DEFAULT_STALL_TIMEOUT_SECONDS)  # 1350 s per cycle
+BUDGET = CYCLES * CAP
+fresh = "2026-07-04T11:55:00Z"
+
+
+def _clears(cache, cap=CAP, cycles=CYCLES, unattended=True):
+    decision = rg.decide(cache, NOW, unattended=unattended, max_wait_seconds=cap)
+    return rg.clears_within_budget(decision, NOW, cycles, cap)
+
+
+far = _cache(95.0, int((NOW + dt.timedelta(days=2)).timestamp()), fresh)
+check(_clears(far) == "no", "a reset two days out cannot clear in three capped cycles -> no")
+near = _cache(95.0, int((NOW + dt.timedelta(minutes=30)).timestamp()), fresh)
+check(_clears(near) == "yes", "a reset 30 min out clears within the budget -> yes")
+# Boundary: the true wait is reset - now + buffer; it fits when it is <= cycles * cap.
+at_budget = _cache(95.0, int((NOW + dt.timedelta(seconds=BUDGET - rg.WAIT_BUFFER_SECONDS)).timestamp()), fresh)
+check(_clears(at_budget) == "yes", "a wait exactly equal to the budget still clears")
+past_budget = _cache(95.0, int((NOW + dt.timedelta(seconds=BUDGET - rg.WAIT_BUFFER_SECONDS + 1)).timestamp()), fresh)
+check(_clears(past_budget) == "no", "one second past the budget does not clear")
+check(_clears(far, cap=None) == "yes", "no watchdog cap -> one wait reaches any reset, so it can clear")
+check(_clears(far, unattended=False, cap=None) == "yes", "interactive, uncapped -> can clear")
+iso_far = _cache(95.0, (NOW + dt.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"), fresh)
+check(_clears(iso_far) == "no", "an ISO reset beyond the budget is read the same way")
+
+# Facts the gate could not establish are never folded into "no" (a skip) or "yes".
+check(_clears(_cache(95.0, None, fresh)) == "unknown", "over threshold with no reset time -> unknown")
+for label, raw in (("garbage", "soon"), ("bool", True), ("nan", float("nan"))):
+    check(_clears(_cache(95.0, raw, fresh)) == "unknown", f"unreadable reset ({label}) -> unknown, not a skip")
+for label, no_signal in (("empty cache", {}), ("stale cache", stale_cache),
+                         ("null usage", _cache(None, None, fresh))):
+    check(_clears(no_signal) == "unknown", f"unattended no-signal ({label}) -> unknown, keeps today's waits")
+    check(_clears(no_signal, unattended=False) == "unknown", f"interactive UNKNOWN ({label}) -> unknown")
+check(_clears(_cache(10.0, None, fresh)) == "not_paused", "an OK gate has nothing to clear -> not_paused")
+
 # ---- load_cache: missing/corrupt file -> empty dict, no crash ----
 tmp = Path(tempfile.mkdtemp(prefix="rate_gate_"))
 try:
@@ -251,6 +289,33 @@ try:
     check("REASON=over_threshold" in watched and "WAIT_SECONDS=60.0" in watched,
           f"check CLI caps a 4h over-threshold wait under a 120s watchdog ({watched!r})")
     check("WATCHDOG_SECONDS=120.0" in watched, "check CLI names the watchdog it capped against")
+
+    # --pause-cycles adds the budget verdict; without it the output is unchanged for every other caller.
+    check("CLEARS_WITHIN_BUDGET" not in watched, "check CLI without --pause-cycles prints no budget line")
+
+    def _budget_run(directory, cycles, env):
+        return subprocess.run(
+            [sys.executable, str(REPO / "skills" / "_lib" / "rate_gate.py"), "check", "--state-dir", str(directory),
+             "--pause-cycles", str(cycles)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+        ).stdout
+
+    scheduled_env = {**interactive_env, rg.UNATTENDED_ENV: "1", rg.STALL_TIMEOUT_ENV: "2700.0"}
+    skip = _budget_run(over_dir, 3, scheduled_env)  # reset 4h out, budget 3 x 1350 s
+    check("DECISION=PAUSE" in skip and "CLEARS_WITHIN_BUDGET=no" in skip,
+          f"check CLI: a 4h reset outruns three 1350 s cycles -> no ({skip!r})")
+    check("RESET_IN_SECONDS=" in skip and "PAUSE_BUDGET_SECONDS=4050.0" in skip,
+          "check CLI names the true wait and the budget it was judged against")
+    short_dir = tmp / "short"
+    short_dir.mkdir()
+    reset_soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=20)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    (short_dir / "rate-limits.json").write_text(json.dumps(_cache(95.0, reset_soon, recent)), encoding="utf-8")
+    check("CLEARS_WITHIN_BUDGET=yes" in _budget_run(short_dir, 3, scheduled_env),
+          "check CLI: a 20 min reset fits the budget -> yes")
+    check("CLEARS_WITHIN_BUDGET=unknown" in _budget_run(empty_dir, 3, scheduled_env),
+          "check CLI: an unreadable gate stays unknown under --pause-cycles")
+    check("CLEARS_WITHIN_BUDGET=not_paused" in _budget_run(tmp, 3, scheduled_env),
+          "check CLI: an OK gate reports not_paused")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

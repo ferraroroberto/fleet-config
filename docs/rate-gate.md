@@ -139,6 +139,23 @@ The fix keeps the watchdog exactly as strict and makes the wait fit it:
   watchdog": the cap falls back to `UNKNOWN_WAIT_SECONDS` (600 s).
 - Interactive runs have no watchdog (`WATCHDOG_SECONDS=null`) and are not capped.
 
+## Skipping a pause that cannot clear
+
+`rate_gate.py check --pause-cycles N` also prints `RESET_IN_SECONDS` (the uncapped
+wait to the reset, buffer included), `PAUSE_BUDGET_SECONDS` (N capped waits, or
+`uncapped` when no watchdog caps a single wait) and `CLEARS_WITHIN_BUDGET`:
+
+- `no` — a usage figure over threshold and a readable reset that the budget cannot
+  reach. Waiting cannot change the outcome, so the caller skips at once.
+- `yes` — the reset fits the budget; the caller waits and re-checks as usual.
+- `unknown` — no signal, no reset time or an unreadable one, or an interactive
+  `UNKNOWN`. Never read as a skip or a pass; the caller keeps its normal behaviour.
+- `not_paused` — the gate said `OK`.
+
+The flag adds lines only when passed, so every other caller's output is unchanged.
+The decision is `clears_within_budget`, pure and fake-clock tested in
+`tests/claude_progress/test_rate_gate.py`.
+
 ## How a skill waits on `PAUSE`
 
 Chained short `sleep` calls are explicitly disallowed (they're a workaround for
@@ -171,6 +188,9 @@ again.
 - **`/cleanup-fleet-all`** and **`/prompt-audit`** — one gate before their
   worker dispatch, same wait/re-check loop and 3-cycle cap. Both run weekly
   unattended, and each prints `SCHEDULED-RUN-FAILED` when the cap is exhausted.
+  `/cleanup-fleet-all` first asks `--pause-cycles 3`: a `CLEARS_WITHIN_BUDGET=no`
+  skips with no wait and prints `SCHEDULED-RUN-SKIPPED` (exit 0, no `job-failed`
+  event), because a weekly reset hours away is a correct "not today", not a failure.
 
 ## What this deliberately does not change
 

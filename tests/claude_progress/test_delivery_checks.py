@@ -75,6 +75,31 @@ for shape in (
     check(cp._is_self_reported_failure(shape),
           f"the marker is detected at the start of a line: {shape.splitlines()[-1].strip()[:34]!r}")
 
+# fleet-config#2012: a clean usage-gate skip prints its own marker and exits 0, not 123.
+skip_report = "Cleanup-fleet-all SKIPPED (session limit)\nSCHEDULED-RUN-SKIPPED - session limit: reset out of reach"
+check(not cp._is_self_reported_failure(skip_report),
+      "SCHEDULED-RUN-SKIPPED is not read as a self-reported failure")
+skip_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + TOOL_LINE
+    + f"report = {skip_report!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+skip_formatter = cp.ProgressFormatter(emit=lambda *_: None)
+skip_exit = cp.run_process([sys.executable, "-c", skip_script], formatter=skip_formatter)
+check(skip_exit == 0 and not skip_formatter.saw_self_reported_failure,
+      "a run that prints SCHEDULED-RUN-SKIPPED exits 0, so no job-failed event is raised")
+
+cleanup_all_skill = (ROOT / ".claude" / "skills" / "cleanup-fleet-all" / "SKILL.md").read_text(encoding="utf-8")
+check("rate_gate.py check --pause-cycles 3" in cleanup_all_skill
+      and "CLEARS_WITHIN_BUDGET=no" in cleanup_all_skill and "SCHEDULED-RUN-SKIPPED" in cleanup_all_skill,
+      "cleanup-fleet-all's SKILL.md asks the gate whether a pause can clear and prints the skip marker when not")
+
 # The marker is a contract between this adapter and the skills that print it.
 audit_skill = (ROOT / ".claude" / "skills" / "audit-fleet" / "SKILL.md").read_text(encoding="utf-8")
 check(cp.SELF_REPORTED_FAILURE_MARKER in audit_skill,
