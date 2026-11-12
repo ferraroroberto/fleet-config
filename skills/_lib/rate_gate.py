@@ -25,6 +25,11 @@ Subcommand
            RESETS_AT=<epoch seconds|iso|null>
            WAIT_SECONDS=<float|null>
            WATCHDOG_SECONDS=<float|off|unknown|null>
+         With --pause-cycles N it also prints:
+           RESET_IN_SECONDS=<float|null>        uncapped wait to the reset, buffer included
+           PAUSE_BUDGET_SECONDS=<float|uncapped>  N capped waits
+           CLEARS_WITHIN_BUDGET=yes|no|unknown|not_paused   (not_paused = OK)
+         `no` is the only value that lets a caller skip without waiting.
 
 Unattended mode
 ----------------------------------------
@@ -195,6 +200,44 @@ def _decide(
     return Decision("PAUSE", reason, used_pct, resets_at_raw, float(DEFAULT_WAIT_SECONDS))
 
 
+def reset_wait_seconds(decision: Decision, now: _dt.datetime) -> Optional[float]:
+    """Seconds until the reported reset plus the buffer, uncapped; ``None`` if no readable reset."""
+    resets_at = _parse_reset(decision.resets_at)
+    if resets_at is None:
+        return None
+    return max((resets_at - now).total_seconds(), 0) + WAIT_BUFFER_SECONDS
+
+
+def pause_budget(pause_cycles: int, max_wait_seconds: Optional[float]) -> Optional[float]:
+    """Total seconds ``pause_cycles`` capped waits can cover; ``None`` when a single wait is uncapped."""
+    if max_wait_seconds is None:
+        return None
+    return pause_cycles * max_wait_seconds
+
+
+def clears_within_budget(decision: Decision, now: _dt.datetime, pause_cycles: int,
+                         max_wait_seconds: Optional[float]) -> str:
+    """Whether waiting out this PAUSE can end it inside ``pause_cycles`` capped waits.
+
+    ``no`` only when the gate read a usage figure over threshold *and* a parseable
+    reset that the budget cannot reach: waiting then cannot change the outcome.
+    A fallback wait, an unreadable reset and a no-signal PAUSE all return
+    ``unknown`` so the caller keeps its normal wait-and-recheck; an unreadable
+    gate is never folded into a skip or a pass. ``not_paused`` only for OK.
+    """
+    if decision.status == "OK":
+        return "not_paused"
+    if decision.status != "PAUSE":
+        return "unknown"
+    if decision.reason != "over_threshold" or decision.used_pct is None:
+        return "unknown"
+    needed = reset_wait_seconds(decision, now)
+    if needed is None:
+        return "unknown"
+    budget = pause_budget(pause_cycles, max_wait_seconds)
+    return "yes" if budget is None or needed <= budget else "no"
+
+
 def load_cache(path: Path) -> dict:
     """A missing/corrupt cache is treated as no signal (empty dict -> UNKNOWN)."""
     try:
@@ -212,12 +255,12 @@ def _format_watchdog(unattended: bool, watchdog: Optional[float]) -> str:
 
 
 def cmd_check(threshold_pct: float, max_age_seconds: int, state_directory: Path, unattended: bool,
-              environ: Mapping[str, str]) -> None:
+              environ: Mapping[str, str], pause_cycles: Optional[int] = None) -> None:
     cache = load_cache(state_directory / "rate-limits.json")
     watchdog = watchdog_seconds(environ)
     max_wait = max_silent_wait(watchdog) if unattended else None
-    result = decide(cache, _dt.datetime.now(_dt.timezone.utc), threshold_pct, max_age_seconds, unattended,
-                    max_wait)
+    now = _dt.datetime.now(_dt.timezone.utc)
+    result = decide(cache, now, threshold_pct, max_age_seconds, unattended, max_wait)
     print(f"DECISION={result.status}")
     print(f"REASON={result.reason}")
     print(f"MODE={'unattended' if unattended else 'interactive'}")
@@ -225,6 +268,12 @@ def cmd_check(threshold_pct: float, max_age_seconds: int, state_directory: Path,
     print(f"RESETS_AT={result.resets_at if result.resets_at else 'null'}")
     print(f"WAIT_SECONDS={result.wait_seconds if result.wait_seconds is not None else 'null'}")
     print(f"WATCHDOG_SECONDS={_format_watchdog(unattended, watchdog)}")
+    if pause_cycles is not None:  # extra lines only on request, so existing callers' output is unchanged
+        needed = reset_wait_seconds(result, now) if result.status == "PAUSE" else None
+        budget = pause_budget(pause_cycles, max_wait)
+        print(f"RESET_IN_SECONDS={needed if needed is not None else 'null'}")
+        print(f"PAUSE_BUDGET_SECONDS={budget if budget is not None else 'uncapped'}")
+        print(f"CLEARS_WITHIN_BUDGET={clears_within_budget(result, now, pause_cycles, max_wait)}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -238,10 +287,13 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--unattended", action="store_true",
                    help=f"treat as a scheduled run even without {UNATTENDED_ENV}=1 (never the reverse)")
 
+    c.add_argument("--pause-cycles", type=int, default=None, dest="pause_cycles",
+                   help="also print whether a PAUSE can clear within this many capped wait cycles")
+
     args = ap.parse_args(argv)
     if args.cmd == "check":
         cmd_check(args.threshold_pct, args.max_age_seconds, args.state_dir or state_dir(),
-                  args.unattended or is_unattended(os.environ), os.environ)
+                  args.unattended or is_unattended(os.environ), os.environ, args.pause_cycles)
 
 
 if __name__ == "__main__":
