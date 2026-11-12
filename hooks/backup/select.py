@@ -297,7 +297,7 @@ def select_transcripts(cfg: BackupConfig) -> Selection:
     """The transcripts leg: the whole `~/.claude/projects/` tree, deny-list applied.
 
     No bulk-directory guard here — this tree *is* the payload, and it is the leg
-    that actually recovered the life-os content on 2026-08-10.
+    that recovers a project's content when its own repo copy is lost.
     """
     sel = Selection()
     if not cfg.transcripts_src.is_dir():

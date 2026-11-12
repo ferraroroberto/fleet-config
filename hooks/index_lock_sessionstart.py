@@ -22,11 +22,10 @@ agent writing to a repo, which is an agent session starting.
 
 Why it sweeps the whole fleet, not just this session's repo
 -----------------------------------------------------------
-The incident's own shape rules the narrow version out. A fleet-wide sweep is
-what strands these, so the locked set is fleet-wide — and on 2026-09-20
-``fleet-config`` was the *one* repo left clean, which is exactly where chief
-was cwd'd. A cwd-only tripwire would have reported all-clear through the
-entire incident. The sweep is affordable precisely because the common answer
+The failure's own shape rules the narrow version out. A fleet-wide sweep is
+what strands these, so the locked set is fleet-wide — and the one repo left
+clean can be exactly where chief is cwd'd. A cwd-only tripwire would report
+all-clear through the entire incident. The sweep is affordable precisely because the common answer
 is "nothing": one ``stat()`` per repo, ~40 of them, no subprocess at all
 unless something is actually found.
 

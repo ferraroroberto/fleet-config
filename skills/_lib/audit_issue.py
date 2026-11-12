@@ -160,8 +160,8 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
 # A 5xx / timeout-shaped gh failure is the server or the network, not our
 # request — retrying once after a short backoff clears it in practice (seen
 # for pdf-to-markdown during a fleet sweep). A genuine 4xx
-# (auth, not-found, bad args) is never transient, so it still fails on the
-# first attempt.
+# (auth, not-found, bad args) is never transient, so it fails immediately,
+# unretried.
 _TRANSIENT_GH_RE = re.compile(
     r"(?i)(http\s*5\d\d|timed?\s*out|timeout|connection\s*reset|i/o\s*timeout|"
     r"deadline\s*exceeded|temporarily\s*unavailable|EOF)"

@@ -1,12 +1,10 @@
 """The fleet chief's worktree sweep.
 
 Every `<repo>-wt-<N>` folder beside the fleet repos is a leftover of a
-chief-dispatched lane: the owner does not use worktrees himself. Until this
-module the chief asked him before removing any whose issue was still open
-(umbrella issues, issues waiting on a live check, plan-only lanes) and he said
-yes every time; on 2026-10-18 he authorised the chief to remove finished ones
-on its own judgment ("If that work is finished, yes, you have to delete it").
-The judgment is mechanical, so it lives here rather than being re-typed as
+chief-dispatched lane: the owner does not use worktrees himself, and has
+authorised the chief to remove finished ones on its own judgment, including
+those whose issue is still open (umbrella issues, issues waiting on a live
+check, plan-only lanes). The judgment is mechanical, so it lives here rather than being re-typed as
 `git status` / `git log` / `gh pr list` by hand on every lane close.
 
 `classify_worktree` puts each folder in exactly one class:

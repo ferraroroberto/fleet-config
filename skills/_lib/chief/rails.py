@@ -51,8 +51,8 @@ CHANNEL_SESSION_LABEL_PREFIX = "telegram:"
 
 # Scheduled launcher jobs whose scope is the whole fleet.
 # Every fleet repo is in their scope, so any dispatch while one runs can
-# collide with it: on 2026-09-27 a `/propagate-vendored` lane's worktrees
-# halted a running cleanup-fleet-all after 9 of 50 issues.
+# collide with it: a `/propagate-vendored` lane's extra worktrees halt a running
+# cleanup-fleet-all partway through its issues.
 FLEET_JOB_PATTERNS = (
     "cleanup-fleet-*",
     "codebase-audit-fleet",

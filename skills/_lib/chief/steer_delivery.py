@@ -1,7 +1,7 @@
 """Did a steer sent to a live session actually land?
 
-`chief_ops say --verify` exists because the session-input endpoint reported
-`{"ok": true}` on 2026-07-27 for two messages that were never submitted.
+`chief_ops say --verify` exists because the session-input endpoint can report
+`{"ok": true}` for a message that was never submitted.
 Everything needed to turn "I posted it" into an evidenced
 verdict grew inside that CLI module: the exchange-marker parser, the
 four-verdict classifier and its precedence rules, the output-age measurement
@@ -217,8 +217,8 @@ def finalize_delivery(
        "stranded"; anything else, unreadable included → "pending", with no
        verdict reached. Exchange movement is not consulted — a send is
        deferred because the target is mid-turn, so its exchange advances
-       regardless, and reading that as proof reported three stranded briefs
-       `DELIVERED` on 2026-09-12.
+       regardless, and reading that as proof reports stranded briefs
+       `DELIVERED`.
     3. The exchange advanced past a send that was not deferred —
        "delivered". Positive proof.
     4. A watcher failure on `last_input` without a deferred send (the POST's
