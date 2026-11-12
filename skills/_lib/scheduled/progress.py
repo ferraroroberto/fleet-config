@@ -305,9 +305,9 @@ def _tool_summary(tool_input: object) -> str:
 # which half fired.
 #
 # The shape is `❓ not confirmed`, not `❌ failed`, and that is the second half
-# of the decision. On 2026-09-06 `weekly-recap-draft` swept, rewrote and
-# validated its ledger, posted to Telegram and left a clean tree — and reported
-# `❌ failed · exit 118` because three owned descendants outlived the provider.
+# of the rule. A run such as `weekly-recap-draft` can sweep, rewrite and
+# validate its ledger, post to Telegram and leave a clean tree, and still exit
+# 118 because three owned descendants outlived the provider.
 # "Delivered its work" and "left three processes behind" are two different
 # facts; folding the second into `❌ failed` asserts the first did not happen,
 # which the adapter has no evidence for. It has no evidence of success either —
