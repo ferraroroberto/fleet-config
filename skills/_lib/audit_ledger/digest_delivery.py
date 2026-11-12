@@ -9,7 +9,7 @@ auditing zero repos, filing zero issues and posting no digest.
 
 Two skills now ask that question (`/audit-fleet`, `/context-purge`), so the
 predicate lives here once rather than in two ~100-line near-copies free to
-drift (fleet-config#627). The rule this module exists to hold is narrow and
+drift. The rule this module exists to hold is narrow and
 absolute:
 
     a delivery that cannot be ESTABLISHED is not a delivery.
@@ -17,7 +17,7 @@ absolute:
 An unreadable ledger, a missing issue, an undateable comment and a stamp that
 never appeared are all "unknown", and unknown exits non-zero -- never folded
 into the passing state. That is the same rule the fleet's health checks follow,
-and it is exactly what `#560` violated.
+and it is exactly what a check that folds unknown into pass gets wrong.
 
 Two strictness levels, because the callers genuinely differ:
 
@@ -30,8 +30,7 @@ Two strictness levels, because the callers genuinely differ:
 
 A strict caller whose stamp proves delivery with fields other than
 `delivery=posted` passes its own ``delivered`` predicate (`/prompt-audit`:
-`scan=posted`, plus `update-issue=#N` when `guides=changed`, fleet-config#834,
-#1132). `status=complete` is
+`scan=posted`, plus `update-issue=#N` when `guides=changed`). `status=complete` is
 required either way.
 
 Strictness is a **constructor argument, not a CLI flag**, on purpose:

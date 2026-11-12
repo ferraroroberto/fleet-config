@@ -1,4 +1,4 @@
-"""Colour maths shared by `design_lint` and `design_review` (fleet-config#1065).
+"""Colour maths shared by `design_lint` and `design_review`.
 
 Parsing a spec colour string, compositing it over a background, and scoring
 WCAG contrast is needed on both sides of the `design_lint` / `design_review`
@@ -99,7 +99,7 @@ def spec_pairs(tokens: Dict[str, str]) -> List[Dict[str, object]]:
     composited over `colors.card`, with its WCAG ratio and AA threshold.
 
     `button-disabled` is left out: an inactive component is exempt from WCAG
-    1.4.3, and its measured ratio is recorded in the spec instead (fleet-config#1368)."""
+    1.4.3, and its measured ratio is recorded in the spec instead."""
     card = parse_color(tokens.get("colors.card", "#ffffff"), tokens) or (255.0, 255.0, 255.0, 1.0)
     out: List[Dict[str, object]] = []
     names = sorted({k.split(".")[1] for k in tokens if k.startswith("components.") and k.count(".") >= 2})

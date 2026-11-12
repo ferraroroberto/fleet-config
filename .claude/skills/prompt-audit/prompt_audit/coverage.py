@@ -1,6 +1,6 @@
-"""Coverage check: which sections of each tracked guide no `rules.md` `Source:` line cites (fleet-config#1128).
+"""Coverage check: which sections of each tracked guide no `rules.md` `Source:` line cites.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 
 The freshness gate only fires when a page's bytes move, so guidance that was on a
 page at baseline but never encoded would never surface again. This diffs every

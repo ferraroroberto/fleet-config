@@ -315,7 +315,7 @@ class ProcessScope:
         """``(pid, image, command line)`` for each live member; ``None`` when unknowable.
 
         Read before teardown so an exit-118 log names what outlived the provider
-        instead of only counting it (fleet-config#911). POSIX process groups have
+        instead of only counting it. POSIX process groups have
         no member list here, so they report ``None`` rather than a guessed empty one.
         """
         if self.job is None:

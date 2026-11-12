@@ -1,5 +1,5 @@
 """Shared "diff two JSON snapshots into a one-line summary" logic behind the
-/config-map and /system-map week-over-week Telegram posts (fleet-config#318).
+/config-map and /system-map week-over-week Telegram posts.
 
 Both skills follow the same shape: slice the strict-JSON object out of a
 ``window.X = {...};`` snapshot file, flatten it to ``{key: entry}``, diff two
@@ -70,7 +70,7 @@ def read_git_snapshot(file_path: str, ref: str) -> Optional[str]:
     exist there yet (first run / baseline).
 
     Routed through `git_run.run_git` for the same reason as `run_cli`'s stdio
-    guard below (fleet-config#561) — the shared wrapper already owns the UTF-8
+    guard below — the shared wrapper already owns the UTF-8
     decode and `NO_WINDOW`, and adds the `errors="replace"` this call site was
     missing."""
     try:

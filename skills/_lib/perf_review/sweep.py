@@ -1,13 +1,13 @@
-"""`python -m perf_review sweep` — /perf-review across every fleet web app, one at a time (fleet-config#1686).
+"""`python -m perf_review sweep` — /perf-review across every fleet web app, one at a time.
 
 Each app is measured and filed by the same `measure` / `file` code a single `/perf-review` runs, so the sweep owns
 only the loop: who is in scope, the box lock around each measurement, and the digest. Apps run strictly in sequence
 because a second page load skews the timings of the first. A port that is down, an app that fails to measure or a
 box that stays busy is reported `unmeasured`; the sweep never starts, restarts or kills anything.
 
-`--detach` (fleet-config#1558): a full sweep runs long past the Bash tool's 600s ceiling, so
+`--detach`: a full sweep runs long past the Bash tool's 600s ceiling, so
 `.claude/skills/perf-sweep/SKILL.md` must never drive the wait with a model-composed `Monitor` loop — the same
-failure shape `/audit-fleet` hit and fixed with `fleet_audit_scan.py`'s detach + sentinel pair (`fleet-config#609`).
+failure shape `/audit-fleet` hit and fixed with `fleet_audit_scan.py`'s detach + sentinel pair.
 `dispatch_sweep` mirrors that module's three-way split: plain (synchronous, no sentinel), `--out` alone (synchronous,
 for manual/test polling) and `--detach` (spawns this package directory as an independent, console-less process —
 `CREATE_NEW_PROCESS_GROUP | NO_WINDOW`, `launch_detached` — and returns immediately, printing `LAUNCHED pid=... out=...
@@ -254,7 +254,7 @@ def launch_detached(child_argv: List[str], log_path: Path) -> int:
 
 def dispatch_sweep(a: argparse.Namespace) -> int:
     """`sweep`'s three run shapes: plain (synchronous, no sentinel), `--out` alone (synchronous + sentinel, for
-    manual/test polling) and `--detach` (spawned + sentinel, fleet-config#1558) — the split `fleet_audit_scan.main`
+    manual/test polling) and `--detach` (spawned + sentinel) — the split `fleet_audit_scan.main`
     uses for the same reason.
     """
     if getattr(a, "detach", False):

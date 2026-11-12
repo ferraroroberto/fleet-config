@@ -1,4 +1,4 @@
-"""Dialog and editor-modal contracts (design.md `modal`; fleet-config#307).
+"""Dialog and editor-modal contracts (design.md `modal`).
 
 Native `<dialog>` vs a hand-rolled overlay, plus the five editor-modal checks
 (rows / fieldset / header / footer / top-anchor). All five read the one
@@ -26,7 +26,7 @@ from ._ctx import _ContractsCtx, _evidence, _result
 
 def _join(sites: List[Tuple[str, str]], sep: str) -> str:
     """The detail's `loc what` list, first six. The first `loc` is the row's
-    evidence as well, so a [[design.accepted]] `target` can match it (#953)."""
+    evidence as well, so a [[design.accepted]] `target` can match it."""
     return sep.join(f"{loc} {what}" if what else loc for loc, what in sites[:6])
 
 

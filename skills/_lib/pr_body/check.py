@@ -1,4 +1,4 @@
-"""One checker for a finish PR's body, run after `gh pr create`/`edit` (fleet-config#1913).
+"""One checker for a finish PR's body, run after `gh pr create`/`edit`.
 
 Rules, each refused with its own message naming the fix:
   closing-refs  GitHub's own `closingIssuesReferences` must be exactly the branch's issue, or empty

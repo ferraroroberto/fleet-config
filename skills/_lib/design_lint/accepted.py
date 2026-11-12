@@ -4,12 +4,11 @@ A contract finding can be accurate and its proposed fix still wrong for one
 repo: local-llm-hub-lite's `app-icon-family` FAIL (no `brand_gen.render_set`
 caller) is true, but its icons are byte-identical copies of upstream
 local-llm-hub's generated set and the fork refuses the generator dependency.
-With nowhere to record that verdict, `/design-sync` re-filed it four times
-(lite#1/#18/#21/#23, fleet-config#836).
+With nowhere to record that verdict, `/design-sync` re-filed it on every run.
 
 A repo declares the verdict once, in its own `.fleet.toml`. The minimal entry
 accepts a repo-level finding, one with no evidence file such as
-`rendered-leg` (fleet-config#1322):
+`rendered-leg`:
 
     [[design.accepted]]
     check  = "rendered-leg"
@@ -32,7 +31,7 @@ Three rules keep an exception from becoming permanent blindness:
 - It matches only the exact `detail` it accepted, when it names one, apart
   from the line number after the target path: a contract detail embeds
   `<target>:<line>`, and an edit above the flagged element would otherwise
-  strand the entry (fleet-config#1475). A new problem in the same check
+  strand the entry. A new problem in the same check
   changes the message, so the finding is raised again. An entry without
   `target` never matches a finding that has an evidence file.
 - A declared assertion is re-verified every run: each path's committed blob
@@ -46,7 +45,7 @@ Committed blobs, not the working tree, for the same reason as
 `vendored_drift`: these checkouts store LF and check out CRLF, so a
 filesystem read of a text file would differ from its own blob.
 
-The same table also holds `/design-review` exceptions (fleet-config#974):
+The same table also holds `/design-review` exceptions:
 an entry with a `rule` key (a `design.rubric.toml` rule id) and no `check`
 belongs to `design_review.filing` and is skipped here without a WARN row.
 """
@@ -179,8 +178,7 @@ def _without_line(detail: str, target: str) -> str:
 
 
 def _matches(entry: dict, finding: dict) -> bool:
-    """A targeted entry matches its file and its detail, line number aside
-    (fleet-config#1475), exact otherwise. One without `target`
+    """A targeted entry matches its file and its detail, line number aside, exact otherwise. One without `target`
     matches only a repo-level finding (no evidence file), and its detail only
     when it gives one."""
     if finding.get("status") not in ("WARN", "FAIL") or finding.get("id") != entry["check"]:

@@ -26,15 +26,14 @@ def compare_icon_sprite(app_text: str, ref_text: str) -> Optional[str]:
     The icons component's own README sanctions per-app symbol-set trimming
     (an app only inlines the Lucide glyphs it actually uses) — a whole-file
     byte-compare flags any trimmed sprite as FORKED even when every symbol it
-    kept is byte-identical to the scaffold's (fleet-config#284 finding 4).
+    kept is byte-identical to the scaffold's.
     Returns None (caller falls back to a whole-file digest) when either side
     has no `<symbol id="...">` elements to compare.
 
     Comparison is restricted to symbol ids present in BOTH files. Different
     apps vendor different Lucide subsets, so an app-only symbol (present in
     the app's sprite, absent from the reference) is expected, sanctioned
-    trimming — not drift — and must not by itself force FORKED (fleet-
-    config#389: local-llm-hub's sprite barely overlaps the reference set, so
+    trimming — not drift — and must not by itself force FORKED (a sprite that barely overlaps the reference set, so
     every symbol they *do* share was byte-identical yet the file still
     reported FORKED). A reference symbol missing from the app's file is the
     pre-existing "not (yet) vendored" case and is still reflected via the

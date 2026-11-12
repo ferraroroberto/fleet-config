@@ -368,8 +368,7 @@ def read_ledger_body(repo: str, *, required: bool = False) -> str:
     `since`/horizon display. Pass `required=True` to re-raise instead: a
     caller that is about to *overwrite* the ledger (`assemble-ledger`) must
     not treat a failed read the same as "no ledger exists yet", or it
-    replaces the durable archive with an empty one on a single flaky call
-    (fleet-config#1061)."""
+    replaces the durable archive with an empty one on a single flaky call."""
     try:
         raw = run_audit_issue(HELPER, "get", "--repo", repo, "--kind", "learning", timeout=AUDIT_ISSUE_GET_TIMEOUT_S)
         return json.loads(raw or "{}").get("body") or ""

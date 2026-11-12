@@ -1,7 +1,7 @@
 """Shared "enumerate the fleet + resolve a repo's committed default branch"
-logic behind /config-map's and /system-map's `build_data.py` (fleet-config#318),
+logic behind /config-map's and /system-map's `build_data.py`,
 plus the filesystem-crawl half (`is_fleet_repo` / `iter_fleet_repos`) that
-/audit-fleet's and /design-sweep's scanners share (fleet-config#561).
+/audit-fleet's and /design-sweep's scanners share.
 
 It also owns reading the fleet list itself. `hooks/projects.toml` is
 machine-local and gitignored (a tracked `hooks/projects.toml.example` carries
@@ -86,7 +86,7 @@ def fleet_repo_tables(projects_toml: Optional[Path] = None) -> Dict[str, dict]:
     The membership half of `fleet_repos` without the projection down to a
     path: callers that need a *declaration* rather than a location — is there
     a `tray_cmd`, which `webapp_port`, which `api_version_path`
-    (`service_probe.declared_service`, fleet-config#665) — read it here
+    (`service_probe.declared_service`) — read it here
     instead of re-parsing the file. Deliberately **not** filtered by
     ``[global] architecture_ignore``: that list says a repo is out of scope
     for the architecture map, never that it has no long-running process.
@@ -133,7 +133,7 @@ def is_linked_worktree(path: str | Path) -> bool:
     Worktrees are created and torn down constantly by `/issue-start`,
     `/cleanup-fleet` and `/cleanup-fleet-all`, so a scan without this guard
     produces different numbers on every run with no file having changed
-    (fleet-config#629 — `/context-audit`'s budget block reported 6.5% phantom
+    (e.g. `/context-audit`'s budget block would count phantom
     tokens from two unrelated sessions' worktrees).
 
     Named and shared rather than re-inlined: `iter_fleet_repos` below asks the
@@ -180,7 +180,7 @@ def iter_fleet_repos(
     check fails it separately.
 
     `fleet_audit_scan.scan` and `design_sweep_scan.scan` carried this loop
-    copy-pasted verbatim, comment and all (fleet-config#561), which is why the
+    copy-pasted verbatim, comment and all, which is why the
     worktree guard had to be got right twice.
     """
     ignore = frozenset() if (include_ignored or only) else ignored_repos(projects_toml)
@@ -209,7 +209,7 @@ def default_ref(repo_dir: Path) -> Optional[str]:
     default-branch names. Uses remote-tracking refs so the result is
     independent of which branch the repo is checked out on, and needs no
     network. Routed through the shared `git_run.resolve_default_branch_ref`
-    resolver (fleet-config#500); `final_fallback=""` reproduces this helper's
+    resolver; `final_fallback=""` reproduces this helper's
     own pre-existing "give up and return None" contract on top of it.
     """
     ref = git_run.resolve_default_branch_ref(

@@ -1,6 +1,6 @@
-"""Interpreter-start beacon for the dead-code inventory (fleet-config#1114). stdlib only.
+"""Interpreter-start beacon for the dead-code inventory. stdlib only.
 
-Step 2 of fleet-config#961: static analysis can't judge a script that only a
+Static analysis can't judge a script that only a
 human or a desktop shortcut starts, so this records which scripts actually
 run. One file, `fleet_start_beacon.pth`, goes into the target repo's `.venv`
 site-packages. Python's `site` runs a `.pth` line that starts with `import` at
@@ -15,8 +15,8 @@ Guarantees:
   once to `%TEMP%\\fleet_start_beacon.<repo>.error` (created only when absent)
   and never to stdout/stderr, so the host script's output is untouched.
 - One record per process. On Windows 3.14 `site` processes a venv's
-  site-packages twice, so the line would fire twice without a guard (the
-  #1114 probe), and a `sys` attribute marks the process as already counted.
+  site-packages twice, so the line would fire twice without a guard,
+  and a `sys` attribute marks the process as already counted.
   The attribute is per process, so child interpreters still record.
 - No network, and nothing but the script path is recorded.
 - Self-contained. The `.pth` embeds the code, so it never imports anything from

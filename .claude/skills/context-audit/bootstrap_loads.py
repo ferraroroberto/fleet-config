@@ -1,4 +1,4 @@
-"""Measure what each skill's bootstrap auto-loads on invocation (fleet-config#1014).
+"""Measure what each skill's bootstrap auto-loads on invocation.
 
 `audit.py` measures the always-on surface: CLAUDE.md files and skill
 descriptions. A skill that bootstraps by reading files pays a second cost on
@@ -17,7 +17,7 @@ A repo opts in by declaring its bootstrap in `hooks/projects.toml`:
 
 A bootstrap that reads only the head of a file declares where its line cap
 lives, and the audit measures what that head costs, not the whole file
-(fleet-config#1051 -- life-os loads the newest 40 conversation-index entries):
+(e.g. life-os loads the newest 40 conversation-index entries):
 
     bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }
 

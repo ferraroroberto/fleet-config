@@ -1,4 +1,4 @@
-"""Post-condition for the scheduled `/prompt-audit` job (fleet-config#834).
+"""Post-condition for the scheduled `/prompt-audit` job.
 
 `claude_progress.py --delivery-check` runs this after the child exits, whatever
 the child's exit code was, and turns a non-zero exit here into
@@ -18,7 +18,7 @@ needs all of:
   4. `guides=changed` needs `update-issue=#N`    -> a moved guide also filed the
                                                     rule-set update issue
 
-A changed guide no longer stops the scan (fleet-config#1132, 2026-10-02): an
+A changed guide does not stop the scan: an
 update issue without a posted scan is not a delivery, and a stamp with no
 `guides=` field cannot show the update issue was due, so it is not one either.
 

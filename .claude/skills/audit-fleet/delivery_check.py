@@ -1,4 +1,4 @@
-"""Post-condition for the scheduled `/audit-fleet` job (fleet-config#560).
+"""Post-condition for the scheduled `/audit-fleet` job.
 
 `claude_progress.py --delivery-check` runs this after the child exits, whatever
 the child's exit code was, and turns a non-zero exit here into
@@ -19,7 +19,7 @@ the question could not be answered at all; both are "not confirmed", which is
 the whole reason this exists.
 
 The predicate itself now lives in `skills/_lib/audit_ledger/digest_delivery.py`, shared with
-`/context-purge`'s check (fleet-config#627) -- two ~100-line near-copies of the
+`/context-purge`'s check -- two ~100-line near-copies of the
 rule "an unestablished delivery is not a delivery" were free to drift on
 exactly the property that matters. This caller stays **lenient**: a dated
 comment inside the window is enough, and the digest stamp `/context-purge`

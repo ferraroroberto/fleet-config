@@ -1,4 +1,4 @@
-"""Shared resolution for the hooks-state base directory (fleet-config#817).
+"""Shared resolution for the hooks-state base directory.
 
 Every `skills/_lib` module that persists advisory state under
 `~/.claude/hooks/state/` re-derived this exact `CLAUDE_HOOKS_STATE_DIR`
@@ -10,8 +10,8 @@ the env var being honoured everywhere, so a ninth caller that re-derives it
 by hand risks getting it wrong and writing into live fleet state during a
 test run.
 
-Also owns the atomic-write temp naming + age sweep (fleet-config#864) and the
-shared write body around them (fleet-config#1441) for writers into that
+Also owns the atomic-write temp naming + age sweep and the
+shared write body around them for writers into that
 directory, mirroring `hooks/_lib.py`'s copy -- the tree
 boundary forbids either tier importing the other's.
 
@@ -52,7 +52,7 @@ def atomic_tmp_prefix(path: Path) -> str:
 
     An orphan is then `.<target>.<random>.tmp` -- it names the file whose
     writer stranded it, instead of the anonymous `tmp<8>.tmp` that left six
-    accumulated temps in `hooks/state/` unattributable (fleet-config#816).
+    accumulated temps in `hooks/state/` unattributable.
     Pair with `suffix=".tmp"`.
     """
     return f".{path.name}."
@@ -89,7 +89,7 @@ def atomic_write_text(
 ) -> None:
     """Replace `path` with `text` (UTF-8) so a reader never sees half a file.
 
-    Mirror of `hooks/_lib.py`'s copy (fleet-config#1441): sweep the stem's
+    Mirror of `hooks/_lib.py`'s copy: sweep the stem's
     stale orphans, `mkstemp` a sibling named by `atomic_tmp_prefix`, write,
     `os.replace`, and unlink the temp when any of that raises `OSError` --
     then re-raise, so each caller keeps its own failure policy. `newline` goes

@@ -1,6 +1,6 @@
-"""Hand-fed leads: outside claims (videos, posts, talks) traced back to a vendor sentence (fleet-config#1129).
+"""Hand-fed leads: outside claims (videos, posts, talks) traced back to a vendor sentence.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 
 `leads.toml` is edited by hand through a PR, like `sources.toml`. A lead never
 becomes a rule by itself: each claim either names the tracked section that says

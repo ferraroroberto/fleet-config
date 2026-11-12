@@ -1,4 +1,4 @@
-"""The one reader for a repo's `.fleet.toml` (fleet-config#1062).
+"""The one reader for a repo's `.fleet.toml`.
 
 Every `_lib` consumer of a repo-authored `.fleet.toml` (`[e2e]`, `[worktree]`,
 `[cert]`) used to hand-roll the same load-degrade-on-error-pick-a-table

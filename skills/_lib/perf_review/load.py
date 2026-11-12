@@ -1,4 +1,4 @@
-"""The phone-load leg of /perf-review: a Playwright child (fleet-config#1121).
+"""The phone-load leg of /perf-review: a Playwright child.
 
 Spawned by `cli.py` under the **target repo's** `.venv` (where Playwright
 lives — this repo's venv is stdlib-only), the same split `/design-review`
@@ -17,10 +17,10 @@ Three legs, written to `<out>/load.json`:
 `--cold-samples N` (default 3) adds N-1 more fresh-context cold loads after
 the warm leg and lists every cold "ready" in `android_cold.ready_samples_ms`;
 `/perf-review` scores their median, because one cold load right after an
-app restart can read ~3 s on an app that loads in ~370 ms (fleet-config#1140).
+app restart can read ~3 s on an app that loads in ~370 ms.
 
 Read-only by construction: navigate and wait, nothing else — no click, no
-fill. Two traps it must not fall into (both measured, #1121):
+fill. Two traps it must not fall into (both measured):
 
   * **No request interception.** Playwright turns the HTTP cache off for a
     page or context with any `route()` installed, so a non-GET guard built
@@ -69,8 +69,7 @@ POLL_GAP_S = 1.0  # a repeat GET of one API path starting later than this after 
 def is_api_path(path: str) -> bool:
     """Whether a request path is the app's API: it has an `/api/` segment, wherever the app mounts it.
 
-    local-llm-hub serves its API under `/admin/api/`; matching only a leading `/api/` counted no boot call there
-    (fleet-config#1170), so the boot-data and API checks came back unmeasured and the warm split read `api=0 KB`.
+    local-llm-hub serves its API under `/admin/api/`; matching only a leading `/api/` counted no boot call there, so the boot-data and API checks came back unmeasured and the warm split read `api=0 KB`.
     """
     return "/api/" in path
 
@@ -94,7 +93,7 @@ def _ready(page, selector: str, timeout_ms: int):
     """`(ready_ms, ready_by)` — when the declared selector became visible, else first contentful paint.
 
     Not `wait_for_selector`: it re-checks at 0, 20, 50, 100, 100 ms, then every 500 ms, so a selector visible at
-    1100 ms read ~1455 ms, and two unrelated apps shared that "warm ready" (fleet-config#1236).
+    1100 ms read ~1455 ms, and two unrelated apps shared that "warm ready".
     """
     if selector:
         try:
@@ -144,7 +143,7 @@ def top_responses(net: list, keep: int = TOP_RESPONSES) -> list:
     """The `keep` biggest network responses: path without query, bytes on the wire, content-encoding, resource type.
 
     A transfer budget that fails says nothing about *which* bytes; one API payload was 5.56 MB of a "6.6 MB"
-    cold load in task-os (#280) while the playbook pointed at assets. Responses with no size are left out.
+    cold load in task-os while the playbook pointed at assets. Responses with no size are left out.
     """
     ranked = sorted((r for r in net if r["bytes"] > 0), key=lambda r: r["bytes"], reverse=True)[:keep]
     return [{"path": r["path"], "bytes": r["bytes"], "encoding": r.get("encoding", "identity"),
@@ -155,8 +154,7 @@ def poll_ids(rows: list) -> set:
     """`id()` of every row that is a poll: a GET to an `/api/` path starting over `POLL_GAP_S` after the previous
     request to that path started.
 
-    A poll is steady-state traffic, not the cost of opening the app, so the boot figures leave it out
-    (fleet-config#1218). The first request of a path, and a burst inside the gap, stay boot traffic. The gap is the
+    A poll is steady-state traffic, not the cost of opening the app, so the boot figures leave it out. The first request of a path, and a burst inside the gap, stay boot traffic. The gap is the
     one `CdpLeg.api_paths` uses to find a poll interval.
     """
     last, polls = {}, set()

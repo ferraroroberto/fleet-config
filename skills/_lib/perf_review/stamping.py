@@ -1,4 +1,4 @@
-"""Does the target's cache-busting cover the JS import graph? (fleet-config#1140)
+"""Does the target's cache-busting cover the JS import graph?
 
 Read-only: parses the target's `src/static_versioning.py` (the fleet's per-app
 copy, in about ten repos) and names its stamping strategy from the functions
@@ -10,7 +10,7 @@ it defines, never from words in comments or docstrings.
                transitively imports (a `*graph*hash*` function).
   per-file     per-file stamps from a file's own bytes only. Behind a long
                immutable cache, editing a nested module leaves a cached importer
-               on its old import URLs (voice-transcriber#220/#221). Unsafe.
+               on its old import URLs. Unsafe.
   unknown      the module exists but its shape is not recognised.
   none         no such module: nothing to check.
 """

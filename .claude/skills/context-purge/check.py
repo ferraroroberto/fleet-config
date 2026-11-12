@@ -13,12 +13,12 @@ checkable, so they live here rather than in LLM judgment (same discipline as
      prose cap precisely because they must never be reworded.
   3. The after-file's frontmatter must still parse as YAML — a rewrite that
      breaks it keeps every phrase on disk while the harness drops the whole
-     description (fleet-config#845).
+     description.
 
 The `description:` parser and the double-quoted-trigger regex now live in
 `skills/_lib/fleet_core/skill_description.py`, shared with `context-audit/audit.py` — the
 two carried private copies and the audit's `["']` character class silently
-under-counted every description containing an apostrophe (fleet-config#626).
+under-counted every description containing an apostrophe.
 
 It also prints the before/after token delta (~4 chars/token, the same estimate
 audit.py trends on) so the purge report quotes exact numbers.
@@ -35,7 +35,7 @@ stdlib only. CLI:
 The `--base` form checks every instruction file (CLAUDE.md, AGENTS.md,
 SKILL.md, .claude/rules/*.md) the branch changed since its merge-base with
 <base>, committed or not, against its merge-base bytes — the one command a
-`prompt-drift` cleanup lane's validate stage runs (fleet-config#833). A deleted
+`prompt-drift` cleanup lane's validate stage runs. A deleted
 instruction file fails (its directives cannot be checked); an added one is
 reported and skipped (nothing to preserve).
 Exit 0 = all preservation checks pass; exit 2 = at least one failed (reasons on

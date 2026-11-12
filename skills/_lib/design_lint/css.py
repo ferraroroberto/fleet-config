@@ -22,8 +22,8 @@ def strip_comments(text: str, kind: str, *,
 
     `blank_regex_literals` (js only) additionally drops regex literals. It is
     opt-in, for the scanners that read JS source as *rendered output* — a
-    regex's character class is input matching, the exact opposite of UI copy
-    (#416). Every other caller wants the pattern text left alone.
+    regex's character class is input matching, the exact opposite of UI copy.
+    Every other caller wants the pattern text left alone.
     """
     def nl(m: "re.Match[str]") -> str:
         return "\n" * m.group(0).count("\n")

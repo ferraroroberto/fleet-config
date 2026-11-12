@@ -1,4 +1,4 @@
-"""Deterministic core of /perf-review (fleet-config#1121): how fast does a fleet web app load on a phone?
+"""Deterministic core of /perf-review: how fast does a fleet web app load on a phone?
 
 The skill (`skills/perf-review/SKILL.md`) orchestrates; this package measures
 and scores, with no LLM in the verdict. Read-only by construction: it refuses

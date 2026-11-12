@@ -1,4 +1,4 @@
-"""Chart.js contracts (design.md Charts; home-automation#409).
+"""Chart.js contracts (design.md Charts).
 
 A phone-width tick budget, and a second visual channel beside colour for every
 multi-series chart (WCAG 2.2 Use of Color).

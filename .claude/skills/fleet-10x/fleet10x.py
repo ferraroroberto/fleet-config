@@ -1,4 +1,4 @@
-"""Deterministic halves of /fleet-10x (fleet-config#1253).
+"""Deterministic halves of /fleet-10x.
 
 The skill asks every active fleet repo "how could this be 10x better, even at
 twice the effort?". The judgment (research, synthesis) is the model's; the

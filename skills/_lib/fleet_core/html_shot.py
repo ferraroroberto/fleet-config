@@ -1,9 +1,8 @@
-"""Shared headless-browser HTML -> PNG screenshot helper (fleet-config#96).
+"""Shared headless-browser HTML -> PNG screenshot helper.
 
-`.claude/skills/system-map/render.py` (fleet-config#94) and `/docs-shots`
-(fleet-config#93) both need to turn an HTML page into a deterministic PNG.
-Before there were two divergent copies of that dance to maintain, this module
-extracts the shared technique: a two-pass **measure-then-shoot** render — probe
+`.claude/skills/system-map/render.py` and `/docs-shots`
+both need to turn an HTML page into a deterministic PNG. This module
+holds the one shared technique (not two divergent copies): a two-pass **measure-then-shoot** render — probe
 once to read the page's own `DIMS w h` (logged to the console via `--enable-
 logging=stderr`), then screenshot at exactly that size so there is no empty
 canvas and nothing is clipped — plus the Windows write-lock workaround
@@ -19,7 +18,7 @@ fetchable from `file://`. An optional `query` string is appended either way
 `render_cli()` (below) uses this to force `?placeholders=1` so the committed
 PNG never bakes in real hardware specs from a local `system-map.local.js`; it
 is also the shared `--html/--out/--scale` entry point both map renderers call,
-so neither has to re-implement the wrapper (fleet-config#677).
+so neither has to re-implement the wrapper.
 
 stdlib + Chrome Headless Shell or Chrome (matches the `_lib` module contract) —
 no extra Python deps, per the repo's "system Python, no venv" hook convention.
@@ -263,7 +262,7 @@ def render_cli(
 
     `.claude/skills/system-map/render.py` and `.claude/skills/config-map/render.py`
     were near-byte-for-byte copies of the same argparse + try/except + one-line
-    report (fleet-config#677) — differing only in their two default paths, the
+    report — differing only in their two default paths, the
     argparse description, and whether the success line mentions placeholders.
     Those four differences are now the parameters; each script keeps its
     docstring and nothing else. Returns the process exit code (0 / 1) so the

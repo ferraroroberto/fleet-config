@@ -1,9 +1,9 @@
-"""Deterministic half of `/prompt-audit`, as a package (fleet-config#831, #832, #931).
+"""Deterministic half of `/prompt-audit`, as a package.
 
 `audit.py` beside this package is the CLI entry the skill invokes; its
 docstring lists the subcommands. This was one 1462-line module carrying eleven
 concerns behind a single dispatcher, the same shape `skills/_lib/design_lint`
-recorded fixing (fleet-config#564), and `rules.md` grows it the same way. The
+recorded fixing, and `rules.md` grows it the same way. The
 code moved verbatim; only imports changed.
 
 Layout, in dependency order (no module imports a later one):

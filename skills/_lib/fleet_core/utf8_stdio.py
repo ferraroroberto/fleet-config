@@ -1,4 +1,4 @@
-"""Force UTF-8 stdout/stderr under capture (fleet-config#500).
+"""Force UTF-8 stdout/stderr under capture.
 
 The global `CLAUDE.md` gotcha ("Windows Python: UTF-8 stdout under capture"):
 piped/redirected stdout makes Python fall back to cp1252 on this machine, so

@@ -1,6 +1,6 @@
 """Paths, fleet constants, the `skills/_lib` imports and small pure helpers.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ def fence_flags(lines: List[str]) -> List[bool]:
 
     Tracks the opening fence's character and length (CommonMark): a fence closes
     only on the same character, at least as long, with nothing after it — so a
-    four-backtick example can carry three-backtick lines (fleet-config#1126).
+    four-backtick example can carry three-backtick lines.
     """
     flags: List[bool] = []
     fence: Optional[str] = None

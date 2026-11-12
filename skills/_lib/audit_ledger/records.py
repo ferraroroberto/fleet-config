@@ -227,8 +227,8 @@ def parse_ledger(body: str) -> dict:
     (`<!-- audit-ledger` … `-->`) — matching on the shared prefix reads both,
     and the `-->` terminator can't match a `key: value` line. Reading only the
     closed form made a hand-authored ledger indistinguishable from a changed
-    repo, buying a full Opus whole-repo audit every week forever
-    (fleet-config#566). `render_ledger_body` normalizes to the closed form on
+    repo, buying a full Opus whole-repo audit every week forever.
+    `render_ledger_body` normalizes to the closed form on
     the next write, so a drifted ledger self-heals.
     """
     # GitHub stores issue bodies with CRLF. `gh issue view -q .body` hands them
@@ -259,8 +259,8 @@ def render_ledger_body(sha: str, at: str, rubric: str) -> str:
     The marker is a machine contract, and a contract spelled out in agent prose
     is a contract that drifts: three repos hand-authored an unreadable variant,
     including one whose ledger was created fresh by the run that then couldn't
-    read it (fleet-config#566). Enforce it in the tool, not the prose
-    (project-scaffolding#202). `rubric` may legitimately be the empty string —
+    read it. Enforce it in the tool, not the prose.
+    `rubric` may legitimately be the empty string —
     a repo with no CLAUDE.md — which is why it is written unconditionally
     rather than omitted when falsy.
     """
@@ -280,7 +280,7 @@ def normalize_ledger_body(body: str) -> str:
 
     Every ledger write goes through here, so a body that would not parse back
     is rejected *at write time* — where it is one clear error — instead of a
-    week later as a silent, permanent full-audit (fleet-config#566). A body in
+    week later as a silent, permanent full-audit. A body in
     the open-comment form parses fine and comes back out closed, which is how
     an already-drifted ledger self-heals on its next write.
     """
@@ -472,7 +472,7 @@ def default_branch_sha(repo_path: str) -> str | None:
     branch: the fleet pipeline squash-merges and deletes the branch, so that tip
     exists in no checkout and no remote afterwards, `rev-list <sha>..HEAD`
     fails, and the repo silently drops out of every later sweep
-    (fleet-config#567 — two repos went unaudited for three weeks). A
+    (two repos went unaudited for three weeks). A
     default-branch commit survives a squash by construction.
     """
     ref = git_run.resolve_default_branch_ref(Path(repo_path))
@@ -512,7 +512,7 @@ def commits_since(repo_path: str, sha: str) -> int | None:
     None is a real answer — "the baseline is unreadable" — and the caller must
     route it to a full audit under its own reason. Letting the underlying
     `rev-list` raise instead lands the repo in `fleet_audit_scan`'s `errors[]`
-    bucket, which is reported nowhere (fleet-config#567).
+    bucket, which is reported nowhere.
     """
     r = git_run.run_git(["-C", repo_path, "rev-list", f"{sha}..HEAD", "--count"])
     if r.returncode != 0:
@@ -549,7 +549,7 @@ def _unexplained_commits(
     `managed_numbers`. Both callers need exactly this walk and differ only in
     what they do with the result — `audit_only_churn` asks whether the sequence
     is empty, `unexplained_weighted_loc` sums a score over it — so the self-fix
-    rule is defined once and can only change in one place (fleet-config#677).
+    rule is defined once and can only change in one place.
     """
     by_sha = {}
     for pr in prs:

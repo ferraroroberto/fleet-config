@@ -1,4 +1,4 @@
-"""Grant a scheduled map refresh the right to commit on the default branch (fleet-config#1916).
+"""Grant a scheduled map refresh the right to commit on the default branch.
 
 `hooks/main_commit_guard.py` refuses `git commit` on a repo's default branch.
 A scheduled `/system-map` or `/config-map` run has nobody attending and commits

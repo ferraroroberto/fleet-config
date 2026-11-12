@@ -1,6 +1,6 @@
 """The lint engine (R-01..R-17, R-30, R-34..R-37, R-45, assists for R-39 and R-43): exact hit counts per instruction file.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations

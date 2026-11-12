@@ -1,4 +1,4 @@
-"""One Codex `app-server --stdio` JSON-RPC session (fleet-config#1062).
+"""One Codex `app-server --stdio` JSON-RPC session.
 
 `quota_sources` (account/rate-limit read) and `discovery_probe` (skills/list)
 both spawn the installed Codex client's app server, run the

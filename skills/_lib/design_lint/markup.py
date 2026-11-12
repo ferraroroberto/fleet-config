@@ -83,7 +83,7 @@ def nav_nested_in_app(html_files: List[Path]) -> bool:
     class="app">` — the _vendored/nav/README.md load-bearing rule is that
     they must be `<body>` siblings; an installed iOS PWA can capture a fixed
     nav inside a scroll container and anchor it there instead of the
-    viewport (home-automation#232, app-launcher#369)."""
+    viewport."""
     for p in html_files:
         text = strip_comments(read_text(p), "html")
         stack: List[Tuple[str, set]] = []
@@ -131,7 +131,7 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
 def find_glyph_icon_sites(root: Path, html_files: List[Path], js_files: List[Path]
                           ) -> List[str]:
     """`file:line` for arrow / geometric-shape characters in rendered text —
-    text glyphs standing in for a Lucide icon (fleet-config#969). Same
+    text glyphs standing in for a Lucide icon. Same
     exclusions as the emoji scan."""
     return _rendered_text_sites(root, html_files, js_files, _GLYPH_ICON_RE)
 
@@ -142,9 +142,9 @@ def _rendered_text_sites(root: Path, html_files: List[Path], js_files: List[Path
     stripped so attribute values don't count) and JS source (string literals
     used as UI copy, e.g. an empty-state message baked into a .js file, are
     indistinguishable from other JS text at grep level, so the whole file is
-    scanned — app-launcher#368).
+    scanned).
 
-    Two things are *not* rendered text and are excluded (#416): JS regex
+    Two things are *not* rendered text and are excluded: JS regex
     literals, whose character classes match glyphs coming *in* off a terminal
     rather than drawing any (app-launcher's `/^[●⏺•◉○]$/` reply-block parser),
     and third-party `vendor/` bundles, whose internal glyph tables aren't the
@@ -198,7 +198,7 @@ _SAVE_AFFORDANCE_RE = re.compile(
 def _editor_modals(root: Path, html_files: List[Path]) -> List[dict]:
     """`<dialog>` blocks that contain a real input/select/textarea — i.e.
     detail/rename/settings editors, not a plain alert or results dialog.
-    A `<form>` wrapper is optional (fleet-config#342)."""
+    A `<form>` wrapper is optional."""
     modals: List[dict] = []
     for p in html_files:
         text = strip_comments(read_text(p), "html")

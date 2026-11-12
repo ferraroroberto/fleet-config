@@ -1,4 +1,4 @@
-"""Incremental fleet-health ledger (fleet-config#397).
+"""Incremental fleet-health ledger.
 
 One markdown file, newest run on top, one entry per machine per run. Two verbs:
 

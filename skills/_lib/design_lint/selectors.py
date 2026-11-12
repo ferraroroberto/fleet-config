@@ -22,7 +22,7 @@ def selector_group(sel_group: str) -> str:
     injects ahead of each file's chunk. Any check that substring-tests that
     string is really testing the file *path* too — a stylesheet under
     `_vendored/icons/` or `_vendored/row/` would make the first rule of that
-    file count as an icon or a row rule (fleet-config#843). Source comments
+    file count as an icon or a row rule. Source comments
     are already blanked by `strip_comments`; this removes the one we add.
 
     Every check that reads a selector out of `_BLOCK_RE` goes through here —
@@ -86,9 +86,8 @@ def _class_scope_status(css_all: str, class_name: str,
     """Where a class is styled: `global` (bare/unscoped), `dialog` (an
     ancestor compound mentions "dialog" or carries a class that appears on/in
     a known editor `<dialog>` — e.g. `.detail-card .row`, where the wrapper
-    class lives inside the dialog, fleet-config#342), `other` (scoped to some
-    unrelated ancestor, e.g. `.settings-card .stacked` — the app-launcher#70
-    bug)."""
+    class lives inside the dialog), `other` (scoped to some
+    unrelated ancestor, e.g. `.settings-card .stacked`)."""
     pat = re.compile(r"\." + re.escape(class_name) + r"\b")
     scopes: set = set()
     for _, ancestors, _body in _selector_hits(css_all, pat):

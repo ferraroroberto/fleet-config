@@ -1,6 +1,6 @@
 """Parsing `rules.md` and deciding a rule's verdict for a file audience.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Fleet hardware-health capture driver (fleet-config#397).
+"""Fleet hardware-health capture driver.
 
 Discovers every machine from the local hub's own inventory, classifies each by
 *probed capability* (never by name), starts a diagnostics capture on every
@@ -12,17 +12,15 @@ below matches on a machine id — routing is decided by what a machine *answers*
 Captures are strictly local to each hub (``local-llm-hub`` ``docs/diagnostics.md``:
 "each host's hub owns its own sampler"), so a peer is driven through its own
 ``/admin`` endpoint at the ``ip`` the inventory returns for it. The inventory is
-the only source for that: addresses used to be parsed out of the hub's
-``config/models.yaml``, which stopped carrying them when they moved to a
-gitignored ``machines.local.yaml`` (``local-llm-hub`` #525) -- the block simply
-went empty, every peer classified ``no-address``, and three consecutive weekly
-runs reached only the host until an overlay was hand-applied (fleet-config#812).
+the only source for that: the hub's ``config/models.yaml`` does not carry them
+(they live in a gitignored ``machines.local.yaml``), so parsing it leaves the block
+empty, every peer classified ``no-address``, and the capture reaching only the host.
 
 Stdlib only (urllib) — same reason as ``hooks/notify_send.py``: this must run
 without a venv on any host.
 
 Three verbs, because a tool call is capped well under a capture's length and the
-chunk boundary has to be visible to the caller (fleet-config#314 — a scheduled
+chunk boundary has to be visible to the caller (a scheduled
 headless run that backgrounds work and ends its turn exits 0 having done
 nothing)::
 
@@ -170,7 +168,7 @@ def classify(machine: dict) -> tuple[Coverage, str, Optional[str]]:
 
     status is ``ready`` when a capture can be started, otherwise a
     not-covered status carrying a human reason. Every machine gets a verdict —
-    silence is never an option (fleet-config#397 acceptance).
+    silence is never an option.
     """
     if machine.get("dormant"):
         return Coverage.DORMANT, "machine is dormant — not powered for scheduled capture", None
@@ -249,7 +247,7 @@ def poll_chunk(targets: dict[str, str], chunk_s: float) -> dict[str, dict]:
     """Block up to ``chunk_s`` polling every target; report per-machine progress.
 
     Synchronous by construction. A scheduled headless run that backgrounds this
-    and ends its turn exits 0 having done nothing (fleet-config#314).
+    and ends its turn exits 0 having done nothing.
     """
     deadline = time.monotonic() + chunk_s
     # ``capturing`` is True / None (unknown) / False; only False is settled.
@@ -431,7 +429,7 @@ def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
     is scheduled at 23:30 and polls for well over an hour, so a date
     re-derived per invocation splits one run across two directories and hands
     the ledger append a third answer -- which it did on three consecutive
-    runs, reproducing live at 00:07 (fleet-config#812). An explicit
+    runs, reproducing live at 00:07. An explicit
     ``--date``/``--out-dir`` still wins, so a rerun stays targetable by hand.
 
     The marker carries the run directory as well as the date, so a ``start``

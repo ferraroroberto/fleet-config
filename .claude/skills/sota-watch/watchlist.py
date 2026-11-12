@@ -1,4 +1,4 @@
-"""Watchlist state for /sota-watch (fleet-config#393).
+"""Watchlist state for /sota-watch.
 
 Two subcommands:
 

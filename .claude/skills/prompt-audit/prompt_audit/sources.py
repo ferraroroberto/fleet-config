@@ -1,6 +1,6 @@
 """Vendor-guide freshness gate: hash a fetched guide against its baseline.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations

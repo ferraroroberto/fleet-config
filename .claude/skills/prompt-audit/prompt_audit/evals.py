@@ -1,6 +1,6 @@
-"""Skill-eval fold-in: the weekly eval job's aggregates, read into the digest and R-44 (fleet-config#1131).
+"""Skill-eval fold-in: the weekly eval job's aggregates, read into the digest and R-44.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 
 `eval_rotation.py` runs on its own schedule and writes timestamped aggregates
 (plus `latest.json`) under `~/.claude/prompt-audit/evals/`. This module reads the
@@ -44,7 +44,7 @@ def _load(path: Path) -> Optional[dict]:
 
 def _is_run(path: Path) -> bool:
     """A timestamped aggregate that has not been invalidated. An aggregate found to be measuring a harness defect
-    carries a top-level `invalidated` (the issue that explains it): it stays on disk but is not a run (#1238)."""
+    carries a top-level `invalidated` (the issue that explains it): it stays on disk but is not a run."""
     data = _load(path)
     return data is not None and not data.get("invalidated")
 

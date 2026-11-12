@@ -1,6 +1,6 @@
 """Run digest markdown and its one-line chat ping.
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def _page(url: str) -> str:
 
 
 def provisional_rules(rules: Dict[str, dict], sources: Dict[str, dict], verdict_lines: Iterable[str]) -> Set[str]:
-    """Rules whose `Source:` cites a guide this run found `changed` or `new-guide` (fleet-config#1132).
+    """Rules whose `Source:` cites a guide this run found `changed` or `new-guide`.
 
     The scan still runs against the current `rules.md` when a guide moved; a
     finding on one of these rules may be contradicted by the pending rule-set
@@ -119,7 +119,7 @@ def render_ping(run: dict, comment_url: str, provisional: Set[str] = frozenset()
     """One pure-ASCII chat line for a delivered run. Pure: every value comes from `run`.
 
     ASCII separators only: a non-ASCII character in a Windows command line reaches
-    the chat as `??` (fleet-config#507).
+    the chat as `??`.
     """
     s = summarize_run(run)
     parts = s["parts"]

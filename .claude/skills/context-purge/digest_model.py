@@ -165,7 +165,7 @@ def merge_state(repo: dict) -> str:
 def merge_blockers(repo: dict) -> list[str]:
     """Why this repo's rewrite may NOT be merged. Empty = eligible.
 
-    The deterministic half of the auto-merge go/no-go (fleet-config#1312): a
+    The deterministic half of the auto-merge go/no-go: a
     worker runs it (`digest.py merge-check`) before `gh pr merge`, and
     `validate` re-applies it to every repo recorded as merged, so a rewrite
     that skipped the harness cannot reach `main` and still publish a clean

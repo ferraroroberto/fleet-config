@@ -1,6 +1,6 @@
 """The skip-unchanged ledger (audit-managed `kind=prompt-audit` issue).
 
-Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
+Part of the `prompt_audit` package; see `__init__.py`.
 """
 
 from __future__ import annotations

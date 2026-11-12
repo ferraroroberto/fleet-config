@@ -1,4 +1,4 @@
-"""Deterministic design-system lint for /design-sync v2 (fleet-config#277).
+"""Deterministic design-system lint for /design-sync v2.
 
 Pure logic + a small CLI, same `_lib` contract as `cert_drift.py` /
 `ux_surface.py`: everything mechanically checkable about a web app's
@@ -19,7 +19,7 @@ Subcommands (all print JSON):
                      tokens a declared vendored component reads but the app
                      never defines).
                      A repo's `[[design.accepted]]` exceptions mark matching
-                     findings ACCEPTED (fleet-config#836).
+                     findings ACCEPTED.
   vendored  <root>   byte-compare the app's _vendored/ copies against
                      project-scaffolding's canonical files.
   siblings  <root>   same-name top-level JS definitions across >=2 files
@@ -37,9 +37,8 @@ single file (only the `.py` goes away):
 
     <python> C:/Users/rober/.claude/skills/_lib/design_lint all <repo-root>
 
-Layout (fleet-config#564 — this was one 2071-line module carrying five
-independent lenses behind a single CLI dispatcher, and the contract set grows
-every time design.md gains a rule, so the file only went one way):
+Layout (one module per concern, because the contract set grows
+every time design.md gains a rule and a single file only grows one way):
 
   files.py       which files a lens reads; which are third-party; path spelling
   spec.py        design.md frontmatter → a flat token dict

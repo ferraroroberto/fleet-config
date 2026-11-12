@@ -1,6 +1,6 @@
 """A repo's declared wide views — `[design] wide_views` in its `.fleet.toml`.
 
-design.md's Layout rule (fleet-config#1113): width follows the shape of a
+design.md's Layout rule: width follows the shape of a
 view's content. A one-dimensional view keeps the 772px measure; a
 two-dimensional one (board lanes, a many-field table, a tree with attribute
 columns, calendar days) may span the full width. An app names those views:
