@@ -196,8 +196,8 @@ Subcommands
       prose as a bare CLI arg — `say` is a pure pipe, it never composes
       the brief. `--verify` polls the session's exchange
       after posting instead of trusting the endpoint's `{"ok": true}` — the
-      endpoint reported success on 2026-07-27 for messages that were never
-      submitted, twice, in two different ways. Four verdicts; only DELIVERED exits 0:
+      endpoint can report success for a message that was never submitted.
+      Four verdicts; only DELIVERED exits 0:
 
         DELIVERED  positive evidence only: the exchange advanced past a send
                    that was submitted immediately, or — for a `deferred` send

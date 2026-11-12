@@ -97,8 +97,8 @@ BG_WAIT_CEILING_ENV = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 BG_WAIT_CEILING_UNLIMITED = "0"
 
 # A run that ends normally having done nothing is the false success neither the
-# kill detector nor the stall watchdog can see — on 2026-07-30 the tell was in
-# the content (zero repos audited, no digest, no ping), not in the exit code.
+# kill detector nor the stall watchdog can see — the tell is in the content
+# (zero repos audited, no digest, no ping), not in the exit code.
 # The adapter cannot judge "no work" for an arbitrary skill, so the skill
 # asserts its own delivery and prints this marker when the assertion fails;
 # the adapter owns turning that into a non-zero exit.
@@ -129,12 +129,11 @@ SELF_REPORTED_FAILURE_EXIT_CODE = RunState.SELF_REPORTED_FAILURE.exit_code
 # stream-json` gains record types routinely -- `KNOWN_IGNORED_SYSTEM_SUBTYPES`
 # has grown eight entries over as many months -- so scoring every one of them
 # red meant a fully delivered run went `not confirmed` the week upstream
-# shipped a new subtype, with no defect anywhere. On 2026-09-09
-# `fleet-health-weekly` delivered its digest, its ledger entry and its Telegram
-# ping under `150 unknown stream record(s)` and would still have exited 122.
-# That is the inverse of the class this file exists to
-# prevent: it manufactures a red rather than hiding one, and a schedule that
-# cries wolf on a timetable is how a real red gets ignored.
+# shipped a new subtype, with no defect anywhere. A run that delivered its
+# digest, its ledger entry and its Telegram ping would still exit 122 under a
+# pile of unknown stream records. That is the inverse of the class this file
+# exists to prevent: it manufactures a red rather than hiding one, and a
+# schedule that cries wolf on a timetable is how a real red gets ignored.
 #
 # So an unknown record is counted, named and logged, and decides nothing by
 # itself. What stays verdict-bearing is evidence a fact was never *established*:
@@ -152,10 +151,10 @@ TRUNCATED_STREAM_EXIT_CODE = RunState.STREAM_UNVERIFIED.exit_code
 
 # The fifth shape, and the one none of the four above can see: a run that
 # starts, answers in prose, and ends its turn normally -- never having invoked a
-# single tool. On 2026-08-20 `/cleanup-fleet-all` did exactly that in 5.3s and
-# reported `exit 0`; the stream was complete, nothing was
-# killed, no watchdog fired, and the skill printed no failure marker, because
-# from the CLI's point of view nothing went wrong. The job card was green.
+# single tool. A `/cleanup-fleet-all` that does exactly that in seconds still
+# reports `exit 0`: the stream is complete, nothing was killed, no watchdog
+# fires, and the skill prints no failure marker, because from the CLI's point
+# of view nothing went wrong. The job card is green.
 #
 # `SELF_REPORTED_FAILURE_MARKER` cannot cover this: it needs the skill to reach
 # its own final report and assert something, and a skill that never started has
@@ -368,13 +367,11 @@ class ProgressFormatter:
     def saw_kill_signature(self) -> bool:
         """True only for the stderr line Claude prints when it kills tasks.
 
-        This used to also return `self._saw_child_failure`, which made **any**
-        background task that ended `failed` exit an otherwise-successful run as
-        `BACKGROUND_KILL_EXIT_CODE`. On 2026-09-09 `fleet-health` delivered its
-        full digest, ledger and Telegram ping and was reported `❌ failed ·
-        exit 125` because it had cancelled one mis-targeted disk scan and had
-        one backgrounded PowerShell exit non-zero after a 90s `docker system
-        df` timeout — both recovered from, neither a fault.
+        A background task that ended `failed` does not count here: returning
+        `self._saw_child_failure` would exit an otherwise-successful run as
+        `BACKGROUND_KILL_EXIT_CODE` for a child the run recovered from, such as
+        a cancelled mis-targeted disk scan or a backgrounded PowerShell that
+        exited non-zero after a timeout. Neither is a fault.
 
         Two things were wrong and both are fixed here. A failed child *created*
         a failure, which is precisely what the sibling comment on

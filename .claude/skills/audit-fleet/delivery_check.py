@@ -4,9 +4,9 @@
 the child's exit code was, and turns a non-zero exit here into
 `DELIVERY_NOT_CONFIRMED_EXIT_CODE`. The point is to check the fact that
 actually matters -- did this run *deliver* -- rather than another symptom of a
-run that didn't. On 2026-08-06 the job recorded `success` / exit 0 while
-auditing zero repos, filing zero issues and posting no digest; the newest
-comment on the digest ledger was a week old, which is exactly what this asks.
+run that didn't: the job can record `success` / exit 0 while auditing zero
+repos, filing zero issues and posting no digest, leaving the newest comment on
+the digest ledger a week old, which is exactly what this asks.
 
 The delivered artifact of an `/audit-fleet` run is one digest comment on the
 `audit-fleet digest state` issue in `ferraroroberto/fleet-config` (SKILL.md

@@ -45,12 +45,11 @@ def git_env(base: Optional[dict] = None) -> dict:
     `.git/index.lock` purely to write back a refreshed stat
     cache — an optimisation, not part of producing the output. Kill such a
     process mid-refresh and it leaves exactly a 0-byte `index.lock` and
-    nothing else touched. That is what happened fleet-wide on 2026-08-01:
-    nine repos, nine 0-byte locks, all stamped the same second, and every one
-    of those repos was silently unable to `git add`/`commit`/`pull`/`stash`
-    for **fifteen days**.
+    nothing else touched. Done fleet-wide, that strands a 0-byte lock in
+    every repo swept, all stamped the same second, and each is silently unable
+    to `git add`/`commit`/`pull`/`stash` for days.
 
-    Fifteen days, because a stale lock is invisible to a read: `git status
+    Days, because a stale lock is invisible to a read: `git status
     --porcelain`, `git fetch`, `git rev-list`, and an up-to-date `git pull
     --ff-only` **all exit 0 and print the right answer** with the lock
     sitting there — so the raise-on-non-zero guard never fires and no sweep
@@ -62,7 +61,7 @@ def git_env(base: Optional[dict] = None) -> dict:
     `diff --name-only --cached HEAD`, `ls-files --others`,
     `rev-parse --verify` and `symbolic-ref`, **only `status` takes the
     optional lock**. A helper that never runs `status` cannot strand one —
-    which is what let the 2026-09-20 hunt rule call sites in and out instead
+    which lets a hunt for stranded locks rule call sites in and out instead
     of suspecting every `git` spawn equally.
 
     `GIT_OPTIONAL_LOCKS=0` suppresses only *optional* locks — a requested

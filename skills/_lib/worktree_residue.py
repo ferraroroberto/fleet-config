@@ -5,18 +5,16 @@ Why this exists
 Teardown's check 1 is not the bare rule "`git worktree list`
 must show the primary only, anything else is residue, and residue halts the
 whole run. That rule exists to stop the run building on its *own* dirt, and it
-is right for that. It was wrong for a worktree the run never created.
+is wrong for a worktree the run never created.
 
-On 2026-09-27 a chief-dispatched lane in another repo created
-`facilitation-suite-wt-nav-41af40a` about ten minutes after the scheduled run's
-pre-flight. Pre-flight defers repos that already hold a worktree
-(`repo_preflight.py`), but this one appeared later. It was clean, and its
-branch was already squash-merged. When the run later shipped a lane in that
-repo, teardown saw a second registered worktree, called it residue, and halted
-with 41 issues never started.
+A chief-dispatched lane can create a worktree in a repo after the scheduled
+run's pre-flight. Pre-flight defers repos that already hold a worktree
+(`repo_preflight.py`), but one that appears later is not covered. If it is
+clean and its branch is already squash-merged, the bare rule would still call
+it residue and halt the run with the rest of its issues never started.
 
-This module is the classification teardown now runs instead of reading the
-list itself. Each registered worktree past the primary gets exactly one class:
+This module is the classification teardown runs instead of reading the list
+itself. Each registered worktree past the primary gets exactly one class:
 
   own               -- created by this run (see below). Residue, halts.
   foreign-dirty     -- someone else's, with uncommitted work. Residue, halts.

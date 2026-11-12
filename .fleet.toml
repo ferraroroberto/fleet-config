@@ -67,6 +67,14 @@ enabled         = true
 baseline        = ".comment-ratchet-baseline.json"
 docstrings      = true
 history_phrases = true
+# A dated incident opener ("On 2026-09-09 ..."), a "Take N" or "first attempt" retelling, and a
+# "reverted ..." aside are decision history; the issue and `git log` hold it.
+extra_history_patterns = [
+  '\bon\s+\d{4}-\d{2}-\d{2}\b',
+  '\btake\s+\d+\b',
+  '\b(?:the\s+)?first\s+attempt\b',
+  '\breverted\s+(?:the\s+same|that|it)\b',
+]
 
 [instruction_ratchet]
 enabled     = true

@@ -9,11 +9,10 @@ Git removes a working-tree file whose path the incoming commit drops from the
 index, even when that path is ignored afterwards. Nothing warns: the pull exits
 0 and the tree reads clean, because the file is now both absent and ignored.
 
-On 2026-09-28 a `cleanup-fleet-all` lane did exactly that.
-It untracked nine live JSON configs, and its `land-primary` fast-forward took
-all nine out of the `automation` primary; the next nightly job failed on a
-missing config. Neither the gate nor the reviewer could have seen it: the lane
-built in a worktree, and the loss only happens at the primary's fast-forward.
+A lane that untracks live JSON configs therefore loses them from the primary
+at its `land-primary` fast-forward, and the next nightly job fails on a missing
+config. Neither the gate nor the reviewer can see it: the lane builds in a
+worktree, and the loss only happens at the primary's fast-forward.
 
 What it does
 ------------

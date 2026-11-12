@@ -14,41 +14,32 @@ exists; this closes the enforcement gap that let two launcher-dispatched
 workers start editing files on the default branch without cutting a branch
 first.
 
-**Take 2.** The first attempt resolved the branch from the
-session's `cwd` and was reverted the same evening for two live
-fleet-wide false positives: it judged a worktree worker by the *primary*
-checkout's branch, and it blocked writes to paths entirely outside any repo
-(e.g. the standing chief writing scratch files under `E:\\tmp\\chief`) because
-the session's cwd repo happened to sit on `main`. This version resolves
-strictly from the directory containing the file actually being written —
-a worktree's own directory naturally resolves that worktree's own HEAD, and a
-non-repo target naturally fails the git call and allows, with no
-special-casing for either failure mode.
+**Where the branch is resolved from.** The branch comes strictly from the
+directory containing the file actually being written, never from the session's
+`cwd`. A worktree's own directory resolves that worktree's own HEAD, so a
+worktree worker is never judged by the *primary* checkout's branch. A target
+outside any repo (e.g. the standing chief writing scratch files under a temp
+directory) fails the git call and is allowed, with no special-casing.
 
-**Take 2's own false positive.** Resolving from the target
-directory fixed writes *outside* a repo but still blocked writes *inside* one
-that git deliberately ignores — `life-os`'s `/journal-daily` could not write
-its gitignored `.active-skill` marker, and the standing chief could not write
+**Gitignored targets are exempt.** A write inside a repo to a path git
+deliberately ignores can never become a commit, so the rule this guard
+enforces cannot be broken by it: `life-os`'s `/journal-daily` writes its
+gitignored `.active-skill` marker, and the standing chief writes
 `hooks/state/chief-handover.md` (gitignored, but reached through a junction so
-the guard sees a `fleet-config` file on `main`). Both share the property that
-makes take-1's non-repo case safe: the write can never become a commit, so the
-rule this guard enforces cannot be broken by it. `_is_ignored` therefore
-exempts gitignored targets — and only those. An untracked-but-not-ignored new
+the guard sees a `fleet-config` file on `main`). `_is_ignored` therefore
+exempts gitignored targets, and only those. An untracked-but-not-ignored new
 file *can* be committed to the default branch, so it stays blocked.
 
 Escape hatch: set `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1` for the rare case a
 launcher-dispatched flow needs a deliberate default-branch write.
 
 Git access is `_lib.run_git` / `_lib.resolve_default_branch_ref`, i.e. this
-hook's *own* tree. It used to `sys.path`-insert `../skills/_lib` and import
-`git_run` directly, which broke the convention every other hook here states —
-the two trees install independently, so a hook must stay importable with
-nothing but its own directory on `sys.path`.
+hook's *own* tree: the two trees install independently, so a hook must stay
+importable with nothing but its own directory on `sys.path`.
 
-Tool-id vocabulary stays in `_lib.edit_event()`: this hook
-used to branch on a local `GUARDED_TOOLS` tuple naming Codex's own
-`apply_patch` id directly, instead of asking `edit_event()` (which already
-recognizes it) whether the payload is edit-shaped at all.
+Tool-id vocabulary stays in `_lib.edit_event()`, which already recognizes
+Codex's own `apply_patch` id; this hook asks it whether the payload is
+edit-shaped rather than naming tool ids itself.
 """
 
 from __future__ import annotations

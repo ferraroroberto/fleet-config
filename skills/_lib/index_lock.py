@@ -2,15 +2,14 @@
 
 Why this exists
 ---------------
-On 2026-08-01 a single crashed fleet-wide operation left a **0-byte**
-`.git/index.lock` in nine repos, all stamped the same second. Every one of
-those repos was then silently unable to `git add`, `git commit`, `git pull` or
-`git stash` — for **fifteen days**, until a lane happened to trip over one.
+A single crashed fleet-wide operation can leave a **0-byte** `.git/index.lock`
+in many repos, all stamped the same second. Each is then silently unable to
+`git add`, `git commit`, `git pull` or `git stash` until something happens to
+trip over it, which can take days.
 
-Fifteen days is the interesting number, and it is not a coverage gap: the
-2026-08-13 fleet sweep enumerated all 39 repos, visited all nine, and filed
-every one of them as a healthy `below_threshold`. Zero errors, zero
-`UNKNOWN`s. It did that because **a stale lock is invisible to a read**:
+That is not a coverage gap: a fleet sweep can enumerate every repo, visit every
+locked one, and file each as healthy, with zero errors and zero `UNKNOWN`s. It
+does that because **a stale lock is invisible to a read**:
 
     git status --porcelain   -> exit 0, correct output   (optional lock skipped)
     git fetch origin         -> exit 0                   (doesn't touch the index)
@@ -79,7 +78,7 @@ import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 # 15 minutes. Well past any plausible single git operation on this fleet
-# (the 2026-08-01 locks had sat for fifteen *days*), and far enough from the
+# (a stranded lock otherwise sits for days), and far enough from the
 # millisecond-scale optional lock that a concurrent `git status` in another
 # tool can't race us into a false report.
 STALE_AFTER_SECONDS = 900

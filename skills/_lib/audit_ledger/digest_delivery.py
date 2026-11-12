@@ -4,8 +4,8 @@
 exits, whatever the child's exit code was, and turns a non-zero exit here into
 `DELIVERY_NOT_CONFIRMED_EXIT_CODE`. The point is to check the fact that
 actually matters -- did this run *deliver* -- rather than another symptom of a
-run that didn't. On 2026-08-06 `/audit-fleet` recorded `success` / exit 0 while
-auditing zero repos, filing zero issues and posting no digest.
+run that didn't: `/audit-fleet` can record `success` / exit 0 while auditing
+zero repos, filing zero issues and posting no digest.
 
 Two skills now ask that question (`/audit-fleet`, `/context-purge`), so the
 predicate lives here once rather than in two ~100-line near-copies free to

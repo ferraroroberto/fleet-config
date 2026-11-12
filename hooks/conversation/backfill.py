@@ -1,11 +1,10 @@
 """Recover a stored transcript no live Stop hook ever captured.
 
 A session is lost forever when its Stop hook never fires, or fires against a
-hosting process that had not yet loaded the capture hook — the concrete cause
-recovered by hand for two Codex sessions on 2026-09-06, whose hosting
-``codex app-server`` had been running for 26 hours before ``codex-hooks.json``
-gained a ``Stop`` entry. This is the supported, documented replacement for that
-hand-rolled recovery: it walks a harness's own stored-transcript store, finds
+hosting process that had not yet loaded the capture hook — a long-running
+``codex app-server`` started before ``codex-hooks.json`` gained a ``Stop``
+entry never fires it. This is the supported replacement for recovering such a
+session by hand: it walks a harness's own stored-transcript store, finds
 sessions whose recorded ``cwd`` resolves to a registered ``capture = true``
 project, and runs each one through the same
 :func:`conversation_capture.write_capture` the live hook uses — so a backfilled
