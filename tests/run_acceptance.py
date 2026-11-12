@@ -140,6 +140,10 @@ from acceptance.guard_checks.attribution_scan_checks import (
 from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
 from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
 from acceptance.guard_checks.lane_compact_checks import _lane_compact_unit_checks  # noqa: E402
+from acceptance.guard_checks.restart_cmd_checks import (  # noqa: E402
+    _restart_cmd_registry_check,
+    _restart_cmd_unit_checks,
+)
 from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _safe_kill_git_bypass_unit_checks,
@@ -403,6 +407,10 @@ def _run_repo_guards(tally: _Tally) -> None:
 
     # ---- the machine-local registry and its tracked example agree ----
     tally.run_unit(_projects_toml_contract_check)
+
+    # ---- every restart_cmd names a module, class and call signature that exist ----
+    tally.run_unit(_restart_cmd_unit_checks)
+    tally.run_unit3(_restart_cmd_registry_check)
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     tally.run_unit(_mermaid_check)
