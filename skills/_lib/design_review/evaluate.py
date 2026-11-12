@@ -300,7 +300,7 @@ def _d_no_text_size_control(m: dict, rule: Rule, ctx: dict) -> Derived:
     """A11Y-02: the app carries the vendored text-size control, whether or not its viewport locks zoom.
 
     The control is the fact judged. `zoom_locked` is evidence only: a viewport that cannot pinch-zoom makes a missing
-    control worse, but an app that allows pinch still owes the Settings control (Roberto's decision, 2026-10-03)."""
+    control worse, but an app that allows pinch still owes the Settings control."""
     ctl = measure.metric_value(m, "a11y.text_size_control")
     if ctl is None:
         return None, [], _section_reason(m, "a11y")
