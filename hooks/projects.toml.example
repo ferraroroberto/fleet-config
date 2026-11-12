@@ -26,6 +26,9 @@
 #     port PID and relaunch tray_cmd". Tray-owned apps need it: an idempotent
 #     tray.bat no-ops while the tray lives, while the one-liner below spawns a
 #     fresh uvicorn the tray adopts and never touches the :8446 session-host.
+#     A repo with no session-host may instead name its own `tray.bat --restart`,
+#     which leaves the webapp a child of the new tray. The acceptance run reads
+#     each recipe against its checkout (module, class, call signature, script).
 #
 #   telegram_chat / telegram_chat_attention / telegram_chat_log = "-100..."
 #     Where pings go. A ping is "attention" (come look: blocked, awaiting
@@ -253,7 +256,7 @@ webapp_port         = 8453
 browser_scheme      = "https"
 gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
-restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start()"'
+restart_cmd         = '& .\tray.bat --restart'
 api_version_path    = "/api/version"
 
 [task-os]
