@@ -64,7 +64,7 @@ from .drift import (
 )
 from .evals import digest_lines as eval_digest_lines
 from .evals import fold as fold_evals
-from .evals import latest_two
+from .evals import latest_two, r44_verdict, skill_cases
 from .inventory import (
     Entry,
     inventory,
@@ -142,6 +142,7 @@ __all__ = [
     "partition_run",
     "plan_scan",
     "provisional_rules",
+    "r44_verdict",
     "references",
     "render_digest",
     "render_drift_item",
@@ -151,6 +152,7 @@ __all__ = [
     "rules_rubric",
     "sections",
     "sha12",
+    "skill_cases",
     "source_due",
     "suggestions_comment",
     "verdict_cap",

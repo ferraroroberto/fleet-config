@@ -290,7 +290,7 @@ Fix shape: "Run `x.py` to …" or "See `x.py` for …"; one line naming any thir
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Provide utility scripts; Package dependencies; Avoid assuming tools are installed)
 
 ### R-44 Skill passes its evals on the tiers it runs on        tags: [anthropic] [file: skill] [tier: hard]
-Detect: eval — in the weekly eval job's newest aggregate, a case that passed in the previous aggregate fails now. On a scored tier it is a violation; on the advisory (smallest) tier a consider. A missing, unreadable or stale aggregate is not-checked, never a pass.
+Detect: eval — in the weekly eval job's newest aggregate, a case that passed in the previous aggregate fails now. On a scored tier it is a violation; on the advisory (smallest) tier a consider. A skill with no eval cases is a consider ("no evals for this skill"). A skill with cases but a missing, unreadable or stale aggregate is unmeasured, never a pass.
 Why: "Skills act as additions to models, so effectiveness depends on the underlying model. Test your Skill with all the models you plan to use it with." The page's checklist asks for "At least three evaluations created" and testing on each model tier.
 Fix shape: read the failing case's transcript, then tighten the step the model got wrong; for an advisory-tier-only failure, add the missing guidance without over-explaining for the larger tiers.
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Test with all models you plan to use; Build evaluations first; Testing)
