@@ -215,6 +215,60 @@ check(len({st for st in stamps}) == 1 and stamps[0][0] == "complete",
 check(dc.delivered({"scan": "posted", "guides": "unchanged", "update-issue": "none"}) is None,
       "the delivery check passes on the stamp the eval section cannot change")
 
+# ---- R-44 is decided by the fold-in (#2006): no cases -> consider, cases + unusable aggregate -> unmeasured ----
+
+r44_tmp = Path(tempfile.mkdtemp(prefix="r44-skills-"))
+try:
+    write(r44_tmp / "has" / "SKILL.md", "---\nname: has\n---\n")
+    write(r44_tmp / "has" / "evals" / "c1" / "prompt.md", "/has go\n")
+    write(r44_tmp / "bare" / "SKILL.md", "---\nname: bare\n---\n")
+    ent = [pa.Entry("r/has/SKILL.md", r44_tmp / "has" / "SKILL.md", "r", "skill"),
+           pa.Entry("r/bare/SKILL.md", r44_tmp / "bare" / "SKILL.md", "r", "skill"),
+           pa.Entry("r/CLAUDE.md", r44_tmp / "CLAUDE.md", "r", "claude-md")]
+    cases = pa.skill_cases(ent)
+finally:
+    shutil.rmtree(r44_tmp, ignore_errors=True)
+check(cases == {"r/has/SKILL.md": "cases", "r/bare/SKILL.md": "no-cases"},
+      f"skill_cases: a skill is `cases` only with evals/<case>/prompt.md; non-skill files are not in the map (got {cases})")
+
+
+def r44_run(evals, worker=None):
+    plan = ["PLAN=r/has/SKILL.md|action=scan|reason=new|sha=aaaaaaaaaaaa",
+            "PLAN=r/bare/SKILL.md|action=scan|reason=new|sha=bbbbbbbbbbbb"]
+    return dict(base_run, plan=plan, evals=evals,
+                judgments={"r/has/SKILL.md": list(worker or []), "r/bare/SKILL.md": list(worker or [])})
+
+
+fresh_evals = dict(pa.fold_evals(now_agg, prev_agg, dt.date(2026, 10, 5)), skills=cases)
+stale_evals = dict(pa.fold_evals(now_agg, prev_agg, dt.date(2026, 10, 20)), skills=cases)
+r44_note = lambda parts, key: [(f["verdict"], f["note"]) for f in parts["findings"] + parts["unmeasured_rules"]
+                               if f["path"] == key and f["rule"] == "R-44"]
+
+body_n, status_n = pa.render_digest(r44_run(fresh_evals), RULES)
+parts_n = pa.partition_run(r44_run(fresh_evals))
+check(r44_note(parts_n, "r/bare/SKILL.md") == [("consider", "no evals for this skill")] and not parts_n["unmeasured_rules"]
+      and status_n == "complete",
+      f"a skill with no eval cases gets an R-44 consider and the digest is complete (got {status_n}, {parts_n['unmeasured_rules']})")
+check(r44_note(parts_n, "r/has/SKILL.md") == [], "a skill with cases and a fresh aggregate gets no R-44 verdict from the fold-in")
+
+parts_s = pa.partition_run(r44_run(stale_evals))
+body_s, status_s = pa.render_digest(r44_run(stale_evals), RULES)
+check([(f["path"], f["verdict"]) for f in parts_s["unmeasured_rules"]] == [("r/has/SKILL.md", "unmeasured")]
+      and r44_note(parts_s, "r/bare/SKILL.md") == [("consider", "no evals for this skill")] and status_s == "partial",
+      f"a skill with cases but a stale aggregate stays unmeasured and partial; a no-cases skill is still a consider (got {status_s})")
+check("r/has/SKILL.md" not in parts_s["recorded"] and "r/bare/SKILL.md" in parts_s["recorded"],
+      "the unmeasured skill is rescanned next run; the no-cases skill is recorded")
+
+guess = [{"rule": "R-44", "verdict": "unmeasured", "line": None, "text": "", "note": "worker could not read evals"},
+         {"rule": "R-01", "verdict": "consider", "line": 3, "text": "x", "note": "kept"}]
+parts_w = pa.partition_run(r44_run(fresh_evals, guess))
+check(r44_note(parts_w, "r/bare/SKILL.md") == [("consider", "no evals for this skill")]
+      and [f["rule"] for f in parts_w["findings"] if f["path"] == "r/has/SKILL.md"] == ["R-01"]
+      and not parts_w["unmeasured_rules"],
+      "a worker's own R-44 answer is replaced by the fold-in's; its other findings are kept")
+check(pa.partition_run(r44_run(None, guess))["unmeasured_rules"] != [],
+      "a run without the fold-in leaves the workers' verdicts untouched")
+
 bat = (SKILL / "evals" / "run-weekly.bat").read_text(encoding="utf-8")
 bat_cmds = [l.strip() for l in bat.splitlines() if l.strip() and not l.strip().upper().startswith(("REM", "@ECHO"))]
 check(bat_cmds[0] == r"cd /d E:\automation\fleet-config"

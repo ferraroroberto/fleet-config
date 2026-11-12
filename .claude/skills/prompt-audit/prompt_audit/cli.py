@@ -54,7 +54,7 @@ from .drift import (
     merge_drift,
 )
 from .evals import fold as fold_evals
-from .evals import latest_two
+from .evals import latest_two, skill_cases
 from .inventory import Entry, _read, inventory, kind_of, sections
 from .leads import LeadsError, load_leads, suggestions_comment
 from .leads import mark as mark_lead
@@ -89,8 +89,7 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
     repos = _repos(args)
     master, lite = _master_and_lite(repos)
     parts = partition_run(run)
-    all_findings = [dict(f, path=k) for k in parts["judged"] for f in (run.get("judgments") or {})[k]
-                    if f.get("verdict") in ("violation", "consider")]
+    all_findings = [dict(f) for f in parts["findings"]]
     # R-44: eval regressions the fold-in found, filed like any judged finding.
     all_findings += [dict(f) for f in (run.get("evals") or {}).get("findings", [])
                      if f.get("verdict") in ("violation", "consider")]
@@ -246,11 +245,12 @@ def _post_update(number: Optional[int], body: str, key: str) -> int:
     return 0
 
 
-def cmd_evals(args: argparse.Namespace) -> int:
-    """The newest skill-eval aggregate folded against the one before it, as JSON for `run.json`."""
+def cmd_evals(args: argparse.Namespace, cfg: dict) -> int:
+    """The newest skill-eval aggregate folded against the one before it, plus which skills carry eval cases, as JSON for `run.json`."""
     newest, previous = latest_two(Path(args.dir) if args.dir else None)
     today = dt.date.fromisoformat(args.date) if args.date else None
     folded = fold_evals(newest, previous, today)
+    folded["skills"] = skill_cases(_entries(args, cfg))
     print(json.dumps(folded, indent=2))
     print(f"EVALS=status={folded['status']}|findings={len(folded['findings'])}", file=sys.stderr)
     return 0
@@ -586,7 +586,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "leads":
         return cmd_leads(args, cfg)
     if args.cmd == "evals":
-        return cmd_evals(args)
+        return cmd_evals(args, cfg)
     if args.cmd == "inventory":
         return cmd_inventory(args, cfg)
     if args.cmd == "lint":

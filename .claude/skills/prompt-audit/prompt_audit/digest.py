@@ -10,6 +10,7 @@ from typing import Dict, Iterable, Set, Tuple
 from .common import COMMENT_CHAR_CAP, DIGEST_FINDINGS_CAP, STAMP_PREFIX, VERDICTS, clean
 from .coverage import digest_line
 from .dedup import dedup, norm_line
+from .evals import EVAL_RULE, r44_verdict
 from .evals import digest_lines as eval_digest_lines
 from .leads import digest_lines as lead_digest_lines
 
@@ -48,6 +49,21 @@ def provisional_rules(rules: Dict[str, dict], sources: Dict[str, dict], verdict_
     return {rid for rid, r in rules.items() if pages & {_page(u) for u in r.get("sources", [])}}
 
 
+def _with_r44(judgments: dict, evals: object) -> dict:
+    """`judgments` with R-44 owned by the eval fold-in: a worker's R-44 entry on a skill file is replaced by the
+    deterministic verdict (a worker cannot read the aggregate, so any answer it gives is a guess)."""
+    skills = evals.get("skills") if isinstance(evals, dict) else None
+    if not isinstance(skills, dict):
+        return judgments
+    out = dict(judgments)
+    for key, found in judgments.items():
+        if found is None or key not in skills:
+            continue
+        verdict = r44_verdict(evals, key)
+        out[key] = [f for f in found if f.get("rule") != EVAL_RULE] + ([dict(verdict)] if verdict else [])
+    return out
+
+
 def partition_run(run: dict) -> dict:
     """Split a run into what was judged, skipped and not established.
 
@@ -63,7 +79,7 @@ def partition_run(run: dict) -> dict:
     sha_of = {p["PLAN"]: p.get("sha", "") for p in plan}
     scan = [p["PLAN"] for p in plan if p.get("action") == "scan"]
     unreadable = [p["PLAN"] for p in plan if p.get("action") == "unmeasured"]
-    judgments = run.get("judgments") or {}
+    judgments = _with_r44(run.get("judgments") or {}, run.get("evals"))
     scan_ran = bool(run.get("scan_ran"))
     judged = [k for k in scan if judgments.get(k) is not None] if scan_ran else []
     unmeasured_rules = [dict(f, path=k) for k in judged for f in judgments[k] if f.get("verdict") == "unmeasured"]

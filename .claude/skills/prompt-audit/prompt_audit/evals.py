@@ -9,9 +9,11 @@ turns a case that passed last time and fails now into an R-44 finding:
 `violation` on a row the job marked `scored`, `consider` on an `advisory` one;
 an `extra` model is reported but never a finding. Which tier is which is the
 job's decision, recorded per row, so no model name lives here. A missing,
-unreadable or stale aggregate is `not-checked`, never a pass. A red eval job
-changes nothing about this run's own delivery: the eval section is reported,
-never gated on.
+unreadable or stale aggregate is `not-checked`, never a pass. R-44 is
+decided here, not by the judging workers: a skill with no eval cases gets a
+definite `consider` (a stable fact about the skill), a skill with cases but no
+usable aggregate gets `unmeasured` (a gap in this run). The eval job's own
+success or failure is reported in the eval section and never gates delivery.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import datetime as dt
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from .common import HOME_REPO
 from .state import state_path
@@ -28,6 +30,7 @@ from .state import state_path
 RUN_NAME = re.compile(r"^\d{8}T\d{4,6}\.json$")
 STALE_DAYS = 8          # the job runs weekly; one missed week reads as not-checked
 EVAL_RULE = "R-44"
+NO_CASES_NOTE = "no evals for this skill"
 
 
 def evals_dir() -> Path:
@@ -102,6 +105,33 @@ def fold(newest: Optional[dict], previous: Optional[dict], today: Optional[dt.da
                          "verdict": "violation" if w == "scored" else "consider", "line": None, "text": "",
                          "note": f"eval case {case} passed last run and fails now on {tier}"})
     return {"status": "checked", "started": newest["started"], "scores": scores, "findings": findings}
+
+
+def has_eval_cases(skill_md: Path) -> bool:
+    """Whether the skill beside `skill_md` carries at least one `evals/<case>/prompt.md` (the eval job's opt-in)."""
+    return any(c.is_file() for c in (skill_md.parent / "evals").glob("*/prompt.md"))
+
+
+def skill_cases(entries: Iterable) -> Dict[str, str]:
+    """Inventory key -> `cases` | `no-cases` for every skill entry; non-skill files are not in the map."""
+    return {e.key: "cases" if has_eval_cases(e.path) else "no-cases" for e in entries if e.kind == "skill"}
+
+
+def r44_verdict(evals: object, key: str) -> Optional[dict]:
+    """The deterministic R-44 verdict for skill file `key`, or None when R-44 raises nothing for it here.
+
+    `evals` is the fold-in object carried in `run.json` with its `skills` map. No map (a run that skipped the
+    fold-in) or a key outside it -> None: R-44 is not this module's to decide for that file. Regressions on a
+    skill with cases are findings of `fold`, not of this function."""
+    skills = evals.get("skills") if isinstance(evals, dict) else None
+    if not isinstance(skills, dict) or key not in skills:
+        return None
+    if skills[key] == "no-cases":
+        return {"rule": EVAL_RULE, "verdict": "consider", "line": None, "text": "", "note": NO_CASES_NOTE}
+    if evals.get("status") != "checked":
+        return {"rule": EVAL_RULE, "verdict": "unmeasured", "line": None, "text": "",
+                "note": f"eval aggregate not usable: {evals.get('reason', 'not checked')}"}
+    return None
 
 
 def digest_lines(evals: Optional[dict]) -> List[str]:
