@@ -83,7 +83,6 @@ def reclassify(
     item: dict,
     issue: dict,
     pr_files: Callable[[int], List[Tuple[str, str]]],
-    pr_body: Callable[[int], str],
 ) -> Verdict:
     """Keep or clear one `validate-after` item. `issue` is `github.fetch_issue`'s dict."""
     parts = _split(item.get("reason") or "")
@@ -98,8 +97,7 @@ def reclassify(
             return Verdict(UNKNOWN, kept, [], "no PR link to re-read the diff")
     else:
         # No proof is inferred from history, so a recorded device reason never drops here.
-        decision = rule.decide(issue["labels"], issue["title"], issue["body"], pr_files(pr),
-                               rule.VERIFIED_NA, rule.ux_proven(pr_body(pr)))
+        decision = rule.decide(issue["labels"], issue["title"], issue["body"], pr_files(pr), rule.VERIFIED_NA)
         fired = list(decision.reasons)
     now = kept + fired
     still = {classify_recorded(r).split(":", 1)[-1] for r in fired}

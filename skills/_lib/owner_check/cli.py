@@ -102,7 +102,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
         print(f"OWNER_CHECK=refused APPLIED=no reason=adds a new page or view ({surface}) with no visual proof; "
               "a browser proves it, not the owner: run it and put VISUAL_PROOF=fresh in the PR body, then re-run")
         return EXIT_REFUSED
-    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified, proven,
+    decision = rule.decide(issue["labels"], issue["title"], issue["body"], files, args.verified,
                            getattr(args, "gaps", ()))
     latest = block.latest_block(issue["comments"]) or {}
     label = block.LABELS[block.VALIDATE_AFTER]
@@ -274,8 +274,7 @@ def _reclassify_one(item: dict, apply: bool) -> str:
     issue = github.fetch_issue(repo, number)
     if block.LABELS[block.BEFORE_START] in issue["labels"]:
         return f"RECLASS keep {item['ref']} reason=also needs-owner; left alone"
-    verdict = reclassify.reclassify(item, issue, lambda pr: github.pr_files(repo, pr),
-                                    lambda pr: github.pr_body(repo, pr))
+    verdict = reclassify.reclassify(item, issue, lambda pr: github.pr_files(repo, pr))
     if verdict.state == reclassify.UNKNOWN:
         return f"RECLASS unknown {item['ref']} reason={verdict.why}"
     if verdict.state == reclassify.KEEP:

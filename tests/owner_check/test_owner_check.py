@@ -191,8 +191,8 @@ def _iss(title="Lock out after six wrong passwords", labels=("enhancement",), bo
     return {"title": title, "labels": list(labels), "body": body}
 
 
-def _re(item, issue, files=(), body=""):
-    return reclassify.reclassify(item, issue, lambda pr: list(files), lambda pr: body)
+def _re(item, issue, files=()):
+    return reclassify.reclassify(item, issue, lambda pr: list(files))
 
 
 v = _re(_item(backfill.BACKFILL_REASON), _iss())
@@ -206,9 +206,6 @@ v = _re(_item("adds a new page or view no UX proof covered (content/pages/privac
         [("added", "content/pages/privacy.html")])
 check(v.state == reclassify.CLEAR and v.dropped == ["surface"] and "browser-provable" in reclassify.DROPPED_WORDS["surface"],
       f"a new page with no proof clears: a browser proves it, not the owner, got {v}")
-v = _re(_item("adds a new user-facing surface (content/pages/privacy.html)"), _iss(),
-        [("added", "content/pages/privacy.html")], "VISUAL_PROOF=fresh")
-check(v.state == reclassify.CLEAR and v.dropped == ["surface"], f"the same page with a fresh proof clears, got {v}")
 v = _re(_item("the lane could not verify the work in its own session"), _iss())
 check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic could-not-verify clears, got {v}")
 v = _re(_item("the lane did not state that it verified the work in its own session"), _iss())

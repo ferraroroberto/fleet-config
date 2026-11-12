@@ -144,16 +144,14 @@ def decide(
     body: str,
     files: Optional[Sequence[Tuple[str, str]]] = None,
     verification: str = VERIFIED_NA,
-    ux_proven: bool = False,
     gaps: Sequence[Tuple[str, str]] = (),
 ) -> Decision:
     """Required or none, with every reason that fired.
 
     `files` are `(status, path)` pairs with GitHub's PR-file statuses
     (`added`, `modified`, `removed`, `renamed`); None means no diff is part of
-    this decision (an issue draft, a back-fill). `ux_proven` is accepted for callers
-    that also ask `unproven_surface`; a new page or view never adds an owner reason.
-    `gaps` are `(class, criterion)` pairs from `parse_gap`; `VERIFIED_NO` needs at
+    this decision (an issue draft, a back-fill). A new page or view never adds an
+    owner reason here; `unproven_surface` handles it. `gaps` are `(class, criterion)` pairs from `parse_gap`; `VERIFIED_NO` needs at
     least one, since "could not verify" alone names nothing the owner can do.
     """
     if verification not in VERIFICATION_STATES:
