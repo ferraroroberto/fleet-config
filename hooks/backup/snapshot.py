@@ -122,6 +122,7 @@ def snapshot_sqlite(src: Path, dst: Path,
         with contextlib.suppress(OSError):
             dst.unlink()
         try:
+            # must-use-exempt: the read-write retry URI carries no mode=ro, which connect_read_only refuses; the source is only read
             # runtime-write-exempt: the source database is only read; the copy's destination is the guarded connect_sqlite below
             source = sqlite3.connect(uri, uri=True, timeout=busy)
         except sqlite3.Error as exc:

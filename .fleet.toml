@@ -110,12 +110,17 @@ git_wrappers = ["hooks/_lib.py", "skills/_lib/git_run.py"]
 
 # One atomic-write helper per import world: hooks/_lib.py for hooks, its mirror
 # skills/_lib/fleet_core/hooks_state.py for skills, config_edit.py for the root
-# CLI. A raw os.replace skips the temp sweep and the cleanup on failure. No
-# sqlite3.connect entry: its 4 calls take 3 shapes and share no helper.
+# CLI. A raw os.replace skips the temp sweep and the cleanup on failure. A raw
+# sqlite3.connect skips the code-folder refusal the runtime_files helpers apply.
 [[conventions_ratchet.must_use]]
 call   = "os.replace"
 helper = ["hooks/_lib.py", "skills/_lib/fleet_core/hooks_state.py", "config_edit.py"]
 why    = "atomic writes go through atomic_write_text (hooks/_lib.py, skills/_lib/fleet_core/hooks_state.py) or config_edit.atomic_write"
+
+[[conventions_ratchet.must_use]]
+call   = "sqlite3.connect"
+helper = ["hooks/runtime_files/__init__.py", "skills/_lib/fleet_core/runtime_files.py"]
+why    = "database connections go through runtime_files.connect_sqlite or connect_read_only, which refuse a path under a code folder"
 
 # The scheduled-run outcome: every fact a drained run leaves behind is ordered into
 # one RunState by decide(); the exit code, verdict line, retry gate and delivery
