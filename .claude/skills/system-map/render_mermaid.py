@@ -40,6 +40,9 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+from fleet_core.check_or_write import check_or_write  # noqa: E402
+
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"
 MMD_OUT = REPO_ROOT / "architecture" / "system-map.mmd"
 
@@ -148,30 +151,13 @@ def main(argv: list[str] | None = None) -> int:
     import render_contracts
     import render_guide
 
-    rendered = regenerate()
-    current = MMD_OUT.read_text(encoding="utf-8") if MMD_OUT.exists() else None
-    mmd_fresh = rendered == current
-
-    if args.check:
-        ok = mmd_fresh
-        stream = sys.stdout if ok else sys.stderr
-        print(
-            "render_mermaid: up to date." if ok else
-            "render_mermaid: STALE — run "
-            "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py` and commit.",
-            file=stream,
-        )
-        contracts_rc = render_contracts.main(["--check"])
-        guide_rc = render_guide.main(["--check"])
-        return contracts_rc or guide_rc or (0 if ok else 1)
-
-    if not mmd_fresh:
-        MMD_OUT.write_text(rendered, encoding="utf-8")
-        print(f"render_mermaid: regenerated {MMD_OUT.name}.")
-    else:
-        print(f"render_mermaid: {MMD_OUT.name} already up to date.")
-
-    return render_contracts.main([]) or render_guide.main([])
+    mmd_rc = check_or_write(MMD_OUT, regenerate(), "render_mermaid",
+                            Path(__file__),
+                            args.check)
+    sub_args = ["--check"] if args.check else []
+    contracts_rc = render_contracts.main(sub_args)
+    guide_rc = render_guide.main(sub_args)
+    return contracts_rc or guide_rc or mmd_rc
 
 
 if __name__ == "__main__":

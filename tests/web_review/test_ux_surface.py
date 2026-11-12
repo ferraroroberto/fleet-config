@@ -306,5 +306,44 @@ _app = _applies_out(BLOCK, 'shape = "webapp-tray"\n')
 check("SPEC_APPLIES=yes" in _app and "SPEC_KIND=web-app" in _app,
       f"applies: a web app prints SPEC_APPLIES=yes and SPEC_KIND=web-app -- {_app!r}")
 
+# ---- trigger(): the one decision cmd_check, proof and merge_gate share ----
+
+
+def _trigger(block_text, diff_files, **kw):
+    repo = Path(tempfile.mkdtemp(prefix="test_ux_trigger_"))
+    if block_text is not None:
+        (repo / "CLAUDE.md").write_text(block_text, encoding="utf-8")
+    orig_changed, orig_base = ux.git_run.changed_files, ux._default_base
+    ux.git_run.changed_files = lambda *a, **k: diff_files
+    ux._default_base = lambda *_a, **_k: "origin/main"
+    try:
+        return ux.trigger(repo, **kw)
+    finally:
+        ux.git_run.changed_files, ux._default_base = orig_changed, orig_base
+        import shutil
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+_t = _trigger(BLOCK, ["app/webapp/static/a.css", "README.md"])
+check(_t.applies and _t.touched == "yes" and _t.matched == ["app/webapp/static/a.css"] and _t.key_views,
+      f"trigger: a touched surface is yes with its matches and key views -- {_t!r}")
+_t = _trigger(BLOCK, ["README.md"])
+check(_t.applies and _t.touched == "no" and _t.matched == [], f"trigger: an untouched surface is no -- {_t!r}")
+_t = _trigger(BLOCK, None)
+check(_t.applies and _t.touched == "unknown", f"trigger: a failed diff is unknown, never no -- {_t!r}")
+_t = _trigger(BLOCK, None, changed=["app/webapp/static/a.css"])
+check(_t.touched == "yes", f"trigger: a caller-supplied file list is matched without a diff -- {_t!r}")
+_t = _trigger(BLOCK, ["app/webapp/static/a.css"], diff=False)
+check(_t.applies and _t.touched == "unknown", f"trigger: diff=False answers applies and leaves touched unknown -- {_t!r}")
+_t = _trigger(None, ["app/webapp/static/a.css"])
+check(not _t.applies and _t.touched == "no" and _t.key_views == [], f"trigger: no CLAUDE.md means the spec does not apply -- {_t!r}")
+
+# The private block loader and base resolver stay private: consumers go through trigger().
+_LIB = Path(__file__).resolve().parents[2] / "skills" / "_lib"
+_leaks = [str(p.relative_to(_LIB)) for p in _LIB.rglob("*.py")
+          if p.name != "ux_surface.py" and ("ux_surface._load_block" in p.read_text(encoding="utf-8")
+                                            or "ux_surface._default_base" in p.read_text(encoding="utf-8"))]
+check(_leaks == [], f"nothing outside ux_surface reaches its private block loader or base resolver -- {_leaks}")
+
 
 _h.report_and_exit("ux_surface")

@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core.check_or_write import check_or_write  # noqa: E402
 from gh_issue_fetch import OWNER  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -74,22 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="exit 1 if CONTRACTS.md is stale")
     args = ap.parse_args(argv)
 
-    rendered = regenerate()
-    current = CONTRACTS_OUT.read_text(encoding="utf-8") if CONTRACTS_OUT.exists() else None
-    if args.check:
-        if rendered != current:
-            print("render_contracts: STALE — run "
-                  "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_contracts.py` "
-                  "and commit.", file=sys.stderr)
-            return 1
-        print("render_contracts: up to date.")
-        return 0
-    if rendered != current:
-        CONTRACTS_OUT.write_text(rendered, encoding="utf-8", newline="\n")
-        print(f"render_contracts: regenerated {CONTRACTS_OUT.name}.")
-    else:
-        print(f"render_contracts: {CONTRACTS_OUT.name} already up to date.")
-    return 0
+    return check_or_write(CONTRACTS_OUT, regenerate(), "render_contracts",
+                          Path(__file__),
+                          args.check, newline="\n")
 
 
 if __name__ == "__main__":

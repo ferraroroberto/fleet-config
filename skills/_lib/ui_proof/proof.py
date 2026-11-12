@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import gate_evidence
-import git_run
 import ux_surface
 from fleet_core import fleet_toml, hooks_state
 
@@ -218,22 +217,16 @@ def _judge_page(verdict: Verdict, folder: Path) -> None:
 def _evaluate_manifest(repo: Path, base: Optional[str], rec: Optional[dict],
                        changed: Optional[List[str]] = None) -> Verdict:
     """The layout-lint manifest's verdict for the branch diff, or for `changed` when given."""
-    block = ux_surface._load_block(repo)
-    if not (block and block["spec_applies"]):
+    found = ux_surface.trigger(repo, base, changed)
+    if not found.applies:
         return Verdict("n/a", False, "no", detail="no design-gated UX surface (SPEC_APPLIES=no)")
     enforced = layout_lint_vendored(repo)
-    if changed is None:
-        changed = git_run.changed_files(repo, base or ux_surface._default_base(repo))
-    if changed is None:
-        touched, matched = "unknown", []
-    else:
-        matched = ux_surface.ui_paths(changed, block["paths"])  # type: ignore[arg-type]
-        touched = "yes" if matched else "no"
+    touched, matched = found.touched, found.matched
     if touched == "no":
         return Verdict("n/a", enforced, "no", detail="no UX surface touched")
     state, need, detail = _judge_record(repo, rec)
     if touched == "unknown":
-        views = ",".join(block["key_views"]) or "(none declared)"  # type: ignore[arg-type]
+        views = ",".join(found.key_views) or "(none declared)"
         note = f"diff could not be taken (TOUCHED=unknown), so proof is required for every key view: {views}"
         if state == "fresh":
             detail = f"{note}; {detail}"

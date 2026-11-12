@@ -53,6 +53,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import git_run  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core.check_or_write import check_or_write  # noqa: E402
 from fleet_core.frontmatter import frontmatter_field  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -464,21 +465,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"build_data: {exc}", file=sys.stderr)
         return 1
 
-    current = DATA_JS.read_text(encoding="utf-8") if DATA_JS.is_file() else ""
-    if args.check:
-        if rendered != current:
-            print("build_data: config.data.js is STALE — run "
-                  "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/build_data.py` and commit.", file=sys.stderr)
-            return 1
-        print("build_data: config.data.js is up to date.")
-        return 0
-
-    if rendered != current:
-        DATA_JS.write_text(rendered, encoding="utf-8")
-        print(f"build_data: regenerated {DATA_JS.name}.")
-    else:
-        print(f"build_data: {DATA_JS.name} already up to date.")
-    return 0
+    return check_or_write(DATA_JS, rendered, "build_data",
+                          Path(__file__),
+                          args.check)
 
 
 if __name__ == "__main__":

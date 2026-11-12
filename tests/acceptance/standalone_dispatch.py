@@ -529,6 +529,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "answer, plus a real reproduction of the 2026-08-01 condition proving "
      "`git status` still exits 0 and reads clean while every write is "
      "frozen -- is testable on its own (fleet-config#667)"),
+    ("check_or_write", "repo/test_check_or_write.py",
+     "the shared check-or-regenerate tail of the generated-file renderers -- stale to stderr, exit 1 under "
+     "`--check`, otherwise rewrite -- is testable on its own, and a structural scan fails on a second "
+     "copy of the STALE tail (fleet-config#2000)"),
     ("scoped_discovery", "repo/test_scoped_discovery.py",
      "real scoped links, collisions, worktree sources, and uninstall ownership (fleet-config#748)"),
     ("discovery_probe", "repo/test_discovery_probe.py",
