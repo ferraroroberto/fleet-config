@@ -193,14 +193,19 @@ def stale_report(counts: Mapping[str, Optional[int]]) -> List[str]:
     return lines
 
 
+def in_scope_counts(count: Callable[[Path], Optional[int]] = count_behind_fetched) -> Dict[str, Optional[int]]:
+    """Behind counts for the in-scope fleet (ignored repos dropped); raises OSError/ValueError on an unreadable registry."""
+    tables = fleet_repo_scan.fleet_repo_tables()
+    ignored = fleet_repo_scan.ignored_repos()
+    return behind_counts(tables, sorted(n for n in tables if n not in ignored), count)
+
+
 def stale_lines(count: Callable[[Path], Optional[int]] = count_behind_fetched) -> List[str]:
     """`stale_report` over the in-scope fleet; an unreadable registry is `unknown`, never `none`."""
     try:
-        tables = fleet_repo_scan.fleet_repo_tables()
-        ignored = fleet_repo_scan.ignored_repos()
+        return stale_report(in_scope_counts(count))
     except (OSError, ValueError) as exc:
         return [f"STALE_PRIMARIES=unknown (registry unreadable: {exc})"]
-    return stale_report(behind_counts(tables, sorted(n for n in tables if n not in ignored), count))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -214,18 +219,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub.add_parser("stale")
     args = ap.parse_args(argv)
 
+    if args.cmd == "stale":
+        print("\n".join(stale_lines()))
+        return 0
     toml = fleet_repo_scan.load_projects_toml()
     tables = fleet_repo_scan.fleet_repo_tables()
-    if args.cmd == "stale":
-        print("\n".join(stale_report(behind_counts(tables, sorted(tables), count_behind_fetched))))
-        return 0
     names = list(args.repos)
     unknown = [n for n in names if n not in tables]
     if unknown:
         print(f"REFUSED=unknown-repo {', '.join(unknown)} (not in hooks/projects.toml)")
         return 2
     if args.all_behind:
-        counts = behind_counts(tables, sorted(tables), count_behind_fetched)
+        counts = in_scope_counts()
         names += [n for n, c in counts.items() if c != 0 and n not in names]
     never_kill = never_kill_ports(toml)
     outcomes = []

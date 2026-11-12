@@ -169,4 +169,30 @@ counts = pr.behind_counts({"has": {"cwd_prefix": str(root / "has")}, "gone": {"c
                           ["has", "gone"], lambda _r: 2)
 check(counts == {"has": 2}, f"behind_counts: a repo with no checkout is skipped, not reported level ({counts})")
 
+# ---- one scope and one unknown path for the stale line and --all-behind ----
+import contextlib  # noqa: E402
+import io  # noqa: E402
+from unittest import mock  # noqa: E402
+
+_scope = throwaway_dir("primaries-scope-")
+for _n in ("live", "asleep"):
+    (_scope / _n / ".git").mkdir(parents=True)
+_tables = {n: {"cwd_prefix": str(_scope / n)} for n in ("live", "asleep")}
+with mock.patch.object(pr.fleet_repo_scan, "fleet_repo_tables", return_value=_tables), \
+        mock.patch.object(pr.fleet_repo_scan, "ignored_repos", return_value=frozenset({"asleep"})):
+    check(pr.in_scope_counts(lambda _r: 4) == {"live": 4}, "in_scope_counts: an ignored repo is dropped from the scope")
+    check(pr.stale_lines(lambda _r: 0) == ["STALE_PRIMARIES=none (checked 1)"], "stale_lines: the checked count excludes ignored repos")
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf), mock.patch.object(pr.wcl, "count_behind", lambda *_a: 1), \
+            mock.patch.object(pr.wcl, "main_ref", lambda _r: "origin/main"):
+        pr.main(["stale"])
+    check(_buf.getvalue().splitlines() == pr.stale_lines(lambda _r: 1) and "asleep" not in _buf.getvalue(),
+          f"the `stale` CLI prints exactly stale_lines() ({_buf.getvalue()!r})")
+with mock.patch.object(pr.fleet_repo_scan, "fleet_repo_tables", side_effect=OSError("boom")):
+    check(pr.stale_lines()[0].startswith("STALE_PRIMARIES=unknown"), "stale_lines: an unreadable registry is unknown")
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        _rc = pr.main(["stale"])
+    check(_rc == 0 and _buf.getvalue().startswith("STALE_PRIMARIES=unknown"), f"the `stale` CLI prints unknown instead of raising ({_buf.getvalue()!r})")
+
 _h.report_and_exit("test_vendored_primaries")

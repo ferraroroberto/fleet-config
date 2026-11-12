@@ -70,6 +70,7 @@ from fleet_core import (
     fleet_repo_scan,  # noqa: E402
     fleet_toml,  # noqa: E402
 )
+from fleet_core.check_or_write import check_or_write  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"
@@ -361,21 +362,10 @@ def main(argv: list[str] | None = None) -> int:
     for reason in refused:
         print(f"build_data: REFUSED {reason} Kept its residual fallback card.", file=sys.stderr)
 
-    current = DATA_JS.read_text(encoding="utf-8")
-    if args.check:
-        if rendered != current:
-            print("build_data: fleet.data.js is STALE — run "
-                  "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` and commit.", file=sys.stderr)
-            return 1
-        print("build_data: fleet.data.js is up to date.")
-        return 1 if refused else 0
-
-    if rendered != current:
-        DATA_JS.write_text(rendered, encoding="utf-8")
-        print(f"build_data: regenerated {DATA_JS.name}.")
-    else:
-        print(f"build_data: {DATA_JS.name} already up to date.")
-    return 1 if refused else 0
+    rc = check_or_write(DATA_JS, rendered, "build_data",
+                        Path(__file__),
+                        args.check, current=DATA_JS.read_text(encoding="utf-8"))
+    return rc or (1 if refused else 0)
 
 
 if __name__ == "__main__":

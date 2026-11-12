@@ -20,6 +20,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from fleet_core.check_or_write import check_or_write  # noqa: E402
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_mermaid import DATA_JS, SECTIONS, load_data  # noqa: E402
 
@@ -90,22 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="exit 1 if the repo list is stale")
     args = ap.parse_args(argv)
 
-    current = GUIDE.read_text(encoding="utf-8")
-    rendered = regenerate()
-    if args.check:
-        if rendered != current:
-            print("render_guide: STALE — run "
-                  "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_guide.py` "
-                  "and commit.", file=sys.stderr)
-            return 1
-        print("render_guide: up to date.")
-        return 0
-    if rendered != current:
-        GUIDE.write_text(rendered, encoding="utf-8", newline="\n")
-        print(f"render_guide: regenerated the repo list in {GUIDE.name}.")
-    else:
-        print(f"render_guide: {GUIDE.name} already up to date.")
-    return 0
+    return check_or_write(GUIDE, regenerate(), "render_guide",
+                          Path(__file__),
+                          args.check, current=GUIDE.read_text(encoding="utf-8"), newline="\n")
 
 
 if __name__ == "__main__":

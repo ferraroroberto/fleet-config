@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -329,30 +330,45 @@ def cmd_applies(repo: Path) -> int:
     return 0
 
 
-def cmd_check(repo: Path, base: Optional[str]) -> int:
+@dataclass(frozen=True)
+class Trigger:
+    """The UX-surface decision for one repo: `touched` is `yes`, `no` or `unknown`; `key_views` is empty unless the spec applies."""
+
+    applies: bool
+    touched: str
+    matched: List[str]
+    key_views: List[str]
+
+
+def trigger(repo: Path, base: Optional[str] = None, changed: Optional[List[str]] = None,
+            diff: bool = True) -> Trigger:
+    """Does the design spec apply to `repo`, and did the change touch its UX surface?
+
+    `changed` is the file list to match when the caller already has it (a PR's
+    file list); otherwise `<base>...HEAD` is diffed, `base` defaulting to the
+    repo's main branch. A diff that cannot be taken is `touched=unknown`, never
+    `no`. `diff=False` answers `applies` alone and leaves a spec-applying repo
+    at `unknown`, for a caller that has not yet picked what to diff.
+    """
     block = _load_block(repo)
-    applies = bool(block and block["spec_applies"])
-    print(f"SPEC_APPLIES={'yes' if applies else 'no'}")
-    print(f"SPEC_KIND={repo_spec_kind(repo)}")
-    if not applies:
-        print("TOUCHED=no")
-        print("MATCHED=")
-        print("KEY_VIEWS=")
-        return 0
-    base = base or _default_base(repo)
-    changed = git_run.changed_files(repo, base)
+    if not (block and block["spec_applies"]):
+        return Trigger(False, "no", [], [])
+    views = list(block["key_views"])  # type: ignore[arg-type]
+    if changed is None and diff:
+        changed = git_run.changed_files(repo, base or _default_base(repo))
     if changed is None:
-        # The diff itself failed. "The UX surface was not touched" is a claim
-        # this run has no evidence for, so it does not make it — the gate reads
-        # `unknown` as touched.
-        print("TOUCHED=unknown")
-        print("MATCHED=")
-        print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]
-        return 0
-    matched = ui_paths(changed, block["paths"])  # type: ignore[index]
-    print(f"TOUCHED={'yes' if matched else 'no'}")
-    print(f"MATCHED={','.join(matched)}")
-    print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]
+        return Trigger(True, "unknown", [], views)
+    matched = ui_paths(changed, block["paths"])  # type: ignore[arg-type]
+    return Trigger(True, "yes" if matched else "no", matched, views)
+
+
+def cmd_check(repo: Path, base: Optional[str]) -> int:
+    found = trigger(repo, base)
+    print(f"SPEC_APPLIES={'yes' if found.applies else 'no'}")
+    print(f"SPEC_KIND={repo_spec_kind(repo)}")
+    print(f"TOUCHED={found.touched}")
+    print(f"MATCHED={','.join(found.matched)}")
+    print(f"KEY_VIEWS={','.join(found.key_views)}")
     return 0
 
 

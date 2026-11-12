@@ -109,8 +109,7 @@ def run(cwd: Path, selector: Optional[str], slug: Optional[str],
     repo, slug, why = resolve_checkout(cwd, slug)
     if repo is None or slug is None:
         return _unknown(why)
-    block = ux_surface._load_block(repo)
-    if not (block and block["spec_applies"]):
+    if not ux_surface.trigger(repo, diff=False).applies:
         return 0, ["GATE=pass", "VISUAL_PROOF=n/a", f"REPO={slug}", "DETAIL=no design-gated UX surface"]
     if not selector:
         selector = git_run.run_git(["-C", str(repo), "branch", "--show-current"]).stdout.strip()
