@@ -73,6 +73,10 @@ enabled     = true
 baseline    = ".instruction-ratchet-baseline.json"
 skill_dirs  = ["skills", ".claude/skills"]
 extra_files = ["global-CLAUDE.md"]
+ci_expectations     = true
+agents_pointer      = true
+claude_md_max_lines = 120
+repeated_text_words = 12
 
 [doc_refs_ratchet]
 enabled  = true

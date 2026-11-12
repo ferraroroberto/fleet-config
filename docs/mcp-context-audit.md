@@ -56,7 +56,7 @@ End state: **zero account connectors enabled by default**, the journal running o
 
 ## Generalizable convention (→ project-scaffolding)
 
-> For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector. Reserve connectors for genuinely interactive, exploratory use, and keep the **default** session connector set minimal — every enabled connector is a fleet-wide, every-session context cost regardless of whether a given session uses it.
+Unattended automation runs on a thin script (SDK or REST), not a session-injected MCP connector. Connectors are for interactive, exploratory sessions, and the **default** set stays minimal: each enabled one adds context to every session, used or not. The rule's canonical wording is the "Prefer scripts over session-injected MCP connectors" section of `global-CLAUDE.md`.
 
 This mirrors the existing fleet rules ("don't duplicate hub functionality" / Slack-via-Python-helper) and is routed up to `project-scaffolding` so the whole fleet inherits it.
 

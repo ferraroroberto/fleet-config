@@ -175,7 +175,7 @@ Route downstream LLM access — Anthropic- or OpenAI-shape, subscription or open
 
 ### Prefer scripts over session-injected MCP connectors for automation
 
-For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused, and every enabled connector is a fleet-wide, every-session context cost. New automation → script via SDK/REST first; connectors only for genuinely interactive, exploratory, one-off use. Keep the default connector set minimal and toggle one on per session that needs it; a connector that becomes a recurring automation dependency is the signal to scriptify it and disable it by default (`docs/mcp-context-audit.md`).
+For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused, and every enabled connector is a fleet-wide, every-session context cost. New automation → script via SDK/REST first; connectors only for genuinely interactive, exploratory, one-off use. Keep the default connector set minimal and enable one only in a session that needs it; a connector that turns into a recurring automation dependency should be scriptified and disabled by default (`docs/mcp-context-audit.md`).
 
 ### Showing the owner a file (launcher sessions)
 
