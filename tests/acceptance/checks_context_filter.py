@@ -48,6 +48,7 @@ _SECTIONS = (
     hook_rewrite.cwd_reaches_wrapper_verbatim,
     wrapper_cli.survives_non_cp1252_output,
     wrapper_cli.bash_body_runs_non_login,
+    wrapper_cli.runs_without_a_stdin_handle,
     wrapper_cli.import_paths_defer_heavy_modules,
     hook_rewrite.mode_file_resolution,
     hook_rewrite.grok_payload_short_circuits,

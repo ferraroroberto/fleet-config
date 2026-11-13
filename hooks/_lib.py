@@ -690,7 +690,7 @@ def run_git(
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        creationflags=NO_WINDOW, env=git_env(),
+        creationflags=NO_WINDOW, env=git_env(), stdin=subprocess.DEVNULL,  # inherited stdin is invalid when detached
     )
 
 
