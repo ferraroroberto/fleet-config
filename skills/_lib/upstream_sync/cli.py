@@ -1,18 +1,28 @@
-"""`upstream_sync` command line: the deterministic half of `/upstream-sync`.
+"""`upstream_sync` command line: the deterministic half of `/upstream-sync` and `/downstream-sync`.
 
   init <url> [--branch B] [--dry-run]
                             add the fetch-only source remote, set the watermark to its head
                             (--dry-run: report the head, write nothing)
   status [--ref REF]        the [upstream] table in the working tree, or as committed on REF
   survey [--against REF]    fetch, then one ITEM line per source item after the watermark,
-                            `present=yes` when REF (default HEAD) already carries its patch
-  advance <sha> --outcome merged|skipped [--reason R]
-                            record one item; the watermark moves only over a contiguous run
+                            `present=yes` when REF (default HEAD) already carries its patch,
+                            `supersedes=<local sha>` when it answers an offered feature
+  advance <sha> --outcome merged|skipped [--reason R] [--supersedes LOCAL_SHA]
+                            record one item; the watermark moves only over a contiguous run;
+                            --supersedes retires the offer the item answered
+  compare [--against REF] [--since REF]
+                            fetch, then one LOCAL line per local commit the source lacks,
+                            `candidate=yes` for local work never synced, present or offered
+  offer <local-sha> --feature F [--source-issue N]
+                            record a local feature handed back to the source
+  lint-spec <file> [--allow-code] [--forbid WORD ...]
+                            refuse a hand-back spec missing a section or carrying code,
+                            private paths, hosts, emails, tokens or this repo's own name
 
 Every command takes `--repo PATH` (default `.`) and prints `KEY=value` lines. Exit 0 done,
 1 held (the watermark could not move onto the named item, or the table is absent on
-`status`), 2 refused call, 3 unknown (git or the table could not be read). Contract:
-`docs/skills/upstream-sync.md`.
+`status`), 2 refused call (a spec that may not leave included), 3 unknown (git or the table
+could not be read). Contract: `docs/skills/upstream-sync.md`.
 """
 from __future__ import annotations
 
@@ -27,7 +37,7 @@ if str(_LIB) not in sys.path:
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from git_run import run_git  # noqa: E402
 
-from upstream_sync import ledger, source  # noqa: E402
+from upstream_sync import downstream, ledger, source  # noqa: E402
 
 EXIT_OK, EXIT_HELD, EXIT_REFUSED, EXIT_UNKNOWN = 0, 1, 2, 3
 
@@ -98,20 +108,91 @@ def cmd_survey(repo: Path, against: str) -> int:
     items = source.survey(repo, state.synced_sha, state.branch, against)
     print(f"PENDING={len(items)}")
     skipped = state.skipped_shas()
+    answers = downstream.supersedes(repo, [item.sha for item in items], state.offered)
     for i, item in enumerate(items, 1):
         print(f"ITEM {i} sha={item.sha} pr={item.pr if item.pr is not None else '-'} "
-              f"merge={'yes' if item.merge else 'no'} present={'yes' if item.present else 'no'} "
-              f"skipped={'yes' if item.sha in skipped else 'no'} files={','.join(item.files) or '-'} "
-              f"subject={item.subject}")
+              f"merge={_yes(item.merge)} present={_yes(item.present)} "
+              f"skipped={_yes(item.sha in skipped)} files={','.join(item.files) or '-'} "
+              f"supersedes={answers.get(item.sha, '-')} subject={item.subject}")
+    _print_offers(state)
     return EXIT_OK
 
 
-def cmd_advance(repo: Path, sha: str, outcome: str, reason: Optional[str]) -> int:
+def _yes(flag: bool) -> str:
+    return "yes" if flag else "no"
+
+
+def _print_offers(state: ledger.UpstreamState) -> None:
+    for offer in state.offered:
+        issue = offer.source_issue if offer.source_issue is not None else "-"
+        print(f"OFFERED local_sha={offer.local_sha} source_issue={issue} feature={offer.feature}")
+
+
+def _fetched(repo: Path) -> Optional[ledger.UpstreamState]:
+    state = _load(repo)
+    if state:
+        source.ensure_remote(repo, state.url)
+        source.fetch(repo, state.branch)
+    return state
+
+
+def cmd_compare(repo: Path, against: str, since: Optional[str]) -> int:
+    state = _fetched(repo)
+    if not state:
+        return EXIT_REFUSED
+    _print_state(state)
+    items = downstream.compare(repo, state, against, since)
+    print(f"LOCAL_ITEMS={len(items)}")
+    print(f"CANDIDATES={sum(1 for item in items if item.candidate)}")
+    for i, item in enumerate(items, 1):
+        print(f"LOCAL {i} sha={item.sha} pr={item.pr if item.pr is not None else '-'} "
+              f"synced={_yes(item.synced)} present={_yes(item.present)} offered={_yes(item.offered)} "
+              f"candidate={_yes(item.candidate)} files={','.join(item.files) or '-'} subject={item.subject}")
+    _print_offers(state)
+    return EXIT_OK
+
+
+def cmd_offer(repo: Path, sha: str, feature: str, source_issue: Optional[int]) -> int:
+    if not feature.strip():
+        print("REFUSED=an offer needs --feature")
+        return EXIT_REFUSED
+    state = _fetched(repo)
+    if not state:
+        return EXIT_REFUSED
+    resolved = run_git(["-C", str(repo), "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"])
+    full = resolved.stdout.strip() if resolved.returncode == 0 else ""
+    item = next((i for i in downstream.compare(repo, state) if i.sha == full), None)
+    if item is None or not item.candidate:
+        why = ("is not local-only work" if item is None else "came in through a sync" if item.synced
+               else "is already in the source" if item.present else "is already offered")
+        print(f"REFUSED={sha} {why}")
+        return EXIT_REFUSED
+    state.offered.append(ledger.Offer(local_sha=full, feature=feature.strip(), source_issue=source_issue))
+    ledger.write_state(repo, state)
+    print(f"OFFERED={full} OFFERS={len(state.offered)}")
+    return EXIT_OK
+
+
+def cmd_lint_spec(repo: Path, path: Path, allow_code: bool, forbid: Sequence[str]) -> int:
+    state, _ = ledger.read_state(repo)
+    problems = downstream.lint_spec_file(repo, path, state, allow_code, forbid)
+    for problem in problems:
+        print(f"PROBLEM={problem}")
+    print(f"SPEC={'refused' if problems else 'ok'}")
+    return EXIT_REFUSED if problems else EXIT_OK
+
+
+def cmd_advance(repo: Path, sha: str, outcome: str, reason: Optional[str],
+                supersedes: Optional[str] = None) -> int:
     if outcome == "skipped" and not (reason and reason.strip()):
         print("REFUSED=a skip needs --reason")
         return EXIT_REFUSED
     state = _load(repo)
     if not state:
+        return EXIT_REFUSED
+    retired = [o for o in state.offered if supersedes and o.local_sha.startswith(supersedes)]
+    if supersedes and len(retired) != 1:
+        print(f"REFUSED={supersedes} does not name exactly one offered feature")
         return EXIT_REFUSED
     resolved = run_git(["-C", str(repo), "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"])
     full = resolved.stdout.strip()
@@ -121,6 +202,9 @@ def cmd_advance(repo: Path, sha: str, outcome: str, reason: Optional[str]) -> in
         return EXIT_REFUSED
     if outcome == "skipped" and full not in state.skipped_shas():
         state.skipped.append(ledger.Skip(sha=full, reason=reason.strip()))
+    if retired:
+        state.offered.remove(retired[0])
+        print(f"RETIRED={retired[0].local_sha}")
     merged = {full} if outcome == "merged" else set()
     new = ledger.advance_watermark(state.synced_sha, order, merged, state.skipped_shas())
     moved = new != state.synced_sha
@@ -139,9 +223,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(prog="upstream_sync", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "status", "survey", "advance"):
+    for name in ("init", "status", "survey", "advance", "compare", "offer", "lint-spec"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=".")
+        if name == "compare":
+            p.add_argument("--against", default="HEAD")
+            p.add_argument("--since")
+        if name == "offer":
+            p.add_argument("sha")
+            p.add_argument("--feature", required=True)
+            p.add_argument("--source-issue", type=int)
+        if name == "lint-spec":
+            p.add_argument("file")
+            p.add_argument("--allow-code", action="store_true")
+            p.add_argument("--forbid", nargs="*", default=[])
         if name == "init":
             p.add_argument("url")
             p.add_argument("--branch", default="main")
@@ -154,6 +249,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             p.add_argument("sha")
             p.add_argument("--outcome", required=True, choices=("merged", "skipped"))
             p.add_argument("--reason")
+            p.add_argument("--supersedes")
     args = parser.parse_args(list(argv) if argv is not None else None)
     repo = Path(args.repo).resolve()
     try:
@@ -163,8 +259,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return cmd_status(repo, args.ref)
         if args.cmd == "survey":
             return cmd_survey(repo, args.against)
-        return cmd_advance(repo, args.sha, args.outcome, args.reason)
-    except (source.SourceError, ValueError) as exc:
+        if args.cmd == "compare":
+            return cmd_compare(repo, args.against, args.since)
+        if args.cmd == "offer":
+            return cmd_offer(repo, args.sha, args.feature, args.source_issue)
+        if args.cmd == "lint-spec":
+            return cmd_lint_spec(repo, Path(args.file), args.allow_code, args.forbid)
+        return cmd_advance(repo, args.sha, args.outcome, args.reason, args.supersedes)
+    except (source.SourceError, ValueError, OSError) as exc:
         print(f"UNKNOWN={exc}")
         return EXIT_UNKNOWN
 

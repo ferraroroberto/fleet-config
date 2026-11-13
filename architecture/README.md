@@ -412,6 +412,11 @@ synced_sha = "<last source commit accounted for>"
 [[upstream.skipped]]
 sha = "<source commit>"
 reason = "<why it does not belong here>"
+
+[[upstream.offered]]
+local_sha = "<local commit that built the feature>"
+feature = "<the feature, in public-safe words>"
+source_issue = 7  # optional: the issue it was filed as on the source
 ```
 
 | Field | Meaning |
@@ -420,6 +425,7 @@ reason = "<why it does not belong here>"
 | `branch` | the source branch whose first-parent history is tracked (default `main`) |
 | `synced_sha` | the watermark: every source item up to here is merged locally or skipped |
 | `skipped` | source items deliberately left out, each with its reason; kept after the watermark passes them |
+| `offered` | local features `/downstream-sync` handed back as specs; optional, a table without it reads as none offered; an entry is retired when `/upstream-sync` ports the source's version over it |
 
 **Forward only, never over a gap.** The watermark moves only over a contiguous
 run of merged or skipped items, so an item that failed or was never worked
