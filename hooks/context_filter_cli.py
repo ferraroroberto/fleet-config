@@ -114,6 +114,9 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
     process = subprocess.Popen(
         args,
         cwd=cwd or None,
+        # DEVNULL: an inherited stdin is an invalid handle when the wrapper's parent is hidden and
+        # detached, and Popen then raises WinError 6 before the command runs.
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
