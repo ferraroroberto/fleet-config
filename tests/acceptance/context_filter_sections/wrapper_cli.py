@@ -348,6 +348,34 @@ def bash_body_runs_non_login(check: _Checker) -> None:
             )
 
 
+def runs_without_a_stdin_handle(check: _Checker) -> None:
+    # A wrapper started by a hidden, detached parent (gate_evidence.py's NO_WINDOW run) has no
+    # usable standard input; Popen then raised WinError 6 and the wrapped command never ran.
+    # The probe invalidates this process's stdin handle, then runs the real CLI in it.
+    if sys.platform != "win32":
+        return
+    cli = str(HOOKS / "context_filter_cli.py")
+    body = base64.b64encode(b"echo wrapped-ok").decode("ascii")
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "no_stdin_probe.py"
+        probe.write_text(
+            "import ctypes, runpy, sys" + chr(10)
+            + "ctypes.windll.kernel32.SetStdHandle(-10, ctypes.c_void_p(-1))" + chr(10)
+            + "sys.argv = [sys.argv[1], 'run', '--tool', 'Bash', '--mode', 'rewrite', '--encoded', sys.argv[2], '--cwd', sys.argv[3]]" + chr(10)
+            + "runpy.run_path(sys.argv[0], run_name='__main__')" + chr(10),
+            encoding="utf-8",
+        )
+        res = subprocess.run(
+            [PYTHON, str(probe), cli, body, tmp],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+        )
+    check(
+        "context_filter_cli: Bash body runs when the wrapper has no valid stdin handle (fleet-config#2027)",
+        res.returncode == 0 and "wrapped-ok" in res.stdout,
+        res.stdout.strip() + " | " + res.stderr.strip()[-300:],
+    )
+
 def import_paths_defer_heavy_modules(check: _Checker) -> None:
     # The hook imports context_filter on every shell call and the wrapper adds
     # its own interpreter start, so modules only `eval` or a cached blob need
