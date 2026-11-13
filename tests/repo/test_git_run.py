@@ -332,6 +332,30 @@ try:
     check(blocked_pull.returncode != 0 and not (downstream / "c.txt").exists(),
           f"run_git: a real `pull` is still refused when the index lock is held "
           f"(exit {blocked_pull.returncode}) — GIT_OPTIONAL_LOCKS=0 did NOT weaken it")
+
+    # ---- no valid stdin handle (a hidden, detached parent) ----
+    # Without stdin=DEVNULL the child inherits the invalid handle and the spawn
+    # raises WinError 6 before git runs. The probe invalidates its own stdin
+    # handle, then drives both wrappers.
+    if sys.platform == "win32":
+        probe = tmp / "no_stdin_probe.py"
+        probe.write_text(
+            "import ctypes, sys\n"
+            "ctypes.windll.kernel32.SetStdHandle(-10, ctypes.c_void_p(-1))\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "import git_run\n"
+            "print(git_run.run_git(['--version']).returncode,\n"
+            "      git_run.run_git_bytes(['--version']).returncode)\n",
+            encoding="utf-8",
+        )
+        no_stdin = subprocess.run(
+            [sys.executable, str(probe), str(REPO / "skills" / "_lib")],
+            capture_output=True, text=True, timeout=60,
+        )
+        check(no_stdin.returncode == 0 and no_stdin.stdout.split() == ["0", "0"],
+              f"run_git/run_git_bytes: git runs when the process has no valid stdin handle "
+              f"(exit {no_stdin.returncode}, out {no_stdin.stdout.strip()!r}, "
+              f"err {no_stdin.stderr.strip()[-200:]!r})")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
