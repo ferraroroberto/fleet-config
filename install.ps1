@@ -90,14 +90,14 @@ function Get-ManifestKey($item) {
 }
 
 function Install-OtelProjectProfileHook {
-    # Wires shell/claude-otel-project.ps1 into $PROFILE for
+    # Wires scripts/shell/claude-otel-project.ps1 into $PROFILE for
     # both PowerShell 7 (pwsh) and Windows PowerShell 5.1, so `claude`
     # auto-tags OTEL_RESOURCE_ATTRIBUTES with the current repo name regardless
     # of which host launches it. Explicit paths (not the ambient $PROFILE)
     # because this function can run inside the elevated Windows PowerShell
     # 5.1 relaunch below, whose $PROFILE would otherwise point at the wrong
     # host's profile file, silently wiring the hook into the wrong shell.
-    $sourceScript = Join-Path $RepoRoot 'shell\claude-otel-project.ps1'
+    $sourceScript = Join-Path $RepoRoot 'scripts\shell\claude-otel-project.ps1'
     if (-not (Test-Path $sourceScript)) {
         Write-Warning "Source missing, skipping OTel project-attribution hook: $sourceScript"
         return
@@ -127,9 +127,24 @@ function Install-OtelProjectProfileHook {
         if ($content.Contains($markerBegin)) {
             if ($content.Contains($dotSourceLine)) {
                 Write-Host "OK      $profilePath (OTel project hook already wired)" -ForegroundColor Green
-            } else {
-                Write-Host "BLOCKED $profilePath (OTel project hook marker present but points elsewhere)" -ForegroundColor Yellow
+                continue
             }
+            # The block is ours (marker-delimited), so a stale path inside it -- the
+            # snippet moved within the repo, or the repo moved -- is rewritten in place;
+            # left alone, every new shell would fail to dot-source a missing file.
+            $lines = @(Get-Content -Path $profilePath)
+            $beginIdx = [array]::IndexOf($lines, $markerBegin)
+            $endIdx = [array]::IndexOf($lines, $markerEnd)
+            if ($beginIdx -lt 0 -or $endIdx -le $beginIdx) {
+                Write-Host "BLOCKED $profilePath (OTel project hook marker present but the block is malformed -- edit by hand)" -ForegroundColor Yellow
+                continue
+            }
+            $kept = @()
+            if ($beginIdx -gt 0) { $kept += $lines[0..($beginIdx - 1)] }
+            $kept += $markerBegin, $dotSourceLine, $markerEnd
+            if ($endIdx -lt $lines.Count - 1) { $kept += $lines[($endIdx + 1)..($lines.Count - 1)] }
+            Set-Content -Path $profilePath -Value $kept -Encoding UTF8
+            Write-Host "UPDATED $profilePath  ->  $sourceScript  (profile dot-source re-pointed)" -ForegroundColor Cyan
             continue
         }
 
