@@ -1,6 +1,6 @@
 # OTel project attribution for Claude Code sessions
 
-`shell/claude-otel-project.ps1` wraps the `claude` CLI so every invocation
+`scripts/shell/claude-otel-project.ps1` wraps the `claude` CLI so every invocation
 auto-tags `OTEL_RESOURCE_ATTRIBUTES` with the current git repo's name. This
 lets any OTel metrics consumer distinguish which project a session's token
 usage came from, without per-repo setup.
@@ -30,7 +30,7 @@ junction/symlink into an agent home).
 
 ## How it's wired
 
-- `shell/claude-otel-project.ps1` defines a `claude` PowerShell function:
+- `scripts/shell/claude-otel-project.ps1` defines a `claude` PowerShell function:
   it runs `git rev-parse --show-toplevel`, takes the basename as
   `project.name`, sets `$env:OTEL_RESOURCE_ATTRIBUTES` accordingly (or clears
   it outside any git repo), then calls the real `claude.exe`. Calling
@@ -110,7 +110,7 @@ curl http://127.0.0.1:8000/admin/api/telemetry/claude-code/usage?period=today
   running `claude`" scoping this mechanism deliberately chose over a broader
   `Set-Location`/`cd` hook.
 - **Something needs to change here later** — start from
-  `shell/claude-otel-project.ps1` (the function itself),
+  `scripts/shell/claude-otel-project.ps1` (the function itself),
   `install.ps1`'s `Install-OtelProjectProfileHook` (the wiring), and
   `uninstall.ps1`'s `Remove-OtelProjectProfileHook` (the teardown); all three
   share the same two marker strings, so grep for

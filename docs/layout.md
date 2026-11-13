@@ -6,7 +6,7 @@ Where code goes in this repo. `scripts/structure_ratchet.py` enforces it (shape 
 
 - `skills/` — one folder per fleet skill (`skills/<name>/SKILL.md`, plus the helpers private to that one skill). `skills/_lib/` holds the shared library: CLIs that a `SKILL.md` invokes by path (`skills/_lib/<entry>.py`, which keep their path) and packages shared by two or more skills (`skills/_lib/<pkg>/`).
 - `hooks/` — one module per hook, the shared core (`_lib.py`, `hook_wire/`) and the helpers a hook family owns (`secret_scan/`, `lane_compact/`). Linked into `~/.claude/hooks` and `~/.codex/hooks` by `install.ps1`.
-- `scripts/` — the vendored ratchet scripts and their siblings. Copied verbatim from project-scaffolding; never edited here.
+- `scripts/` — the vendored ratchet scripts and their siblings at its top level, copied verbatim from project-scaffolding and never edited here; this repo's own shell scripts sit in subfolders (`scripts/shell/` holds the PowerShell profile snippet `install.ps1` wires into `$PROFILE`).
 - `tests/` — pytest suite mirroring what it tests: one folder per hook family, skill or `skills/_lib` package (for example `tests/hooks/`, `tests/chief_ops/`, `tests/design_lint/`), `tests/acceptance/` and the data they read under `tests/fixtures/`.
 - `docs/` — durable reference, one file per topic; `docs/skills/` holds the operating notes for individual skills.
 - `architecture/` — the generated fleet and config maps and the contract docs beside them (allowed by the shape).
@@ -21,7 +21,6 @@ Each is a surface this repo ships beyond skills and hooks, and each holds files 
 - `commands/` — slash commands exposed to Claude Code.
 - `copilot-hooks/` — the Copilot CLI hook definition.
 - `pi/` — Pi extensions (`pi/extensions/`).
-- `shell/` — the PowerShell profile snippet `install.ps1` wires into `$PROFILE`.
 - `stream-deck/` — the Stream Deck plugin: its source, templates, registry and tests.
 - `tray/` — `tray_lifecycle.ps1`, the shared tray restart helper every fleet repo's `tray.bat` runs from `~/.claude/tray/`.
 

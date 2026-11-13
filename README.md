@@ -129,10 +129,8 @@ fleet-config/
 ├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
 ├── config_edit.py                  # atomic_write, line-level TOML regexes and the quote/comment-aware TOML scanner shared by the three root config writers above
 ├── .gitignore
-├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
+├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires scripts/shell/claude-otel-project.ps1 into $PROFILE
 ├── uninstall.ps1                   # mirror of install.ps1: the manifest links + the $PROFILE OTel block, agy plugin, and copilot hook it writes outside it
-├── shell/
-│   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports hook_wire/ (harness_wire.py + registry.py + edit_events.py) so no hook's import line changes
 │   ├── hook_wire/harness_wire.py   # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound
@@ -203,6 +201,7 @@ fleet-config/
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── scripts/                        # the nine ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
+│   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
