@@ -352,10 +352,11 @@ def runs_without_a_stdin_handle(check: _Checker) -> None:
     # A wrapper started by a hidden, detached parent (gate_evidence.py's NO_WINDOW run) has no
     # usable standard input; Popen then raised WinError 6 and the wrapped command never ran.
     # The probe invalidates this process's stdin handle, then runs the real CLI in it.
+    # The body reads stdin first, so it must see EOF at once instead of hanging.
     if sys.platform != "win32":
         return
     cli = str(HOOKS / "context_filter_cli.py")
-    body = base64.b64encode(b"echo wrapped-ok").decode("ascii")
+    body = base64.b64encode(b"cat; echo wrapped-ok").decode("ascii")
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "no_stdin_probe.py"
         probe.write_text(
