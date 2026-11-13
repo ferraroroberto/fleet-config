@@ -299,6 +299,16 @@ before running any restart.
 
 If the project has no tray, skip this step.
 
+**A change that moved paths finishes the downstream follow-through too**
+(fleet-config#2039), without asking: run `install.ps1` when it moved anything
+`install.ps1` links, apply the matching steps on satellites over the existing
+passwordless SSH, restart every other app the move affects through its own
+recipe, repoint any launcher Job whose script moved (`PUT /api/jobs/{id}` with
+only `script_path`, read back), and move your own untracked leftovers by name.
+Report each with its proof. A repo with no restart recipe is a gap to file, not
+a step to hand back; the session-host on :8446 is the one restart that stays
+Roberto's.
+
 ### 6b. Deploy-coverage check (repos with declared not-fully-covered components only)
 
 After step 6, **read [`deploy-coverage.md`](E:/automation/fleet-config/skills/issue-finish/deploy-coverage.md) and run its `deploy_coverage.py check .`**: `DECLARED=no` is a silent no-op, any other result qualifies the step-7 summary as confirmed live, merged but not yet live, or unknown — never blocking the merge.
