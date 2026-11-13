@@ -192,6 +192,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "every SKILL.md frontmatter this repo ships must parse as YAML, not just "
      "carry a line a regex reads as a description -- the purge wrote one that "
      "the harness dropped while check.py printed PASS (fleet-config#845)"),
+    ("config_map_check", "audit/test_config_map_check.py",
+     "/config-map step 1 runs only the config-map check, not the full acceptance run that outlived the "
+     "job's watchdog, and a stale config.data.js still fails it while a fresh one passes (fleet-config#2018)"),
     ("context_purge_gate", "audit/test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),
