@@ -94,6 +94,9 @@ def run_git(
     window on screen. `env=git_env()` is the same
     one-place-fix argument for optional index locks — see that function.
 
+    `stdin=DEVNULL` because git is never fed input and a hidden, detached
+    parent leaves an invalid inherited handle (`OSError: [WinError 6]`).
+
     `extra_env` layers variables that have no `-c` equivalent (e.g.
     `GIT_INDEX_FILE`) over the ambient environment;
     `git_env()` is applied last, so no caller can drop `GIT_OPTIONAL_LOCKS=0`.
@@ -102,7 +105,7 @@ def run_git(
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        creationflags=NO_WINDOW, env=git_env(base),
+        creationflags=NO_WINDOW, env=git_env(base), stdin=subprocess.DEVNULL,
     )
 
 
@@ -151,7 +154,7 @@ def run_git_bytes(
     """
     return subprocess.run(
         ["git", *args], capture_output=True, check=check, timeout=timeout,
-        creationflags=NO_WINDOW, env=git_env(),
+        creationflags=NO_WINDOW, env=git_env(), stdin=subprocess.DEVNULL,
     )
 
 
