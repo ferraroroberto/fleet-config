@@ -690,9 +690,7 @@ def run_git(
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        # DEVNULL: git never reads input here, and an inherited stdin is an invalid handle under a
-        # hidden, detached parent, where Popen raises WinError 6 before git starts.
-        creationflags=NO_WINDOW, env=git_env(), stdin=subprocess.DEVNULL,
+        creationflags=NO_WINDOW, env=git_env(), stdin=subprocess.DEVNULL,  # inherited stdin is invalid when detached
     )
 
 
