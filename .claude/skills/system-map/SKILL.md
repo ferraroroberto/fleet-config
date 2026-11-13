@@ -84,13 +84,20 @@ Diffs the freshly-reconciled working `architecture/fleet.data.js` against the pr
 git status --porcelain architecture/
 ```
 
-If nothing changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did:
+If nothing changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did, run the grant as **its own command first** and confirm it succeeded:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py grant . --reason system-map --path architecture/ --path docs/fleet-guide.md
+```
+
+Only then, as a **separate** command:
+
+```
 git add architecture/ docs/fleet-guide.md
 git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 ```
+
+Never chain the `grant` and the `git commit` in one shell command (`&&`, `;`, a newline-joined block): the guard is a `PreToolUse` hook that judges the whole command before any part of it runs, so the marker does not exist yet and the commit is refused.
 
 If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow. Then `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/commit_guard/marker.py revoke .` whether or not the commit happened.
 

@@ -22,7 +22,10 @@ What passes without a grant:
 The other sanctioned exception is a scheduled map refresh (`/system-map`,
 `/config-map`) committing its generated `architecture/` output on main. It runs
 with nobody attending, so the skill grants itself a short-lived marker first
-(`skills/_lib/commit_guard/marker.py grant`) and revokes it after. A marker
+(`skills/_lib/commit_guard/marker.py grant`) and revokes it after. The grant
+must run as its own command, and succeed, before the `git commit` command: this
+guard judges a whole command before any part of it runs, so a `grant && git
+commit` chain finds no marker and is refused. A marker
 covers one repo and the path prefixes it names; the commit's staged files must
 all sit under them. An expired, garbled or foreign marker grants nothing.
 
