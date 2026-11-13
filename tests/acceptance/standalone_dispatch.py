@@ -592,13 +592,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a run total, and a duration that could not be read (an unspawnable "
      "gate, a planned repo with no record) prints as unknown, never 0 -- is "
      "testable on its own against a throwaway hooks-state dir"),
-    ("upstream_sync", "repo/test_upstream_sync.py",
+    ("upstream_sync", "repo/upstream_sync/test_upstream_sync.py",
      "/upstream-sync's watermark only moves over a contiguous run of merged or "
      "skipped source items (a failed middle item holds it), the [upstream] "
      "table round-trips without touching the rest of .fleet.toml, and the "
      "survey, fetch-only remote and licence check work against throwaway "
      "source and local repos"),
-    ("downstream_sync", "repo/test_downstream_sync.py",
+    ("downstream_sync", "repo/upstream_sync/test_downstream_sync.py",
      "/downstream-sync's half of the shared [upstream] helper -- an old table "
      "reads and rewrites byte for byte, compare lists local-only work and tells "
      "synced, present and offered commits apart, offer refuses non-candidates, "

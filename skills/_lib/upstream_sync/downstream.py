@@ -19,7 +19,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 _LIB = Path(__file__).resolve().parent.parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
-from git_run import run_git  # noqa: E402
+from git_run import origin_slug, run_git  # noqa: E402
 
 from upstream_sync import ledger, source  # noqa: E402
 
@@ -45,7 +45,6 @@ _PRIVATE: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("a secret-shaped token", re.compile(
         r"\b(ghp_|gho_|github_pat_|sk-|xox[abp]-|AKIA)[A-Za-z0-9_-]{10,}")),
 )
-_GITHUB = re.compile(r"github\.com[:/]+([\w.-]+)/([\w.-]+?)(\.git)?/?$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -63,11 +62,8 @@ class LocalItem:
         return not (self.synced or self.present or self.offered)
 
 
-def _git(repo: Path, *args: str) -> str:
-    done = run_git(["-C", str(repo), *args])
-    if done.returncode != 0:
-        raise source.SourceError(f"git {' '.join(args)}: {(done.stderr or done.stdout).strip()}")
-    return done.stdout
+# One raising git wrapper for the package: a failed step surfaces as SourceError.
+_git = source._git
 
 
 def _table_at(repo: Path, rev: str) -> Tuple[Optional[ledger.UpstreamState], str]:
@@ -138,10 +134,9 @@ def _own_names(repo: Path, source_url: str) -> Set[str]:
     common = run_git(["-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"])
     if common.returncode == 0 and common.stdout.strip():
         names.add(Path(common.stdout.strip()).parent.name)
-    origin = run_git(["-C", str(repo), "remote", "get-url", "origin"])
-    match = _GITHUB.search(origin.stdout.strip()) if origin.returncode == 0 else None
-    if match:
-        names.update({match.group(1), match.group(2)})
+    slug = origin_slug(repo)
+    if slug:
+        names.update(slug.split("/"))
     shared = {w.lower() for w in re.split(r"[^\w-]+", source_url) if w}
     return {n for n in names if n and n.lower() not in shared}
 

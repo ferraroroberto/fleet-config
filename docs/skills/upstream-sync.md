@@ -8,7 +8,7 @@ The watermark (`synced_sha`, the last source commit already accounted for), a le
 
 ## The helper: `skills/_lib/upstream_sync/`
 
-The deterministic half, tested in `tests/repo/test_upstream_sync.py` against throwaway source and local repos.
+The deterministic half, tested in `tests/repo/upstream_sync/test_upstream_sync.py` against throwaway source and local repos.
 
 - `ledger.py` reads and rewrites the `[upstream]` tables at the end of `.fleet.toml`, keeping every other line, and refuses a write that would not read back. `advance_watermark` is the rule: the watermark moves to the last item of the contiguous run, from the start, where every item is merged or skipped. A failed or unworked item holds it, whatever comes after.
 - `source.py` keeps the source as the fetch-only remote `upstream-sync` (its push url is unreachable), lists its first-parent commits after the watermark (one per merged PR, whether the source squashes or merges), marks each one the local ref already carries through `git cherry` patch ids, and classifies the root licence as `yes`, `copyleft`, `no` (none) or `unknown`.
@@ -17,7 +17,7 @@ The deterministic half, tested in `tests/repo/test_upstream_sync.py` against thr
 
 ## Handing work back: `/downstream-sync`
 
-The reverse direction. The source is often a repo the owner cannot push to or see into, so what travels is a feature spec, not code (code only when the source is public). The skill lists the local work the source lacks, the owner picks, it writes one spec per pick, and it files each one on the source only after a per-item OK. A bookkeeping lane then records each hand-back as an `offered` entry. When the source ships its own version, the next `/upstream-sync` survey marks that item `supersedes local` (from the issue reference, or by behaviour against the `OFFERED` lines), and the port replaces the local implementation with the source's, keeping local data and config readable. Its `advance --supersedes` retires the offer. Tests: `tests/repo/test_downstream_sync.py`.
+The reverse direction. The source is often a repo the owner cannot push to or see into, so what travels is a feature spec, not code (code only when the source is public). The skill lists the local work the source lacks, the owner picks, it writes one spec per pick, and it files each one on the source only after a per-item OK. A bookkeeping lane then records each hand-back as an `offered` entry. When the source ships its own version, the next `/upstream-sync` survey marks that item `supersedes local` (from the issue reference, or by behaviour against the `OFFERED` lines), and the port replaces the local implementation with the source's, keeping local data and config readable. Its `advance --supersedes` retires the offer. Tests: `tests/repo/upstream_sync/test_downstream_sync.py`.
 
 ## How a run moves the watermark
 

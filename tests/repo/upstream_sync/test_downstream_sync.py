@@ -10,30 +10,30 @@ code, private paths, hosts, emails or the local repo's name is refused, and that
 forward survey marks a source item answering an offered feature as superseding the local
 one, which `advance --supersedes` then retires. No real repo is touched.
 
-Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/repo/test_downstream_sync.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/repo/upstream_sync/test_downstream_sync.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations
 
-import io
 import shutil
 import sys
 import tempfile
-from contextlib import redirect_stdout
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(REPO / "skills" / "_lib"))
-from git_run import run_git  # noqa: E402
-from upstream_sync import cli, ledger  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sync_fixture import MIT, REPO  # noqa: E402
+from sync_fixture import commit as _commit  # noqa: E402
+from sync_fixture import configure as _configure  # noqa: E402
+from sync_fixture import git as _git  # noqa: E402
+from sync_fixture import init as _init  # noqa: E402
+from sync_fixture import run_cli as _cli  # noqa: E402
+from upstream_sync import ledger  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
-
-MIT = "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\n"
 
 GOOD_SPEC = """# Export the report as CSV
 
@@ -52,38 +52,6 @@ A `GET /report.csv` route; no new config.
 ## Tests
 - A request to `/report.csv` returns status 200 and the header line.
 """
-
-
-def _git(repo: Path, *args: str) -> str:
-    done = run_git(["-C", str(repo), *args])
-    if done.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {done.stderr}")
-    return done.stdout.strip()
-
-
-def _commit(repo: Path, name: str, body: str, subject: str) -> str:
-    (repo / name).write_text(body, encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", subject)
-    return _git(repo, "rev-parse", "HEAD")
-
-
-def _configure(repo: Path) -> None:
-    _git(repo, "config", "user.email", "test@example.invalid")
-    _git(repo, "config", "user.name", "Test")
-    _git(repo, "config", "commit.gpgsign", "false")
-    # `core.hooksPath` -> an empty dir: this machine carries a global commit hook
-    # that refuses the fixture's author email.
-    empty = repo.parent / "no-hooks"
-    empty.mkdir(exist_ok=True)
-    _git(repo, "config", "core.hooksPath", str(empty))
-
-
-def _cli(argv: list) -> tuple:
-    out = io.StringIO()
-    with redirect_stdout(out):
-        code = cli.main(argv)
-    return code, out.getvalue()
 
 
 def _local_lines(out: str) -> dict:
@@ -119,9 +87,7 @@ try:
     # --- compare: the local-only work -------------------------------------------------
 
     src = root / "src"
-    src.mkdir()
-    _git(src, "init", "-q", "-b", "main")
-    _configure(src)
+    _init(src)
     _commit(src, "LICENSE", MIT, "init")
     _commit(src, "core.py", "x = 1\n", "core (#1)")
 
