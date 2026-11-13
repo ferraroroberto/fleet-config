@@ -509,16 +509,17 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   the app reopens on the tab you left.
 - **The nav hides whenever a modal/overlay is open** (`body:has(dialog[open])`) so
   it never floats above a dialog.
-- **Installed PWA: the page head starts the app at its final viewport.** The
-  head sets `<meta name="apple-mobile-web-app-status-bar-style"
-  content="default">`, `viewport-fit=cover` in the viewport meta, and the dual
-  `theme-color` metas that paint the status bar in the page colour. With
-  `default`, iOS gives the installed app its final viewport from the first
-  frame, so the bar is in place on a cold launch. `black-translucent` is the
-  wrong value: it lets the viewport grow after launch, the bar rides that
-  growth, and the status bar needs an app-drawn scrim to hide content behind
-  it. Desktop engines don't reproduce the installed app, so the app's e2e
-  smoke test asserts the status-bar style and `viewport-fit=cover`.
+- **Installed PWA: the page head is the other half of the nav's top glass.**
+  The head sets `<meta name="apple-mobile-web-app-status-bar-style"
+  content="black-translucent">`, `viewport-fit=auto` in the viewport meta, and
+  the dual `theme-color` metas, which follow the page colour and paint the
+  status bar. The vendored nav's top glass is written for exactly this head
+  (the translucent top-bar recipe validated on the installed iPhone app), and
+  the nav's own test pins it in the skeleton, the gallery and the README, so an
+  app carries the head verbatim. `default` and `viewport-fit=cover` are the
+  old values: `design_lint` warns on them. Desktop engines don't reproduce the
+  installed app, so the app's e2e smoke test asserts the status-bar style and
+  `viewport-fit=auto`.
 - **Installed PWA: the window is the scroller and the bar is placed from the
   top.** There is no fixed-inset `.app` scroller, no element-scroller shell and
   no JS pinning. The document is always 1px taller than the viewport (`html`

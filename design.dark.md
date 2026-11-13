@@ -235,7 +235,7 @@ alone. See `design.md` for the full note.
 
 Identical to the [Light theme contract](design.md): fixed floating bottom-tab pill
 on coarse pointers, a clear-glass bar anchored to the viewport (placed from the
-top with `100lvh` in the installed app, whose page head sets the `default`
+top with `100lvh` in the installed app, whose page head sets the `black-translucent`
 status-bar style), one active tab at a time (`accent-text` over the pill's
 capsule, `aria-selected` tracked),
 unselected tabs with no boundary (the 1.4.11 exemption: icon + label identify
