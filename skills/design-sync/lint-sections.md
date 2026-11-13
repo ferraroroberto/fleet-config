@@ -65,13 +65,14 @@ read.
     found as a DOM descendant of `<main class="app">` instead of a `<body>`
     sibling always FAILs on its own (home-automation#232/app-launcher#369).
   - **status-bar style** — `apple-mobile-web-app-status-bar-style` is
-    `default` on every `index.html`; `black-translucent` or a missing tag
+    `black-translucent` on every `index.html`; `default` or a missing tag
     WARNs.
   - **icon sizes** — icon px sizes vs the spec's `icons.size` steps
     (spec-driven — the allowed set is parsed from the spec, not hardcoded).
   - **viewport zoom lock** — `user-scalable=no` + `maximum-scale=1` +
-    `viewport-fit=cover` on every `index.html`; PWAs are never
-    pinch-zoomable (fleet-config#296).
+    `viewport-fit=auto` on every `index.html`; PWAs are never
+    pinch-zoomable (fleet-config#296). `viewport-fit=cover` or a missing
+    value WARNs.
   - **button-tier vocabulary** — hardcoded button fills and a filled
     "ghost" FAIL; a solid accent outside the primary class and a tint
     without accent text WARN — the tiers live in design.md `components`

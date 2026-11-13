@@ -373,35 +373,39 @@ check(commented["no-native-checkbox"]["status"] == "PASS",
 # ---- viewport zoom lock (fleet-config#296) ----
 
 VP_LOCKED = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
-             'maximum-scale=1, user-scalable=no, viewport-fit=cover">')
-VP_UNLOCKED = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
-VP_NO_COVER = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
-               'maximum-scale=1, user-scalable=no">')
+             'maximum-scale=1, user-scalable=no, viewport-fit=auto">')
+VP_UNLOCKED = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=auto">'
+VP_COVER = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
+            'maximum-scale=1, user-scalable=no, viewport-fit=cover">')
+VP_NO_FIT = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
+             'maximum-scale=1, user-scalable=no">')
 vp = run_contracts(GOOD_CSS, VP_LOCKED, html_name="index.html")
-check(vp["viewport-lock"]["status"] == "PASS", "locked viewport meta PASS")
+check(vp["viewport-lock"]["status"] == "PASS", "locked viewport meta with viewport-fit=auto PASS")
 vp2 = run_contracts(GOOD_CSS, VP_UNLOCKED, html_name="index.html")
 check(vp2["viewport-lock"]["status"] == "FAIL",
       "zoomable viewport (no user-scalable=no / maximum-scale=1) FAIL")
-vp3 = run_contracts(GOOD_CSS, VP_NO_COVER, html_name="index.html")
-check(vp3["viewport-lock"]["status"] == "WARN",
-      "locked but missing viewport-fit=cover WARN")
+vp3 = run_contracts(GOOD_CSS, VP_COVER, html_name="index.html")
+check(vp3["viewport-lock"]["status"] == "WARN" and "cover" in vp3["viewport-lock"]["detail"],
+      "viewport-fit=cover WARNs (the nav ships auto) and names the value")
+vp5 = run_contracts(GOOD_CSS, VP_NO_FIT, html_name="index.html")
+check(vp5["viewport-lock"]["status"] == "WARN", "locked but no viewport-fit=auto WARN")
 vp4 = run_contracts(GOOD_CSS, "<dialog></dialog>", html_name="index.html")
 check(vp4["viewport-lock"]["status"] == "FAIL", "index.html without any viewport meta FAIL")
 check(good["viewport-lock"]["status"] == "NA", "no index.html -> viewport-lock NA")
 
-# ---- status-bar style: `default` so the installed app starts with its final viewport ----
+# ---- status-bar style: `black-translucent`, the head the vendored nav's top glass is written for ----
 
-SB_DEFAULT = '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
 SB_TRANSLUCENT = '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
-sb = run_contracts(GOOD_CSS, SB_DEFAULT, html_name="index.html")
-check(sb["status-bar-style"]["status"] == "PASS", "status-bar style default PASS")
-sb2 = run_contracts(GOOD_CSS, SB_TRANSLUCENT, html_name="index.html")
-check(sb2["status-bar-style"]["status"] == "WARN" and "black-translucent" in sb2["status-bar-style"]["detail"],
-      "black-translucent WARNs (drift, not FAIL) and names the value")
+SB_DEFAULT = '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
+sb = run_contracts(GOOD_CSS, SB_TRANSLUCENT, html_name="index.html")
+check(sb["status-bar-style"]["status"] == "PASS", "status-bar style black-translucent PASS")
+sb2 = run_contracts(GOOD_CSS, SB_DEFAULT, html_name="index.html")
+check(sb2["status-bar-style"]["status"] == "WARN" and "default" in sb2["status-bar-style"]["detail"],
+      "default WARNs (drift, not FAIL) and names the value")
 sb3 = run_contracts(GOOD_CSS, "<dialog></dialog>", html_name="index.html")
 check(sb3["status-bar-style"]["status"] == "WARN", "missing status-bar meta WARN")
-sb4 = run_contracts(GOOD_CSS, "<!-- " + SB_TRANSLUCENT + " -->" + SB_DEFAULT, html_name="index.html")
-check(sb4["status-bar-style"]["status"] == "PASS", "a commented-out black-translucent is ignored")
+sb4 = run_contracts(GOOD_CSS, "<!-- " + SB_DEFAULT + " -->" + SB_TRANSLUCENT, html_name="index.html")
+check(sb4["status-bar-style"]["status"] == "PASS", "a commented-out default is ignored")
 check(good["status-bar-style"]["status"] == "NA", "no index.html -> status-bar-style NA")
 
 # ---- button tiers (fleet-config#296) ----

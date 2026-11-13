@@ -2,8 +2,8 @@
 
 The nav contract (hide-under-dialog, viewport anchor, safe-area inset, the
 installed-app 100lvh bar anchor, and the load-bearing `nav.tabs`-is-a-`<body>`-
-sibling rule), the installable-PWA viewport zoom lock that its safe-area insets
-depend on, and the `default` status-bar style the installed app needs.
+sibling rule), the installable-PWA viewport zoom lock and `viewport-fit=auto`,
+and the `black-translucent` status-bar style its top glass is written for.
 """
 from __future__ import annotations
 
@@ -66,59 +66,59 @@ def _check_nav_contract(ctx: _ContractsCtx) -> List[dict]:
 
 
 def _check_status_bar_style(ctx: _ContractsCtx) -> List[dict]:
-    # 11. page head — an installed iOS app starts with its final viewport, so
-    #     the bar is in place from the first frame, only with the `default`
-    #     status-bar style (design.md nav contract). `black-translucent` lets
-    #     the viewport grow after launch and the bar rides that growth.
+    # 11. page head — the vendored nav's top glass is written for the
+    #     `black-translucent` status-bar style (design.md nav contract). Any
+    #     other value leaves the glass without the viewport it was built for.
     index_files = ctx.index_files
     if not index_files:
         return [_result("status-bar-style", "NA", "no index.html found")]
-    translucent: List[str] = []
+    default: List[str] = []
     other: List[str] = []
     for p in index_files:
         style = status_bar_style(strip_comments(read_text(p), "html"))
-        if style == "default":
+        if style == "black-translucent":
             continue
-        (translucent if style == "black-translucent" else other).append(rel(ctx.root, p))
-    if translucent:
+        (default if style == "default" else other).append(rel(ctx.root, p))
+    if default:
         return [_result("status-bar-style", "WARN",
-                         "apple-mobile-web-app-status-bar-style is black-translucent — the "
-                         "installed app's viewport grows after launch and the bar rides it; "
-                         "use \"default\" with theme-color (design.md nav contract): "
-                         + ", ".join(translucent))]
+                         "apple-mobile-web-app-status-bar-style is default — the vendored "
+                         "nav's top glass is written for \"black-translucent\" "
+                         "(design.md nav contract): " + ", ".join(default))]
     if other:
         return [_result("status-bar-style", "WARN",
-                         "apple-mobile-web-app-status-bar-style is missing or not \"default\" "
-                         "(design.md nav contract): " + ", ".join(other))]
+                         "apple-mobile-web-app-status-bar-style is missing or not "
+                         "\"black-translucent\" (design.md nav contract): " + ", ".join(other))]
     return [_result("status-bar-style", "PASS",
-                     f"status-bar style \"default\" on {len(index_files)} index.html")]
+                     f"status-bar style \"black-translucent\" on {len(index_files)} index.html")]
 
 
 def _check_viewport_lock(ctx: _ContractsCtx) -> List[dict]:
     # 10. viewport zoom lock — installable PWAs pin the scale (design.md Layout):
-    #     user-scalable=no + maximum-scale=1, plus
-    #     viewport-fit=cover for the safe-area insets the nav contract needs.
+    #     user-scalable=no + maximum-scale=1, plus the `viewport-fit=auto` the
+    #     vendored nav's standalone head ships (`cover` makes the viewport run
+    #     under the status bar, which the nav's top glass is not written for).
     index_files = ctx.index_files
     if not index_files:
         return [_result("viewport-lock", "NA", "no index.html found")]
     broken: List[str] = []
-    uncovered: List[str] = []
+    wrong_fit: List[str] = []
     for p in index_files:
         text = strip_comments(read_text(p), "html")
         m = re.search(r"<meta[^>]+name=[\"']viewport[\"'][^>]*>", text, re.I)
         tag = m.group(0) if m else ""
         if not m or "user-scalable=no" not in tag or "maximum-scale=1" not in tag:
             broken.append(rel(ctx.root, p))
-        elif "viewport-fit=cover" not in tag:
-            uncovered.append(rel(ctx.root, p))
+        elif "viewport-fit=auto" not in tag:
+            wrong_fit.append(rel(ctx.root, p))
     if broken:
         return [_result("viewport-lock", "FAIL",
                          "viewport meta lacks the zoom lock (user-scalable=no + "
                          "maximum-scale=1 — design.md Layout, fleet-config#296): "
                          + ", ".join(broken))]
-    if uncovered:
+    if wrong_fit:
         return [_result("viewport-lock", "WARN",
-                         "zoom lock present but viewport-fit=cover missing (safe-area "
-                         "insets need it): " + ", ".join(uncovered))]
+                         "zoom lock present but viewport-fit=auto missing — the vendored "
+                         "nav ships auto, and cover is the old value (design.md nav "
+                         "contract): " + ", ".join(wrong_fit))]
     return [_result("viewport-lock", "PASS",
-                     f"zoom lock (user-scalable=no, maximum-scale=1, viewport-fit=cover) on {len(index_files)} index.html")]
+                     f"zoom lock (user-scalable=no, maximum-scale=1, viewport-fit=auto) on {len(index_files)} index.html")]

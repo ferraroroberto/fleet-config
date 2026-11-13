@@ -176,7 +176,7 @@ its selectors or APIs into checks.
   — never re-author it. **A nav-contract WARN/FAIL is always a finding, never
   demoted by judgment** — in particular the superseded standalone
   fixed-inset `.app` scroller and a missing 100lvh bar anchor: the settled
-  conclusion is to adopt `_vendored/nav/` verbatim with the `default`
+  conclusion is to adopt `_vendored/nav/` verbatim with the `black-translucent`
   status-bar page head, and no app-side shell. Do not re-litigate this per run.
   **The list-row nested-card anti-pattern** (fleet-config#293): a repeating
   list (history, activity, request log) built as per-entry `canvas-subtle`
@@ -232,7 +232,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 - [ ] **<file>** — missing dark theme block; spec defines `design.dark.md`. Fix: add `[data-theme="dark"]` with the spec's dark values.
 - [ ] **<contract-id> FAIL** — <detail from the lint>. Fix: <align to the design.md v2 contract / adopt the vendored component>.
 - [ ] **_vendored/<component>/<file> FORKED** — the vendored copy diverges from project-scaffolding's canonical bytes. Fix: re-vendor verbatim (or upstream the change to the scaffold first).
-- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract (or still carries the superseded fixed-inset `.app` scroller). Fix: adopt the vendored nav from `project-scaffolding` verbatim, with the `default` status-bar page head — one piece, never re-authored.
+- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract (or still carries the superseded fixed-inset `.app` scroller). Fix: adopt the vendored nav from `project-scaffolding` verbatim, with the `black-translucent` status-bar page head — one piece, never re-authored.
 
 ## Token adoption
 
