@@ -592,6 +592,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a run total, and a duration that could not be read (an unspawnable "
      "gate, a planned repo with no record) prints as unknown, never 0 -- is "
      "testable on its own against a throwaway hooks-state dir"),
+    ("upstream_sync", "repo/test_upstream_sync.py",
+     "/upstream-sync's watermark only moves over a contiguous run of merged or "
+     "skipped source items (a failed middle item holds it), the [upstream] "
+     "table round-trips without touching the rest of .fleet.toml, and the "
+     "survey, fetch-only remote and licence check work against throwaway "
+     "source and local repos"),
     ("watchlist", "audit/test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),

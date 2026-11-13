@@ -196,7 +196,7 @@ fleet-config/
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json
 ├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
 ├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
-├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, codebase-audit, design-sync, design-review, perf-review, retro, screen, _lib/, …
+├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, codebase-audit, design-sync, design-review, perf-review, retro, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md

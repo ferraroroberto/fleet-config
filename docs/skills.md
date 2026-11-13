@@ -36,6 +36,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [`/e2e-audit`](skills/e2e-audit.md) — on-demand e2e suite redundancy audit
 - [`/docs-shots`](skills/docs-shots.md) — judgment + orchestration of a repo's visual-docs screenshots
 - [`/propagate-vendored`](skills/propagate-vendored.md) — byte-for-byte re-vendor of a scaffolding component to every adopter
+- [`/upstream-sync`](skills/upstream-sync.md) — port an outside source repo's merged work past the `[upstream]` watermark, one `/issue-yolo` lane per item
 - [`/audit-fleet`](skills/audit-fleet.md) — scatter-gather `/codebase-audit` across every repo, one weekly digest
 - [`/design-sweep`](skills/design-sweep.md) — fleet-wide unattended `/design-sync`
 - [`/perf-sweep`](skills/perf-sweep.md) — weekly `/perf-review` over every web app, one digest

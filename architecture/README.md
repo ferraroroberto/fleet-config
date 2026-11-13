@@ -396,6 +396,39 @@ named keys. Checked with a string `boot`, an argv-list `boot` and an empty
 table) leaves its card unchanged. No schema check rejects an unknown table, so
 adopting `[verify]` adds no required key to any existing repo.
 
+### Optional per-repo `[upstream]` table
+
+A repo built from an outside source repo records how far it has brought that
+source's merged work in. `/upstream-sync` and `/downstream-sync` write it
+through `skills/_lib/upstream_sync/` (procedure: `docs/skills/upstream-sync.md`);
+nobody edits it by hand.
+
+```toml
+[upstream]
+url = "https://github.com/<owner>/<repo>"
+branch = "main"
+synced_sha = "<last source commit accounted for>"
+
+[[upstream.skipped]]
+sha = "<source commit>"
+reason = "<why it does not belong here>"
+```
+
+| Field | Meaning |
+|---|---|
+| `url` | the source repo, fetched as the fetch-only remote `upstream-sync` |
+| `branch` | the source branch whose first-parent history is tracked (default `main`) |
+| `synced_sha` | the watermark: every source item up to here is merged locally or skipped |
+| `skipped` | source items deliberately left out, each with its reason; kept after the watermark passes them |
+
+**Forward only, never over a gap.** The watermark moves only over a contiguous
+run of merged or skipped items, so an item that failed or was never worked
+holds it. The table is the only provenance record: no commit, issue or PR text
+names the source.
+
+**Costs nothing on the map-build path.** `card_from_toml` reads only its own
+named keys, so a repo carrying `[upstream]` gets the same card as without it.
+
 ### Local specs — kept out of git 🔒
 
 The committed `DATA.compute` (and the committed `system-map.png`) show **placeholder** hardware specs. Real GPU/CPU/RAM are personal detail, so they live in **`system-map.local.js`** (gitignored via `*.local.*`). `system-map.html` loads it with a plain `<script>` tag — works under `file://`, no CORS — and merges `window.LOCAL` over the placeholders. Missing on a fresh checkout → harmless 404, placeholders stay.
