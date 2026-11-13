@@ -376,6 +376,24 @@ def runs_without_a_stdin_handle(check: _Checker) -> None:
         res.returncode == 0 and "wrapped-ok" in res.stdout,
         res.stdout.strip() + " | " + res.stderr.strip()[-300:],
     )
+    # git_bash_exe() asks git for its install path through hooks/_lib.run_git; a raise there
+    # leaves the wrapper without Git Bash whenever PATH has none.
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "no_stdin_git.py"
+        probe.write_text(
+            "import ctypes, sys" + chr(10)
+            + "ctypes.windll.kernel32.SetStdHandle(-10, ctypes.c_void_p(-1))" + chr(10)
+            + "sys.path.insert(0, sys.argv[1])" + chr(10)
+            + "import _lib" + chr(10)
+            + "print(_lib.run_git(['--version']).returncode)" + chr(10),
+            encoding="utf-8",
+        )
+        res = subprocess.run([PYTHON, str(probe), str(HOOKS)], capture_output=True, text=True, timeout=60)
+    check(
+        "_lib.run_git: git runs when the process has no valid stdin handle (fleet-config#2027)",
+        res.returncode == 0 and res.stdout.strip() == "0",
+        res.stdout.strip() + " | " + res.stderr.strip()[-300:],
+    )
 
 def import_paths_defer_heavy_modules(check: _Checker) -> None:
     # The hook imports context_filter on every shell call and the wrapper adds
