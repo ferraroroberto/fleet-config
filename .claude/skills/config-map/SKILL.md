@@ -26,10 +26,10 @@ Run in order. A failure on one step prints a short error and stops.
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/build_data.py     # introspect → architecture/config.data.js
-E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/check.py          # only the config_map: checks, seconds
 ```
 
-`config_map:` checks fail loud if a `whatchanged` invariant breaks, and print `SKIP  config_map: config.data.js matches build_data.py output` when the committed snapshot is stale. **Treat that SKIP as a failure of this run** — advisory only for fleet-config's own gate; this skill is what clears it, so investigate rather than proceeding. Fix any failure or SKIP before rendering. If a new agent, config class, statusline kind, or project-wired hook appeared that introspection can't derive, add it to `architecture/config.residual.json` first, then regenerate.
+`check.py` runs just the `config_map:` checks, never the whole acceptance run (many minutes, and it outlives the job's watchdog while other lanes gate). They fail loud if a `whatchanged` invariant breaks, and `check.py` exits 1 when the committed snapshot is stale (fleet-config's own gate prints that as `SKIP  config_map: config.data.js matches build_data.py output`, advisory there). **Treat that as a failure of this run** — this skill is what clears it, so investigate rather than proceeding. Fix any failure or SKIP before rendering. If a new agent, config class, statusline kind, or project-wired hook appeared that introspection can't derive, add it to `architecture/config.residual.json` first, then regenerate.
 
 ### 2. Render the visual
 

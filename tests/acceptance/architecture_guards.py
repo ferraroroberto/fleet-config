@@ -554,7 +554,7 @@ def _system_map_whatchanged_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _config_map_check() -> Tuple[int, int, int]:
+def _config_map_check(data_js: Path | None = None) -> Tuple[int, int, int]:
     """The /config-map data is fresh, and its week-over-week diff behaves.
 
     Guards the introspected config map (`.claude/skills/config-map`):
@@ -569,6 +569,8 @@ def _config_map_check() -> Tuple[int, int, int]:
          dimension (skills/hooks/matrix/conventions), edits are counted, repo
          keys collapse to a short label, and the no-op / first-run lines read
          sensibly. In-repo and deterministic — stays hard.
+    `data_js` overrides the snapshot read (default `architecture/config.data.js`) so
+    `config_map_check.py` can be proven against a stale one.
     Returns (failures, total, skipped).
     """
     import importlib.util
@@ -580,7 +582,7 @@ def _config_map_check() -> Tuple[int, int, int]:
     bd = importlib.util.module_from_spec(bd_spec)
     bd_spec.loader.exec_module(bd)  # type: ignore[union-attr]
 
-    committed = (REPO / "architecture" / "config.data.js").read_text(encoding="utf-8")
+    committed = (data_js or REPO / "architecture" / "config.data.js").read_text(encoding="utf-8")
     try:
         fresh = bd.regenerate(gate_projects_toml()) == committed
         regen_err = ""
