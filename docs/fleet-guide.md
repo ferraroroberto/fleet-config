@@ -81,7 +81,7 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 💶 | `family-accounting` | Shared household-expense tracker. | — |
 | 🎓 | `vibe-coding-workshop` | Python workshop + exercises. | — |
 | 🌱 | `life-os` | Personal productivity skills plus a shared document-archive engine and Outlook email tooling | — |
-| 🌡️ | `home-automation` | Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant. | :8447 |
+| 🌡️ | `home-automation` | Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant, Tesla. | :8447 |
 | 📊 | `github-copilot-usage` | Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs. | :8377 |
 | 🗂️ | `folder-explorer` | Disk-space explorer and search: folder tree, largest files, file types, folder and mail search. | :8453 |
 | 🅿️ | `parking-manager` | Household parking: which days to book, time off and the Thursday release; books them itself. | :8450 |
