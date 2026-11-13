@@ -264,6 +264,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "inspiration-scan",
+      "ds": "Daily digest of ideas from followed newsletters, YouTube channels and X accounts — drop seen items, score the rest through the lo…",
+      "sched": true
+    },
+    {
       "nm": "learning-log",
       "ds": "Weekly learning log + forward horizon + productivity stats distilled from the fleet's GitHub work stream (merged PRs and closed i…",
       "sched": true
@@ -361,7 +366,8 @@ window.CONFIG = {
     {
       "repo": "local-llm-hub",
       "items": [
-        "frontier-refresh"
+        "frontier-refresh",
+        "mac-results"
       ]
     },
     {
@@ -391,7 +397,14 @@ window.CONFIG = {
       "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
       "reach": "Claude + Codex",
-      "ds": "Block `git commit` with an AI attribution trailer."
+      "ds": "Block an AI attribution trailer on its way into git history or GitHub."
+    },
+    {
+      "nm": "main_commit_guard",
+      "ev": "PreToolUse · Bash·PowerShell",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Refuse `git commit` on a repo's default branch."
     },
     {
       "nm": "gh_body_file_guard",
@@ -440,7 +453,7 @@ window.CONFIG = {
       "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
       "reach": "Claude only",
-      "ds": "Refuse `gh pr merge` on a UX diff that has no `.proof/&lt;PR&gt;/index.html` (fleet-config#1768)."
+      "ds": "Refuse `gh pr merge` on a UX diff that has no `.proof/&lt;PR&gt;/index.html`."
     },
     {
       "nm": "context_filter_hook",
@@ -461,14 +474,14 @@ window.CONFIG = {
       "ev": "PreToolUse · AskUserQuestion",
       "block": true,
       "reach": "Claude only",
-      "ds": "Block `AskUserQuestion` from a chief-managed worker (fleet-config#463)."
+      "ds": "Block `AskUserQuestion` from a chief-managed worker."
     },
     {
       "nm": "telegram_file_reply_guard",
       "ev": "PreToolUse · mcp__plugin_telegram_telegram__reply",
       "block": true,
       "reach": "Claude only",
-      "ds": "Refuse a Telegram file reply outside the sender's private chat (fleet-config#1478)."
+      "ds": "Refuse a Telegram file reply outside the sender's private chat."
     },
     {
       "nm": "branch_before_edit_guard",
@@ -510,7 +523,7 @@ window.CONFIG = {
       "ev": "UserPromptSubmit",
       "block": false,
       "reach": "Claude only",
-      "ds": "Persist per-session state for the Fleet Board (fleet-config#91)."
+      "ds": "Persist per-session state for the Fleet Board."
     },
     {
       "nm": "chief_waiter_stop",
@@ -552,7 +565,7 @@ window.CONFIG = {
     },
     {
       "nm": "chief_inbox",
-      "ds": "Chief inbox: a chief-managed worker's turn-end becomes a wake event (fleet-config#999)."
+      "ds": "Chief inbox: a chief-managed worker's turn-end becomes a wake event."
     },
     {
       "nm": "codex_attention",
@@ -567,24 +580,20 @@ window.CONFIG = {
       "ds": "CLI entrypoint for the fleet context filter."
     },
     {
-      "nm": "conversation_backfill",
-      "ds": "Recover a stored transcript no live Stop hook ever captured (fleet-config#785)."
-    },
-    {
       "nm": "conversation_index",
       "ds": "Tier-1 conversation index — a cheap, searchable layer over raw captures."
     },
     {
       "nm": "conversation_search",
-      "ds": "Ranked full-text search over captured conversations (fleet-config#586)."
+      "ds": "Ranked full-text search over captured conversations."
     },
     {
       "nm": "conversation_title",
-      "ds": "Set or clear the owner's title on one captured conversation (fleet-config#1348)."
+      "ds": "Set or clear the owner's title on one captured conversation."
     },
     {
       "nm": "hook_dispatch",
-      "ds": "Run several hook modules in one process and answer once (fleet-config#1274)."
+      "ds": "Run several hook modules in one process and answer once."
     },
     {
       "nm": "notify_complete",
@@ -596,11 +605,11 @@ window.CONFIG = {
     },
     {
       "nm": "session_state_codex",
-      "ds": "Codex adapter for the Fleet Board session-state writer (fleet-config#349)."
+      "ds": "Codex adapter for the Fleet Board session-state writer."
     },
     {
       "nm": "session_state_pi",
-      "ds": "Pi adapter for the Fleet Board session-state writer (fleet-config#349)."
+      "ds": "Pi adapter for the Fleet Board session-state writer."
     },
     {
       "nm": "work_summary",
