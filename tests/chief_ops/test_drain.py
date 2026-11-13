@@ -548,6 +548,36 @@ check(lines == ["SLOTS_IDLE=2 reason=no-eligible-rows"], f"another open ask does
 rc, lines, _ = _slots(FakeLauncher({"auto_drain": True}, cards=[_busy_card], cap=1), plan=_ask_plan("slots-idle"))
 check(lines == ["SLOTS_IDLE=0"], "a full cap prints no cover line")
 
+# ---- an owned (auto-drained) row's own brief --------------------------------------------
+
+
+def _owned(fields):
+    """One plan row drain owns (its ref is in the ledger), with `fields` set on the row."""
+    _reset()
+    plan = _hand_plan(("app-a#1", fields))
+    _ledger.parent.mkdir(parents=True, exist_ok=True)
+    _ledger.write_text(json.dumps({"version": 1, "refs": {"app-a#1": {"kind": "design-drift", "added_at": "x"}}}),
+                       encoding="utf-8")
+    fake = FakeLauncher({"auto_drain": True})
+    rc, out, plan_path, _ = _run(fake, [], plan=plan)
+    return fake, out
+
+
+fake, out = _owned({"brief": _brief})
+check(len(fake.posted) == 1 and fake.posted[0]["brief"] == _BRIEF.read_text(encoding="utf-8"),
+      f"an owned row with its own brief is dispatched with it, not the generic one (got {fake.posted})")
+check(f"DRAIN_BRIEF={_brief} source=row" in out, f"the dispatch line names the row brief (got {out!r})")
+
+fake, out = _owned({})
+check(len(fake.posted) == 1 and "design-drift" in fake.posted[0]["brief"],
+      "an owned row without a brief still gets the generic per-kind brief")
+check(f"DRAIN_BRIEF={_briefs / 'app-a-1.md'} source=generic" in out,
+      f"the dispatch line names the generic brief (got {out!r})")
+
+fake, out = _owned({"brief": str(_TMP / "gone.md")})
+check(not fake.posted and "DRAIN_SKIPPED=app-a#1 reason=brief-unreadable" in out,
+      f"an owned row whose own brief cannot be read is skipped, never briefed generically (got {out!r})")
+
 # The subcommands are wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,
       "`chief_ops.py drain` reaches cmd_drain")
