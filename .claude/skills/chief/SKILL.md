@@ -339,7 +339,7 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   Roberto's (a device probe, a signup, a decision) gets
   `owner_check/cli.py mark <repo>#<N> --kind before-start --reason "…" --try "…"`;
   `chief_ops.py dispatch` then refuses it by code. Shipped work he still has to
-  try carries `needs-validation`, set by `/issue-finish`. `chief_ops.py
+  try on a device carries `needs-validation`, set by `/issue-finish`. **A mechanical step (ff, restart, `install.ps1`, satellite SSH, job repoint, cleanup) is never an owner check or a plan ask**: the lane does it (dispatch-brief rule 6); only the :8446 session-host restart goes to him. `chief_ops.py
   owner-checks` is your only list of both, read from the labels. Keep no parallel
   one in the plan or the handover. When his Board answer covers an owner item, run
   `owner_check/cli.py clear <repo>#<N> --answer "…"`.
@@ -480,7 +480,7 @@ instead:
    terminal even after you've relayed it. Identity was never the thing standing
    between a steer and irreversible loss. A worker that pushes back on an
    instruction is behaving correctly: answer the objection with something checkable, never argue it out of the suspicion, never re-send the same steer harder.
-9. **Jobs re-run only through `chief_ops.py heal rerun` (fleet-config#1897).** Never re-run a Job that is not `rerun_safe`, never re-run one with `chief_job_self_heal` off or unreadable, never more than once per failure, and never edit a job definition or `jobs.json`. `heal rerun` enforces all four by code; its `HEAL_REFUSED=` / `HEAL=unknown` lines are final, never routed around by a direct `POST /api/jobs/<id>/run`.
+9. **Jobs re-run only through `chief_ops.py heal rerun` (fleet-config#1897).** Never re-run a Job that is not `rerun_safe`, never re-run one with `chief_job_self_heal` off or unreadable, and never more than once per failure. `heal rerun` enforces all three by code; its `HEAL_REFUSED=` / `HEAL=unknown` lines are final, never routed around by a direct `POST /api/jobs/<id>/run`. Job edits are Roberto's, with one exception (fleet-config#2039): after a merged move of a script a Job calls, you or the lane send `PUT /api/jobs/<id>` with only `script_path`, the Jobs API's own preflight must pass, and the new path is read back. Never touch `jobs.json` by hand or change any other field.
 
 ## Reply shape (drawer contract)
 
