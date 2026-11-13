@@ -598,6 +598,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "table round-trips without touching the rest of .fleet.toml, and the "
      "survey, fetch-only remote and licence check work against throwaway "
      "source and local repos"),
+    ("downstream_sync", "repo/test_downstream_sync.py",
+     "/downstream-sync's half of the shared [upstream] helper -- an old table "
+     "reads and rewrites byte for byte, compare lists local-only work and tells "
+     "synced, present and offered commits apart, offer refuses non-candidates, "
+     "the spec lint refuses code and private detail, and a returning source item "
+     "supersedes the offer -- against throwaway source and local repos"),
     ("watchlist", "audit/test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),

@@ -44,13 +44,14 @@ Run from inside the local repo. `git fetch origin`, then `status --ref origin/<d
 
 ### 2. Survey
 
-`survey --against origin/<default-branch>`. It fetches the source and prints the table, `LICENSE=`, `PENDING=<n>` and one `ITEM` line per source item after the watermark, oldest first (`sha`, `pr`, `merge`, `present`, `skipped`, `files`, `subject`). `WATERMARK=unknown` (the source rewrote its history) stops the run. `PENDING=0` → report "up to date" and stop.
+`survey --against origin/<default-branch>`. It fetches the source and prints the table, `LICENSE=`, `PENDING=<n>` and one `ITEM` line per source item after the watermark, oldest first (`sha`, `pr`, `merge`, `present`, `skipped`, `files`, `supersedes`, `subject`), then one `OFFERED` line per local feature `/downstream-sync` handed back. `WATERMARK=unknown` (the source rewrote its history) stops the run. `PENDING=0` → report "up to date" and stop.
 
 Read each item's diff (`git show <sha>`, or `git diff <sha>^1 <sha>` for a merge) against the local tree and classify it:
 
 - **apply**: the code fits as it is.
 - **adapt**: it fits after a named local change (a different path, config shape, dependency or convention). Name the change.
 - **skip**: it does not belong here. Give the reason. `present=yes` is a skip with the reason "already present"; `skipped=yes` is already in the ledger and needs nothing.
+- **supersedes local**: it is the source's own version of an offered feature. `supersedes=<local sha>` names the offer when the item references the issue it was filed as; otherwise match an `OFFERED` line by behaviour. The source's version wins: the port replaces the local implementation with it and removes the local one, keeping local data and config readable (a migration when the shapes differ). Name the local sha.
 
 The order is the source's order: the watermark advances only over a contiguous run, and source order puts each change after what it builds on.
 
@@ -60,14 +61,14 @@ Print the survey as a table (item, PR, class, reason or adaptation). With `--dry
 
 Walk the items in order. Collect the skips in front of each port; that lane records them, so its PR moves the watermark over them and onto its own item in one merge. Any skips left after the last port go to one bookkeeping lane at the end.
 
-For each **apply** or **adapt** item:
+For each **apply**, **adapt** or **supersedes local** item:
 
 1. **File the issue** through the `/issue-add` flow (its own steps, not a paraphrase): a feature title and body in the local repo's terms, the adaptation as an acceptance criterion, a type label. No provenance (Hard rules).
 2. **Write the lane brief** to a file in this session's scratch or temp dir, containing:
    - the source item: remote `upstream-sync`, the sha, and whether it is a merge;
    - how to bring it in: `git fetch upstream-sync`, then `git cherry-pick --no-commit <sha>` (`-m 1` for a merge), or `git diff <sha>^1 <sha> | git apply -3` when the cherry-pick cannot start; the lane's own commit message describes the feature, never the source;
-   - the adaptation from the survey;
-   - the skips to record first, one `advance <skip-sha> --outcome skipped --reason "<reason>"` each, then `advance <sha> --outcome merged`, both run on the lane's branch before `/issue-finish`, so the merged PR carries the watermark (an exit 1 `WATERMARK=held` there means an earlier item is missing: stop and report);
+   - the adaptation from the survey; for **supersedes local**, the local sha it replaces, and that the lane removes the local implementation and keeps local data and config readable;
+   - the skips to record first, one `advance <skip-sha> --outcome skipped --reason "<reason>"` each, then `advance <sha> --outcome merged` (with `--supersedes <local-sha>` for a **supersedes local** item, which retires the offer), both run on the lane's branch before `/issue-finish`, so the merged PR carries the watermark (an exit 1 `WATERMARK=held` there means an earlier item is missing: stop and report);
    - fix forward: when the source code does not work here as it is, fix it in the same run until the gate passes, reusing as much of it as possible; stop only on a third red on this item or a change that would break existing behaviour;
    - no provenance anywhere, and ship only on `GATE-RESULT: PASS` through `/issue-finish` with its independent review.
 3. **Dispatch** through the one path every model uses:

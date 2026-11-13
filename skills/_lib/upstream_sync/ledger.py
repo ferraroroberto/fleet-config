@@ -2,7 +2,9 @@
 
 The table is the only record of what was brought in from the source: no provenance line
 goes into commits, issues or PR bodies. So the watermark must never jump an item that was
-neither merged nor deliberately skipped -- a gap there would be lost for good.
+neither merged nor deliberately skipped -- a gap there would be lost for good. It also lists
+the local features handed back to the source as specs (`offered`), so a later forward sync
+can recognise the source's own version of one.
 
 stdlib only.
 """
@@ -23,7 +25,7 @@ from fleet_core import fleet_toml  # noqa: E402
 FILENAME = fleet_toml.FILENAME
 
 # Header lines of the tables this module owns; every other line of the file is kept.
-_OWN_HEADER = re.compile(r"^\s*(\[upstream\]|\[\[upstream\.skipped\]\])\s*(#.*)?$")
+_OWN_HEADER = re.compile(r"^\s*(\[upstream\]|\[\[upstream\.(skipped|offered)\]\])\s*(#.*)?$")
 _ANY_HEADER = re.compile(r"^\s*\[")
 
 
@@ -33,15 +35,28 @@ class Skip:
     reason: str
 
 
+@dataclass(frozen=True)
+class Offer:
+    """A local feature handed back to the source as a spec; `source_issue` is the
+    source's issue number when it was filed there, None when handed over another way."""
+    local_sha: str
+    feature: str
+    source_issue: Optional[int] = None
+
+
 @dataclass
 class UpstreamState:
     url: str
     branch: str
     synced_sha: str
     skipped: List[Skip] = field(default_factory=list)
+    offered: List[Offer] = field(default_factory=list)
 
     def skipped_shas(self) -> Set[str]:
         return {s.sha for s in self.skipped}
+
+    def offered_shas(self) -> Set[str]:
+        return {o.local_sha for o in self.offered}
 
 
 def advance_watermark(watermark: str, order: Sequence[str], merged: Iterable[str],
@@ -71,7 +86,16 @@ def _parse(table: object) -> Optional[UpstreamState]:
                 and isinstance(entry.get("reason"), str)):
             return None
         skipped.append(Skip(sha=entry["sha"], reason=entry["reason"]))
-    return UpstreamState(url=url, branch=branch, synced_sha=synced, skipped=skipped)
+    offered: List[Offer] = []
+    for entry in table.get("offered", []):
+        if not (isinstance(entry, dict) and isinstance(entry.get("local_sha"), str)
+                and isinstance(entry.get("feature"), str)):
+            return None
+        issue = entry.get("source_issue")
+        if issue is not None and (isinstance(issue, bool) or not isinstance(issue, int)):
+            return None
+        offered.append(Offer(local_sha=entry["local_sha"], feature=entry["feature"], source_issue=issue))
+    return UpstreamState(url=url, branch=branch, synced_sha=synced, skipped=skipped, offered=offered)
 
 
 def parse_text(text: Optional[str]) -> Tuple[Optional[UpstreamState], str]:
@@ -113,6 +137,11 @@ def render_table(state: UpstreamState) -> str:
     ]
     for skip in state.skipped:
         lines += ["", "[[upstream.skipped]]", f"sha = {_quote(skip.sha)}", f"reason = {_quote(skip.reason)}"]
+    for offer in state.offered:
+        lines += ["", "[[upstream.offered]]", f"local_sha = {_quote(offer.local_sha)}",
+                  f"feature = {_quote(offer.feature)}"]
+        if offer.source_issue is not None:
+            lines.append(f"source_issue = {offer.source_issue}")
     return "\n".join(lines) + "\n"
 
 
