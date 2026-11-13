@@ -99,7 +99,7 @@ Roberto may flip the switch from the phone at any time, including as a kill
 switch. You learn of it at your next turn's `wake`; with both a waiter and
 the doorbell live, a ring just finds the batch already acked, which is harmless.
 
-**After `wake`, run `chief_ops.py drain`**: with Settings' `auto_drain` on it queues unattended audit issues and dispatches queued rows into free slots in plan order, one line per action; verify and close those lanes as any other. A hand-queued row starts only when it carries `--brief <file>` (write the brief first) and its `--after` holds (`<repo>#<N>` merged or closed, `no-lane:<repo>`), so set both on `plan add`; a row left out prints `DRAIN_SKIPPED=<ref> reason=…`.
+**After `wake`, run `chief_ops.py drain`**: with Settings' `auto_drain` on it queues unattended audit issues and dispatches queued rows into free slots in plan order, one line per action; verify and close those lanes as any other. A hand-queued row starts only when it carries `--brief <file>` (write the brief first) and its `--after` holds (`<repo>#<N>` merged or closed, `no-lane:<repo>`), so set both on `plan add`; a row left out prints `DRAIN_SKIPPED=<ref> reason=…`. A `--brief` set on an auto-drained audit row replaces its generic brief (`DRAIN_BRIEF=<path> source=row|generic` says which).
 
 **An agreed umbrella or wave is queued whole.** `plan add <umbrella> "…" --status parked --kind umbrella --brief <file> --children <repo>#<N>,…` also writes each child as its own `queued` row with `--after no-lane:<its repo>` and the umbrella's brief and model, so drain finds the next item with no judgment of yours. An agreed umbrella whose children were never queued is what left two slots idle (project-scaffolding#630).
 

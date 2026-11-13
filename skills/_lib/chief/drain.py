@@ -14,14 +14,17 @@ judgment (verifying each merge, closing each lane) with the chief:
    the plan, drain never added it before, and its repo is not
    `auto_ship = false` in `hooks/projects.toml`.
 3. **Dispatch.** Queued rows are dispatched top-down through `cmd_dispatch`, with
-   every one of its refusals, skipping a busy repo. A row drain added gets the
-   generic per-kind brief. A hand-queued row is dispatched only when it carries
-   its own `brief` file, every `after` condition holds, its repo has no live
-   session and its issue is open without an owner, validation or ledger label;
-   each hand row left out prints why. A pass dispatches at most the free slots
-   it measured at its start (a fresh spawn is not on the board for a while, so
-   dispatch's own live count would read one lane too few). The first refusal or
-   unconfirmed dispatch ends the drain for this turn.
+   every one of its refusals, skipping a busy repo. A row that carries its own
+   `brief` file is briefed with it, whoever queued the row; a row drain added
+   with none gets the generic per-kind brief. Each dispatch prints
+   `DRAIN_BRIEF=<path> source=row|generic`. A hand-queued row is dispatched
+   only when it carries its own `brief` file, every `after` condition holds,
+   its repo has no live session and its issue is open without an owner,
+   validation or ledger label; each hand row left out prints why. A pass
+   dispatches at most the free slots it measured at its start (a fresh spawn is
+   not on the board for a while, so dispatch's own live count would read one
+   lane too few). The first refusal or unconfirmed dispatch ends the drain for
+   this turn.
 
 Drain's ledger (`chief-drain.json` in the hooks state dir) lists every ref it
 ever queued. That is how it tells its own rows from hand-queued ones (which
@@ -29,7 +32,7 @@ only get the extra checks above), and how a row the chief removed stays
 removed: the ref is in the ledger but no longer in the plan.
 
 Every action prints one line (`DRAIN_ADDED=`, `DRAIN_DISPATCHED=`,
-`DRAIN_SKIPPED=<ref> reason=`, `DRAIN_STOPPED=<ref> reason=`), then the
+`DRAIN_BRIEF=`, `DRAIN_SKIPPED=<ref> reason=`, `DRAIN_STOPPED=<ref> reason=`), then the
 summary `DRAIN=done added=N dispatched=M`. `--dry-run` prints `DRAIN_WOULD_*`
 lines and writes nothing: no plan, no ledger, no brief, no dispatch.
 
@@ -219,6 +222,15 @@ def no_lane_blockers(after: str, doc: Dict[str, Any], busy: Set[str]) -> Set[str
     return {item.split(" ", 1)[0][len("no-lane:"):].lower() for item in unmet}
 
 
+def _brief_unreadable(path: str) -> Optional[str]:
+    """The `reason=` text when the brief file cannot be loaded for dispatch; None when it can."""
+    try:
+        commands.load_dispatch_brief(path)
+    except ValueError as exc:
+        return f"brief-unreadable ({exc})"
+    return None
+
+
 def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> Optional[str]:
     """Why a hand-queued row is not dispatched this turn (the `reason=` text); None means eligible.
 
@@ -227,10 +239,9 @@ def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> O
     """
     if not row.get("brief"):
         return "no-brief"
-    try:
-        commands.load_dispatch_brief(row["brief"])
-    except ValueError as exc:
-        return f"brief-unreadable ({exc})"
+    unreadable = _brief_unreadable(row["brief"])
+    if unreadable:
+        return unreadable
     unmet = unmet_after(row["after"], doc, busy) if row.get("after") else None
     if unmet is not None:
         return f"after-unmet ({unmet})"
@@ -251,9 +262,13 @@ def row_skip(row: Dict[str, Any], doc: Dict[str, Any], known: Set[str], busy: Se
     """Why a queued row is not dispatched this turn; None means eligible.
 
     `known` is drain's own refs (lowercased): those only need a free repo, hand rows all of `hand_row_skip`.
+    A brief the chief set on a drain-owned row must be readable too: dispatch uses it in place of the
+    generic one, and falling back to the generic brief would reverse the chief's scope.
     """
     if f"{row['repo']}{row['ref']}".lower() in known:
-        return "repo-busy" if row["repo"].lower() in busy else None
+        if row["repo"].lower() in busy:
+            return "repo-busy"
+        return _brief_unreadable(row["brief"]) if row.get("brief") else None
     return hand_row_skip(row, doc, busy)
 
 
@@ -457,15 +472,17 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
             print(f"DRAIN_SKIPPED={ref} reason={reason}")
             note_skip(reason, row, doc, busy, reasons, blockers)
             continue
-        owned = ref.lower() in known
         model = row.get("model") or "default"
         if args.dry_run:
             busy.add(row["repo"].lower())
             dispatched += 1
             print(f"DRAIN_WOULD_DISPATCH={ref} model={model}")
             continue
-        brief_file = (str(write_brief(ref, (ledger.get(ref) or {}).get("kind") or "audit")) if owned
-                      else row["brief"])
+        if row.get("brief"):
+            brief_file, source = row["brief"], "row"
+        else:
+            brief_file, source = str(write_brief(ref, (ledger.get(ref) or {}).get("kind") or "audit")), "generic"
+        print(f"DRAIN_BRIEF={brief_file} source={source}")
         sid, output = _dispatch_one(args, row, brief_file)
         print(output, end="" if output.endswith("\n") or not output else "\n")
         if sid is None:
