@@ -313,7 +313,7 @@ $Items = @(
     # Skills, however, ARE wired: Pi reads ~/.agents/skills (junctioned above); Copilot scans its
     # own ~/.copilot/skills/<name>/SKILL.md (auto-discovered, no enable step), junctioned below.
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'pi' },
-    @{ kind = 'junction'; source = 'pi/extensions';          target = 'extensions';             base = 'pi' },
+    @{ kind = 'junction'; source = 'hooks/agents/pi/extensions'; target = 'extensions';             base = 'pi' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'copilot' }
 )

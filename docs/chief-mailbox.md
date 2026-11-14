@@ -64,7 +64,7 @@ Excerpt sources per harness, verified live:
 |---|---|
 | Claude Code (2.1.301) | `Stop` payload `last_assistant_message`; fallback: the last assistant record in the bounded tail (256 KiB) of `transcript_path` |
 | Codex (0.154.0) | `Stop` payload `last_assistant_message`; same transcript fallback (rollout `response_item` records) |
-| Pi (0.84.4) | The `pi/extensions/session_state.ts` extension reads the session branch's newest assistant text and sends it as `last_assistant_message`; Pi sends no `transcript_path` |
+| Pi (0.84.4) | The `hooks/agents/pi/extensions/session_state.ts` extension reads the session branch's newest assistant text and sends it as `last_assistant_message`; Pi sends no `transcript_path` |
 
 Readers must ignore fields they do not know, and must accept v1 events (no `v`, `id`, `kind`, `dispatch_id` or excerpt fields). A reader that does not know a `kind` still counts and claims the event; the counting rule below never looks at `kind`.
 

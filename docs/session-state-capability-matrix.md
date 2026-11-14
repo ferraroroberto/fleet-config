@@ -57,7 +57,7 @@ an explicit new prompt clears that marker because it proves a real resume.
   `hook_event_name`, `transcript_path` — confirmed against
   [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)), so this is a thin event-map wrapper
   around `session_state.upsert_from_payload()`, not a separate parser.
-- **Pi** — `pi/extensions/session_state.ts` (sibling to the existing
+- **Pi** — `hooks/agents/pi/extensions/session_state.ts` (sibling to the existing
   `statusline.ts`), subscribing to `input` / `agent_settled` /
   `session_shutdown`. It shells out to `hooks/session_state_pi.py` on each
   event rather than duplicating the atomic-write/prune logic in TypeScript —

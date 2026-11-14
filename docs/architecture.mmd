@@ -9,7 +9,7 @@
 
 flowchart TB
   subgraph install["install.ps1 / uninstall.ps1"]
-    INSTALL["junctions: hooks/, skills/, pi/extensions/, tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
+    INSTALL["junctions: hooks/, skills/, hooks/agents/pi/extensions/, tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
     CODEXSTATUS["codex_statusline.py\nopt-in atomic merge into ~/.codex/config.toml\npreserves custom footer order, comments, and unrelated settings"]
     CODEXPOLICY["codex_model_policy.py + codex/\nopt-in native preflight + atomic model/role merge\nSol default; generated four-model catalog; tier layers"]
   end
@@ -39,7 +39,7 @@ flowchart TB
   QUOTAS -.->|Claude windows| GROKSTATUS
   INSTALL -->|"-ConfigureCodexModelPolicy"| CODEXPOLICY --> CODEX
   INSTALL --> PIHOME
-  PIPOLICY["pi/extensions/policy_hooks.ts\nPi tool_call/tool_result -> bounded hidden Python guards\nversioned allow/block/warn; compression preserves advice"]
+  PIPOLICY["hooks/agents/pi/extensions/policy_hooks.ts\nPi tool_call/tool_result -> bounded hidden Python guards\nversioned allow/block/warn; compression preserves advice"]
   PIHOME --> PIPOLICY --> HOOKFILES
   PIPOLICY --> LIBPY
   INSTALL --> COPILOT

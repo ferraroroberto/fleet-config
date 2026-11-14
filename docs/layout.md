@@ -5,7 +5,7 @@ Where code goes in this repo. `scripts/structure_ratchet.py` enforces it (shape 
 ## Top-level folders
 
 - `skills/` — one folder per fleet skill (`skills/<name>/SKILL.md`, plus the helpers private to that one skill). `skills/_lib/` holds the shared library: CLIs that a `SKILL.md` invokes by path (`skills/_lib/<entry>.py`, which keep their path) and packages shared by two or more skills (`skills/_lib/<pkg>/`).
-- `hooks/` — one module per hook, the shared core (`_lib.py`, `hook_wire/`) and the helpers a hook family owns (`secret_scan/`, `lane_compact/`). `hooks/agents/<agent>/` holds one agent's integration of the hook layer (`agents/agy/` is the Antigravity plugin and `agents/copilot/` the Copilot CLI hook definition, both installed by copy; `agents/codex/` holds the Codex agent definitions and the model catalog the policy writer merges). Linked into `~/.claude/hooks` and `~/.codex/hooks` by `install.ps1`.
+- `hooks/` — one module per hook, the shared core (`_lib.py`, `hook_wire/`) and the helpers a hook family owns (`secret_scan/`, `lane_compact/`). `hooks/agents/<agent>/` holds one agent's integration of the hook layer (`agents/agy/` is the Antigravity plugin and `agents/copilot/` the Copilot CLI hook definition, both installed by copy; `agents/codex/` holds the Codex agent definitions and the model catalog the policy writer merges; `agents/pi/extensions/` is junctioned to `~/.pi/agent/extensions`). Linked into `~/.claude/hooks` and `~/.codex/hooks` by `install.ps1`.
 - `scripts/` — the vendored ratchet scripts and their siblings at its top level, copied verbatim from project-scaffolding and never edited here; this repo's own shell scripts sit in subfolders (`scripts/shell/` holds the PowerShell profile snippet `install.ps1` wires into `$PROFILE`).
 - `tests/` — pytest suite mirroring what it tests: one folder per hook family, skill or `skills/_lib` package (for example `tests/hooks/`, `tests/chief_ops/`, `tests/design_lint/`), `tests/acceptance/` and the data they read under `tests/fixtures/`.
 - `docs/` — durable reference, one file per topic; `docs/skills/` holds the operating notes for individual skills.
@@ -16,7 +16,6 @@ Where code goes in this repo. `scripts/structure_ratchet.py` enforces it (shape 
 
 Each is a surface this repo ships beyond skills and hooks, and each holds files an installer links into an agent's home, so the folder name is part of that contract.
 
-- `pi/` — Pi extensions (`pi/extensions/`).
 - `stream-deck/` — the Stream Deck plugin: its source, templates, registry and tests.
 - `tray/` — `tray_lifecycle.ps1`, the shared tray restart helper every fleet repo's `tray.bat` runs from `~/.claude/tray/`.
 

@@ -67,7 +67,7 @@ Per-topic references that the intro used to carry, one file each:
   feedback](docs/adding-a-coding-harness.md#shared-edit-events-and-codex-syntax-feedback)
   (renames included; unknown targets or outcomes are unverified), and [Pi
   policy conformance](docs/adding-a-coding-harness.md#pi-policy-conformance)
-  (`pi/extensions/policy_hooks.ts`).
+  (`hooks/agents/pi/extensions/policy_hooks.ts`).
 - **[`docs/cross-agent-parity.md`](docs/cross-agent-parity.md#command-and-edit-policy-coverage)**
   — which command and edit policies Codex and Pi carry, with observed
   block/advice semantics and explicit unsupported surfaces.
@@ -168,7 +168,7 @@ fleet-config/
 │   ├── codex_attention.py           # safe, redacted PermissionRequest + Stop question Telegram ping
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
 │   ├── session_state_codex.py       # Codex working/needs-you/SessionEnd adapter → shared state
-│   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
+│   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by hooks/agents/pi/extensions/session_state.ts)
 │   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `inbox` claims (docs/chief-mailbox.md)
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
@@ -186,14 +186,14 @@ fleet-config/
 │   ├── agents/agy/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
 │   ├── agents/copilot/fleet-context-filter.json   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
 │   ├── agents/codex/               # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
+│   ├── agents/pi/extensions/statusline.ts     # junction via hooks/agents/pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
+│   ├── agents/pi/extensions/policy_hooks.ts   # same junction — bounded shared Python policies; native block/advisory adapter
+│   ├── agents/pi/extensions/session_state.ts  # same junction — reports Pi lifecycle events into sessions-state.json
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
 │   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
-├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
-├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter
-├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js

@@ -57,7 +57,7 @@ def main() -> None:
             '--no-skills', '--no-prompt-templates', '--no-extensions', '--offline']
     extensions = ['policy_hooks', 'context_filter'] if args.policy_first else ['context_filter', 'policy_hooks']
     for extension in [*extensions, 'session_state']:
-        base += ['--extension', str(ROOT / 'pi' / 'extensions' / (extension+'.ts'))]
+        base += ['--extension', str(ROOT / 'hooks' / 'agents' / 'pi' / 'extensions' / (extension+'.ts'))]
     if args.synthetic:
         provider = root / 'synthetic_provider.ts'
         provider.write_text((ROOT / 'tests/pi_synthetic_provider.ts').read_text(encoding='utf-8'), encoding='utf-8')
