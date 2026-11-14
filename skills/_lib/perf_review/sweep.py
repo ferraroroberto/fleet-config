@@ -104,6 +104,8 @@ def measure_app(repo: str, args: argparse.Namespace) -> dict:
                       for c in v["checks"] if c["status"] == "fail"],
                regressed=d.get("regressed", []), fixed=d.get("fixed", []), slower=d.get("slower", []),
                build=(v.get("deploy") or {}).get("state"))
+    if v.get("stall") and row["state"] == "unmeasured":
+        row["reason"] = v["stall"]["reason"] + "; endpoint checks unmeasured, nothing filed"
     if not args.no_file:
         out = _Tee(sys.stdout)
         try:

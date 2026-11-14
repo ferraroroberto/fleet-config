@@ -67,6 +67,13 @@ waiting.
 - A `text/event-stream` endpoint is never timed (an SSE feed has no end): its `ENDPOINT` line reads `skipped (stream)`
   and it neither passes nor spoils the API check. Every request also has a 30 s deadline on the whole exchange; one
   that runs out reads `timeout` (`unmeasured`), so a stalled route cannot hang the run.
+- **An all-routes stall is `unknown (machine busy)`, not over budget.** When three or more routes were timed and *every*
+  one went over its p95 budget in the same window (`/`, which does no work, included), the machine was busy, not the app.
+  Those routes read `unmeasured`, both `endpoints.*` checks read `unmeasured` with a `reason`, a `STALL machine-busy`
+  line names the signal, and the body says so. The run files nothing from it (an `unmeasured` run leaves the issue as
+  it is) and its p95s are not read as a slowdown by the next run's `DIFF`. One slow route, or two, still reads over
+  budget: the signal is the spread. The browser legs are a separate window and score on their own. Tell the user to
+  re-measure on a quiet box; never treat the stall as a finding.
 - Otherwise it prints one `CHECK` line per budget, one `ENDPOINT` line per
   timed path, a `DIFF` line against the previous run, a `BUILD` line and `PERF=pass|over-budget|unmeasured`.
   Exit is 0, 1 or 3 respectively. The run dir (`RUN_DIR=`) holds
@@ -244,7 +251,7 @@ writes no record. Numbers, ids and URL paths only.
 | `overall` | `pass`, `over-budget` or `unmeasured`. |
 | `counts` | `{pass, fail, unmeasured}` over the checks. |
 | `checks` | `{<check id>: {status, budget, measured}}`. `status` is `pass`, `fail` or `unmeasured`; `measured` is `null` when unmeasured; ids as in `CHECK` lines (`cold.ready_ms`, `warm.bytes_kb`, `endpoints.api_p95_ms`, ...). |
-| `endpoints` | `{<url path>: {status, budget, p50, p95}}`, milliseconds. `status` also has `skipped` (an event stream). |
+| `endpoints` | `{<url path>: {status, budget, p50, p95}}`, milliseconds. `status` also has `skipped` (an event stream). `stalled: true` marks a route read as `unmeasured` because every timed route stalled together (machine busy). |
 | `seeded_from` | Only on a record rebuilt from an issue's run-log line: `"issue-run-log"`. Such a record has `overall` and `counts` but empty `checks` and `endpoints`. |
 
 ## Per-app configuration (optional)

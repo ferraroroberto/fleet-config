@@ -135,6 +135,25 @@ with redirect_stdout(io.StringIO()):
     err = sweep.measure_app("alpha", args)
 check(err["state"] == "unmeasured" and "playwright exploded" in err["reason"], f"an app that raises is unmeasured, the sweep goes on: {err}")
 
+# ---- a stalled window: unmeasured with the signal as its reason, nothing over budget (fleet-config#2053) ----
+def fake_stalled(ns: argparse.Namespace) -> int:
+    run = Path(_STATE) / "run-stall"
+    run.mkdir(exist_ok=True)
+    verdict = {"summary": {"overall": "unmeasured", "unmeasured": 2}, "checks": [{"id": "endpoints.api_p95_ms", "status": "unmeasured", "measured": None, "budget": 250}],
+               "stall": {"routes": ["/", "/api/a", "/api/b"], "reason": "machine busy: all 3 timed routes went over their p95 budget in the same window"},
+               "diff": {"regressed": [], "fixed": [], "slower": []}, "deploy": {"state": "live"}}
+    (run / "verdict.json").write_text(json.dumps(verdict), encoding="utf-8")
+    print(f"RUN_DIR={run}")
+    return 3
+
+
+cli.cmd_measure = fake_stalled  # type: ignore[assignment]
+with redirect_stdout(io.StringIO()):
+    stalled_row = sweep.measure_app("alpha", args)
+check(stalled_row["state"] == "unmeasured" and stalled_row["fails"] == [] and "machine busy" in stalled_row["reason"],
+      f"a stalled app is unmeasured with machine busy as the reason and nothing over budget: {stalled_row}")
+check("- alpha: machine busy" in sweep.render_digest([stalled_row], [], "2026-11-14"), "the digest's Unmeasured section names the stall")
+
 # ---- the box lock: busy box -> unmeasured, never measured under load ----
 marker, _ = box_lock.try_acquire(box_lock.SHARED, "some-lane-gate")
 called = []
