@@ -708,7 +708,7 @@ def _copilot_statusline_utf8_check() -> Tuple[int, int, int]:
     Returns `(failures, total, skipped)` -- run via `run_unit3`; a missing
     PowerShell is a skip, never a pass.
 
-    - `copilot-hooks/fleet-context-filter.json` piped `[Console]::In.ReadToEnd()`
+    - `hooks/agents/copilot/fleet-context-filter.json` piped `[Console]::In.ReadToEnd()`
       into the hook: an em dash reached `context_filter_hook` as `???` (5.1) or
       cp850 mojibake (pwsh), and the rewrite ran that. It now invokes Python
       directly, which inherits the raw stdin bytes in either shell.
@@ -724,7 +724,7 @@ def _copilot_statusline_utf8_check() -> Tuple[int, int, int]:
         return check.failures, check.total, check.skipped
 
     command = f"python -c \"print('{_UTF8_SAMPLE}')\""
-    wiring = json.loads((REPO / "copilot-hooks" / "fleet-context-filter.json").read_text(encoding="utf-8"))
+    wiring = json.loads((REPO / "hooks" / "agents" / "copilot" / "fleet-context-filter.json").read_text(encoding="utf-8"))
     hook_cmd = wiring["hooks"]["preToolUse"][0]["powershell"]
     hook_path = re.compile(r"'[^']*context_filter_hook\.py'")
     copilot_payload = {"sessionId": "cop-913", "timestamp": 1789340000000, "cwd": str(REPO),
