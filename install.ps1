@@ -89,6 +89,33 @@ function Get-ManifestKey($item) {
     if ($item.base -and $item.base -ne 'claude') { "$($item.base)/$($item.target)" } else { $item.target }
 }
 
+# The absolute path a link points at, read from the link itself so a dangling link
+# still answers.
+function Get-LinkSource($info) {
+    $target = @($info.Target)[0]
+    if ($target -and -not [System.IO.Path]::IsPathRooted($target)) {
+        $target = Join-Path (Split-Path -Parent $info.FullName) $target
+    }
+    $target
+}
+
+# True when the manifest records this installer creating the link with its current
+# target: only then is re-pointing or removing it this script's call to make.
+function Test-OwnedLink([string]$manifestKey, $info) {
+    $entry = $manifest[$manifestKey]
+    $linkSource = Get-LinkSource $info
+    if (-not $entry -or -not $entry.source -or -not $linkSource) { return $false }
+    [System.IO.Path]::GetFullPath($linkSource) -eq [System.IO.Path]::GetFullPath($entry.source)
+}
+
+# Delete the link, never its target. Directory::Delete handles junctions and
+# directory symlinks, File::Delete file symlinks and hardlinks (same split as
+# uninstall.ps1).
+function Remove-LinkOnly($info) {
+    if ($info.PSIsContainer) { [System.IO.Directory]::Delete($info.FullName, $false) }
+    else                     { [System.IO.File]::Delete($info.FullName) }
+}
+
 function Install-OtelProjectProfileHook {
     # Wires scripts/shell/claude-otel-project.ps1 into $PROFILE for
     # both PowerShell 7 (pwsh) and Windows PowerShell 5.1, so `claude`
@@ -259,7 +286,6 @@ function Invoke-GrokCompatVerification {
 # than adding a duplicate link.
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
-    @{ kind = 'junction'; source = 'commands';               target = 'commands' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
     # The ONE machine-local copy of tray_lifecycle.ps1 --
     # every sister app's tray.bat calls it at this stable path instead of
@@ -278,7 +304,6 @@ $Items = @(
     # Pi per pi.dev/docs/skills, which also reads ~/.agents/skills). All four agents use the same
     # SKILL.md format, so a junction is the whole port -- no per-agent translation.
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
-    @{ kind = 'junction'; source = 'commands';               target = 'prompts';                base = 'codex' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
     @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' },
     # Pi (~/.pi/agent) and Copilot (~/.copilot): link the one global context file into each
@@ -291,6 +316,16 @@ $Items = @(
     @{ kind = 'junction'; source = 'pi/extensions';          target = 'extensions';             base = 'pi' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'copilot' }
+)
+
+# Links an earlier install created for a surface this repo no longer ships. Each is
+# removed only while it still points where the manifest says this installer put it;
+# a link someone re-pointed by hand is reported BLOCKED and left alone.
+$RetiredItems = @(
+    # The one slash command became skills/restart-webapp/, which every agent
+    # already reaches through its skills link.
+    @{ target = 'commands' },
+    @{ target = 'prompts'; base = 'codex' }
 )
 
 foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $CopilotHome)) {
@@ -418,15 +453,12 @@ foreach ($item in $Items) {
         continue
     }
 
-    if (Test-Path $targetAbs) {
-        $existing = Get-Item $targetAbs -Force
+    # Get-Item, not Test-Path: Test-Path follows the link, so a link whose source
+    # folder moved reads as absent and New-Item then fails on the dangling entry.
+    $existing = Get-Item -LiteralPath $targetAbs -Force -ErrorAction SilentlyContinue
+    if ($existing) {
         if ($existing.LinkType -in @('Junction', 'SymbolicLink', 'HardLink')) {
-            # Compare normalized link target with desired source
-            $linkTarget = $null
-            try { $linkTarget = (Get-Item $targetAbs -Force).Target }
-            catch { $linkTarget = $existing.Target }
-
-            $linkTargetStr = if ($linkTarget -is [array]) { $linkTarget[0] } else { $linkTarget }
+            $linkTargetStr = Get-LinkSource $existing
             $sourceFull    = (Resolve-Path $sourceAbs).Path
 
             if ($linkTargetStr -and ((Resolve-Path $linkTargetStr -ErrorAction SilentlyContinue).Path -eq $sourceFull)) {
@@ -434,6 +466,10 @@ foreach ($item in $Items) {
                 # A matching user-created link is usable, but is not ours to uninstall.
                 $skipped++
                 continue
+            } elseif (Test-OwnedLink $manifestKey $existing) {
+                # This installer made the link and its source moved inside the repo.
+                Remove-LinkOnly $existing
+                Write-Host "REPOINT $targetAbs (was $linkTargetStr)" -ForegroundColor Cyan
             } else {
                 Write-Host "BLOCKED $targetAbs (linked to a different target: $linkTargetStr)" -ForegroundColor Yellow
                 $blocked++
@@ -463,6 +499,25 @@ foreach ($item in $Items) {
 
     $manifest[$manifestKey] = @{ kind = $item.kind; source = $sourceAbs; target = $targetAbs; installed_at = (Get-Date -Format 'o') }
     $created++
+}
+
+foreach ($item in $RetiredItems) {
+    $targetAbs   = Join-Path (Get-BaseHome $item.base) $item.target
+    $manifestKey = Get-ManifestKey $item
+    if (-not $manifest.ContainsKey($manifestKey)) { continue }
+    $existing = Get-Item -LiteralPath $targetAbs -Force -ErrorAction SilentlyContinue
+    if (-not $existing) {
+        $manifest.Remove($manifestKey)
+        continue
+    }
+    if ($existing.LinkType -in @('Junction', 'SymbolicLink', 'HardLink') -and (Test-OwnedLink $manifestKey $existing)) {
+        Remove-LinkOnly $existing
+        $manifest.Remove($manifestKey)
+        Write-Host "RETIRED $targetAbs (surface no longer shipped)" -ForegroundColor Cyan
+    } else {
+        Write-Host "BLOCKED $targetAbs (retired link no longer points where install.ps1 put it; remove it by hand)" -ForegroundColor Yellow
+        $blocked++
+    }
 }
 
 # Persist manifest

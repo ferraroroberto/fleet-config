@@ -27,12 +27,6 @@
       "annot": { "agy": "❌ plugin-only (#160)" }
     },
     {
-      "cls": "Commands / prompts",
-      "sub": "slash-command bodies",
-      "src": "commands",
-      "annot": { "pi": "—", "copilot": "—", "agy": "—" }
-    },
-    {
       "cls": "Hooks",
       "sub": "lifecycle code + wiring",
       "src": "hooks",

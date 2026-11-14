@@ -163,7 +163,7 @@ fleet-config/
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
 │   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see docs/hooks.md, Graduation)
-│   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
+│   ├── restart_and_verify_webapp.py   # also exposed as the /restart-webapp skill
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Telegram ping
 │   ├── codex_attention.py           # safe, redacted PermissionRequest + Stop question Telegram ping
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
@@ -188,13 +188,12 @@ fleet-config/
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
 │   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
-├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
 ├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json
 ├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
 ├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
-├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, retro, screen, _lib/, …
+├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
