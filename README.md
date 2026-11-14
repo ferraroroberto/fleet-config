@@ -185,6 +185,7 @@ fleet-config/
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
 │   ├── agents/agy/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
 │   ├── agents/copilot/fleet-context-filter.json   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
+│   ├── agents/codex/               # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
@@ -204,7 +205,6 @@ fleet-config/
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
-├── codex/                          # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
 ```
 

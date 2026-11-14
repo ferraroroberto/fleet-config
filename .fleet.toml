@@ -8,9 +8,8 @@ icon        = "⚙️"
 description = "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."
 shape       = "skills-governance"
 # One folder per surface this repo ships beyond skills/hooks (README layout tree
-# describes each): per-agent config (codex, pi), the tray
-# helper and the Stream Deck plugin.
-extra_roots = ["codex", "pi", "stream-deck", "tray"]
+# describes each): the Pi extensions, the tray helper and the Stream Deck plugin.
+extra_roots = ["pi", "stream-deck", "tray"]
 # Contracts with the rest of the fleet (schema: architecture/README.md).
 interfaces = [
   { name = "hooks", kind = "lib", doc = "docs/hooks.md" },

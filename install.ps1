@@ -552,7 +552,7 @@ if ($ConfigureGrokStatusline) {
 if ($ConfigureCodexModelPolicy) {
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_model_policy.py') --apply `
         --config (Join-Path $CodexHome 'config.toml') `
-        --policy-root (Join-Path $RepoRoot 'codex')
+        --policy-root (Join-Path $RepoRoot 'hooks\agents\codex')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 if ($ConfigureSessionRetention) {
