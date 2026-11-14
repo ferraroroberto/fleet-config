@@ -1,7 +1,7 @@
 {
   "version": 1,
   "band": {"files": 6, "functions": 29},
-  "root_extras": ["pi", "stream-deck", "tray"],
+  "root_extras": ["stream-deck", "tray"],
   "shape_contract": {
     "root_files": ["codex-hooks.json", "codex_model_policy.py", "codex_statusline.py", "config_edit.py", "design.dark.md", "design.md", "design.rubric.toml", "design.web.md", "design.web.rubric.toml", "global-CLAUDE.md", "grok_statusline.py", "session_retention.py", "settings.template.json", "statusline-command.ps1", "uninstall.ps1"],
     "redundant": [],

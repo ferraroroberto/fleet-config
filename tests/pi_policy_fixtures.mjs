@@ -29,9 +29,9 @@ childProcess.spawn = (python, args, options) => {
   return child;
 };
 syncBuiltinESMExports();
-const policy = await import('../pi/extensions/policy_hooks.ts');
-const compression = await import('../pi/extensions/context_filter.ts');
-const lifecycle = await import('../pi/extensions/session_state.ts');
+const policy = await import('../hooks/agents/pi/extensions/policy_hooks.ts');
+const compression = await import('../hooks/agents/pi/extensions/context_filter.ts');
+const lifecycle = await import('../hooks/agents/pi/extensions/session_state.ts');
 const ctx = {cwd: process.cwd(), sessionManager:{getSessionId:()=> 'synthetic'}};
 const event = {type:'tool_call',toolName:'bash',toolCallId:'a',input:{command:'echo harmless'}};
 for (const failure of ['spawn','timeout','stdin','exit','malformed']) {

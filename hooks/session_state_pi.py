@@ -1,6 +1,6 @@
 """Pi adapter for the Fleet Board session-state writer.
 
-Small stdin-JSON CLI the Pi extension (``pi/extensions/session_state.ts``)
+Small stdin-JSON CLI the Pi extension (``hooks/agents/pi/extensions/session_state.ts``)
 shells out to on each lifecycle event it observes — keeps the one-writer,
 atomic-write invariant :mod:`session_state` documents ("this module is the
 only writer") in Python rather than duplicating tmp+replace/prune logic in
