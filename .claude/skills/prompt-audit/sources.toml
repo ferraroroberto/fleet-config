@@ -56,30 +56,40 @@ vendor = "anthropic"
 role = "index"
 marker_kind = "llms-txt-lines"
 marker_pattern = "prompt-engineering/(prompting-claude-[a-z0-9-]+)\\.md"
-baseline_sha = "33310e0f7083"
-baseline_marker = "prompting-claude-fable-5,prompting-claude-fable-5-1,prompting-claude-haiku-5-5,prompting-claude-opus-4-8,prompting-claude-opus-5,prompting-claude-opus-5-5,prompting-claude-sonnet-5,prompting-claude-sonnet-5-5"
+baseline_sha = "c8a464dbf370"
+baseline_marker = "prompting-claude-fable-5,prompting-claude-fable-5-1,prompting-claude-fable-5-2,prompting-claude-haiku-5-5,prompting-claude-opus-4-8,prompting-claude-opus-5,prompting-claude-opus-5-5,prompting-claude-sonnet-5,prompting-claude-sonnet-5-5"
 baseline_final_url = "https://platform.claude.com/llms.txt"
-baseline_date = 2026-10-15
+baseline_date = 2026-11-14
 
 [sources.anthropic-best-practices]
 url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md"
 vendor = "anthropic"
 role = "hub"
 marker_kind = "model-list"
-baseline_sha = "fb1ad4a72da8"
-baseline_marker = "Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 5.5, Claude Sonnet 5, Claude Sonnet 4.6, Claude Haiku 5.5, and Claude Haiku 4.5"
+baseline_sha = "1b45ffbca510"
+baseline_marker = "Claude Fable 5.2, Claude Mythos 5.2, Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 5.5, Claude Sonnet 5, Claude Sonnet 4.6, Claude Haiku 5.5, and Claude Haiku 4.5"
 baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.anthropic-fable-5-1]
 url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1.md"
 vendor = "anthropic"
 role = "per-model"
 marker_kind = "none"
-baseline_sha = "8f323d954727"
+baseline_sha = "7a71c59ccbb0"
 baseline_marker = ""
 baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
+
+[sources.anthropic-fable-5-2]
+url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2.md"
+vendor = "anthropic"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "c20db12661c1"
+baseline_marker = ""
+baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2.md"
+baseline_date = 2026-11-14
 
 [sources.anthropic-opus-5]
 url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5.md"
@@ -96,10 +106,10 @@ url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/
 vendor = "anthropic"
 role = "per-model"
 marker_kind = "none"
-baseline_sha = "0203e04ee828"
+baseline_sha = "6171e5c0ada4"
 baseline_marker = ""
 baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.anthropic-sonnet-5]
 url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5.md"
@@ -116,20 +126,20 @@ url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/
 vendor = "anthropic"
 role = "per-model"
 marker_kind = "none"
-baseline_sha = "0826ae2afb34"
+baseline_sha = "c3197181ae54"
 baseline_marker = ""
 baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.anthropic-haiku-5-5]
 url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5.md"
 vendor = "anthropic"
 role = "per-model"
 marker_kind = "none"
-baseline_sha = "69d8bf18169f"
+baseline_sha = "f0e4031394a0"
 baseline_marker = ""
 baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.anthropic-skill-authoring]
 url = "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md"
@@ -146,10 +156,10 @@ url = "https://code.claude.com/docs/en/memory.md"
 vendor = "anthropic"
 role = "instruction-files"
 marker_kind = "none"
-baseline_sha = "275fe39e8501"
+baseline_sha = "524cff77043d"
 baseline_marker = ""
 baseline_final_url = "https://code.claude.com/docs/en/memory.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 # ---- OpenAI ----------------------------------------------------------------------
 
@@ -159,30 +169,30 @@ vendor = "openai"
 role = "hub"
 marker_kind = "latest-model-frontmatter"
 marker_key = "model"
-baseline_sha = "746dd4b734bb"
+baseline_sha = "b12f5dde985d"
 baseline_marker = "gpt-6-astra"
 baseline_final_url = "https://developers.openai.com/api/docs/guides/latest-model.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.openai-flagship-guide]
 url = "https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md"
 vendor = "openai"
 role = "per-model"
 marker_kind = "none"
-baseline_sha = "746dd4b734bb"
+baseline_sha = "b12f5dde985d"
 baseline_marker = ""
 baseline_final_url = "https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.openai-prompt-engineering]
 url = "https://developers.openai.com/api/docs/guides/prompt-engineering.md"
 vendor = "openai"
 role = "hub"
 marker_kind = "none"
-baseline_sha = "79c72a47f0b1"
+baseline_sha = "a77f44ef8cea"
 baseline_marker = ""
 baseline_final_url = "https://developers.openai.com/api/docs/guides/prompt-engineering.md"
-baseline_date = 2026-11-04
+baseline_date = 2026-11-14
 
 [sources.openai-gpt-5-2-guide]
 url = "https://developers.openai.com/cookbook/examples/gpt-5/gpt-5-2_prompting_guide.md"
