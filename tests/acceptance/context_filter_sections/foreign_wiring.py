@@ -185,7 +185,7 @@ def agy_installed_copy_matches_source(check: _Checker) -> None:
     # possible between installs — this is the same anti-staleness contract as
     # .fleet.toml. Skips when agy (or the plugin) is not on this machine.
     agy_installed = Path.home() / ".gemini" / "config" / "plugins" / "fleet-context-filter"
-    agy_source = REPO / "agy" / "plugins" / "fleet-context-filter"
+    agy_source = REPO / "hooks" / "agents" / "agy" / "fleet-context-filter"
     if agy_installed.exists():
         drifted = [
             name for name in ("plugin.json", "hooks.json")

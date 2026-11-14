@@ -43,7 +43,7 @@ def _layout_top_dirs(layout: str) -> set:
 
     This README's tree sometimes spells a top-level directory alone
     (`hooks/`) and sometimes fuses it with a deeper path in one line
-    (`agy/plugins/fleet-context-filter/`, `pi/extensions/statusline.ts`,
+    (`pi/extensions/statusline.ts`,
     `tests/run_acceptance.py`) rather than giving it its own nested lines --
     so "the entry token equals `<dir>/`" is too strict and would misreport
     those as missing. Taking each token's first path segment covers both
