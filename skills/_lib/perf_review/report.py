@@ -37,6 +37,10 @@ OUTLIER_MIN_MS = 500
 # went 31 -> 43 ms (+39%, +12 ms) under a 50 ms budget, so every status stayed `pass` and `DIFF` read clean.
 SLOWER_FACTOR = 1.25
 SLOWER_MIN_MS = 10.0
+# Every timed route over its own p95 budget in one window, routes that do no work included, is the machine stalling, not the
+# app: a sweep that shared its window with a backup read every route, `/` too, over budget. Two routes over budget can still
+# be two real regressions, so the signal needs this many timed routes before it can name the machine.
+STALL_MIN_ROUTES = 3
 TITLE = audit_issue.PERF_REVIEW_TITLE
 KIND = "perf-review"
 LABEL = "perf-review"
@@ -170,6 +174,21 @@ def ready_selector_state(cold: dict, warm: dict) -> Optional[dict]:
     return {"measured": "visible", "status": "pass"}
 
 
+def stall_signal(endpoints: List[dict]) -> Optional[dict]:
+    """`{routes, reason}` when every timed route went over budget together, else None.
+
+    A single slow route never matches: the signal is the spread, so an app with one real hot spot still fails.
+    A route that was skipped, answered an error or timed out is not timed and does not count either way.
+    """
+    timed = [e for e in endpoints if e["status"] in ("pass", "fail")]
+    if len(timed) < STALL_MIN_ROUTES or any(e["status"] != "fail" for e in timed):
+        return None
+    paths = [e["path"] for e in timed]
+    return {"routes": paths,
+            "reason": f"machine busy: all {len(paths)} timed routes went over their p95 budget in the same window"
+                      + (", including `/`, which does no work" if "/" in paths else "")}
+
+
 def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     """`{"checks": [{id, label, budget, measured, status}], "endpoints": [...], "summary": {...}}`."""
     checks: List[dict] = []
@@ -225,6 +244,10 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         ok_codes = all(c in ("200", "304") for c in codes)
         status = "skipped" if codes == [SKIPPED_STREAM] else (_status(row.get("p95"), limit) if ok_codes else "unmeasured")
         endpoints.append({"path": path, **row, "budget": limit, "status": status})
+    stall = stall_signal(endpoints)
+    for e in endpoints:
+        if stall and e["status"] == "fail":  # the window is unknown, so no route in it is a breach
+            e.update(status="unmeasured", stalled=True)
     for cid in ("endpoints.index_p95_ms", "endpoints.api_p95_ms"):
         # a skipped feed was left alone on purpose: it neither passes nor spoils the check
         rows = [e for e in endpoints if e["status"] != "skipped" and (e["path"] == "/") == (cid == "endpoints.index_p95_ms")]
@@ -233,6 +256,8 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         over = [e["path"] for e in rows if e["status"] == "fail"]
         add(cid, "Entry document p95 (ms)" if cid.endswith("index_p95_ms") else "API endpoints p95 (ms)",
             budgets["endpoints"][cid.split(".")[1]], ", ".join(over) if over else ("all within" if rows else None), status)
+        if any(e.get("stalled") for e in rows):
+            checks[-1].update(measured=None, reason=stall["reason"])
 
     counts = {s: sum(1 for c in checks if c["status"] == s) for s in ("pass", "fail", "unmeasured")}
     overall = "over-budget" if counts["fail"] else ("unmeasured" if counts["unmeasured"] else "pass")
@@ -242,7 +267,7 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     if info is not None:
         info["kb"] = kb(iphone)
     return {"checks": checks, "endpoints": endpoints, "summary": {**counts, "overall": overall},
-            "iphone_cold": info, "budgets_version": budgets.get("version"),
+            "iphone_cold": info, "budgets_version": budgets.get("version"), "stall": stall,
             "ready_by": cold.get("ready_by") if cold.get("status") == "ok" else None}
 
 
@@ -267,6 +292,10 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
              f"playbook: {PLAYBOOK}. Measured read-only: GETs at phone-poll spacing, nothing restarted._", "",
              "| Check | Budget | Measured | |", "|---|---|---|---|"]
     lines += [f"| {c['label']} | {_fmt(c['budget'])} | {_fmt(c['measured'])} | {_MARK[c['status']]} |" for c in v["checks"]]
+    if v.get("stall"):
+        lines += ["", f"❔ Endpoint timing is unknown ({v['stall']['reason']}). "
+                      "The signal is the spread, not any one number: a slow route on a healthy machine would not take `/` with it. "
+                      "Nothing is filed from this window; re-measure on a quiet box before reading it as a breach."]
     ios = v.get("iphone_cold")
     if ios:
         lines += ["", f"iPhone (WebKit, cold, unthrottled loopback; reported, not scored): ready {_fmt(ios['ready_ms'])} ms, "
@@ -381,7 +410,8 @@ def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Opti
              "commit": commit, "build": build, "budgets_version": v.get("budgets_version"), "ready_by": v.get("ready_by"),
              "overall": v["summary"]["overall"], "counts": {k: v["summary"][k] for k in ("pass", "fail", "unmeasured")},
              "checks": {c["id"]: {"status": c["status"], "budget": c["budget"], "measured": c["measured"]} for c in v["checks"]},
-             "endpoints": {e["path"]: {"status": e["status"], "budget": e["budget"], "p50": e.get("p50"), "p95": e.get("p95")}
+             "endpoints": {e["path"]: {"status": e["status"], "budget": e["budget"], "p50": e.get("p50"), "p95": e.get("p95"),
+                                       **({"stalled": True} if e.get("stalled") else {})}
                            for e in v["endpoints"]}}
     path = ledger_path()
     runtime_files.make_dirs(path.parent, parents=True, exist_ok=True)
@@ -418,7 +448,7 @@ def diff(current: dict, previous: Optional[dict]) -> dict:
                 out["fixed"].append(k)
             elif pair == ("pass", "fail"):
                 out["regressed"].append(k)
-            elif key == "endpoints" and _slower(before[k].get("p95"), now[k].get("p95")):
+            elif key == "endpoints" and not (before[k].get("stalled") or now[k].get("stalled"))                     and _slower(before[k].get("p95"), now[k].get("p95")):
                 out["slower"].append({"path": k, "from": before[k]["p95"], "to": now[k]["p95"], "status": now[k]["status"]})
     return out
 
@@ -453,7 +483,8 @@ def filing_decision(existing_body: str, existing_number: Optional[int], v: dict)
     if summary["fail"]:
         return {"action": "upsert", "reason": f"{summary['fail']} check(s) over budget"}
     if summary["overall"] != "pass":
-        return {"action": "none", "reason": f"{summary['unmeasured']} check(s) unmeasured, so neither a breach nor green is confirmed; "
+        busy = f" ({v['stall']['reason']})" if v.get("stall") else ""
+        return {"action": "none", "reason": f"{summary['unmeasured']} check(s) unmeasured{busy}, so neither a breach nor green is confirmed; "
                                             "issue left as it is"}
     if existing_number is None:
         return {"action": "none", "reason": "all checks within budget, no issue to keep"}

@@ -435,6 +435,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "reported unmeasured with no issue filed, filing from the run's own "
      "directory, and the digest and exit codes -- is testable on its own, "
      "with no live app or issue touched (fleet-config#1686)"),
+    ("perf_stall", "web_review/test_perf_stall.py",
+     "/perf-review's all-routes stall -- a delay injected on every route of a "
+     "fixture app reads unmeasured (machine busy) with the signal named and "
+     "nothing filed, while one slow route, two routes, or a healthy route "
+     "beside the slow ones still reads over budget, and a stalled run is not "
+     "read as slower by the next diff -- is testable on its own, with no live "
+     "app, sweep or CPU burn (fleet-config#2053)"),
     ("perf_review", "web_review/test_perf_review.py",
      "/perf-review's probe self-test against a local fixture server (slow vs "
      "fast endpoint at short spacing, cold request kept apart, GET only; a "
