@@ -36,7 +36,6 @@ flowchart LR
   subgraph pipe["Pipelines"]
     accounting_quarterly["💳 accounting-quarterly"]
     content_management["📝 content-management"]
-    email_archiver["📧 email-archiver"]
     copilot_studio_transcripts["🗂️ copilot-studio-transcripts"]
     automation["🤖 automation"]
     minecraft_bedrock_bot["⛏️ minecraft-bedrock-bot"]
@@ -51,7 +50,6 @@ flowchart LR
     t_github["GitHub"]
     t_stripe["Stripe"]
     t_notion["Notion"]
-    t_onedrive["OneDrive"]
     t_minecraft_realm["Minecraft Realm"]
     t_ibkr["IBKR"]
   end
@@ -62,7 +60,6 @@ flowchart LR
   task_os -->|→| t_github
   accounting_quarterly -->|→| t_stripe
   content_management -->|→| t_notion
-  email_archiver -->|→| t_onedrive
   minecraft_bedrock_bot -->|→| t_minecraft_realm
   algo_trading -->|→| t_ibkr
   fleet_config -.-> project_scaffolding
@@ -96,7 +93,6 @@ flowchart LR
   life_os -.-> app_launcher
   life_os -.-> local_llm_hub
   life_os -.-> folder_explorer
-  life_os -.-> email_archiver
   life_os -.-> fleet_config
   home_automation -.-> local_llm_hub
   home_automation -.-> project_scaffolding

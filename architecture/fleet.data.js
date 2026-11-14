@@ -44,7 +44,7 @@ window.FLEET = {
     {"ic": "🎤", "nm": "facilitation-suite", "port": ":8449", "ds": "<b>facilitation-suite</b> — live workshop app: stage, cockpit, Zoom chat, live copilot.", "chips": ["public: cloudflared quiz.robertoferraro.net → :8451 /play", "this PC: http://127.0.0.1:8456 (loopback)"], "deps": [{"repo": "local-llm-hub"}]},
     {"ic": "💶", "nm": "family-accounting", "ds": "Shared household-expense tracker."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
-    {"ic": "🌱", "nm": "life-os", "ds": "Personal productivity skills plus a shared document-archive engine and Outlook email tooling", "tag": ["via", "launcher"], "deps": [{"repo": "app-launcher"}, {"repo": "local-llm-hub"}, {"repo": "folder-explorer"}, {"repo": "email-archiver"}, {"repo": "fleet-config"}], "owns": ["personal productivity skills", "document archive engine", "Outlook email tooling"], "not_owns": ["task list", "session hosting", "LLM routing", "hooks"]},
+    {"ic": "🌱", "nm": "life-os", "ds": "Personal productivity skills plus a shared document-archive engine and Outlook email tooling", "tag": ["via", "launcher"], "deps": [{"repo": "app-launcher"}, {"repo": "local-llm-hub"}, {"repo": "folder-explorer"}, {"repo": "fleet-config"}], "owns": ["personal productivity skills", "document archive engine", "Outlook email tooling"], "not_owns": ["task list", "session hosting", "LLM routing", "hooks"]},
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant, Tesla.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Tesla", "Telegram"], "deps": [{"repo": "local-llm-hub"}, {"repo": "project-scaffolding"}, {"repo": "voice-transcriber"}]},
     {"ic": "📊", "nm": "github-copilot-usage", "port": ":8377", "ds": "Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs."},
     {"ic": "🅿️", "nm": "parking-manager", "port": ":8450", "ds": "Household parking: which days to book, time off and the Thursday release; books them itself.", "deps": [{"repo": "fleet-config"}]},
@@ -55,7 +55,6 @@ window.FLEET = {
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"], "deps": [{"repo": "local-llm-hub"}]},
     {"ic": "📝", "nm": "content-management", "ds": "Content surfaces: reporting, planning, newsletter, podcast and video.", "tag": ["→", "Notion"], "deps": [{"repo": "local-llm-hub"}]},
-    {"ic": "📧", "nm": "email-archiver", "ds": "Retired: replaced by folder-explorer, kept one release as a fallback.", "tag": ["→", "OneDrive"]},
     {"ic": "🗂️", "nm": "copilot-studio-transcripts", "ds": "Copilot Studio workbench.", "deps": [{"repo": "local-llm-hub"}]},
     {"ic": "🤖", "nm": "automation", "ds": "Python automation grab-bag.", "deps": [{"repo": "fleet-config"}]},
     {"ic": "⛏️", "nm": "minecraft-bedrock-bot", "ds": "Headless Bedrock Realm bot driven by an LLM decision loop on the hub.", "tag": ["→", "Minecraft Realm"], "deps": [{"repo": "local-llm-hub"}]},
@@ -67,7 +66,7 @@ window.FLEET = {
     {"ic": "🔔", "nm": "Pushover", "fr": "from launcher jobs"},
     {"ic": "📔", "nm": "Notion", "fr": "content · automation"},
     {"ic": "💳", "nm": "Stripe", "fr": "accounting-quarterly"},
-    {"ic": "📁", "nm": "OneDrive", "fr": "email-archiver"},
+    {"ic": "📁", "nm": "OneDrive", "fr": "folder-explorer"},
     {"ic": "🐙", "nm": "GitHub", "fr": "all repos · PRs · CI"},
     {"ic": "🎥", "nm": "Zoom", "fr": "facilitation-suite"}
   ],
