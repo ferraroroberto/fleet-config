@@ -133,6 +133,8 @@ GitHub's issue-list index trails a label write by a few seconds, so an item mark
 
 ## Re-classifying the list
 
+A recorded block joins its reasons with `; `, and a gap's criterion may hold one itself, so a gap is read as one reason from its opening words to its closing `because it needs <class>` clause.
+
 `owner_check reclassify [--repo R] [--apply]` re-runs the rule over every `needs-validation` issue and clears the label where no reason fires any more, with a `cleared` block that names the rule that stopped applying. A dry run prints `RECLASS keep|would-clear|unknown <ref>` per item and a `RECLASSIFY=` count line, and writes nothing. Three kinds of recorded reason are never recomputed, so they keep the item: a lane's named gap (a criterion with an owner-only class), unless the narrowed classes now refuse it as lane-provable or its class (`taste`) is gone, any text a person wrote by hand, and any item whose PR cannot be read (`unknown`, never cleared). A generic "the lane could not verify" or "did not state" reason names no criterion and no class, so it drops. No in-session proof is inferred from history, so a recorded device reason still keeps its item. Everything else is recomputed from the issue title and body and the PR's files; a recorded new-page-or-view reason drops, since a browser proves it. A back-fill-only entry has no rule reason, so it clears.
 
 ## Back-fill

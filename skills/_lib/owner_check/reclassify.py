@@ -64,7 +64,25 @@ def _pr_number(proof: Sequence[str]) -> Optional[int]:
 
 
 def _split(reason: str) -> List[str]:
-    return [part.strip() for part in reason.split("; ") if part.strip()]
+    """Recorded reasons are joined with `; `, but a gap's criterion may hold one too.
+
+    A gap opens with `GAP_PREFIX` and closes at its `because it needs <class>` clause,
+    so pieces are re-joined until `recorded_gap` reads the whole gap back. A gap that
+    never closes stays split as written.
+    """
+    pieces = [part.strip() for part in reason.split("; ") if part.strip()]
+    parts: List[str] = []
+    i = 0
+    while i < len(pieces):
+        end = i
+        if pieces[i].startswith(rule.GAP_PREFIX):
+            for j in range(i, len(pieces)):
+                if rule.recorded_gap("; ".join(pieces[i:j + 1])):
+                    end = j
+                    break
+        parts.append("; ".join(pieces[i:end + 1]))
+        i = end + 1
+    return parts
 
 
 def classify_recorded(part: str) -> str:

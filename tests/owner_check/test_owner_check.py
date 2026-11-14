@@ -276,6 +276,15 @@ v = _re(_item("needs a real device or live input (mic), which a session cannot d
 check(v.state == reclassify.UNKNOWN, "a rule reason with no PR to re-read is unknown, not cleared")
 v = _re(_item("", block_=False), _iss())
 check(v.state == reclassify.UNKNOWN, "an item with no block is unknown, not cleared")
+# A criterion may itself hold "; ": the gap stays one reason, so its lane-provable half cannot escape the rule.
+_semi = rule.GAP_PREFIX + " a real drag from the file manager; the tests dispatch synthetic drag events, because it needs " \
+    + rule.OWNER_CLASSES["device"]
+check(reclassify._split(_semi) == [_semi], f"a gap whose criterion holds '; ' is one reason, got {reclassify._split(_semi)}")
+v = _re(_item(_semi), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["lane-provable"],
+      f"a gap with '; ' in its criterion is judged whole and clears when lane-provable, got {v}")
+_two = "; ".join([rule.gap_reason("device", "the mic level moves"), rule.gap_reason("owner-account", "the owner signs in")])
+check(len(reclassify._split(_two)) == 2, f"two joined gaps still split into two reasons, got {reclassify._split(_two)}")
 
 
 # ---- CLI against a fake gh ----
