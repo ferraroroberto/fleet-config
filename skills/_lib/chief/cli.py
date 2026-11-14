@@ -12,7 +12,17 @@ import argparse
 from chief import chief_sweep
 from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 
-from . import commands, compact, drain, heal, journal, launcher, mailbox, plan_cli, proposals
+from . import (
+    commands,
+    compact,
+    drain,
+    heal,
+    journal,
+    launcher,
+    mailbox,
+    plan_cli,
+    proposals,
+)
 
 
 def build_parser(description: str) -> argparse.ArgumentParser:

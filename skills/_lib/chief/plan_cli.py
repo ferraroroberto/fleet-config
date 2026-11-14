@@ -14,7 +14,6 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from chief import journal
 from chief_plan import (
     LANE_STATUSES,
     MODELS,
@@ -35,6 +34,9 @@ from chief_plan import (
     split_ref,
     update,
 )
+
+from chief import journal
+
 
 def _summary(doc: Dict[str, Any]) -> str:
     return (f"PLAN=written lanes={len(doc['lanes'])} queue={len(doc['queue'])} "
