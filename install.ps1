@@ -341,7 +341,7 @@ foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $Copi
 function Install-AgyContextFilterPlugin {
     $agy = Get-Command agy -ErrorAction SilentlyContinue
     if (-not $agy) { return }
-    $source = Join-Path $RepoRoot 'agy\plugins\fleet-context-filter'
+    $source = Join-Path $RepoRoot 'hooks\agents\agy\fleet-context-filter'
     $installed = Join-Path $GeminiConfHome 'plugins\fleet-context-filter'
     $fresh = $true
     foreach ($name in @('plugin.json', 'hooks.json')) {
