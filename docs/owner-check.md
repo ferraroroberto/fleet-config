@@ -109,6 +109,7 @@ Every `<repo>#<N>` argument (`gate`, `finish`, `mark`, `clear`) also takes the o
 | Chief, before dispatch | `chief_ops.py dispatch` | Refuses a `needs-owner` issue. An unreadable issue only warns, because `/issue-start`'s gate is the hard stop. |
 | Chief, reading | `chief_ops.py owner-checks` | Every open owner item fleet-wide, from the labels. |
 | Chief, parking | `owner_check mark <repo>#<N> --kind before-start --reason "…" --try "…"` | Owner-blocked work gets the label first; `plan set --status parked --kind owner` then records it and is refused without the label. The `--try` text must name the exact owner action, where to do it and which answer unblocks the work, so the Board question answers cold; an empty, placeholder or under-six-word action is refused (exit 2). A block that is really an agent's decision goes to the chief, never the owner. |
+| Any write of a label | `github.mark`, behind `finish` and `mark` | The block is posted first and the label applied second, so a failure between the two never leaves a label with no note. `mark` refuses (exit 2) an empty `--reason` or `--try`. A label put on by hand has no write path to guard; `owner_check repair` finds it (see [Repairing a label with no note](#repairing-a-label-with-no-note)). |
 | Board answer | `owner_check clear <repo>#<N> --answer "…"` | Removes the label and posts a `cleared` block with the answer. Every other issue in the same repo labelled for the same kind whose block carries the identical `try` text is cleared with it (`MERGED_CLEARED with=… also=…`), since `list` showed them as one line. |
 
 `--verified yes` means the original repro or acceptance re-ran and passed in this session. Pass `scheduled` when everything did except a criterion that only a later scheduled run can show: it adds no reason and prints `SCHEDULED_READ=chief`, the chief reading that run. Pass `no` only for a criterion the deterministic proofs cannot show, with one `--gap <class>:<criterion>` per such criterion; each becomes its own reason. A generic "could not verify" names nothing Roberto can act on, so `no` without a gap, and a missing `--verified`, are refused.
@@ -121,7 +122,7 @@ Run every command as `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Use
 | --- | --- | --- | --- | --- |
 | `classify`, `finish` | none | required (`APPLIED=yes` or `already`) | refused (`finish`): no `--verified`, `no` without a valid `--gap`, an unproven new page or view, or required with no `--try` | unknown |
 | `gate` | clear | blocked | | unknown |
-| `mark`, `clear`, `ensure-labels`, `backfill`, `reclassify`, `list` | every write or read landed | | refused (`mark`): a before-start step with no concrete owner action | something did not land; named on its own line |
+| `mark`, `clear`, `ensure-labels`, `backfill`, `reclassify`, `repair`, `list` | every write or read landed | | refused (`mark`): an empty `--reason` or `--try`, or a before-start step with no concrete owner action | something did not land, or (`repair`) a note could not be built; named on its own line |
 
 Each command prints `KEY=value` lines (`OWNER_CHECK=`, `OWNER_GATE=`, `REASON=`, `TRY=`, `MARKED=`, `CLEARED=`, `UNKNOWN=`).
 
@@ -136,6 +137,12 @@ GitHub's issue-list index trails a label write by a few seconds, so an item mark
 A recorded block joins its reasons with `; `, and a gap's criterion may hold one itself, so a gap is read as one reason from its opening words to its closing `because it needs <class>` clause.
 
 `owner_check reclassify [--repo R] [--apply]` re-runs the rule over every `needs-validation` issue and clears the label where no reason fires any more, with a `cleared` block that names the rule that stopped applying. A dry run prints `RECLASS keep|would-clear|unknown <ref>` per item and a `RECLASSIFY=` count line, and writes nothing. Three kinds of recorded reason are never recomputed, so they keep the item: a lane's named gap (a criterion with an owner-only class), unless the narrowed classes now refuse it as lane-provable or its class (`taste`) is gone, any text a person wrote by hand, and any item whose PR cannot be read (`unknown`, never cleared). A generic "the lane could not verify" or "did not state" reason names no criterion and no class, so it drops. No in-session proof is inferred from history, so a recorded device reason still keeps its item. Everything else is recomputed from the issue title and body and the PR's files; a recorded new-page-or-view reason drops, since a browser proves it. A back-fill-only entry has no rule reason, so it clears.
+
+## Repairing a label with no note
+
+A label with no block of its own kind shows on the Board as "Details unknown": the owner cannot tell what to try. It arrives by hand, from an older flow, or after a block that was cleared and the label re-added.
+
+`owner_check repair [--repo R] [--apply]` lists every labelled issue whose latest block is missing or of another kind (open or closed, as `list` reads them) and, with `--apply`, posts the missing block. It never adds, removes or changes a label and never closes an issue. The note's `reason` is "Labelled for an owner check with no note on record"; its `try` is built from the first source that has unticked `- [ ]` items: the issue body, then each closing PR's body (up to three, one line each). With none, a validate-after note falls back to the generic "use what shipped once" line, and a before-start item gets no note, because an owner step must name a concrete action (`vague_action`). That item prints `REPAIR unbuildable <ref>`, the run exits 3, and the label stays until someone writes the step with `mark`. A dry run prints `REPAIR planned|unbuildable|unknown <ref>` per item and a `REPAIR=` count line, and writes nothing.
 
 ## Back-fill
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from owner_check import backfill, block, github, reclassify, rule  # noqa: E402
+from owner_check import backfill, block, github, reclassify, repair, rule  # noqa: E402
 
 EXIT_NONE, EXIT_REQUIRED, EXIT_REFUSED, EXIT_UNKNOWN = 0, 1, 2, 3
 
@@ -172,6 +173,11 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
 def cmd_mark(args: argparse.Namespace) -> int:
     repo, number = args.ref
+    for name, value in (("reason", args.reason), ("try", args.try_text)):
+        if not value.strip():
+            print(f"MARKED=refused reason=--{name} is empty; a label with no {name} shows on the Board as "
+                  "'details unknown'")
+            return EXIT_REFUSED
     if args.kind == block.BEFORE_START:
         problem = block.vague_action(args.try_text)
         if problem:
@@ -328,6 +334,51 @@ def cmd_reclassify(args: argparse.Namespace) -> int:
     return EXIT_UNKNOWN if counts["unknown"] else EXIT_NONE
 
 
+_PR_URL = re.compile(r"/pull/(\d+)$")
+
+
+def _repair_one(item: dict, apply: bool) -> str:
+    """One unreadable item's outcome line: planned, repaired, unbuildable or skipped."""
+    repo, number, kind = item["repo"], item["number"], item["kind"]
+    issue = github.fetch_issue(repo, number)
+    latest = block.latest_block(issue["comments"]) or {}
+    if block.LABELS[kind] not in issue["labels"] or latest.get("kind") == kind:
+        return f"REPAIR skipped {item['ref']} reason=already readable or no longer labelled"
+    bodies = [("issue", issue["body"])]
+    for url in issue["prs"]:
+        m = _PR_URL.search(url)
+        if m:
+            bodies.append(("pr", github.pr_body(repo, int(m.group(1)))))
+    built = repair.build_try(kind, bodies)
+    if built is None:
+        return f"REPAIR unbuildable {item['ref']} reason=a {kind} note needs a concrete owner action and none is on the issue"
+    try_text, source = built
+    if apply:
+        body = block.format_block(kind, repair.REPAIR_REASON, try_text, issue["prs"], _today())
+        github.note(repo, number, body)
+    return f"REPAIR {'repaired' if apply else 'planned'} {item['ref']} source={source}"
+
+
+def cmd_repair(args: argparse.Namespace) -> int:
+    result = github.list_items(args.repo or None)
+    todo = [it for it in result["items"] if not it["block"]]
+    counts = {"planned": 0, "repaired": 0, "unbuildable": 0, "skipped": 0, "unknown": len(result["unknown"])}
+    for item in todo:
+        try:
+            line = _repair_one(item, args.apply)
+        except github.GhError as exc:
+            line = f"REPAIR unknown {item['ref']} reason={exc}"
+        print(line)
+        counts[line.split()[1]] += 1
+    for miss in result["unknown"]:
+        print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
+    fixable = counts["repaired"] + counts["planned"]
+    skipped = f" skipped={counts['skipped']}" if counts["skipped"] else ""
+    print(f"REPAIR={'applied' if args.apply else 'dry-run'} before={len(todo)} repairable={fixable} "
+          f"unbuildable={counts['unbuildable']} unknown={counts['unknown']}{skipped}")
+    return EXIT_UNKNOWN if counts["unbuildable"] or counts["unknown"] else EXIT_NONE
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     audit, ruled, unknown = _collect_backfill(args)
     items = backfill.merge(audit, ruled)
@@ -405,6 +456,11 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--repo", action="append", default=[])
     rc.add_argument("--apply", action="store_true")
     rc.set_defaults(func=cmd_reclassify)
+
+    rp = sub.add_parser("repair", help="write the missing note on every labelled issue with none (dry run unless --apply)")
+    rp.add_argument("--repo", action="append", default=[])
+    rp.add_argument("--apply", action="store_true")
+    rp.set_defaults(func=cmd_repair)
 
     b = sub.add_parser("backfill", help="label shipped-but-unvalidated work once (dry run unless --apply)")
     b.add_argument("--list", default=None, help="audit list file of repo#N items")
