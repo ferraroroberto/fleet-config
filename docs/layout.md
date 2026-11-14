@@ -18,7 +18,6 @@ Each is a surface this repo ships beyond skills and hooks, and each holds files 
 
 - `agy/` — the Antigravity plugin (`agy/plugins/fleet-context-filter/`).
 - `codex/` — Codex agent definitions (`codex/agents/`) and the model catalog the policy writer merges.
-- `commands/` — slash commands exposed to Claude Code.
 - `copilot-hooks/` — the Copilot CLI hook definition.
 - `pi/` — Pi extensions (`pi/extensions/`).
 - `stream-deck/` — the Stream Deck plugin: its source, templates, registry and tests.

@@ -1,4 +1,5 @@
 ---
+name: restart-webapp
 description: "Safely restart the current project's webapp and verify the new build is live."
 ---
 

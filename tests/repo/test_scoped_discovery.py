@@ -252,6 +252,65 @@ class ScopedDiscoveryTests(unittest.TestCase):
         self.assertEqual(target.resolve(), replacement.resolve())
         self.assertIn("hooks", json.loads(manifest.read_text(encoding="utf-8-sig")))
 
+    def _run_install_link_loop(self, items: str, retired: str, manifest: Path):
+        """Run install.ps1's real link helpers and loops against a scratch home."""
+        source = (REPO / "install.ps1").read_text(encoding="utf-8")
+        helpers = source[source.index("function Get-ManifestKey"):source.index("function Install-OtelProjectProfileHook")]
+        loops = source[source.index("foreach ($item in $Items) {\n    $sourceAbs"):source.index("# Persist manifest")]
+        prelude = (
+            "$RepoRoot=$env:FLEET_TEST_REPO\n"
+            "function Get-BaseHome([string]$base) { $env:FLEET_TEST_HOME }\n"
+            f"$Items=@({items})\n$RetiredItems=@({retired})\n"
+            "$manifest=@{}\n"
+            "(Get-Content $env:FLEET_TEST_MANIFEST -Raw | ConvertFrom-Json).PSObject.Properties |"
+            " ForEach-Object { $manifest[$_.Name] = $_.Value }\n"
+            "$created=0; $skipped=0; $blocked=0\n"
+        )
+        script = self.base / "install-loop.ps1"
+        script.write_text(prelude + helpers + loops + "\nif ($blocked -gt 0) { exit 1 }\n", encoding="utf-8")
+        env = dict(os.environ, FLEET_TEST_REPO=str(self.repo), FLEET_TEST_HOME=str(self.home),
+                   FLEET_TEST_MANIFEST=str(manifest))
+        ps = str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe")
+        return subprocess.run([ps, "-NoProfile", "-File", str(script)], env=env,
+                              capture_output=True, text=True, encoding="utf-8", creationflags=sd.NO_WINDOW)
+
+    @unittest.skipUnless(sys.platform == "win32", "PowerShell entry points are Windows-only")
+    def test_install_repoints_owned_link_whose_source_moved_and_retires_dropped_one(self):
+        moved_from = self.repo / "tray"
+        moved_to = self.repo / "scripts/tray"
+        moved_to.mkdir(parents=True)
+        dropped = self.repo / "commands"
+        stray = self.base / "elsewhere"
+        stray.mkdir()
+        repoint, retire, foreign = self.home / "tray", self.home / "commands", self.home / "hooks"
+        # Both owned links dangle, as they do once a pull deletes the old folders.
+        for old in (moved_from, dropped):
+            old.mkdir()
+        sd._link(moved_from, repoint)
+        sd._link(dropped, retire)
+        for old in (moved_from, dropped):
+            old.rmdir()
+        sd._link(stray, foreign)
+        (self.repo / "hooks").mkdir()
+        manifest = self.home / "manifest.json"
+        manifest.write_text(json.dumps({
+            "tray": {"kind": "junction", "source": str(moved_from), "target": str(repoint)},
+            "commands": {"kind": "junction", "source": str(dropped), "target": str(retire)},
+            "hooks": {"kind": "junction", "source": str(self.repo / "old-hooks"), "target": str(foreign)},
+        }))
+        result = self._run_install_link_loop(
+            "@{ kind='junction'; source='scripts/tray'; target='tray' },"
+            "@{ kind='junction'; source='hooks'; target='hooks' }",
+            "@{ target='commands' }", manifest)
+        output = result.stdout + result.stderr
+        self.assertIn("REPOINT", output)
+        self.assertIn("RETIRED", output)
+        self.assertEqual(repoint.resolve(), moved_to.resolve())
+        self.assertFalse(sd.present(retire))
+        # A link the manifest does not record pointing there is someone else's: left alone.
+        self.assertEqual(result.returncode, 1, output)
+        self.assertEqual(foreign.resolve(), stray.resolve())
+
     @unittest.skipUnless(sys.platform == "win32", "PowerShell entry points are Windows-only")
     def test_powershell_scoped_entry_points_never_touch_global_homes(self):
         source = self.skill(self.repo / ".claude/skills/check")
