@@ -43,7 +43,7 @@ work in this repo doesn't cost the whole catalogue:
   Antigravity), what is wired and what is a documented non-goal, the
   verification probes, and statusline parity.
 - **[`docs/install.md`](docs/install.md)** — the link table `install.ps1`
-  creates, the other surfaces this repo ships (`scripts/tray/`, `stream-deck/`), and
+  creates, the other surface this repo ships (`scripts/tray/`), and
   the migration recipes for an agent home that already holds real files.
 - **[`docs/fleet-scope.md`](docs/fleet-scope.md)** — which repos fleet-wide
   runs reach: the machine-local `hooks/projects.toml` and its tracked example,
@@ -190,8 +190,6 @@ fleet-config/
 │   ├── agents/pi/extensions/policy_hooks.ts   # same junction — bounded shared Python policies; native block/advisory adapter
 │   ├── agents/pi/extensions/session_state.ts  # same junction — reports Pi lifecycle events into sessions-state.json
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
-├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
-│   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js

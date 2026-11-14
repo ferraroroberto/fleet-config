@@ -83,19 +83,12 @@ conversation_title — user titles in a titles.json sidecar (#1348)"]
   BACKUPPY -->|"success to coding log, failure to coding alerts"| NOTIFYPY
   BACKUPPY -->|"E: repo residue -> C: ; C: sessions/runtime data -> E:"| BACKUPDEST["C:/Users/rober/backup/fleet-private\nE:/backup/{claude-transcripts,codex-sessions,fleet-runtime-data}\ndated snapshots + latest/ + session archive + manifests"]
 
-  subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]
+  subgraph tray["scripts/tray/ — junctioned into ~/.claude/tray"]
     TRAYPS1["tray_lifecycle.ps1\nONE machine-local copy; every sister tray.bat calls it by path\ncanonical source: project-scaffolding"]
   end
   tray --> CLAUDE
 
-  subgraph streamdeck["stream-deck/ — self-contained Node/TS Stream Deck plugin (fleet-config#370)"]
-    SDREGISTRY["registry/targets.json\ncommitted tray-target registry"]
-    SDSYNC["scripts/sync-assets.mjs\nvalidates + copies sister-repo icons,\ncross-checks hooks/projects.toml at build time"]
-    SDACTIONS["src/actions/\nlaunch-target · open-coding · back · call-action"]
-    SDMANIFEST["manifest.json + bundled\nread-only Fleet Coding XL profile"]
-    SDREGISTRY --> SDSYNC --> SDACTIONS --> SDMANIFEST
-  end
-  SDREGISTRY -->|validated against| PROJECTS
+  STREAMDECKREPO["stream-deck repo (own checkout)\nElgato plugin; its build resolves tray targets"] -.->|reads| PROJECTS
 
   subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]
     ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]

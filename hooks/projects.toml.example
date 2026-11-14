@@ -259,6 +259,10 @@ tray_cmd            = "tray.bat"
 restart_cmd         = '& .\tray.bat --restart'
 api_version_path    = "/api/version"
 
+[stream-deck]
+cwd_prefix          = "E:/automation/stream-deck"
+gate_cmd            = "npm run verify"
+
 [task-os]
 cwd_prefix          = "E:/automation/task-os"
 webapp_port         = 8448
