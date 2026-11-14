@@ -40,7 +40,7 @@ There is no taste class: a genuine design choice is a plan-gate question before 
 | SSH, satellite | the passwordless SSH |
 | job | the launcher Jobs API |
 | CI, workflow | the local gate; CI being off is a blocked-by |
-| a bare issue reference such as `#123` | a blocked-by on that issue |
+| a bare issue reference (a hash sign and a number) | a blocked-by on that issue |
 
 An allowlisted device item is cut out before the list runs, so "on-screen keyboard" is not refused as a keyboard check. Whether a criterion truly needs an allowlisted item stays the lane's judgement; that is the narrow part a rule cannot decide.
 
