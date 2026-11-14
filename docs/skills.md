@@ -72,5 +72,6 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [Design review core (rendered facts, scored from data)](skills/design-review-core.md) — `design_review/` measure, eval, judgment, ledger, filing, fleet and inventory stages
 - [Box load lock (burn proofs never overlap a gate)](skills/box-load-lock.md) — `box_lock.py`: gates share, a CPU burn runs alone
 - [Stranded index locks (a read that freezes a repo)](skills/stranded-index-locks.md) — `git status` stat-cache locks and the `GIT_OPTIONAL_LOCKS=0` fix
+- [One password for every fleet app](fleet-password.md) — `fleet_password/cli.py`: the owner sets one sign-in password through each app's vendored setter
 - [Sending a file to the owner (`send_file.py`)](skills/send-file.md) — any-harness half of the launcher outbox
 - [Interactive capability adaptation](skills/interactive-capability-adaptation.md) — adapting shared workflows to the session's actual tools
