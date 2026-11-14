@@ -74,7 +74,7 @@ def _finish_refusal(args: argparse.Namespace) -> Optional[str]:
     if not args.gap:
         return ("--verified no needs a --gap <class>:<criterion> per criterion the session cannot prove, "
                 f"class one of {', '.join(rule.OWNER_CLASSES)}; prove the rest with the gate, the repro, "
-                "a screenshot, rendered geometry or a probe and pass --verified yes")
+                f"{'; '.join(rule.PROOF_TOOLS)} and pass --verified yes")
     try:
         args.gaps = [rule.parse_gap(text) for text in args.gap]
     except ValueError as exc:
@@ -200,16 +200,37 @@ def cmd_clear(args: argparse.Namespace) -> int:
         print(f"CLEARED=unknown reason={exc}")
         return EXIT_UNKNOWN
     print(f"CLEARED={repo}#{number} removed={','.join(removed) or 'none'}")
+    return _clear_siblings(repo, number, issue, args.answer)
+
+
+def _clear_siblings(repo: str, number: int, issue: dict, answer: str) -> int:
+    """`list` merged same-`try` items into this one's Board line, so its answer clears them too."""
+    latest = block.latest_block(issue["comments"]) or {}
+    kind = latest.get("kind")
+    if kind not in block.LABELS or block.LABELS[kind] not in issue["labels"]:
+        return EXIT_NONE
+    try:
+        siblings = github.same_try_siblings(repo, number, kind, str(latest.get("try") or ""))
+        for sibling in siblings:
+            body = block.format_block(block.CLEARED, f"answered on the Board with {repo}#{number} (same try)",
+                                      "", (), _today(), answer=answer)
+            github.clear(repo, sibling, [block.LABELS[kind]], body)
+            print(f"MERGED_CLEARED with={repo}#{number} also={repo}#{sibling}")
+    except github.GhError as exc:
+        print(f"CLEARED=unknown reason=a merged same-try item did not clear: {exc}")
+        return EXIT_UNKNOWN
     return EXIT_NONE
 
 
 def cmd_list(args: argparse.Namespace) -> int:
     result = github.list_items(args.repo or None)
+    result["items"] = github.merge_same_try(result["items"])
     if args.json:
         print(json.dumps(result, indent=1))
     else:
         for it in result["items"]:
-            print(f"OWNER_ITEM {it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}")
+            print(f"OWNER_ITEM {it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}"
+                  + (f" merged={','.join(it['merged'])}" if it.get('merged') else ""))
         for miss in result["unknown"]:
             print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
         print(f"ITEMS={len(result['items'])} UNKNOWN={len(result['unknown'])}")
