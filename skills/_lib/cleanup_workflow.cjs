@@ -82,7 +82,7 @@ async function next(state) {
     return prior.result
   }
   try {
-    const result = await execute({ issuesByBucket: state.issuesByBucket }, agent, () => {}, () => {})
+    const result = await execute({ issuesByBucket: state.issuesByBucket, windowArmed: state.windowArmed === true }, agent, () => {}, () => {})
     if (cursor !== state.results.length) throw new Error('unused results after workflow completion')
     return { status: 'complete', workflowHash, result }
   } catch (error) {

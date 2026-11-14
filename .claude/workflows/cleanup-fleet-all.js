@@ -61,6 +61,48 @@ export const meta = {
 
 const MAX_ROUNDS = 2
 
+// The wall-clock window. A workflow script cannot read a
+// clock (Date.now() throws, it would break resume), so before each lane a gate
+// agent reads skills/_lib/scheduled/run_window.py and this script acts only on the
+// verdict. Only 'open' starts a lane: 'closed' is the window ending, anything
+// else is a window that could not be read, which stops the run the same way
+// but under its own name rather than passing as open.
+const WINDOW_GATE_SCHEMA = {
+  type: 'object',
+  required: ['window'],
+  properties: {
+    window: { type: 'string', enum: ['open', 'closed', 'unarmed', 'unknown'] },
+    detail: { type: 'string' },
+  },
+}
+const WINDOW_GATE_ATTEMPTS = 2
+
+function windowGatePrompt() {
+  return `Read the run's wall-clock window and report it. Run exactly this and read its output:
+
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/scheduled/run_window.py check
+
+Report "window" as the WINDOW= value verbatim (open, closed, unarmed or unknown) and put the REMAINING_SECONDS= line in "detail". If the command failed or printed no WINDOW= line, report unknown — never guess open. Change nothing, touch no repo, post nothing.`
+}
+
+// { state: 'open' | 'closed' | 'unknown', detail }. A gate agent that died, or
+// answered unarmed (the run armed a window, so a missing one is a lost fact),
+// is asked once more and then reads as unknown.
+async function windowState(issue) {
+  let detail = 'gate agent returned no result'
+  for (let attempt = 1; attempt <= WINDOW_GATE_ATTEMPTS; attempt++) {
+    const g = await agent(windowGatePrompt(), {
+      phase: 'Build',
+      label: `window:gate:${issue.repo}#${issue.number}`,
+      schema: WINDOW_GATE_SCHEMA,
+    })
+    if (g && g.window === 'open') return { state: 'open', detail: g.detail }
+    if (g && g.window === 'closed') return { state: 'closed', detail: g.detail }
+    if (g) detail = `gate reported ${g.window}${g.detail ? ` (${g.detail})` : ''}`
+  }
+  return { state: 'unknown', detail }
+}
+
 // How a lane ended. Every reader and writer of a lane's status names one of these.
 const LANE_STATUS = Object.freeze({ MERGED: 'merged', ESCALATED: 'escalated', FAILED: 'failed' })
 
@@ -508,6 +550,12 @@ const issuesByBucket = (rawArgs && rawArgs.issuesByBucket) || {}
 const bucketNames = Object.keys(issuesByBucket)
 const allResults = []
 let halted = null
+// Set when the wall-clock window ends (or cannot be read) and no further lane
+// starts: { reason: 'window-closed' | 'window-unknown', bucket, repo, issue,
+// detail, notStarted }. Not a halt (nothing is left unclean) and not a failure;
+// the unstarted issues are in `deferred` and the skill prints its own marker.
+let stopped = null
+const windowArmed = !!(rawArgs && rawArgs.windowArmed)
 // Issues not started because a foreign worktree appeared in
 // their repo mid-run. Same item shape as step 5's skipped set, so the retry
 // pass (step 7b) re-gates both through repo_preflight.py together.
@@ -534,9 +582,20 @@ function ownWorktrees(repo, lane) {
   return { paths: [...paths], branches: [...branches] }
 }
 
+function deferForWindow(bucket, issue, reason, detail) {
+  deferred.push({ ...issue, bucket, repo_state: reason, skip_reason: `${reason}: ${detail}` })
+}
+
 for (const bucket of bucketNames) {
   if (halted) {
     allResults.push({ bucket, results: [], skipped: 'run halted before this bucket started' })
+    continue
+  }
+  if (stopped) {
+    const rest = issuesByBucket[bucket] || []
+    for (const it of rest) deferForWindow(bucket, it, stopped.reason, stopped.detail)
+    stopped.notStarted += rest.length
+    allResults.push({ bucket, results: [], skipped: `run window ended before this bucket started (${stopped.reason})` })
     continue
   }
 
@@ -560,6 +619,16 @@ for (const bucket of bucketNames) {
       })
       log(`${bucket} [${i + 1}/${issues.length}]: deferred ${issue.repo}#${issue.number} — foreign worktree in the repo (fleet-config#1077)`)
       continue
+    }
+    if (windowArmed) {
+      const w = await windowState(issue)
+      if (w.state !== 'open') {
+        const reason = w.state === 'closed' ? 'window-closed' : 'window-unknown'
+        stopped = { reason, bucket, repo: issue.repo, issue: issue.number, detail: w.detail || reason, notStarted: issues.length - i }
+        for (const it of issues.slice(i)) deferForWindow(bucket, it, reason, stopped.detail)
+        log(`STOP: ${reason} before ${issue.repo}#${issue.number} — ${stopped.detail}; ${stopped.notStarted} issue(s) in ${bucket} not started`)
+        break
+      }
     }
     log(`${bucket} [${i + 1}/${issues.length}]: starting ${issue.repo}#${issue.number}`)
     const r = await processIssue(bucket, issue)
@@ -621,4 +690,4 @@ for (const bucket of bucketNames) {
   allResults.push({ bucket, results })
 }
 
-return { buckets: allResults, halted, deferred, promotions }
+return { buckets: allResults, halted, stopped, deferred, promotions }

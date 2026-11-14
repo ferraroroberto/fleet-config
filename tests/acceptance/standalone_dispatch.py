@@ -451,6 +451,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "wait-seconds computation from resets_at -- is testable on its own, "
      "with no real rate-limits.json touched. Replaces the retired "
      "audit_retry dead-man's-switch check. (fleet-config#261)"),
+    ("run_window", "claude_progress/test_run_window.py",
+     "/cleanup-fleet-all's wall-clock window -- open/closed/unarmed/unknown "
+     "decisions against a fixed clock, an unreadable or deadline-less state "
+     "never read as open, and an attended arm clearing a stale deadline -- is "
+     "testable on its own, with no real clock or state file touched "
+     "(fleet-config#2063)"),
     ("send_file", "repo/test_send_file.py",
      "the any-harness `send_file.py` result lines -- SENT only for an accepted "
      "entry, each launcher refusal relayed under its own reason, and "
