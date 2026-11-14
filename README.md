@@ -105,6 +105,8 @@ Per-topic references that the intro used to carry, one file each:
   instruction pack and the `relay.py` send/read helper behind it: the commands
   it may run, why Always allow makes the rules the only guard, and what the relay
   refuses.
+- **[`docs/fleet-password.md`](docs/fleet-password.md)** — the owner-run script
+  that sets one sign-in password in every app through its vendored setter.
 - **[`docs/layout.md`](docs/layout.md)** — where code goes: the folders, the
   declared extra roots and the recorded exceptions.
 

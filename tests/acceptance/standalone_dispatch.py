@@ -682,6 +682,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "block round-trip, the back-fill list parser and every CLI leg -- "
      "finish/gate/clear/mark/list with unknown as its own exit code -- are "
      "testable on their own, with gh replaced by a fake"),
+    ("fleet_password", "fleet_password/test_fleet_password.py",
+     "the one-password fleet script finds the vendored-password apps, sets each "
+     "through its own setter on stdin, checks it back, backs up and restores the "
+     "old hash, refuses empty or mismatched entries and never echoes the "
+     "password -- against temp fixture apps only (fleet-config#2064)"),
     ("workflow_capabilities", "audit/test_workflow_capabilities.py",
      "interactive cleanup request/result gates and portable skill contracts (#749)"),
     ("quota_snapshots", "claude_progress/test_quota_snapshots.py",
