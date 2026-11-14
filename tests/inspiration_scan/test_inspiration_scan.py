@@ -108,6 +108,20 @@ check(atom.status == "ok" and atom.items and atom.items[0].link == "https://www.
       "Atom: a YouTube entry yields its watch link")
 check(atom.items and "build" in atom.items[0].text, "Atom: the media description is the item text")
 
+ODD_LINKS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>Letter</title>
+<item><title>Odd</title><link>javascript:alert(1)</link><pubDate>Fri, 06 Nov 2026 08:00:00 GMT</pubDate></item>
+<item><title>Guid</title><link>data:text/html,x</link><guid>https://letter.example/p/guid</guid>
+<pubDate>Fri, 06 Nov 2026 08:00:00 GMT</pubDate></item>
+</channel></rss>"""
+ODD_ATOM = b"""<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>Odd</title><link rel="alternate" href=" JavaScript:alert(1)"/>
+<published>2026-11-05T10:00:00+00:00</published></entry></feed>"""
+odd = feeds.read_source(letter, SINCE, fetcher=lambda url: ODD_LINKS)
+check(odd.status == "ok" and [i.link for i in odd.items] == ["https://letter.example/p/guid"],
+      "feeds: an RSS item keeps only a web address as its link, falling back to its guid")
+check(feeds.read_source(channel, SINCE, fetcher=lambda url: ODD_ATOM).items == [],
+      "feeds: an Atom entry whose link is not a web address is skipped")
+
 
 def _http_error(url: str) -> bytes:
     raise urllib.error.HTTPError(url, 404, "nf", {}, None)

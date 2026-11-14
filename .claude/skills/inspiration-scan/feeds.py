@@ -15,6 +15,7 @@ import hashlib
 import html
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -69,6 +70,16 @@ def item_id(link: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 
+def web_link(raw: str) -> str:
+    """`raw` stripped when it is an http(s) address, else "".
+
+    The link becomes a clickable target in the digest and the Board, so only a
+    plain web address is kept; an item without one is skipped like a missing link.
+    """
+    link = (raw or "").strip()
+    return link if urllib.parse.urlsplit(link).scheme.lower() in ("http", "https") else ""
+
+
 def clean_text(raw: str) -> str:
     text = _SPACE_RE.sub(" ", html.unescape(_TAG_RE.sub(" ", raw or ""))).strip()
     return text[:TEXT_LIMIT]
@@ -95,7 +106,7 @@ def _text(node: Optional[ET.Element]) -> str:
 def _rss_items(root: ET.Element, source: Source) -> List[Item]:
     items = []
     for entry in root.iter("item"):
-        link = _text(entry.find("link")).strip() or _text(entry.find("guid")).strip()
+        link = web_link(_text(entry.find("link"))) or web_link(_text(entry.find("guid")))
         if not link:
             continue
         items.append(Item(item_id(link), source.kind, source.name, clean_text(_text(entry.find("title"))),
@@ -115,7 +126,7 @@ def _atom_link(entry: ET.Element) -> str:
 def _atom_items(root: ET.Element, source: Source) -> List[Item]:
     items = []
     for entry in root.iter(f"{_ATOM}entry"):
-        link = _atom_link(entry)
+        link = web_link(_atom_link(entry))
         if not link:
             continue
         summary = (_text(entry.find(f"{_ATOM}summary")) or _text(entry.find(f"{_ATOM}content"))
