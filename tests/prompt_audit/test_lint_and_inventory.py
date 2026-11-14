@@ -73,6 +73,22 @@ check(by_rule(r30, "R-30")[0].cap == "consider", "R-30 is single-vendor: conside
 check(pa.lint_entry(entry_for(R30, audience="claude"), RULES, AUD).hits[0].cap == "violation",
       "R-30 is a violation in a claude-scoped file")
 
+# R-08: a think-less line is dead text on the newest model; "never think about" or a fence is not a hit
+R08 = """# Thinking
+
+- Do not think before answering.
+- Answer directly without deliberating.
+- Reply quickly and without deliberating on edge cases.
+- Never think about the user's mood while triaging.
+- Set the effort level instead of asking for less thinking.
+
+```
+answer directly without deliberating
+```
+"""
+r08 = pa.lint_entry(entry_for(R08), RULES, AUD)
+check(r08.counts().get("R-08") == 3, f"R-08 counts the three think-less lines only (got {r08.counts()})")
+
 # R-45 (#1307): blanket tool-use discouragement; a named condition or a fence is not a hit
 R45 = """# Tools
 
