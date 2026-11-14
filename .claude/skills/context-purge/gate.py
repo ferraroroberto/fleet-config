@@ -33,10 +33,11 @@ CLI (run from anywhere; `reconcile` also shells out to `gh`):
                                     scanned surface are preserved), upsert
   reconcile [--fleet] [--dry-run] [--json]
       — sync the ledger against every `chore/context-purge-*` PR's actual
-        outcome: a merged PR's files get re-hashed to
-        their content *at that PR's own merge commit* (never `main`'s
-        ever-moving tip); a closed-unmerged PR's files have their
-        (never-landed) ledger entry dropped so they re-enter `to_purge`;
+        outcome without overwriting a later `advance`: a merged PR's file is
+        filled (at its content *at that PR's own merge commit*, never `main`'s
+        ever-moving tip) only when the ledger has no entry for it; a
+        closed-unmerged PR's entry is dropped only when it equals the hash
+        that PR's branch produced, so the file re-enters `to_purge`;
         an open PR is left untouched and reported in the backlog instead.
         Run before `gate` — an abandoned or still-open purge PR must not
         keep suppressing its files forever.
@@ -195,42 +196,39 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
     `prs` — one dict per PR, already scoped to `is_purge_branch`-matching
     branches: `{"repo": <ledger-key repo segment>, "number", "title", "url",
     "created_at", "state", "mergedAt", "files": [<repo-relative path>, ...],
-    "main_hashes": {<path>: <hash12>}}` (`main_hashes` only needed/used for a
-    merged PR — its absence for other states is not a bug).
+    "main_hashes": {<path>: <hash12>}, "head_hashes": {<path>: <hash12> | None}}`
+    (`main_hashes` is only used for a merged PR, `head_hashes` only for a
+    closed-unmerged one — its absence for other states is not a bug).
 
-    Returns `{"updates": {<ledger key>: <hash12> | None}, "backlog": [...]}`.
-    `updates[key] is None` means "delete this ledger entry" (an abandoned
-    PR's assessment must not keep suppressing the file). A merged PR's file
-    is keyed to its hash *at that PR's own merge commit* (`main_hashes`),
-    never to whatever hash the original `advance` call happened to record
-    mid-flight, and never to whatever `main`'s tip happens to hold when this
-    runs — an active fleet has unrelated commits landing on `main`
-    constantly, and crediting a purge PR with content it never touched would
-    silently mark a since-drifted file "unchanged" again.
+    Returns `{"updates": {<ledger key>: <hash12> | None}, "backlog": [...],
+    "unverified_closed": [<ledger key>, ...]}`. `updates[key] is None` means
+    "delete this ledger entry". The ledger keeps no per-entry timestamps, so
+    reconcile never overwrites an entry it cannot prove stale — a later
+    `advance` may have written it after the PR merged:
 
-    Two files can each be touched by more than one purge PR over time, and
-    the two orderings matter differently:
+    - **Merged PR** — its file is keyed to its hash *at that PR's own merge
+      commit* (`main_hashes`, never `main`'s ever-moving tip, so a since-drifted
+      file is not credited as "unchanged"), and only when the ledger has no
+      entry for the key. An existing entry stays; at worst the file re-enters
+      `to_purge`, which is the safe default.
+    - **Closed-unmerged PR** — an entry is dropped only when it equals the hash
+      that PR's own branch produced (`head_hashes`): the never-landed
+      assessment. An entry that differs is a newer `advance` and stays. A
+      branch hash that could not be resolved drops nothing and is listed in
+      `unverified_closed`, never folded into "clean".
 
-    - **Same file, one merged + one closed** — the merged result always
-      wins, independent of fetch/iteration order (an abandoned attempt, e.g.
-      a PR closed unmerged on `CLAUDE.md`, does not get to
-      erase a later successful merge of the same file).
+    Two files can each be touched by more than one purge PR over time:
+
+    - **Same file, one merged + one closed** — an entry equal to the closed
+      branch's hash becomes the merged hash (order-independent).
     - **Same file, two merged PRs** — the *chronologically later* merge
-      wins (a second, more recent purge legitimately supersedes an earlier
-      one's hash). `prs` is sorted by `mergedAt`/`created_at` before
-      processing so plain dict-overwrite resolves this correctly.
-
-    Both orderings were real bugs caught by running this against live fleet
-    data before shipping it — the second is exactly why
-    `main_hashes` must be commit-anchored rather than tip-anchored: three
-    sister repos each had an old (2026-08-15) *merged* purge alongside a
-    newer (2026-08-22) *abandoned* one for the same `CLAUDE.md`, and a
-    tip-anchored hash could not tell "the merge is still what's on main"
-    apart from "an unrelated later commit changed it again".
+      wins for a key with no entry. `prs` is sorted by `mergedAt`/`created_at`
+      before processing so plain dict-overwrite resolves this correctly.
     """
     ordered = sorted(prs, key=lambda pr: pr.get("mergedAt") or pr.get("created_at") or "")
-    merged_updates: dict[str, str] = {}
-    closed_keys: set[str] = set()
+    merged_hashes: dict[str, str] = {}
+    abandoned: dict[str, set[str]] = {}
+    unverified: set[str] = set()
     backlog: list[dict] = []
     for pr in ordered:
         repo = pr["repo"]
@@ -242,13 +240,17 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
                     continue
                 h = (pr.get("main_hashes") or {}).get(path)
                 if h is not None:
-                    merged_updates[key] = h
+                    merged_hashes[key] = h
         elif kind == "closed":
             for path in pr.get("files", []):
                 key = f"{repo}/{path}"
                 if surface is not None and key not in surface:
                     continue
-                closed_keys.add(key)
+                h = (pr.get("head_hashes") or {}).get(path)
+                if h is not None:
+                    abandoned.setdefault(key, set()).add(h)
+                elif key in ledger:
+                    unverified.add(key)
         else:  # open — safe default is to re-offer, never silently suppress
             backlog.append({
                 "repo": repo, "number": pr.get("number"), "title": pr.get("title"),
@@ -256,10 +258,13 @@ def plan_reconcile(ledger: dict[str, str], prs: list[dict], today: _dt.date,
                 "age_days": pr_age_days(pr.get("created_at", ""), today),
             })
     updates: dict[str, "str | None"] = {
-        key: None for key in closed_keys if key in ledger and key not in merged_updates
+        key: h for key, h in merged_hashes.items() if key not in ledger
     }
-    updates.update(merged_updates)
-    return {"updates": updates, "backlog": backlog}
+    for key, hashes in abandoned.items():
+        if ledger.get(key) in hashes:
+            updates[key] = merged_hashes.get(key)
+    return {"updates": updates, "backlog": backlog,
+            "unverified_closed": sorted(unverified - abandoned.keys() - updates.keys())}
 
 
 # ---- surface enumeration ---------------------------------------------------
@@ -366,18 +371,28 @@ def _commit_hashes(repo_dir: Path, commit_sha: str, relpaths: list[str]) -> dict
     return out
 
 
+def _ensure_commit(repo_dir: Path, commit_sha: str, pr_number: int) -> None:
+    """Make an abandoned PR's head commit available locally (its branch is usually deleted)."""
+    have = git_run.run_git(["-C", str(repo_dir), "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+                           timeout=WORKTREE_REMOVE_TIMEOUT_S)
+    if have.returncode != 0:
+        git_run.run_git(["-C", str(repo_dir), "fetch", "--quiet", "origin", f"pull/{pr_number}/head"],
+                        timeout=WORKTREE_ADD_TIMEOUT_S)
+
+
 def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
     """Every `chore/context-purge-*` PR (any state) for one repo, `gh`-fetched.
 
     The `head:` search filters server-side: a bare newest-N window would drop
     older purge PRs behind unrelated traffic. One `gh pr list` call per repo carries `files` inline — no per-PR
     `gh pr view` round trip needed. A merged PR's files are additionally
-    resolved to their hash *at that PR's own merge commit* here (the only
-    place that needs a repo checkout), so `plan_reconcile` stays git/gh-free.
+    resolved to their hash *at that PR's own merge commit* — and a closed-unmerged
+    PR's to the hash at its head commit — here (the only place that needs a repo
+    checkout), so `plan_reconcile` stays git/gh-free.
     """
     res = git_run.run_gh(
         ["pr", "list", "--repo", f"ferraroroberto/{repo_name}", "--state", "all",
-         "--json", "number,title,url,headRefName,state,mergedAt,createdAt,mergeCommit,files",
+         "--json", "number,title,url,headRefName,headRefOid,state,mergedAt,createdAt,mergeCommit,files",
          "--search", f"head:{PURGE_BRANCH_PREFIX}", "--limit", str(PURGE_PR_FETCH_LIMIT)],
         timeout=git_run.GH_LIST_TIMEOUT_S,
     )
@@ -395,8 +410,12 @@ def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
             "files": [f["path"] for f in pr.get("files", [])],
         }
         merge_sha = (pr.get("mergeCommit") or {}).get("oid")
-        if classify_pr(entry) == "merged" and merge_sha:
+        kind = classify_pr(entry)
+        if kind == "merged" and merge_sha:
             entry["main_hashes"] = _commit_hashes(repo_dir, merge_sha, entry["files"])
+        elif kind == "closed" and pr.get("headRefOid") and entry["files"]:
+            _ensure_commit(repo_dir, pr["headRefOid"], entry["number"])
+            entry["head_hashes"] = _commit_hashes(repo_dir, pr["headRefOid"], entry["files"])
         out.append(entry)
     return out
 
@@ -404,13 +423,11 @@ def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
 def reconcile(fleet: bool, dry_run: bool = False) -> dict:
     """Fetch purge PRs fleet-wide (or fleet-config-only), plan, and apply.
 
-    Applying means: a merged PR's files get their ledger hash refreshed to
-    what that PR's own merge commit put there (so they correctly read
-    `unchanged` next week, unless a *later* unrelated commit moved them on
-    again — in which case that's exactly what should re-surface as
-    `to_purge`); a closed-unmerged PR's files have their ledger entry dropped (so
-    they re-enter `to_purge` instead of staying silently suppressed). An
-    open PR touches nothing — it is reported in `backlog` instead, the
+    Applying means: a merged PR's file gets the hash its own merge commit put
+    there when the ledger has no entry for it (an existing entry may be a later
+    `advance` and stays); a closed-unmerged PR's ledger entry is dropped only
+    when it equals that PR's branch hash (so the file re-enters `to_purge`
+    instead of staying silently suppressed). An open PR touches nothing — it is reported in `backlog` instead, the
     "safe default is to re-offer, so don't touch it while a human might
     still be reviewing it" middle state.
     """
@@ -504,7 +521,8 @@ def main() -> int:
         verb = "would record" if args.dry_run else "recorded"
         print(f"RECONCILE: {verb} {merged_syncs} merged sync(s), "
               f"cleared {closed_clears} abandoned entry(ies), "
-              f"{len(plan['backlog'])} PR(s) still open"
+              f"{len(plan['backlog'])} PR(s) still open, "
+              f"{len(plan['unverified_closed'])} abandoned entry(ies) not verifiable"
               + (f" — {plan['ledger_url']}" if plan.get("ledger_url") else ""))
         return 0
 

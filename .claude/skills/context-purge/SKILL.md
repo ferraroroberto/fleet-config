@@ -20,7 +20,7 @@ Both modes **merge their own validated rewrites** (fleet-config#1312); nobody is
 
 A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`).
 
-**Reconcile first** (fleet-config#757): a purge PR that was never merged must not go on suppressing its files forever. `reconcile` syncs the ledger against what actually happened to every `chore/context-purge-*` PR — a merged PR's files get their ledger hash refreshed to their content *at that PR's own merge commit* (never `main`'s ever-moving tip — an unrelated later commit touching the same file must re-surface it, not hide behind a stale credit); a closed-unmerged PR's files have their (never-landed) ledger entry dropped so they re-enter `to_purge`; a still-open PR is left untouched and reported in the backlog instead — the safe default is to re-offer, never silently suppress:
+**Reconcile first** (fleet-config#757): a purge PR that was never merged must not go on suppressing its files forever. `reconcile` syncs the ledger against what actually happened to every `chore/context-purge-*` PR — a merged PR's file is filled with its content *at that PR's own merge commit* (never `main`'s ever-moving tip) only when the ledger has no entry for it — an existing entry may be a later `advance` and is never overwritten; a closed-unmerged PR's ledger entry is dropped only when it equals the hash that PR's branch produced, so the never-landed assessment re-enters `to_purge` while a newer entry stays (an unresolvable branch hash is reported as not verifiable, never folded into clean); a still-open PR is left untouched and reported in the backlog instead — the safe default is to re-offer, never silently suppress:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py reconcile [--fleet] --json > <scratch>/reconcile.json
@@ -40,7 +40,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 
 `advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial (large surface, lean files skipped by design, per-repo failures reported and skipped), so a bare `advance` would record files nobody read and silently suppress them from every future run until edited. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
 
-`advance` runs after the merge, so a rewritten file's hash is recorded only for content that landed. A draft left behind by a failed validation is not advanced; the *next* run's `reconcile` still corrects any stray entry, and the backlog section in every digest (below) makes a waiting PR visible before it goes stale.
+`advance` runs after the merge, so a rewritten file's hash is recorded only for content that landed. A draft left behind by a failed validation is not advanced; the *next* run's `reconcile` drops a stray entry that equals the abandoned branch's hash, and the backlog section in every digest (below) makes a waiting PR visible before it goes stale.
 
 ## Priorities (highest value first)
 

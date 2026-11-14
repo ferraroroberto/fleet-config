@@ -109,13 +109,13 @@ check(gate.pr_age_days("not-a-date", _today) is None,
 # ledger entry must be dropped so the file re-enters to_purge, while a merged
 # PR's entry is refreshed to what main now holds, and an open PR is left
 # alone and reported in the backlog instead.
-_ledger = {"automation/CLAUDE.md": "aaaaaaaaaaaa", "life-os/CLAUDE.md": "bbbbbbbbbbbb"}
+_ledger = {"automation/CLAUDE.md": "aaaaaaaaaaaa"}
 _prs = [
     {  # the exact shape of the four abandoned 2026-08-22 PRs
         "repo": "automation", "number": 110, "title": "chore: compress",
         "url": "https://github.com/ferraroroberto/automation/pull/110",
         "created_at": "2026-08-22T06:10:51Z", "state": "CLOSED", "mergedAt": None,
-        "files": ["CLAUDE.md"],
+        "files": ["CLAUDE.md"], "head_hashes": {"CLAUDE.md": "aaaaaaaaaaaa"},
     },
     {
         "repo": "life-os", "number": 200, "title": "chore: compress",
@@ -135,7 +135,7 @@ plan = gate.plan_reconcile(_ledger, _prs, _dt.date(2026, 9, 5))
 check(plan["updates"]["automation/CLAUDE.md"] is None,
       "plan_reconcile: a closed-unmerged PR's file is marked for deletion, not left suppressing")
 check(plan["updates"]["life-os/CLAUDE.md"] == "ffffffffffff",
-      "plan_reconcile: a merged PR's file is refreshed to its current-on-main hash")
+      "plan_reconcile: a merged PR's file with no ledger entry is filled with its merge-commit hash")
 check(len(plan["backlog"]) == 1 and plan["backlog"][0]["repo"] == "photo-ocr",
       "plan_reconcile: an open PR is left untouched and reported in the backlog")
 check(plan["backlog"][0]["age_days"] == 4,
@@ -159,7 +159,8 @@ _superseded_ledger = {"fleet-config/CLAUDE.md": "aaaaaaaaaaaa"}
 _closed_then_merged = [
     {"repo": "fleet-config", "number": 702, "title": "old attempt",
      "url": "https://x/702", "created_at": "2026-08-22T06:01:15Z",
-     "state": "CLOSED", "mergedAt": None, "files": ["CLAUDE.md"]},
+     "state": "CLOSED", "mergedAt": None, "files": ["CLAUDE.md"],
+     "head_hashes": {"CLAUDE.md": "aaaaaaaaaaaa"}},
     {"repo": "fleet-config", "number": 754, "title": "landed",
      "url": "https://x/754", "created_at": "2026-09-04T23:48:24Z",
      "state": "MERGED", "mergedAt": "2026-09-05T07:56:20Z",
@@ -219,6 +220,45 @@ check("project-scaffolding/docs/agents/CLAUDE.master.md" in _plan_no_surface["up
       "plan_reconcile: with no surface given (surface=None), nothing is filtered "
       "-- the restriction is opt-in for callers that know the current surface")
 
+# A ledger entry the later `advance` wrote must survive reconcile: the ledger keeps no
+# timestamps, so an entry that already exists is never overwritten with an older merge hash.
+_advanced = {"fleet-config/global-CLAUDE.md": "6d711df4d368"}
+_old_merge = [
+    {"repo": "fleet-config", "number": 900, "title": "old purge", "url": "https://x/900",
+     "created_at": "2026-10-01T00:00:00Z", "state": "MERGED", "mergedAt": "2026-10-02T00:00:00Z",
+     "files": ["global-CLAUDE.md"], "main_hashes": {"global-CLAUDE.md": "f6ae38435b84"}},
+]
+_plan_adv = gate.plan_reconcile(_advanced, _old_merge, _dt.date(2026, 11, 12))
+check(_plan_adv["updates"] == {},
+      "plan_reconcile: a file advanced after its purge PR merged keeps its advance hash")
+_plan_fill = gate.plan_reconcile({}, _old_merge, _dt.date(2026, 11, 12))
+check(_plan_fill["updates"] == {"fleet-config/global-CLAUDE.md": "f6ae38435b84"},
+      "plan_reconcile: a merged PR still fills a key the ledger has no entry for")
+
+# A closed-unmerged PR drops an entry only when it equals the hash that PR's branch produced.
+_closed = [
+    {"repo": "fleet-config", "number": 901, "title": "abandoned", "url": "https://x/901",
+     "created_at": "2026-10-01T00:00:00Z", "state": "CLOSED", "mergedAt": None,
+     "files": ["global-CLAUDE.md"], "head_hashes": {"global-CLAUDE.md": "999999999999"}},
+]
+_plan_closed_new = gate.plan_reconcile(_advanced, _closed, _dt.date(2026, 11, 12))
+check(_plan_closed_new["updates"] == {},
+      "plan_reconcile: an entry newer than a closed PR's branch hash is not dropped")
+_plan_closed_same = gate.plan_reconcile(
+    {"fleet-config/global-CLAUDE.md": "999999999999"}, _closed, _dt.date(2026, 11, 12))
+check(_plan_closed_same["updates"] == {"fleet-config/global-CLAUDE.md": None},
+      "plan_reconcile: an entry equal to a closed PR's branch hash is dropped")
+_closed_unknown = [{**_closed[0], "head_hashes": {"global-CLAUDE.md": None}}]
+_plan_closed_unknown = gate.plan_reconcile(_advanced, _closed_unknown, _dt.date(2026, 11, 12))
+check(_plan_closed_unknown["updates"] == {}
+      and _plan_closed_unknown["unverified_closed"] == ["fleet-config/global-CLAUDE.md"],
+      "plan_reconcile: an unresolvable closed-PR branch hash drops nothing and is reported")
+_plan_closed_merged = gate.plan_reconcile(
+    {"fleet-config/global-CLAUDE.md": "999999999999"},
+    _closed + [{**_old_merge[0], "number": 902}], _dt.date(2026, 11, 12))
+check(_plan_closed_merged["updates"] == {"fleet-config/global-CLAUDE.md": "f6ae38435b84"},
+      "plan_reconcile: an abandoned draft's entry is replaced by a merged PR's hash for that file")
+
 # ---- surface: dormant repos (docs/fleet-scope.md) ----------------------------
 
 import tempfile  # noqa: E402
@@ -265,5 +305,29 @@ check(_args[_args.index("--limit") + 1] == str(gate.PURGE_PR_FETCH_LIMIT),
       "_fetch_purge_prs: the --limit is the named PURGE_PR_FETCH_LIMIT")
 check([e["number"] for e in _fetched] == [1],
       "_fetch_purge_prs: a non-purge branch in the response is still dropped")
+
+# A closed-unmerged PR carries its head-commit hashes into the plan; a merged one carries main_hashes.
+_real_ec, _real_ch = gate._ensure_commit, gate._commit_hashes
+_head_calls: list[str] = []
+gate._ensure_commit = lambda repo_dir, sha, number: _head_calls.append(f"ensure:{sha}:{number}")
+gate._commit_hashes = lambda repo_dir, sha, paths: (
+    _head_calls.append(f"hash:{sha}") or {p: sha[:12] for p in paths})
+gate.git_run.run_gh = lambda args, **_kw: SimpleNamespace(returncode=0, stdout=json.dumps([
+    {"number": 7, "headRefName": "chore/context-purge-1", "state": "CLOSED", "mergedAt": None,
+     "headRefOid": "abcdef1234567890", "files": [{"path": "CLAUDE.md"}]},
+    {"number": 8, "headRefName": "chore/context-purge-2", "state": "MERGED",
+     "mergedAt": "2026-11-01T00:00:00Z", "headRefOid": "1111111111111111",
+     "mergeCommit": {"oid": "2222222222222222"}, "files": [{"path": "CLAUDE.md"}]},
+]), stderr="")
+try:
+    _fetched2 = {e["number"]: e for e in gate._fetch_purge_prs("demo", Path("."))}
+finally:
+    gate.git_run.run_gh = _real_run_gh
+    gate._ensure_commit, gate._commit_hashes = _real_ec, _real_ch
+check(_fetched2[7].get("head_hashes") == {"CLAUDE.md": "abcdef123456"} and "main_hashes" not in _fetched2[7],
+      "_fetch_purge_prs: a closed PR is hashed at its head commit, after making that commit available")
+check(_fetched2[8].get("main_hashes") == {"CLAUDE.md": "222222222222"} and "head_hashes" not in _fetched2[8]
+      and "ensure:abcdef1234567890:7" in _head_calls and "ensure:1111111111111111:8" not in _head_calls,
+      "_fetch_purge_prs: a merged PR is still hashed at its merge commit only")
 
 _h.report_and_exit("test_context_purge_gate")
