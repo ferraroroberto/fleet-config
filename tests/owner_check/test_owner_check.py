@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-from owner_check import backfill, block, cli, github, reclassify, rule  # noqa: E402
+from owner_check import backfill, block, cli, github, reclassify, repair, rule  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -371,8 +371,8 @@ fake = FakeGh(issue(), "modified\tsrc/app.py\n")
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "device:the mic level moves",
                  "--try", "open it", "--proof", "https://a"], fake)
 check(code == 1 and "APPLIED=yes label=needs-validation" in out, f"required + try: marked ({code}, {out})")
-check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "edit"], ["issue", "comment"]],
-      f"label ensured, applied, then the block posted: {fake.writes()}")
+check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "comment"], ["issue", "edit"]],
+      f"label ensured, the block posted, then the label applied: {fake.writes()}")
 posted = block.parse_block(fake.comments[0])
 check(posted["proof"] == ["https://github.com/ferraroroberto/demo/pull/9", "https://a"],
       f"the PR url leads the proof list, got {posted['proof']}")
@@ -556,6 +556,86 @@ cleared = block.parse_block(fake.comments[0]) if fake.comments else {}
 check(code == 0 and "RECLASSIFY=applied before=2 clear=1 keep=1" in out and cleared.get("kind") == block.CLEARED
       and "back-fill-only" in cleared.get("answer", "") and len(fake.comments) == 1,
       f"apply clears with a public-safe cleared block ({code}, {out}, {fake.comments})")
+
+
+# ---- a label never lands without a readable note ----
+
+fake = FakeGh(issue(), "", fail=("issue comment",))
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it"], fake)
+check(code == 3 and not any(c[:2] == ["issue", "edit"] for c in fake.calls),
+      f"a note that does not land leaves no label behind ({code}, {fake.calls})")
+fake = FakeGh(issue())
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it"], fake)
+check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "comment"], ["issue", "edit"]],
+      f"the note is posted before the label is applied: {fake.writes()}")
+for field, argv in (("reason", ["--reason", "  ", "--try", "open it on the tower"]),
+                    ("try", ["--reason", "r", "--try", " "])):
+    for kind in (block.VALIDATE_AFTER, block.BEFORE_START):
+        fake = FakeGh(issue())
+        code, out = run(["mark", "demo#7", "--kind", kind, *argv], fake)
+        check(code == 2 and out.startswith("MARKED=refused") and field in out and not fake.calls,
+              f"a {kind} mark with an empty {field} is refused before any write ({code}, {out})")
+
+
+class RepairFake(FakeGh):
+    """Labelled issues, per number: 5 no note, 6 a readable note, 8 needs-owner with no note and no checklist,
+    9 a stale cleared note whose closing PR lists a step."""
+
+    ISSUES = {
+        5: ("needs-validation", "Intro\n\n## Acceptance criteria\n\n- [x] done thing\n- [ ] open the export page\n"
+                                "- [ ] check the totals column\n", ()),
+        6: ("needs-validation", "", (block.format_block(block.VALIDATE_AFTER, "why", "try it", (), "2026-11-01"),)),
+        8: ("needs-owner", "No checklist here.", ()),
+        9: ("needs-validation", "Plain body", (block.format_block(block.CLEARED, "answered", "", (), "2026-11-01",
+                                                                  answer="ok"),)),
+    }
+
+    def __call__(self, args):
+        args = list(args)
+        key = " ".join(args[:2])
+        if key.startswith(("issue list", "issue view")) or (key.startswith("api repos/") and "pulls/" in args[1]):
+            self.calls.append(args)
+        if key.startswith("issue list"):
+            label = args[args.index("--label") + 1]
+            return json.dumps([
+                {"number": n, "title": f"t{n}", "state": "CLOSED", "url": "u", "labels": [],
+                 "comments": [{"body": c} for c in comments]}
+                for n, (lab, _body, comments) in self.ISSUES.items() if lab == label])
+        if key.startswith("issue view"):
+            number = int(args[2])
+            lab, body, comments = self.ISSUES[number]
+            data = issue(labels=("bug", lab), body=body, comments=comments)
+            data["number"] = number
+            if number == 9:
+                data["closedByPullRequestsReferences"] = [{"url": "https://github.com/ferraroroberto/demo/pull/40"}]
+            return json.dumps(data)
+        if key.startswith("api repos/") and "pulls/" in args[1]:
+            return "Summary\n\n- [ ] press Play once on the phone\n"
+        return super().__call__(args)
+
+
+fake = RepairFake()
+code, out = run(["repair", "--repo", "demo"], fake)
+check(code == 3 and "REPAIR planned demo#5" in out and "REPAIR planned demo#9" in out
+      and "REPAIR unbuildable demo#8" in out and "demo#6" not in out
+      and "REPAIR=dry-run before=3 repairable=2 unbuildable=1 unknown=0" in out and not fake.writes(),
+      f"a dry run lists the unreadable items and writes nothing ({code}, {out})")
+fake = RepairFake()
+code, out = run(["repair", "--repo", "demo", "--apply"], fake)
+notes = {int(c[2]): block.parse_block(fake.comments[i]) for i, c in
+         enumerate(c for c in fake.calls if c[:2] == ["issue", "comment"])}
+check(code == 3 and "REPAIR=applied before=3 repairable=2 unbuildable=1 unknown=0" in out and sorted(notes) == [5, 9]
+      and not any(c[:2] == ["issue", "edit"] for c in fake.calls),
+      f"apply writes a note on each buildable item and never touches a label or the unbuildable one ({code}, {out})")
+check(notes[5]["kind"] == block.VALIDATE_AFTER and notes[5]["try"] == "open the export page; check the totals column"
+      and notes[5]["reason"] == repair.REPAIR_REASON,
+      f"the note's try comes from the issue's unticked acceptance items, got {notes[5]}")
+check(notes[9]["try"].startswith("press Play once on the phone"),
+      f"with no issue checklist the closing PR's unticked items are used, got {notes[9]}")
+fake = RepairFake()
+code, out = run(["repair", "--repo", "demo", "--apply"], fake)
+check(github.OWNER in " ".join(fake.calls[0]) and "REPAIR=applied" in out, "repair addresses the fleet owner's repo")
+check(repair.unticked("- [ ] a\n  * [ ] b\n- [x] c\n- [ ]\nno list") == ["a", "b"], "only unticked checklist lines are read")
 
 
 # ---- ref parsing: bare and owner-qualified ----

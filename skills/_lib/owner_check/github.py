@@ -132,12 +132,21 @@ def _post_comment(repo: str, number: int, body: str) -> None:
 
 
 def mark(repo: str, number: int, kind: str, body: str) -> str:
-    """Create the kind's label if missing, apply it, post the block. Returns the label."""
+    """Create the kind's label if missing, post the block, then apply the label. Returns the label.
+
+    The block goes first: a failure between the two calls leaves an unlabelled
+    note (harmless, the Board reads labels) instead of a label with no note.
+    """
     label = block.LABELS[kind]
     ensure_label(repo, label)
-    _edit_labels(repo, number, add=[label])
     _post_comment(repo, number, body)
+    _edit_labels(repo, number, add=[label])
     return label
+
+
+def note(repo: str, number: int, body: str) -> None:
+    """Post a block on an issue that already carries its label (repair)."""
+    _post_comment(repo, number, body)
 
 
 def clear(repo: str, number: int, present_labels: Sequence[str], body: str) -> List[str]:
