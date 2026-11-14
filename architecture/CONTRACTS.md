@@ -37,12 +37,13 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | voice-transcriber | local-llm-hub |
 | photo-ocr | local-llm-hub, project-scaffolding |
 | app-launcher-lite | app-launcher |
+| stream-deck | fleet-config, home-automation |
+| folder-explorer | project-scaffolding |
 | grocery-shopping-automation | local-llm-hub, voice-transcriber |
 | whatsapp-radar | home-automation, local-llm-hub, project-scaffolding, task-os |
 | facilitation-suite | local-llm-hub |
 | life-os | app-launcher, local-llm-hub, folder-explorer, email-archiver, fleet-config |
 | home-automation | local-llm-hub, project-scaffolding, voice-transcriber |
-| folder-explorer | project-scaffolding |
 | parking-manager | fleet-config |
 | task-os | folder-explorer, local-llm-hub, voice-transcriber |
 | accounting-quarterly | local-llm-hub |
