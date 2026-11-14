@@ -45,6 +45,12 @@ could hit by hand.
   queued build item carries its model (fleet-config#1101): `--model
   opus|sonnet` on `plan lane` and `plan add`/`set`, picked per task by
   `docs/model-tiers.md`, matching what you dispatched it with.
+- **Journal what the plan does not.** Every plan transition (`add`, `lane`,
+  `set --status merged|parked`, `ask`, `unwait`) writes its own line to the
+  journal behind the Board's "since you last looked" card. At the end of a turn
+  that changed something no plan command covers, run `chief_ops.py note
+  "<one short public-safe line>" [--kind K] [--ref repo#N]`; a repeat is
+  skipped. Format: `docs/chief-journal.md`.
 - **Every decision you need from Roberto goes in the plan as a question
   (fleet-config#1049):** `plan ask "<question>" --ref repo#N` (or `--repo`)
   with `--detail` (the context needed to decide cold), `--recommend` (your

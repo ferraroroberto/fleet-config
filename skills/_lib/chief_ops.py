@@ -276,6 +276,13 @@ Subcommands
       nothing and exits 2. The logic lives in `skills/_lib/chief_plan.py`, the
       contract in `docs/chief-plan.md`.
 
+  note "<text>" [--kind K] [--ref repo#N]
+      Journals one line for the Board's "since you last looked" card
+      (`chief/journal.py`, format in `docs/chief-journal.md`): `NOTE=appended`,
+      or `NOTE=skipped reason=duplicate` when it repeats the newest entry for
+      the same kind + ref. Every `plan` transition journals itself; run `note`
+      for a change no plan command covers.
+
 `--verify`'s four-verdict classification is **not** here: the exchange-marker
 parser, the precedence rules, the output-age measurement they rest on and the
 verdict/reason rendering are one self-contained subsystem, and they live in

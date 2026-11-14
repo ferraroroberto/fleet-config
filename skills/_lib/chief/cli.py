@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import argparse
 
-import chief_plan
-
 from chief import chief_sweep
 from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 
-from . import commands, compact, drain, heal, launcher, mailbox, proposals
+from . import commands, compact, drain, heal, journal, launcher, mailbox, plan_cli, proposals
 
 
 def build_parser(description: str) -> argparse.ArgumentParser:
@@ -102,6 +100,7 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     si.set_defaults(func=drain.cmd_slots_idle)
 
     heal.add_parser(sub)
+    journal.add_parser(sub)
     proposals.add_parser(sub)
 
     ctx = sub.add_parser("context", help="a session's context-window use (default: the chief)")
@@ -175,4 +174,4 @@ def _add_act_commands(sub: argparse._SubParsersAction) -> None:
     sw.set_defaults(func=commands.cmd_sweep)
 
     pl = sub.add_parser("plan", help="write the Board's structured plan (fleet-config#1034)")
-    chief_plan.add_cli(pl)
+    plan_cli.add_cli(pl)
