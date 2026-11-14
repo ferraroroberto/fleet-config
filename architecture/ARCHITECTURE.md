@@ -135,6 +135,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🗂️ **copilot-studio-transcripts** | Streamlit workbench for Copilot Studio transcripts. | Streamlit | — |
 | 🤖 **automation** | Grab-bag of Python automation tools (audio, image, video, email, Notion, system). | scripts | Notion, etc. |
 | 🌱 **life-os** | Personal productivity suite as Claude Code skills (diary, meeting prep, sparring, visual muse, …) plus a document-archive engine (health, school) and Outlook email search, drafting and filing shared by the skills. Launched from the app-launcher's Life OS tab. | skills | app-launcher (L2) |
+| 🎛️ **stream-deck** | Elgato Stream Deck plugin: one-key tray launchers for the fleet's apps plus authenticated app actions (home-automation, facilitation-suite), built from a committed target registry checked against fleet-config's project table. | plugin (Node) | Stream Deck app, home-automation |
 | ⛏️ **minecraft-bedrock-bot** | Headless Node.js bot that joins a Minecraft Bedrock Realm over NetherNet (BedrockX), with reconnect/supervision. | scripts (Node) | Minecraft Realm |
 | 📈 **algo-trading** | Rule-based automated FX trading on major pairs — backtest → paper → live. | pipeline | **Interactive Brokers** |
 

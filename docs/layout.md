@@ -12,12 +12,6 @@ Where code goes in this repo. `scripts/structure_ratchet.py` enforces it (shape 
 - `architecture/` — the generated fleet and config maps and the contract docs beside them (allowed by the shape).
 - `.claude/` — this repo's own project skills and workflows (hidden, so not a layout folder).
 
-## Declared extra roots
-
-Each is a surface this repo ships beyond skills and hooks, and each holds files an installer links into an agent's home, so the folder name is part of that contract.
-
-- `stream-deck/` — the Stream Deck plugin: its source, templates, registry and tests.
-
 ## Exceptions recorded in the baseline
 
 These shrink with each move and are not allowed to grow.

@@ -23,6 +23,7 @@
     "photo-ocr",
     "project-scaffolding",
     "robertoferraro",
+    "stream-deck",
     "task-os",
     "vibe-coding-workshop",
     "voice-transcriber",
@@ -122,6 +123,17 @@
     }
   ],
   "web": [
+    {
+      "ic": "🗂️",
+      "nm": "folder-explorer",
+      "port": ":8453",
+      "ds": "Disk-space explorer and search: folder tree, largest files, file types, folder and mail search.",
+      "deps": [
+        {
+          "repo": "project-scaffolding"
+        }
+      ]
+    },
     {
       "ic": "🛒",
       "nm": "grocery",

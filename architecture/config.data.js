@@ -71,17 +71,6 @@ window.CONFIG = {
       }
     },
     {
-      "cls": "Commands / prompts",
-      "sub": "slash-command bodies",
-      "cells": {
-        "claude": "~/.claude/commands",
-        "codex": "~/.codex/prompts",
-        "pi": "—",
-        "copilot": "—",
-        "agy": "—"
-      }
-    },
-    {
       "cls": "Hooks",
       "sub": "lifecycle code + wiring",
       "cells": {
@@ -134,6 +123,11 @@ window.CONFIG = {
     {
       "nm": "docs-shots",
       "ds": "Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff touched (or takes named/all feature…",
+      "scope": "repo"
+    },
+    {
+      "nm": "downstream-sync",
+      "ds": "Hand a local copy's own features back to the outside source repo it was built from, as specs — list the local work the source lac…",
       "scope": "repo"
     },
     {
@@ -197,6 +191,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "restart-webapp",
+      "ds": "\"Safely restart the current project's webapp and verify the new build is live.\"",
+      "scope": "repo"
+    },
+    {
       "nm": "retro",
       "ds": "Reviews one agent session for mistakes and friction, labels each finding mechanical (file a check) or judgement (file a rule), pr…",
       "scope": "repo"
@@ -204,6 +203,11 @@ window.CONFIG = {
     {
       "nm": "screen",
       "ds": "Attach screenshots from E:\\downloads\\snaps without manual copy-paste.",
+      "scope": "repo"
+    },
+    {
+      "nm": "upstream-sync",
+      "ds": "Bring an outside source repo's merged work into the local copy built from it — read the `[upstream]` watermark in `.fleet.toml`,…",
       "scope": "repo"
     }
   ],
@@ -368,6 +372,12 @@ window.CONFIG = {
       "items": [
         "frontier-refresh",
         "mac-results"
+      ]
+    },
+    {
+      "repo": "stream-deck",
+      "items": [
+        "streamdeck-deploy"
       ]
     },
     {
@@ -643,9 +653,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 30,
-    "claude_md": "29/30",
-    "fleet_toml": "30/30"
+    "total": 31,
+    "claude_md": "30/31",
+    "fleet_toml": "31/31"
   },
   "principles": [
     [

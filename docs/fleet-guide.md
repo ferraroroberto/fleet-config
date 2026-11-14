@@ -59,7 +59,7 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | ⚙️ | `fleet-config` | Fleet-wide Claude Code hooks, skills & the issue workflow. | — |
 | ⚙️ | `fleet-config-lite` | Copilot-CLI + GitLab lite fork — session-state hook, issue skills & installer. | — |
 
-### Enabling (`layer = "enabling"`, 7 repos)
+### Enabling (`layer = "enabling"`, 8 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
@@ -70,11 +70,13 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 🚀 | `app-launcher-lite` | Copilot + GitLab lite fork of app-launcher: the phone-first launcher hub. | :8465 |
 | 🧰 | `fleet-config-lite` | Lite fleet-config: Copilot CLI hooks, issue-workflow skills and installer. | — |
 | 🧠 | `local-llm-hub-lite` | Single-machine lite fork of local-llm-hub: local models and whisper on :8000. | :8000 |
+| 🎛️ | `stream-deck` | Elgato Stream Deck plugin: one-key tray launchers and app actions for the fleet. | — |
 
 ### Working apps: web (`layer = "working-web"`, 13 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
+| 🗂️ | `folder-explorer` | Disk-space explorer and search: folder tree, largest files, file types, folder and mail search. | :8453 |
 | 🛒 | `grocery-shopping-automation` | Inventory + shopping PWA, voice audit, HA voice commands + product search. | :8502 |
 | 💬 | `whatsapp-radar` | Cut attention load from busy chats. | :8455 |
 | 🎤 | `facilitation-suite` | **facilitation-suite** — live workshop app: stage, cockpit, Zoom chat, live copilot. | :8449 |
@@ -83,7 +85,6 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 🌱 | `life-os` | Personal productivity skills plus a shared document-archive engine and Outlook email tooling | — |
 | 🌡️ | `home-automation` | Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant, Tesla. | :8447 |
 | 📊 | `github-copilot-usage` | Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs. | :8377 |
-| 🗂️ | `folder-explorer` | Disk-space explorer and search: folder tree, largest files, file types, folder and mail search. | :8453 |
 | 🅿️ | `parking-manager` | Household parking: which days to book, time off and the Thursday release; books them itself. | :8450 |
 | 🪞 | `robertoferraro` | robertoferraro.net off Squarespace: same URLs, own design system and form service. | — |
 | ✅ | `task-os` | One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking. | :8448 |

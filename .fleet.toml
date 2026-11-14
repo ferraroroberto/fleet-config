@@ -7,9 +7,6 @@ layer       = "governance"
 icon        = "⚙️"
 description = "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."
 shape       = "skills-governance"
-# One folder per surface this repo ships beyond skills/hooks (README layout tree
-# describes it): the Stream Deck plugin.
-extra_roots = ["stream-deck"]
 # Contracts with the rest of the fleet (schema: architecture/README.md).
 interfaces = [
   { name = "hooks", kind = "lib", doc = "docs/hooks.md" },

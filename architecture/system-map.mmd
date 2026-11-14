@@ -16,8 +16,10 @@ flowchart LR
     app_launcher_lite["🚀 App Launcher Lite"]
     fleet_config_lite["🧰 Fleet Config Lite"]
     local_llm_hub_lite["🧠 Local LLM Hub Lite"]
+    stream_deck["🎛️ stream-deck"]
   end
   subgraph web["Web"]
+    folder_explorer["🗂️ folder-explorer"]
     grocery_shopping_automation["🛒 grocery"]
     whatsapp_radar["💬 whatsapp-radar"]
     facilitation_suite["🎤 facilitation-suite"]
@@ -26,7 +28,6 @@ flowchart LR
     life_os["🌱 life-os"]
     home_automation["🌡️ home-automation"]
     github_copilot_usage["📊 github-copilot-usage"]
-    folder_explorer["🗂️ folder-explorer"]
     parking_manager["🅿️ parking-manager"]
     robertoferraro["🪞 robertoferraro"]
     task_os["✅ task-os"]
@@ -43,6 +44,7 @@ flowchart LR
     algo_trading["📈 algo-trading"]
   end
   subgraph targets["Referenced"]
+    t_stream_deck["Stream Deck"]
     t_hub_whisper["hub + whisper"]
     t_hub["hub"]
     t_launcher["launcher"]
@@ -53,6 +55,7 @@ flowchart LR
     t_minecraft_realm["Minecraft Realm"]
     t_ibkr["IBKR"]
   end
+  stream_deck -->|→| t_stream_deck
   grocery_shopping_automation -->|uses| t_hub_whisper
   whatsapp_radar -->|uses| t_hub
   life_os -->|via| t_launcher
@@ -80,6 +83,9 @@ flowchart LR
   photo_ocr -.-> local_llm_hub
   photo_ocr -.-> project_scaffolding
   app_launcher_lite -.-> app_launcher
+  stream_deck -.-> fleet_config
+  stream_deck -.-> home_automation
+  folder_explorer -.-> project_scaffolding
   grocery_shopping_automation -.-> local_llm_hub
   grocery_shopping_automation -.-> voice_transcriber
   whatsapp_radar -.-> home_automation
@@ -95,7 +101,6 @@ flowchart LR
   home_automation -.-> local_llm_hub
   home_automation -.-> project_scaffolding
   home_automation -.-> voice_transcriber
-  folder_explorer -.-> project_scaffolding
   parking_manager -.-> fleet_config
   task_os -.-> folder_explorer
   task_os -.-> local_llm_hub
