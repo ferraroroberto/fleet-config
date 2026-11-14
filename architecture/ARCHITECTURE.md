@@ -121,7 +121,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🎓 **vibe-coding-workshop** | Hands-on Python workshop — slideshow + structured exercises. | static/notebooks | — |
 | 📶 **github-copilot-usage** | Local read-only dashboard over the usage data Copilot writes to this machine — premium requests, tokens, and prompt composition per session/model/project. | `:8377` FastAPI | — (local Copilot logs) |
 | 🗂️ **folder-explorer** | Disk-space explorer for the local drives and OneDrive: folder tree, largest files and file types, cloud files by size or on disk, from metadata-only scans (never downloads a placeholder). | `:8453` FastAPI+PWA | — (local disks, OneDrive) |
-| ✅ **task-os** | One master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (`taskos://` opener), GitHub/GitLab issues as tasks, folder-index + federated search, Inbox capture (flagged mails from email-archiver, WhatsApp pushes from whatsapp-radar), batch Outlook-Inbox archiving via email-archiver's headless CLI, a read-only calendar lane beside Today (today's events from a private ICS address), voice quick-add via the hub, and a markdown mirror (edit tasks as `.md`) + nightly backup. | `:8448` FastAPI+PWA | **GitHub**, email-archiver, hub |
+| ✅ **task-os** | One master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (`taskos://` opener), GitHub/GitLab issues as tasks, folder-index + federated search, Inbox capture (flagged mails from folder-explorer, WhatsApp pushes from whatsapp-radar), batch Outlook-Inbox archiving via folder-explorer's headless CLI, a read-only calendar lane beside Today (today's events from a private ICS address), voice quick-add via the hub, and a markdown mirror (edit tasks as `.md`) + nightly backup. | `:8448` FastAPI+PWA | **GitHub**, folder-explorer, hub |
 | 📈 **website-analytics** | Local-first website-insight dashboard: GA4 + Search Console + site crawl → weekly report. | Streamlit | **GA4**, **Search Console** |
 
 ### Pipelines & batch (non-interactive)
@@ -130,7 +130,6 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 |---|---|---|---|
 | 💳 **accounting-quarterly** | Classifies Stripe payments by activity + region → quarterly reports. | pipeline | **Stripe** |
 | 📝 **content-management** | Content surfaces: reporting, planning, newsletter, podcast, demo videos and more. | pipeline | **Notion** |
-| 📧 **email-archiver** | Index + archive Outlook emails into a structured OneDrive tree; its index (follow-up flags) and headless batch CLI (plan/apply/revert/renumber over the whole Inbox or targeted mail, plus draft/read/send verbs guarded by a live-fingerprint match, JSON I/O) feed task-os and life-os. | pipeline | **Outlook → OneDrive** |
 | ☁️ **oracle-to-gcp** | Oracle SQL → BigQuery translator prototype with mock dual-engine validation. | Streamlit/pipeline | hub |
 | 🗂️ **copilot-studio-transcripts** | Streamlit workbench for Copilot Studio transcripts. | Streamlit | — |
 | 🤖 **automation** | Grab-bag of Python automation tools (audio, image, video, email, Notion, system). | scripts | Notion, etc. |
@@ -167,7 +166,7 @@ External connections come from **two sources**: the **orchestration layer** (app
 | 🔔 **Pushover** | orchestration (app-launcher jobs) | job-failure push notifications |
 | 📔 **Notion** | apps: content-management, automation | content archive, automation |
 | 💳 **Stripe** | app: accounting-quarterly | payment classification |
-| 📁 **OneDrive** | apps: email-archiver | email archive, file browsing |
+| 📁 **OneDrive** | apps: folder-explorer | file browsing |
 | 🐙 **GitHub** | all repos | PRs, CI, issue workflow |
 | 🎥 **Zoom** | apps: facilitation-suite | session facilitation |
 

@@ -323,6 +323,7 @@ architecture_ignore = [
   "mass-html-to-markdown",
   "mcp-personal-onedrive",
   "pvgis",
+  "email-archiver",         # retired: superseded by folder-explorer; local folder kept for hand deletion
 ]
 
 # ---- Daily fleet-private backup ------------------------------------------------

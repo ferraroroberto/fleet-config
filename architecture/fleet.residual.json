@@ -7,7 +7,6 @@
     "automation",
     "content-management",
     "copilot-studio-transcripts",
-    "email-archiver",
     "facilitation-suite",
     "family-accounting",
     "fleet-config",
@@ -212,15 +211,6 @@
       ]
     },
     {
-      "ic": "📧",
-      "nm": "email-archiver",
-      "ds": "Outlook → OneDrive archive.",
-      "tag": [
-        "→",
-        "OneDrive"
-      ]
-    },
-    {
       "ic": "🗂️",
       "nm": "copilot-studio-transcripts",
       "ds": "Copilot Studio workbench."
@@ -270,7 +260,7 @@
     {
       "ic": "📁",
       "nm": "OneDrive",
-      "fr": "email-archiver"
+      "fr": "folder-explorer"
     },
     {
       "ic": "🐙",

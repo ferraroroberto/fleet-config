@@ -42,7 +42,7 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | grocery-shopping-automation | local-llm-hub, voice-transcriber |
 | whatsapp-radar | home-automation, local-llm-hub, project-scaffolding, task-os |
 | facilitation-suite | local-llm-hub |
-| life-os | app-launcher, local-llm-hub, folder-explorer, email-archiver, fleet-config |
+| life-os | app-launcher, local-llm-hub, folder-explorer, fleet-config |
 | home-automation | local-llm-hub, project-scaffolding, voice-transcriber |
 | parking-manager | fleet-config |
 | task-os | folder-explorer, local-llm-hub, voice-transcriber |

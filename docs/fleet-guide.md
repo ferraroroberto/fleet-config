@@ -90,13 +90,12 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | ✅ | `task-os` | One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking. | :8448 |
 | 📈 | `website-analytics` | Local-first GA4, Search Console, crawl, and weekly website-insight dashboard. | — |
 
-### Working apps: pipelines (`layer = "working-pipe"`, 8 repos)
+### Working apps: pipelines (`layer = "working-pipe"`, 7 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
 | 💳 | `accounting-quarterly` | Stripe payments → quarterly reports. | — |
 | 📝 | `content-management` | Content surfaces: reporting, planning, newsletter, podcast and video. | — |
-| 📧 | `email-archiver` | Retired: replaced by folder-explorer, kept one release as a fallback. | — |
 | 🗂️ | `copilot-studio-transcripts` | Copilot Studio workbench. | — |
 | 🤖 | `automation` | Python automation grab-bag. | — |
 | ⛏️ | `minecraft-bedrock-bot` | Headless Bedrock Realm bot driven by an LLM decision loop on the hub. | — |
