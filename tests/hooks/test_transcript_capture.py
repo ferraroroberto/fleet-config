@@ -298,6 +298,81 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(last['path'], str(legacy / '2026-08-01-0000-legacy.md'))
         self.assertEqual(last['duplicates'], [str(beta[0])])
 
+    def _skills_project(self, *names):
+        self.project.extra.update(capture_routing='skills')
+        skills = self.root / '.claude' / 'skills'
+        for name in names:
+            (skills / name).mkdir(parents=True)
+        return skills
+
+    @staticmethod
+    def _turns(first, sid=SID):
+        return [dict(type=role, sessionId=sid, timestamp=f'2026-09-05T12:00:0{i}Z',
+                     message={'content': text})
+                for i, (role, text) in enumerate([('user', first), ('assistant', 'Synthetic reply')])]
+
+    def test_pasted_leading_skill_word_routes_to_that_skill(self):
+        """#2076: a pasted handoff opening `/<skill>` never becomes a slash command."""
+        skills = self._skills_project('alpha')
+        for sid, first in ((SID, '<pasted_content id="x">\n/alpha synthetic handoff body\n</pasted_content>'),
+                           (OTHER, '  /alpha synthetic handoff body')):
+            self.capture(self._turns(first, sid), sid=sid)
+        self.assertEqual(len(list((skills / 'alpha' / 'conversations').glob('*.md'))), 2)
+        self.assertFalse((self.root / 'conversations' / '_archive').exists())
+        last = self.events()[-1]
+        self.assertEqual((last['route'], last['skill'], last['rule']), ('inferred', 'alpha', 'first_turn_slash'))
+
+    def test_skill_word_not_leading_or_unknown_stays_in_archive(self):
+        skills = self._skills_project('alpha')
+        for sid, first in ((SID, 'Synthetic handoff that mentions /alpha later in the text'),
+                           (OTHER, '/unknownskill synthetic handoff body'),
+                           (THIRD, '/alphabet synthetic handoff body')):
+            self.capture(self._turns(first, sid), sid=sid)
+        self.assertEqual(len(list((self.root / 'conversations' / '_archive').glob('*.md'))), 3)
+        self.assertFalse((skills / 'alpha' / 'conversations').exists())
+        self.assertEqual({e['route'] for e in self.events()}, {'archive'})
+
+    def test_archived_capture_moves_into_skill_once_inferred(self):
+        """#2076: routing is sticky; the one move is root `_archive` -> inferred skill."""
+        skills = self._skills_project('alpha', 'beta')
+        first = self._turns('Synthetic opener with no skill hint')
+        self.capture(first)
+        archived = list((self.root / 'conversations' / '_archive').glob('*.md'))
+        self.assertEqual(len(archived), 1)
+
+        later = first + self._turns('see .claude/skills/alpha/notes.md')
+        self.capture(later)
+        moved = list((skills / 'alpha' / 'conversations').glob('*.md'))
+        self.assertEqual([m.name for m in moved], [archived[0].name])
+        self.assertEqual(list((self.root / 'conversations' / '_archive').glob('*.md')), [])
+        self.assertIn('turns="4"', moved[0].read_text(encoding='utf-8'))
+
+        # A skill-folder capture never moves again, whatever a later turn infers.
+        self.capture(later + self._turns('see .claude/skills/beta/notes.md'))
+        self.assertEqual([m.name for m in (skills / 'alpha' / 'conversations').glob('*.md')], [moved[0].name])
+        self.assertFalse((skills / 'beta' / 'conversations').exists())
+
+    def test_archived_capture_moves_even_when_content_unchanged(self):
+        skills = self._skills_project('alpha')
+        self.capture(self._turns('Synthetic opener with no skill hint'))
+        archived = next((self.root / 'conversations' / '_archive').glob('*.md'))
+        (self.root / '.active-skill').write_text('alpha', encoding='utf-8')
+        with patch.object(cc, 'marker_is_current', return_value=True):
+            self.capture(self._turns('Synthetic opener with no skill hint'))
+        self.assertTrue((skills / 'alpha' / 'conversations' / archived.name).exists())
+        self.assertFalse(archived.exists())
+
+    def test_archived_capture_is_not_moved_over_an_existing_file(self):
+        skills = self._skills_project('alpha')
+        self.capture(self._turns('Synthetic opener with no skill hint'))
+        archived = next((self.root / 'conversations' / '_archive').glob('*.md'))
+        clash = skills / 'alpha' / 'conversations' / archived.name
+        clash.parent.mkdir(parents=True)
+        clash.write_text('unrelated', encoding='utf-8')
+        self.capture(self._turns('see .claude/skills/alpha/notes.md'))
+        self.assertEqual(clash.read_text(encoding='utf-8'), 'unrelated')
+        self.assertTrue(archived.exists())
+
     def test_marker_provenance_falls_back_to_age_without_timestamps(self):
         """An unstamped source cannot prove provenance, so bound the marker by age."""
         undated = tr.Transcript('ok', 'codex', SID, entries=[{'type': 'session_meta'}])

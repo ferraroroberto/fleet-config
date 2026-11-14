@@ -30,6 +30,11 @@ logger = logging.getLogger("conversation_capture")
 # Tags Claude Code embeds in user messages when a skill is invoked.
 _CMD_NAME_RE = re.compile(r"<command-name>/([^<]+)</command-name>")
 
+# A first turn that opens with a `/<name>` word after an optional paste wrapper.
+# A pasted handoff never becomes a slash command, so no command tag exists.
+_PASTE_WRAPPER_RE = re.compile(r"\A\s*(?:<pasted_content\b[^>]*>\s*)+")
+_LEADING_SLASH_RE = re.compile(r"\A/([A-Za-z0-9][\w-]*)(?=\s|\Z)")
+
 # Marker provenance. The marker and the transcript are stamped
 # by the same host clock, so only a token skew allowance is needed; the max age is
 # the weaker fallback used when a source records no timestamp at all.
@@ -107,11 +112,14 @@ def _text_from_content(content) -> str:
     return ""
 
 
-def infer_skill_from_transcript(
+def infer_skill_rule(
     transcript: "Transcript", known_skills: set, skills_dir: str = ".claude/skills"
-) -> Optional[str]:
-    """Best-effort skill name from command-name tags, tool paths, or a plain
-    skill-path mention in conversation text.
+) -> tuple[Optional[str], str]:
+    """Best-effort ``(skill, rule)`` from command-name tags, tool paths, a plain
+    skill-path mention, or a pasted leading ``/<skill>``; ``(None, "")`` when none fires.
+
+    ``rule`` names the pass that matched (``command_tag``, ``tool_path``,
+    ``path_mention``, ``first_turn_slash``) for the routing breadcrumb.
 
     The first two passes read Claude-shaped raw ``entries`` (``<command-name>``
     tags; Read-tool ``file_path``/``path`` values) and are a no-op for a harness
@@ -120,7 +128,9 @@ def infer_skill_from_transcript(
     turn's plain text — the shape Codex naturally produces when a skill names
     itself by path ("Use the journal-daily skill from
     .claude/skills/journal-daily/SKILL.md."), with no command tags or
-    ``tool_input`` to inspect.
+    ``tool_input`` to inspect. The last pass covers a handoff pasted as the first
+    turn: only its leading ``/<name>`` word counts, so a skill named later in
+    the text never routes.
     """
     skill_path_re = _skill_path_re(skills_dir)
     for entry in transcript.entries:
@@ -133,7 +143,7 @@ def infer_skill_from_transcript(
         if m:
             candidate = m.group(1).strip()
             if candidate in known_skills:
-                return candidate
+                return candidate, "command_tag"
     # Second pass: look for Read calls that touched a skill's private dir.
     for entry in transcript.entries:
         for field in (entry.get("tool_input", {}), entry.get("message", {})):
@@ -144,7 +154,7 @@ def infer_skill_from_transcript(
             if m:
                 candidate = m.group(1)
                 if candidate in known_skills:
-                    return candidate
+                    return candidate, "tool_path"
     # Third pass: a skill-path mention anywhere in plain user-turn text.
     for role, text in transcript.messages:
         if role != "user":
@@ -153,8 +163,23 @@ def infer_skill_from_transcript(
         if m:
             candidate = m.group(1)
             if candidate in known_skills:
-                return candidate
-    return None
+                return candidate, "path_mention"
+    # Fourth pass: the first user turn opens with `/<skill>` (a pasted handoff).
+    for role, text in transcript.messages:
+        if role != "user":
+            continue
+        m = _LEADING_SLASH_RE.match(_PASTE_WRAPPER_RE.sub("", text, count=1))
+        if m and m.group(1) in known_skills:
+            return m.group(1), "first_turn_slash"
+        break
+    return None, ""
+
+
+def infer_skill_from_transcript(
+    transcript: "Transcript", known_skills: set, skills_dir: str = ".claude/skills"
+) -> Optional[str]:
+    """The skill :func:`infer_skill_rule` picks, without the rule name."""
+    return infer_skill_rule(transcript, known_skills, skills_dir)[0]
 
 
 def transcript_start_time(entries: list[dict]) -> Optional[datetime]:
@@ -492,6 +517,31 @@ def _find_existing_capture(cfg: CaptureConfig, transcript: Transcript,
     return out_path, prior, duplicates
 
 
+def _adopt_archived(cfg: CaptureConfig, existing: Path, out_dir: Path) -> Path:
+    """Move a session's root ``_archive`` capture into the skill folder now chosen.
+
+    Routing is sticky: a capture already in a skill folder is never moved, so a
+    misrouted one stays misrouted unless a skill is now inferred. Only the shared
+    ``_archive`` is adopted from, keeping the filename and never overwriting an
+    existing file there. Returns the capture's path after any move.
+    """
+    archive = cfg.root / cfg.conversations_dir / "_archive"
+    if cfg.routing != "skills" or existing.parent != archive or out_dir == archive:
+        return existing
+    target = out_dir / existing.name
+    if target.exists():
+        logger.warning("Capture adopt skipped: %s already exists in %s", existing.name, out_dir.parent.name)
+        return existing
+    try:
+        runtime_files.make_dirs(out_dir, parents=True, exist_ok=True)
+        existing.replace(target)
+    except OSError as exc:
+        logger.warning("Capture adopt failed: %s", type(exc).__name__)
+        return existing
+    logger.info("Capture adopted: %s moved from _archive to %s", existing.name, out_dir.parent.name)
+    return target
+
+
 def write_capture(
     cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript,
     *, filename_time: Optional[datetime] = None, dry_run: bool = False,
@@ -529,6 +579,12 @@ def write_capture(
     digest = hashlib.sha256(json.dumps(transcript.messages, ensure_ascii=False).encode()).hexdigest()
     out_path, prior, duplicates = _find_existing_capture(cfg, transcript, key)
     note.update(path=str(out_path) if out_path else "", duplicates=duplicates)
+    moved = False
+    if out_path is not None and not dry_run:
+        adopted = _adopt_archived(cfg, out_path, out_dir)
+        moved = adopted != out_path
+        out_path = adopted
+        note["path"] = str(out_path)
     if out_path is not None:
         try:
             prior_turns = int(prior.get("turns", "0"))
@@ -537,11 +593,11 @@ def write_capture(
         if prior_turns > len(transcript.messages):
             logger.warning("Capture parse_failure: source shrank; retained prior capture")
             note["result"] = "retained_shrunk"
-            return False
+            return moved
         if (prior.get("digest") == digest and prior.get("parent_sid", "") == transcript.parent_session_id
                 and prior.get("format") == transcript.source_format):
             note["result"] = "unchanged"
-            return False
+            return moved
     if dry_run:
         note["result"] = "would_capture"
         return True
@@ -624,8 +680,9 @@ def main() -> int:
             event["marker"] = "stale"
             skill = None
         event["route"] = "marker" if skill else "inferred"
+        event["rule"] = "marker" if skill else ""
         if not skill:
-            skill = infer_skill_from_transcript(transcript, known, cfg.skills_dir)
+            skill, event["rule"] = infer_skill_rule(transcript, known, cfg.skills_dir)
             if not skill:
                 event["route"] = "archive"
         event["skill"] = skill or ""
