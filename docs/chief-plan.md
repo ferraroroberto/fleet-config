@@ -6,6 +6,7 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 
 - `~/.claude/hooks/state/chief-plan.json`, next to `chief-handover.md`. It's machine-local: the state dir is gitignored and the file is never committed. `CLAUDE_HOOKS_STATE_DIR` overrides the directory, which is how tests stay hermetic.
 - The chief writes it only through `chief_ops.py plan …`, never by hand or with the Write tool. The helper validates the whole document and replaces the file atomically (a temp file, then `os.replace`, under the hooks-state lock). A mutation that would leave the file invalid writes nothing and exits 2.
+- Plan transitions also write a line to the chief journal (`docs/chief-journal.md`); a journal failure never fails the plan command.
 - The helper refuses a file it can't parse, and a file with an unsupported `version`. It never overwrites one silently. `plan clear` is the explicit reset.
 
 ## Shape

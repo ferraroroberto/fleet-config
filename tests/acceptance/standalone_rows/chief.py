@@ -115,6 +115,13 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "file, corrupt file left byte-identical) and the CLI `PRUNED=<n>` line "
      "with a repeatable `--status` -- is testable on its own, with no real "
      "chief-plan.json touched"),
+    ("chief_journal", "chief_plan/test_journal.py",
+     "the chief's journal -- `chief_ops.py note` appending and skipping an exact "
+     "repeat for the same kind + ref, each of the six plan transitions (add, lane, "
+     "set merged, set parked, ask, unwait) logging exactly one entry and a "
+     "refused or unjournalled command none, an unwritable journal never failing a "
+     "plan command, and the 500-entry / 14-day trim -- is testable on its own, "
+     "with no real chief-journal.jsonl touched"),
     ("chief_plan_parked_kind", "chief_plan/test_parked_kind.py",
      "a parked plan row needing a kind (owner / umbrella / blocked-by), the "
      "owner kind refused without the needs-owner label or when it cannot be "
