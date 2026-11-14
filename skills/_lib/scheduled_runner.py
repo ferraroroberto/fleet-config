@@ -279,31 +279,43 @@ def _owned_descendant_lines(members: Optional[list]) -> list[str]:
     return lines
 
 
-# A sub-agent's backgrounded search pipeline (`grep -r … | grep -v … | head`) is
-# the one leftover that proves nothing about the run: it reads, it never writes.
-# Anything else still alive after the provider exits may have been mid-write.
-READ_ONLY_SEARCH_TOOLS = frozenset({"grep", "egrep", "fgrep", "find", "head", "rg"})
+# Two kinds of leftover prove nothing about the run, so the teardown reaps them
+# rather than failing the run with 118; anything else still alive after the
+# provider exits may have been mid-write.
+# 1. A sub-agent's backgrounded search or follow pipeline (`grep -r … | head`,
+#    `tail -f task.output | grep --line-buffered … | cut`): it reads and prints,
+#    it never writes, and `tail -f` never ends on its own.
+READ_ONLY_SEARCH_TOOLS = frozenset({"grep", "egrep", "fgrep", "find", "head", "rg", "tail", "cut"})
+# 2. A helper of Playwright's own downloaded test browsers (a lane's e2e run).
+#    Keyed on the install directory in the command line, never the image name:
+#    the fleet's real Chrome profile sessions are not under it and keep the verdict.
+PLAYWRIGHT_BROWSER_DIR = "/ms-playwright/"
 # Windows attaches a console host to a console-less child; it does nothing on its own.
 CONSOLE_HOST_IMAGE = "conhost"
 
 
-def _read_only_search_names(members: Optional[list]) -> Optional[list[str]]:
-    """Sorted tool names when every owned leftover is a read-only search tool, else ``None``.
+def _reapable_names(members: Optional[list]) -> Optional[list[str]]:
+    """Sorted names when every owned leftover is reapable (see above), else ``None``.
 
-    An unreadable image, an empty list or an unnameable member list can never
-    qualify: a leftover nobody could identify keeps the not-confirmed verdict.
-    A console host qualifies only beside at least one search tool.
+    An unreadable image or command line, an empty list or an unnameable member
+    list can never qualify: a leftover nobody could identify keeps the
+    not-confirmed verdict. A console host qualifies only beside at least one
+    other reapable member.
     """
     if not members:
         return None
     names = set()
-    for _pid, image, _command in members:
-        name = (image or "").lower().removesuffix(".exe")
+    for _pid, image, command in members:
+        stem = (image or "").removesuffix(".exe").removesuffix(".EXE")
+        name = stem.lower()
         if name == CONSOLE_HOST_IMAGE:
             continue
-        if name not in READ_ONLY_SEARCH_TOOLS:
+        if name in READ_ONLY_SEARCH_TOOLS:
+            names.add(name)
+        elif stem and command and PLAYWRIGHT_BROWSER_DIR in command.replace("\\", "/").lower():
+            names.add(stem)
+        else:
             return None
-        names.add(name)
     return sorted(names) or None
 
 
@@ -387,7 +399,7 @@ def _pump(
                 if orphaned:
                     # Named now: the teardown below kills them.
                     outcome["orphan_members"] = scope.describe_active()
-                    outcome["reap_names"] = _read_only_search_names(outcome["orphan_members"])
+                    outcome["reap_names"] = _reapable_names(outcome["orphan_members"])
                 # This runner stopped watching before the run was over, so
                 # its outcome is a fact nobody established: verdict-bearing,
                 # and it closes the pre-effect replay gate even when both
@@ -423,7 +435,7 @@ def _verdict(
         # A warning, not a verdict: the rest of the chain below still decides
         # the run from its own evidence (delivery check, tool use, self-report).
         progress.emit_best_effort(
-            f"⚠ reaped {outcome['orphan_count']} stray read-only search descendant(s) "
+            f"⚠ reaped {outcome['orphan_count']} stray read-only descendant(s) "
             f"({', '.join(outcome['reap_names'])}) still running after the provider exited · "
             "terminated, not counted toward this run's outcome"
         )

@@ -22,8 +22,28 @@ class ReapReadOnlySearchTests(unittest.TestCase):
         fixture = ROOT / "tests" / "fixtures" / "scheduled_claude.jsonl"
         self.events = [json.loads(line) for line in fixture.read_text(encoding="utf-8").splitlines()]
 
-    def test_read_only_search_names_classification(self):
-        names = runner._read_only_search_names
+    def test_follow_pipeline_leftovers_are_reapable(self):
+        """The shape the 118 runs left behind: a `tail -f | grep --line-buffered | cut` watcher on a task output file."""
+        names = runner._reapable_names
+        watcher = [(1, "tail.exe", '"tail.exe" -n +1 -f journal.jsonl'),
+                   (2, "grep.exe", '"grep.exe" --line-buffered -v started'),
+                   (3, "cut.exe", '"cut.exe" -c1-260'), (4, "conhost.exe", None)]
+        self.assertEqual(names(watcher), ["cut", "grep", "tail"])
+
+    def test_playwright_browser_helpers_are_reapable_only_from_its_own_install(self):
+        names = runner._reapable_names
+        webkit = r'"C:\Users\x\AppData\Local\ms-playwright\webkit-2287\WebKitNetworkProcess.exe" -type 1'
+        self.assertEqual(names([(1, "WebKitNetworkProcess.exe", webkit), (2, "tail.exe", None)]),
+                         ["WebKitNetworkProcess", "tail"])
+        self.assertEqual(names([(1, "WebKitNetworkProcess.exe", webkit.replace("\\", "/"))]),
+                         ["WebKitNetworkProcess"], "forward-slash path")
+        self.assertIsNone(names([(1, "chrome.exe", r'"C:\Program Files\Google\Chrome\chrome.exe" --user-data-dir=p')]),
+                          "the fleet's real Chrome profile session is not a test browser")
+        self.assertIsNone(names([(1, "WebKitNetworkProcess.exe", None)]), "no command line, no proof of origin")
+        self.assertIsNone(names([(1, "WebKitNetworkProcess.exe", webkit), (2, "python.exe", "python x.py")]))
+
+    def test_reapable_names_classification(self):
+        names = runner._reapable_names
         self.assertEqual(names([(1, "grep.exe", "grep -r x"), (2, "HEAD.EXE", None),
                                 (3, "rg", None), (4, "grep.exe", None)]), ["grep", "head", "rg"])
         self.assertIsNone(names(None), "unnameable members never qualify")
@@ -43,7 +63,7 @@ class ReapReadOnlySearchTests(unittest.TestCase):
                   f"print({good!r},flush=True)")
         lines = []
         formatter = runner.ProgressFormatter(emit=lines.append)
-        with patch.object(runner, "_read_only_search_names", return_value=reap_names):
+        with patch.object(runner, "_reapable_names", return_value=reap_names):
             if terminate is None:
                 code = runner.run_process([sys.executable, "-c", script],
                                           formatter=formatter, stall_timeout=0)
@@ -61,7 +81,7 @@ class ReapReadOnlySearchTests(unittest.TestCase):
         self.assertEqual(formatter.owned_orphans, 0)
         warning = [line for line in lines if "reaped" in line]
         self.assertEqual(len(warning), 1, lines)
-        self.assertIn("stray read-only search descendant", warning[0])
+        self.assertIn("stray read-only descendant", warning[0])
         self.assertIn("grep, head", warning[0])
         self.assertIn("✅ completed", lines[-1])
         self.assertNotIn("not confirmed", "\n".join(lines))
