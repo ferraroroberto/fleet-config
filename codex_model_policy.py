@@ -52,7 +52,7 @@ class PolicyError(ValueError):
 def default_policy_root() -> Path:
     """Return the checked-in policy asset directory."""
 
-    return Path(__file__).resolve().parent / "codex"
+    return Path(__file__).resolve().parent / "hooks" / "agents" / "codex"
 
 
 def _line_ending(text: str) -> str:

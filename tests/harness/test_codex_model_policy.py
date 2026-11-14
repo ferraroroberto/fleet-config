@@ -26,7 +26,7 @@ class CodexModelPolicyTests(unittest.TestCase):
             "default_subagent_model = \"legacy\"\r\nmax_concurrent_threads_per_session = 2\r\n"
         )
 
-        updated, changed = policy.merge_policy(original, ROOT / "tmp" / "catalog.json", ROOT / "codex")
+        updated, changed = policy.merge_policy(original, ROOT / "tmp" / "catalog.json", ROOT / "hooks" / "agents" / "codex")
 
         parsed = tomllib.loads(updated)
         self.assertEqual(changed, ("model-policy",))
@@ -40,14 +40,14 @@ class CodexModelPolicyTests(unittest.TestCase):
     def test_merge_keeps_only_the_real_comment_when_a_string_holds_a_hash(self) -> None:
         original = 'model = "legacy#1" # real comment\nnotify = ["keep"]\n'
 
-        updated, _ = policy.merge_policy(original, ROOT / "tmp" / "catalog.json", ROOT / "codex")
+        updated, _ = policy.merge_policy(original, ROOT / "tmp" / "catalog.json", ROOT / "hooks" / "agents" / "codex")
 
         self.assertIn('model = "gpt-5.6-sol" # real comment\n', updated)
         self.assertNotIn("legacy", updated)
 
     def test_merge_is_idempotent(self) -> None:
-        first, _ = policy.merge_policy("[tui]\nstatus_line = [\"model\"]\n", ROOT / "tmp" / "catalog.json", ROOT / "codex")
-        second, changed = policy.merge_policy(first, ROOT / "tmp" / "catalog.json", ROOT / "codex")
+        first, _ = policy.merge_policy("[tui]\nstatus_line = [\"model\"]\n", ROOT / "tmp" / "catalog.json", ROOT / "hooks" / "agents" / "codex")
+        second, changed = policy.merge_policy(first, ROOT / "tmp" / "catalog.json", ROOT / "hooks" / "agents" / "codex")
 
         self.assertEqual(second, first)
         self.assertEqual(changed, ())
@@ -65,7 +65,7 @@ class CodexModelPolicyTests(unittest.TestCase):
         }
         for name, original in cases.items():
             with self.subTest(table=name):
-                updated, changed = policy.merge_policy(original, catalog, ROOT / "codex")
+                updated, changed = policy.merge_policy(original, catalog, ROOT / "hooks" / "agents" / "codex")
 
                 parsed = tomllib.loads(updated)
                 self.assertEqual(changed, ("model-policy",))
@@ -77,19 +77,19 @@ class CodexModelPolicyTests(unittest.TestCase):
                 for role in policy.ROLE_SPECS:
                     self.assertIn("config_file", parsed["agents"][role])
                     self.assertIn("description", parsed["agents"][role])
-                self.assertEqual(policy.merge_policy(updated, catalog, ROOT / "codex")[0], updated)
+                self.assertEqual(policy.merge_policy(updated, catalog, ROOT / "hooks" / "agents" / "codex")[0], updated)
 
     def test_invalid_toml_is_rejected(self) -> None:
         with self.assertRaises(policy.PolicyError):
-            policy.merge_policy("[agents\n", ROOT / "tmp" / "catalog.json", ROOT / "codex")
+            policy.merge_policy("[agents\n", ROOT / "tmp" / "catalog.json", ROOT / "hooks" / "agents" / "codex")
 
     def test_assets_match_declared_tier_policy(self) -> None:
-        policy.validate_assets(ROOT / "codex")
-        catalog = json.loads((ROOT / "codex" / "model_catalog.json").read_text(encoding="utf-8"))
+        policy.validate_assets(ROOT / "hooks" / "agents" / "codex")
+        catalog = json.loads((ROOT / "hooks" / "agents" / "codex" / "model_catalog.json").read_text(encoding="utf-8"))
         self.assertEqual(tuple(catalog["slugs"]), policy.CATALOG_MODELS)
         self.assertEqual(tuple(policy.ROLE_SPECS), ("easy", "normal", "hard"))
         for role in policy.ROLE_SPECS:
-            layer = tomllib.loads((ROOT / "codex" / "agents" / f"{role}.toml").read_text(encoding="utf-8"))
+            layer = tomllib.loads((ROOT / "hooks" / "agents" / "codex" / "agents" / f"{role}.toml").read_text(encoding="utf-8"))
             self.assertNotIn("rollout_budget", layer.get("features", {}))
 
     def test_configure_does_not_write_when_native_validation_fails(self) -> None:
@@ -101,7 +101,7 @@ class CodexModelPolicyTests(unittest.TestCase):
                 policy, "validate_cli", side_effect=policy.PolicyError("unsupported catalog")
             ):
                 with self.assertRaises(policy.PolicyError):
-                    policy.configure(config, ROOT / "codex", "codex", apply=True)
+                    policy.configure(config, ROOT / "hooks" / "agents" / "codex", "codex", apply=True)
             self.assertEqual(config.read_text(encoding="utf-8"), original)
 
     def test_configure_applies_through_native_validation(self) -> None:
@@ -121,7 +121,7 @@ class CodexModelPolicyTests(unittest.TestCase):
             config = Path(directory) / "config.toml"
             config.write_text("# keep me\nmodel = \"legacy\"\nnotify = [\"keep\"]\n", encoding="utf-8")
             with mock.patch.object(policy.subprocess, "run", side_effect=fake_codex):
-                state = policy.configure(config, ROOT / "codex", "codex", apply=True)
+                state = policy.configure(config, ROOT / "hooks" / "agents" / "codex", "codex", apply=True)
 
             self.assertEqual(state, "updated")
             self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8"))["model"], policy.MAIN_MODEL)
