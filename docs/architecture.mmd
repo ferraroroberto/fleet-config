@@ -9,7 +9,7 @@
 
 flowchart TB
   subgraph install["install.ps1 / uninstall.ps1"]
-    INSTALL["junctions: hooks/, skills/, hooks/agents/pi/extensions/, tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
+    INSTALL["junctions: hooks/, skills/, hooks/agents/pi/extensions/, scripts/tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
     CODEXSTATUS["codex_statusline.py\nopt-in atomic merge into ~/.codex/config.toml\npreserves custom footer order, comments, and unrelated settings"]
     CODEXPOLICY["codex_model_policy.py + codex/\nopt-in native preflight + atomic model/role merge\nSol default; generated four-model catalog; tier layers"]
   end

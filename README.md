@@ -43,7 +43,7 @@ work in this repo doesn't cost the whole catalogue:
   Antigravity), what is wired and what is a documented non-goal, the
   verification probes, and statusline parity.
 - **[`docs/install.md`](docs/install.md)** — the link table `install.ps1`
-  creates, the other surfaces this repo ships (`tray/`, `stream-deck/`), and
+  creates, the other surfaces this repo ships (`scripts/tray/`, `stream-deck/`), and
   the migration recipes for an agent home that already holds real files.
 - **[`docs/fleet-scope.md`](docs/fleet-scope.md)** — which repos fleet-wide
   runs reach: the machine-local `hooks/projects.toml` and its tracked example,
@@ -190,8 +190,6 @@ fleet-config/
 │   ├── agents/pi/extensions/policy_hooks.ts   # same junction — bounded shared Python policies; native block/advisory adapter
 │   ├── agents/pi/extensions/session_state.ts  # same junction — reports Pi lifecycle events into sessions-state.json
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
-├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
-│   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (docs/stream-deck-plugin.md)
 │   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
@@ -201,6 +199,7 @@ fleet-config/
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── scripts/                        # the nine ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
+│   ├── tray/tray_lifecycle.ps1     # this repo's own: junctioned via scripts/tray/ → ~/.claude/tray — the ONE machine-local copy; canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 │   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv

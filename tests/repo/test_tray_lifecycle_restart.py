@@ -32,7 +32,7 @@ from check_harness import CheckHarness  # noqa: E402
 _h = CheckHarness()
 check = _h.check
 
-SCRIPT = ROOT / "tray" / "tray_lifecycle.ps1"
+SCRIPT = ROOT / "scripts" / "tray" / "tray_lifecycle.ps1"
 POWERSHELL = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 HEAD = "abc1234def5678abc1234def5678abc1234def56"
 

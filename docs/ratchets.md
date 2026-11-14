@@ -28,7 +28,7 @@ Nine baseline-and-ratchet stages gate `tests/run_acceptance.py`. [`code-quality.
 
 ## Layout rules
 
-The `structure_ratchet` row above also enforces the repo's folder layout, through the vendored `scripts/structure_layout.py`. The declared `shape` fixes the allowed root folders, the root files, the file types each folder takes and, where the shape names homes, where files may sit one level down. This repo declares `shape = "skills-governance"` and `extra_roots = ["stream-deck", "tray"]`, both top-level `.fleet.toml` keys. The preset tables and the reasoning are in project-scaffolding's [structure-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/structure-ratchet.md) and [repo-layout.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/repo-layout.md).
+The `structure_ratchet` row above also enforces the repo's folder layout, through the vendored `scripts/structure_layout.py`. The declared `shape` fixes the allowed root folders, the root files, the file types each folder takes and, where the shape names homes, where files may sit one level down. This repo declares `shape = "skills-governance"` and `extra_roots = ["stream-deck"]`, both top-level `.fleet.toml` keys. The preset tables and the reasoning are in project-scaffolding's [structure-ratchet.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/structure-ratchet.md) and [repo-layout.md](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/repo-layout.md).
 
 | Rule | Fails on | Baselined |
 | --- | --- | --- |
