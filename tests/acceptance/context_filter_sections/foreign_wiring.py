@@ -157,7 +157,7 @@ def copilot_payload_dialect(check: _Checker) -> None:
 def copilot_installed_copy_matches_source(check: _Checker) -> None:
     # ---- copilot hook wiring: installed copy must match the repo source (#547) ----
     copilot_installed = Path.home() / ".copilot" / "hooks" / "fleet-context-filter.json"
-    copilot_source = REPO / "copilot-hooks" / "fleet-context-filter.json"
+    copilot_source = REPO / "hooks" / "agents" / "copilot" / "fleet-context-filter.json"
     def _normalized(path: Path) -> bytes:
         # Newline-insensitive: git renormalizes the repo copy to CRLF while the
         # installed copy keeps the bytes it was installed with — that is not

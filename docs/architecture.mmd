@@ -47,7 +47,7 @@ flowchart TB
   AGYSRC["hooks/agents/agy/fleet-context-filter/\nplugin.json + hooks.json — the context-filter\nPreToolUse plugin (#546); drift vs installed copy\nfails the acceptance gate"]
   INSTALL -->|"Install-AgyContextFilterPlugin"| AGYHOME
   AGYSRC --> AGYHOME
-  COPILOTHOOKS["copilot-hooks/fleet-context-filter.json\npreToolUse + modifiedArgs context-filter wiring (#547)\ndrift-guarded copy into ~/.copilot/hooks/"]
+  COPILOTHOOKS["hooks/agents/copilot/fleet-context-filter.json\npreToolUse + modifiedArgs context-filter wiring (#547)\ndrift-guarded copy into ~/.copilot/hooks/"]
   INSTALL -->|"Install-CopilotContextFilterHook"| COPILOT
   COPILOTHOOKS --> COPILOT
 

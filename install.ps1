@@ -369,7 +369,7 @@ function Install-AgyContextFilterPlugin {
 # byte-compare copy handles fine. tests/run_acceptance.py fails loud on drift.
 function Install-CopilotContextFilterHook {
     if (-not (Get-Command copilot -ErrorAction SilentlyContinue)) { return }
-    $src = Join-Path $RepoRoot 'copilot-hooks\fleet-context-filter.json'
+    $src = Join-Path $RepoRoot 'hooks\agents\copilot\fleet-context-filter.json'
     $dstDir = Join-Path $CopilotHome 'hooks'
     $dst = Join-Path $dstDir 'fleet-context-filter.json'
     if ((Test-Path $dst) -and (((Get-Content $src -Raw) -replace "`r`n", "`n") -eq ((Get-Content $dst -Raw) -replace "`r`n", "`n"))) {

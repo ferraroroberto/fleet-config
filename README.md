@@ -184,6 +184,7 @@ fleet-config/
 │   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
 │   ├── agents/agy/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction; drift-guarded by tests/run_acceptance.py
+│   ├── agents/copilot/fleet-context-filter.json   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
@@ -192,7 +193,6 @@ fleet-config/
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
 ├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json
-├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs) — copied into ~/.copilot/hooks/, drift-guarded
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
