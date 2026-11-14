@@ -112,6 +112,16 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 `DECISION=PAUSE` with `CLEARS_WITHIN_BUDGET=no` → the reset is further away than three capped waits can reach (a weekly reset hours or days out), so waiting cannot change the outcome: **wait zero cycles**. Invoke no workflow, skip steps 7–7b, record every surviving repo as deferred through step 8c (`repo_state` `session-limit`, `skip_reason` the gate's `REASON`), and step 10 prints the clean-skip marker. Only `no` skips; `yes`, `unknown` (no signal, unreadable reset, no reset time) and `not_paused` fall through to the wait below — an unreadable gate is never a skip. Otherwise, `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against the printed `WAIT_SECONDS` (never `RESETS_AT`: only `WAIT_SECONDS` fits the stall watchdog, fleet-config#891) (per the Execution rules above — this must resolve within the same turn), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → invoke no workflow: skip steps 7–7b, record every surviving repo as deferred through step 8c (`repo_state` `session-limit`, `skip_reason` the gate's `REASON`), and step 10 prints the session-limit failure marker (waited and still blocked, or never got a signal: undelivered work, unlike the clean skip above). `OK`/`UNKNOWN` → proceed immediately. Under its scheduled launcher (`MODE=unattended`) no fresh statusline signal reads `PAUSE` (`REASON=cache_missing|cache_stale|usage_missing`), never `UNKNOWN` — it waits and re-reads rather than proceeding blind (fleet-config#825). Keep every gate line's `DECISION`/`REASON`/`MODE` for step 10.
 
+### 6b. Arm the run window
+
+Right after step 6 lets the run proceed, before any lane starts:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/scheduled/run_window.py arm
+```
+
+An unattended run (`MODE=unattended`) gets `WINDOW_ARMED=yes`: the run has `WINDOW_SECONDS` (five hours by default) of wall-clock from now, so a long queue cannot spill into the weekly block chained behind it (fleet-config#2063). An attended run prints `WINDOW_ARMED=no` and stays unbounded. **Pass `windowArmed: true` to the workflow only on `yes`** (the non-Workflow bridge reads `windowArmed` from its state file); the script then asks a gate agent before each lane and starts none once the window has closed. If the command fails or prints no `WINDOW_ARMED=` line in an unattended run, the run cannot be bounded: start no lane and print `SCHEDULED-RUN-FAILED — run window could not be armed`. Keep `WINDOW_ENDS_AT` for step 10.
+
 ### 7. Invoke the workflow and collect it to completion
 
 Build `issuesByBucket` — `{ "<bucket>": [{ repo, number, title, body }, ...], ... }` — from the surviving, pre-flighted issues (step 5's skips already removed).
@@ -123,7 +133,7 @@ Build `issuesByBucket` — `{ "<bucket>": [{ repo, number, title, body }, ...], 
 **Invoke with the inline `script` parameter (paste the full contents of `.claude/workflows/cleanup-fleet-all.js`), not `scriptPath`.** `scriptPath` has been observed to fail in this environment — the permission-approval layer rejects it with a false-positive "script contains control characters" error even against a byte-clean file. Read the script file fresh each invocation so edits are picked up.
 
 ```
-Workflow({ script: "<full contents of .claude/workflows/cleanup-fleet-all.js>", args: { issuesByBucket } })
+Workflow({ script: "<full contents of .claude/workflows/cleanup-fleet-all.js>", args: { issuesByBucket, windowArmed } })
 ```
 
 This returns a task id immediately. **Do not stop and wait for a notification** — per the Execution rules, immediately enter a blocking poll loop:
@@ -138,6 +148,7 @@ The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }
 
 - each result is `{ issue, status, round, branch, worktree, residue, residueDetail, indexLock, indexLockDetail, behindOrigin, behindOriginDetail, zombieShells?, foreignBranches?, foreignWorktrees?, restoredUntracked?, recurrence, structural?, pr?, mergeSha?, reason?, wipSha?, alreadyClosed? }` — `status` one of `merged`/`escalated`/`failed`; `residue` is `CLEAN` or `RESIDUE`. `indexLock` (`none`/`stale`/`live-held`/`unknown`) and `behindOrigin` (`current`/`fast-forwarded`/`unknown`) are **reported only** — never gate a lane, never halt the run, default `unknown` when teardown died or omitted them. `zombieShells` names a leftover directory satisfying all five zombie-pinned conditions (step 8b), not counted as residue; `foreignBranches` names local branches belonging to no lane of this run — also reported, never residue. `alreadyClosed: true` means an issue step 5's batch check let through turned out closed by the time /issue-start reached it, hours in (fleet-config#623) — lane still escalates and tears down, but teardown skips the usual "unattended lane escalated" comment (noise on an already-resolved thread). Different population from step 5's `skipped_closed`/`unresolved`, which never reach `results` — they never entered `issuesByBucket`, no lane ran for them.
 - `halted` is `null` on a full run, or `{ bucket, repo, issue, status, detail, remainingInBucket }` when a lane's teardown left residue and the run stopped there. **A halted run is a loud failure, not a partial success** — report it at the top of the final summary, name the one repo, and say exactly what a human must do.
+- `stopped` is `null` unless the run window ended: `{ reason, bucket, repo, issue, detail, notStarted }` with `reason` `window-closed` (the window ran out; the lane in flight finished and tore down first) or `window-unknown` (the gate could not read the window twice running — a fact not established, never read as open). It names the first lane not started and every unstarted issue, this bucket's remainder and every later bucket's, is in `deferred` with that `repo_state`. It is not a `halted` run: nothing is left unclean.
 - `foreignWorktrees` on a result is the classifier's `WORKTREE=… CLASS=foreign-merged …` lines: a worktree this run did not create, clean, HEAD proven merged, that appeared in the repo after pre-flight. The script defers only on a real `WORKTREE=` line in the field; prose such as "None" or a check summary is ignored (fleet-config#1453). The lane stays `CLEAN`, and the script stops starting lanes in that repo for the rest of the run. **"Created by this run"** is decided by the script, not the teardown agent: it passes the classifier every worktree path and branch a lane of this run reported, plus `<repo>-wt-<N>` for every issue the run holds in that repo. A registered worktree matching any of them by path or branch is the run's own and halts; the match errs toward own (fleet-config#1077).
 - `restoredUntracked` on a result is the verbatim `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` output of the lane's two fast-forwards — `land-primary` at ship and check 6 at teardown, both guarded by `skills/_lib/untrack_guard.py`. A merged change that untracks a machine-local file (`git rm --cached` + `.gitignore`, or a rename to `.sample`) would otherwise delete the live copy from the primary on fast-forward: on 2026-09-28 the automation#144 lane took nine live configs out that way (fleet-config#1086). Reported only, never residue; list each under primary hygiene as `🗂️`, and a `KEPT_ASIDE` path as needing a human.
 - `recurrence` is the issue body's recurrence stamp as the script read it: `recurring`, `not-recurring` or `unknown`. `structural` is the validator's verbatim `STRUCTURAL=` line on a recurring lane, its `SCOPE=` (and a generalizable check's `NAME=`) included. List every `unknown` lane as `❓ recurrence unknown` under its bucket in the final summary (fleet-config#1520).
@@ -148,7 +159,7 @@ The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }
 
 A repo that was dirty at pre-flight has usually been committed and pushed by the time the last bucket finishes: a full run spans many hours, so step 5's verdict is stale by now. The deferred set gets exactly one more chance, as late as possible.
 
-**Skip this step entirely if step 7's `halted` is non-null.** A halted run has left residue and must not start another lane.
+**Skip this step entirely if step 7's `halted` or `stopped` is non-null.** A halted run has left residue and must not start another lane, and a stopped run's window has ended (or could not be read), so a retry would run past it.
 
 Re-run the *same* gate over the deferred set — the whole array step 5 skipped, unchanged, plus step 7's `deferred` items (repos where a foreign worktree appeared mid-run). A foreign worktree that is still registered makes the gate skip that repo again (`repo_state: worktree`), so it reaches step 8c and is never touched:
 
@@ -230,7 +241,7 @@ Residue is never folded into a `✅`/`📋` line: it gets its own `❌ RESIDUE` 
 
 ### 8c. Record whatever is still deferred — durably, outside this run's stdout
 
-A skip that exists only in one run's stdout is invisible by the following week. Whatever step 7b could not recover goes into the ledger. So do step 7's `deferred` items when a halt skipped 7b. All of it goes into one tracking issue in `ferraroroberto/fleet-config`, upserted through the same marker-keyed machinery as every other managed issue, so re-running can never file a duplicate.
+A skip that exists only in one run's stdout is invisible by the following week. Whatever step 7b could not recover goes into the ledger. So do step 7's `deferred` items when a halt or a window stop skipped 7b. All of it goes into one tracking issue in `ferraroroberto/fleet-config`, upserted through the same marker-keyed machinery as every other managed issue, so re-running can never file a duplicate.
 
 **Still-deferred set non-empty** — write the body to a file, then:
 
@@ -336,6 +347,8 @@ The `rate gate:` line is **mandatory too** — the step 6 decision and pause cyc
 
 **If (and only if) step 7's workflow result carries a non-null `halted`** (`{ bucket, repo, issue, status, detail, remainingInBucket }`), also print the literal line `SCHEDULED-RUN-FAILED — halted at <repo>#<issue>: <detail>, <remainingInBucket + issues in later buckets> issue(s) never started`, exactly as shown above, so `claude_progress.py` maps this run to exit 123 instead of the harness's default exit 0 (fleet-config#612 — a run that halted 1 of 9 lanes reported exit 0, green on the Jobs card). A fully successful run (`halted` null) must **not** print this line — opt-in, not a default.
 
+**If step 7's result carries a non-null `stopped`**, the run ended on its wall-clock window (fleet-config#2063) and the first line reads `Cleanup-fleet-all STOPPED (run window ended)`; the report names `WINDOW_ENDS_AT`, the lanes that did run, and the unstarted issues now deferred. For `reason` `window-closed` print the literal line `SCHEDULED-RUN-STOPPED — run window ended at <WINDOW_ENDS_AT>, <notStarted> issue(s) deferred`. It must **not** print `SCHEDULED-RUN-FAILED`: a bounded stop is a deliberate "not the rest today" whose work is recorded for the next run, so it exits 0 and raises no `job-failed` event, exactly like step 6's skip. For `reason` `window-unknown` the window could not be read, so it is not a deliberate stop: print `SCHEDULED-RUN-FAILED — run window unreadable: <detail>, <notStarted> issue(s) never started`.
+
 ### 11. Stop
 
 No follow-up actions and no auto-launch of anything — including no retry of a halted run. A human clears the residue and decides whether to re-run.
@@ -352,7 +365,7 @@ Recap of binding constraints not fully restated in the steps above:
 - Post-flight dirty-tree check runs here, in this skill, never inside a spawned agent, right before a repo's status is trusted.
 - Second validation failure escalates — never force-merges, never silently drops the issue from the final report.
 - Step 8b's residue enumeration covers every touched repo, not just merged ones, fails loud; a check that can't establish a fact reports `unknown`, never clean. Teardown judges its own lane's mess, never the repo's (fleet-config#572); a stale `index.lock` and a behind-origin primary are reported, never halting, never silently repaired.
-- A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker — pre-flight failure (step 1), every-candidate-repo-skipped stop (step 5), exhausted session-limit pause cycles (step 6), or residue halt (step 10, non-null `halted`) — so `claude_progress.py` maps the run to exit 123 instead of exit 0 (fleet-config#612). The step 3 empty-queue stop is exempt — legitimate success, never prints the marker. So is step 6's immediate skip (`CLEARS_WITHIN_BUDGET=no`): it prints `SCHEDULED-RUN-SKIPPED` and exits 0 (fleet-config#2012).
+- A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker — pre-flight failure (step 1), every-candidate-repo-skipped stop (step 5), exhausted session-limit pause cycles (step 6), residue halt (step 10, non-null `halted`), or an unreadable or unarmable run window (steps 6b and 10) — so `claude_progress.py` maps the run to exit 123 instead of exit 0 (fleet-config#612). The step 3 empty-queue stop is exempt — legitimate success, never prints the marker. So is step 6's immediate skip (`CLEARS_WITHIN_BUDGET=no`): it prints `SCHEDULED-RUN-SKIPPED` and exits 0 (fleet-config#2012). So is a run whose window closed (`stopped.reason` `window-closed`): it prints `SCHEDULED-RUN-STOPPED` and exits 0 (fleet-config#2063).
 - No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 
 ## Notes

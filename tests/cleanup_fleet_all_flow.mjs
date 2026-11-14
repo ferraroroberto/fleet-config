@@ -727,5 +727,68 @@ const structuralRun = (body, structural) => {
   check(/❓ recurrence unknown/.test(all), 'cleanup-fleet-all SKILL.md renders unknown recurrence in the final summary')
 }
 
+// --- Window gate: an unattended run stops starting lanes when its window closes --
+// The script cannot read a clock (Date.now() throws in a workflow), so a gate
+// agent reads run_window.py before each lane and the script only acts on the
+// verdict it returns.
+function windowReply(label, kind, openLanes) {
+  if (label.startsWith('window:gate:')) {
+    const lane = label.split(':')[2]
+    if (kind === 'dead') return null
+    if (kind === 'unknown') return { window: 'unknown', detail: 'state unreadable' }
+    const open = openLanes.has(lane)
+    return { window: open ? 'open' : 'closed', detail: open ? 'open' : 'ended' }
+  }
+  return reply(label, {})
+}
+async function windowRun(kind, openLanes, windowArmed = true) {
+  const { sink, agentImpl } = promptSpy(l => windowReply(l, kind, openLanes))
+  sink.args = { issuesByBucket: ISSUES, windowArmed }
+  const res = await makeRunner(agentImpl, sink)
+  return { sink, res }
+}
+{
+  const { sink, res } = await windowRun('ok', new Set(['alpha#1']))
+  const built = sink.order.filter(l => l.includes(':build:'))
+  check(built.length === 1 && built[0].includes('alpha#1'), 'a closed window starts no further lane (lane 1 built, lanes 2-3 not)')
+  check(sink.order.includes('documentation:teardown:alpha#1'), 'the lane already started still tears down before the run stops')
+  check(res.halted === null, 'a closed window is its own stop, never a residue halt')
+  check(res.stopped && res.stopped.reason === 'window-closed' && res.stopped.issue === 2 && res.stopped.repo === 'bravo',
+    'the result names the stop, its reason and the first lane it did not start')
+  check(res.deferred.length === 2 && res.deferred.every(d => d.repo_state === 'window-closed' && d.skip_reason),
+    'every unstarted issue is deferred with the window-closed state, none dropped')
+  check(res.deferred.some(d => d.bucket === 'bug' && d.repo === 'charlie') && res.deferred.some(d => d.bucket === 'documentation' && d.repo === 'bravo'),
+    'the rest of the bucket and every later bucket are deferred under their own bucket names')
+  check(res.buckets[1].skipped && /window/.test(res.buckets[1].skipped), 'a later bucket is reported as skipped for the window')
+  check(sink.maxInflight === 1, 'the gate agent never overlaps a lane (still one agent in flight)')
+}
+{
+  const { sink, res } = await windowRun('ok', new Set(['alpha#1', 'bravo#2', 'charlie#3']))
+  check(res.stopped === null && sink.order.filter(l => l.includes(':build:')).length === 3,
+    'an open window runs the whole queue and reports no stop')
+  check(res.deferred.length === 0, 'an open window defers nothing')
+}
+{
+  const { sink, res } = await windowRun('dead')
+  check(sink.order.filter(l => l.includes(':build:')).length === 0, 'a gate that never answers starts no lane')
+  check(res.stopped && res.stopped.reason === 'window-unknown', 'a dead gate is window-unknown, never read as open')
+  check(sink.order.filter(l => l === 'window:gate:alpha#1').length === 2, 'the gate is asked twice before the run gives up')
+  check(res.deferred.length === 3, 'every issue is deferred when the window could not be read')
+}
+{
+  const { res } = await windowRun('unknown')
+  check(res.stopped && res.stopped.reason === 'window-unknown', 'an unreadable window state stops the run as unknown')
+}
+{
+  const { sink, res } = await windowRun('ok', new Set(), false)
+  check(sink.order.every(l => !l.startsWith('window:')), 'an unarmed (attended) run never consults the gate')
+  check(res.stopped === null && sink.order.filter(l => l.includes(':build:')).length === 3, 'an unarmed run is unbounded as before')
+}
+{
+  const txt = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+  check(/run_window\.py arm/.test(txt) && /windowArmed/.test(txt) && /SCHEDULED-RUN-STOPPED/.test(txt),
+    'cleanup-fleet-all SKILL.md arms the window, passes windowArmed and prints the stop marker')
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)
