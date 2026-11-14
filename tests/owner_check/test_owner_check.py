@@ -101,6 +101,50 @@ for bad in ("device", "looks:fine", "taste:", ""):
         check(False, f"gap {bad!r} must be refused")
     except ValueError:
         pass
+
+# Every misuse the owner found on 2026-11-13 is refused, naming the tool to use instead.
+MISUSE = (
+    ("taste:the cards match the screenshot of the mock-up", "class one of"),
+    ("device:the composer fits at phone width", "WebKit phone profile"),
+    ("device:Ctrl+Enter sends the prompt from the PC", "Playwright"),
+    ("device:/admin/api/version reports the new build after a restart", "restart recipe"),
+    ("owner-account:the tray restart brings the panel back", "restart recipe"),
+    ("owner-account:launching a lane from the Board works", "launcher API"),
+    ("third-party:CI runs green on the PR", "blocked-by"),
+    ("third-party:waits for #123 to land", "blocked-by"),
+    ("device:the overlay opens on the phone", "emulation"),
+    ("physical:dark mode looks right on the panel", "design-review"),
+    ("owner-account:the satellite pulls over ssh", "SSH"),
+)
+for text, tool in MISUSE:
+    try:
+        rule.parse_gap(text)
+        check(False, f"lane-provable gap {text!r} must be refused")
+    except ValueError as exc:
+        check(tool in str(exc), f"refusal of {text!r} names {tool!r}, got {exc}")
+check("taste" not in rule.OWNER_CLASSES, "taste is no owner class: a design choice is a plan-gate question")
+for text in ("device:the on-screen keyboard does not cover the composer on a real iPhone",
+             "device:the keyboard accessory row shows the dictate button",
+             "device:background audio keeps playing with the phone locked",
+             "device:PWA install adds the icon",
+             "device:the car head unit reads the reply aloud",
+             "physical:plug the USB hub into the tower",
+             "owner-account:moving real mail to the archive folder in Outlook",
+             "third-party:the accountant confirms the export opens"):
+    try:
+        rule.parse_gap(text)
+    except ValueError as exc:
+        check(False, f"an owner-only gap {text!r} is accepted, got {exc}")
+check(rule.recorded_gap(rule.gap_reason("device", "the mic level moves")) == ("device", "the mic level moves"),
+      "a recorded gap reads back to its class and criterion")
+check(rule.recorded_gap("the lane could not prove the cards match, because it needs a taste or judgement call")
+      == ("taste", "the cards match"), "an old taste gap reads back by its old class name")
+check(rule.recorded_gap("a hand-written reason") is None, "hand text is no recorded gap")
+for path in ("src/mic/README.md", "src/mic/docs/setup.py", "tests/mic/test_loop.py", "src/camera/notes.MD"):
+    check(rule.decide(["chore"], "Tidy", "", [("modified", path)]).verdict == rule.NONE,
+          f"docs and tests under a live-input folder add no check ({path})")
+check(rule.decide(["chore"], "Tidy", "", [("modified", "src/mic/loop.py")]).verdict == rule.REQUIRED,
+      "code under a live-input folder still adds one")
 check(rule.decide(["bug"], "Fix crash", "", [], rule.VERIFIED_SCHEDULED).verdict == rule.NONE,
       "a criterion only a later scheduled run can show is the chief's to read, not the owner's")
 check(rule.decide(["bug"], "Android: nav label contrast", "", [], rule.VERIFIED_YES).verdict == rule.NONE,
@@ -212,6 +256,15 @@ v = _re(_item("the lane did not state that it verified the work in its own sessi
 check(v.state == reclassify.CLEAR and v.dropped == ["generic"], f"a generic did-not-state clears, got {v}")
 v = _re(_item(rule.gap_reason("device", "the mic level moves")), _iss())
 check(v.state == reclassify.KEEP, "a named gap with an owner-only class is kept as recorded")
+v = _re(_item("the lane could not prove the cards match, because it needs a taste or judgement call"), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["lane-provable"], f"an old taste gap clears, got {v}")
+v = _re(_item("the lane could not prove the composer fits at phone width, because it needs "
+              "a real device or live input (mic, camera, phone hardware)"), _iss())
+check(v.state == reclassify.CLEAR and v.dropped == ["lane-provable"],
+      f"an old device gap emulation covers clears, got {v}")
+v = _re(_item("the lane could not prove the mic level moves, because it needs "
+              "a real device or live input (mic, camera, phone hardware)"), _iss())
+check(v.state == reclassify.KEEP, f"an old device gap on an allowlisted item is kept, got {v}")
 v = _re(_item("the lane could not verify the work in its own session; needs a real device or live input (mic), "
               "which a session cannot drive"), _iss("Mic: tune the gain"))
 check(v.state == reclassify.KEEP, f"a recorded device reason keeps the item beside a generic one, got {v}")
@@ -337,7 +390,7 @@ check(code == 3 and "RETRACTED=unknown" in out, f"a retract that does not land i
 
 already = block.format_block(block.VALIDATE_AFTER, "r", "t")
 fake = FakeGh(issue(labels=("bug", "needs-validation"), comments=(already,)), "")
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "taste:x", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "physical:x", "--try", "x"], fake)
 check(code == 1 and "APPLIED=already" in out and not fake.writes(), "an already-marked issue is not marked twice")
 
 fake = FakeGh(issue(), "", fail=("api --paginate",))
@@ -400,6 +453,44 @@ va = next(it for it in result["items"] if it["kind"] == block.VALIDATE_AFTER)
 nb = next(it for it in result["items"] if it["kind"] == block.BEFORE_START)
 check(va["reason"] == "why" and va["proof"] == ["https://p"], "the matching block fills the item")
 check(nb["block"] is False and nb["reason"] == "", "a block of another kind is never borrowed")
+
+
+def _row(number, try_text, kind=block.VALIDATE_AFTER):
+    text = block.format_block(kind, "why", try_text, ["https://p"], "2026-11-0" + str(number % 9 + 1))
+    return {"number": number, "title": f"t{number}", "state": "CLOSED", "url": "u", "labels": [],
+            "comments": [{"body": text}]}
+
+
+class FlowFake(FakeGh):
+    """Three validate-after issues: two share one --try text, one differs."""
+
+    def __call__(self, args):
+        args = list(args)
+        if args[:2] == ["issue", "list"]:
+            if args[args.index("--label") + 1] != "needs-validation":
+                return "[]"
+            return json.dumps([_row(5, "archive one mail in Outlook"), _row(6, "archive one mail in Outlook"),
+                               _row(8, "something else")])
+        return super().__call__(args)
+
+
+fake = FlowFake(issue(labels=("bug", "needs-validation"), comments=(_row(5, "archive one mail in Outlook")
+                                                                   ["comments"][0]["body"],)))
+code, out = run(["list", "--repo", "demo", "--json"], fake)
+listed_items = json.loads(out)["items"]
+refs = sorted(it["ref"] for it in listed_items)
+merged = next((it for it in listed_items if it.get("merged")), {})
+check(len(listed_items) == 2 and refs[1] == "demo#8" and merged.get("merged") in (["demo#5"], ["demo#6"]),
+      f"identical --try in one repo merges into one Board line naming the other ref, got {listed_items}")
+merged_away = github.merge_same_try([{"repo": "a", "ref": "a#1", "kind": "validate-after", "try": "x"},
+                                     {"repo": "b", "ref": "b#1", "kind": "validate-after", "try": "x"},
+                                     {"repo": "a", "ref": "a#2", "kind": "validate-after", "try": ""},
+                                     {"repo": "a", "ref": "a#3", "kind": "validate-after", "try": ""}])
+check(len(merged_away) == 4, f"other repos and empty --try never merge, got {merged_away}")
+code, out = run(["clear", "demo#5", "--answer", "validated by owner"], fake)
+edited = sorted(c[2] for c in fake.calls if c[:2] == ["issue", "edit"])
+check(code == 0 and edited == ["5", "6"] and "also=demo#6" in out,
+      f"clearing one merged line clears its siblings with the same --try ({code}, {out}, {edited})")
 
 github._gh = FakeGh(fail=("issue list",))
 try:

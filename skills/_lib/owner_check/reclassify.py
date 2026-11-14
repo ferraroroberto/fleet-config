@@ -3,7 +3,8 @@
 A block records why an issue was put on the owner's list. This module re-runs the
 rule over each such issue and keeps it only while a reason still fires. A lane's
 named gap (a criterion plus an owner-only class) and any text a person wrote by
-hand are never re-derived, so they keep the item. A generic "could not verify" or
+hand are never re-derived, so they keep the item, unless the narrowed classes
+now refuse that gap as lane-provable (or its class is gone). A generic "could not verify" or
 "did not state" names nothing the owner can do, so it drops. Everything else is
 recomputed from the issue and its PR, with no in-session proof assumed.
 """
@@ -42,6 +43,7 @@ DROPPED_WORDS = {
     "generic": "a generic could-not-verify names no criterion and no owner-only class",
     "explicit": "the issue no longer says Owner validation: required",
     "account": "no third-party account involved",
+    "lane-provable": "the named gap is lane-provable under the narrowed owner classes",
 }
 
 
@@ -66,13 +68,16 @@ def _split(reason: str) -> List[str]:
 
 
 def classify_recorded(part: str) -> str:
-    """`rule:<key>`, `lane`, `generic`, `backfill` or `hand` for one recorded reason."""
+    """`rule:<key>`, `lane`, `lane-provable`, `generic`, `backfill` or `hand` for one recorded reason."""
     if part == backfill.BACKFILL_REASON:
         return "backfill"
     for prefix, key in _RULE_PREFIXES:
         if part.startswith(prefix):
             return f"rule:{key}"
     if part.startswith(rule.GAP_PREFIX):
+        gap = rule.recorded_gap(part)
+        if gap and (gap[0] not in rule.OWNER_CLASSES or rule.gap_refusal(*gap)):
+            return "lane-provable"
         return "lane"
     if part.startswith(_GENERIC_PREFIXES):
         return "generic"
@@ -102,6 +107,6 @@ def reclassify(
     now = kept + fired
     still = {classify_recorded(r).split(":", 1)[-1] for r in fired}
     dropped = sorted({kind.split(":", 1)[-1] for _part, kind in recorded
-                      if (kind in ("backfill", "generic") or kind.startswith("rule:"))
+                      if (kind in ("backfill", "generic", "lane-provable") or kind.startswith("rule:"))
                       and kind.split(":", 1)[-1] not in still})
     return Verdict(KEEP if now else CLEAR, now, dropped)

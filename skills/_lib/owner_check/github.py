@@ -199,6 +199,36 @@ def fleet_repo_names(projects_toml: Optional[Path] = None) -> List[str]:
     return kept
 
 
+def merge_same_try(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One Board line per flow: items of one repo and kind with an identical `try` merge.
+
+    The first item (in the given order) stays and lists the others' refs under
+    `merged`; `clear` on it clears them too. Exact text only, never fuzzy, and an
+    empty `try` never merges.
+    """
+    kept: List[Dict[str, Any]] = []
+    first: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for item in items:
+        key = (item["repo"], item["kind"], str(item.get("try") or ""))
+        if not key[2]:
+            kept.append(item)
+        elif key in first:
+            first[key].setdefault("merged", []).append(item["ref"])
+        else:
+            first[key] = item = dict(item)
+            kept.append(item)
+    return kept
+
+
+def same_try_siblings(repo: str, number: int, kind: str, try_text: str) -> List[int]:
+    """Other issues in `repo` labelled for `kind` whose latest block carries the same `try`."""
+    if not try_text:
+        return []
+    rows = _labelled(repo, block.LABELS[kind])
+    return [int(row["number"]) for row in rows
+            if row.get("number") != number and _item(repo, row, kind)["try"] == try_text]
+
+
 def newest_first(items: List[Dict[str, Any]]) -> None:
     """Sort in place: latest `since` first, undated items last, ties by repo and number.
 
