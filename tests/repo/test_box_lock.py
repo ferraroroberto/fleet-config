@@ -124,10 +124,159 @@ done = subprocess.run([*cli, sys.executable, "-c", "print('gate-ran')"],
 check(done.returncode == box_lock.TIMEOUT_EXIT and "gate-ran" not in done.stdout
       and "fake-burn" in done.stderr,
       f"run exits 3 without running the gate while a burn holds the lock ({done.returncode})")
+check("UNKNOWN box_load_lock" in done.stderr and "not a failure" in done.stderr,
+      f"a lock timeout is reported as UNKNOWN, not as the command failing ({done.stderr!r})")
 with contextlib.redirect_stdout(io.StringIO()) as out:
     box_lock.main(["status"])
 check("fake-burn" in out.getvalue(), "status lists the live holder")
 burn.kill()
 burn.wait()
+
+
+# ---- fairness: a waiting gate is not starved by a holder that re-acquires ----
+class FakeClock:
+    """A clock that only moves when the waiter sleeps, so a 30-minute wait takes no time."""
+
+    def __init__(self, on_sleep=None) -> None:
+        self.now = 0.0
+        self.sleeps = 0
+        self.on_sleep = on_sleep
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps += 1
+        self.now += seconds
+        if self.on_sleep is not None:
+            self.on_sleep(self.sleeps)
+
+
+def drop(marker) -> None:
+    """Release a marker the test may not have been granted (the red run must keep going)."""
+    if marker is not None:
+        box_lock.release(marker)
+
+
+def fresh_folder() -> Path:
+    return Path(tempfile.mkdtemp(prefix="box-lock-fair-"))
+
+
+def tickets(folder: Path) -> list:
+    return sorted(p.name for p in folder.iterdir() if p.name.startswith(box_lock.QUEUE + "."))
+
+
+quiet = lambda _line: None  # noqa: E731
+folder = fresh_folder()
+sweep_app, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "perf-sweep", folder)
+regrab = {}
+
+
+def sweep_between_apps(sleeps: int) -> None:
+    """The sweep finishes one app and asks for the next one straight away."""
+    if sleeps != 1:
+        return
+    box_lock.release(sweep_app)
+    regrab["marker"], regrab["blockers"] = box_lock.try_acquire(box_lock.EXCLUSIVE, "perf-sweep", folder)
+
+
+clock = FakeClock(sweep_between_apps)
+try:
+    with box_lock.held(box_lock.SHARED, "lane-gate", 30, folder=folder, poll_seconds=5, report=quiet,
+                       clock=clock, sleep=clock.sleep) as gate_marker:
+        check(regrab.get("marker") is None,
+              "the sweep re-asking between apps is refused while a gate is queued")
+        check(any("lane-gate" in str(b.get("repo")) for b in regrab.get("blockers") or []),
+              f"the refusal names the queued gate ({regrab.get('blockers')})")
+        check(clock.now < 60, f"the gate gets the gap after one poll, not after its timeout ({clock.now:.0f}s)")
+        check(tickets(folder) == [], "the gate's ticket is gone once it holds the lock")
+        check(box_lock.try_acquire(box_lock.EXCLUSIVE, "perf-sweep", folder)[0] is None,
+              "the sweep waits for the gate that took the gap")
+except box_lock.BoxLockTimeout as exc:
+    check(False, f"a gate behind a multi-app sweep acquires between apps, it timed out instead ({exc})")
+sweep_next, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "perf-sweep", folder)
+check(sweep_next is not None, "the sweep resumes once the gate is done")
+if sweep_next is not None:
+    drop(sweep_next)
+if regrab.get("marker") is not None:
+    box_lock.release(regrab["marker"])
+
+# ---- a queued burn is served in arrival order, and no newcomer jumps it ----
+folder = fresh_folder()
+holder_gate, _ = box_lock.try_acquire(box_lock.SHARED, "lane-gate", folder)
+first = box_lock.enqueue(box_lock.EXCLUSIVE, "burn-one", folder, now_ns=lambda: 1_000)
+second = box_lock.enqueue(box_lock.EXCLUSIVE, "burn-two", folder, now_ns=lambda: 2_000)
+box_lock.release(holder_gate)
+own, blockers = box_lock.try_acquire(box_lock.EXCLUSIVE, "burn-two", folder, ticket=second)
+check(own is None and [b["repo"] for b in blockers] == ["burn-one"],
+      f"the younger queued burn defers to the older one ({blockers})")
+own, blockers = box_lock.try_acquire(box_lock.SHARED, "late-gate", folder)
+check(own is None and [b["repo"] for b in blockers] == ["burn-one", "burn-two"],
+      f"a newcomer gate does not overtake queued burns ({blockers})")
+own, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "burn-one", folder, ticket=first)
+check(own is not None, "the older queued burn takes the free lock")
+drop(own)
+box_lock.dequeue(first, folder)
+own, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "burn-two", folder, ticket=second)
+check(own is not None, "the next burn goes once the first has left the queue")
+drop(own)
+box_lock.dequeue(second, folder)
+
+# ---- gates queued behind a burn do not block each other ----
+folder = fresh_folder()
+queued_gate = box_lock.enqueue(box_lock.SHARED, "gate-one", folder, now_ns=lambda: 1_000)
+own, _ = box_lock.try_acquire(box_lock.SHARED, "gate-two", folder)
+check(own is not None, "a queued gate does not hold back another gate")
+drop(own)
+box_lock.dequeue(queued_gate, folder)
+
+# ---- a dead waiter loses its place; an unsettled one keeps it ----
+folder = fresh_folder()
+waiter = sleeper()
+name = f"{box_lock.QUEUE}.{box_lock.SHARED}.{waiter.pid}.5.deadwaiter.json"
+(folder / name).write_text('{"repo": "ghost"}', encoding="utf-8")
+own, blockers = box_lock.try_acquire(box_lock.EXCLUSIVE, "t", folder, probe=lambda _pid: None)
+check(own is None and blockers and blockers[0]["repo"] == "ghost" and (folder / name).exists(),
+      "a waiter whose pid cannot be probed keeps its place in the queue")
+waiter.kill()
+waiter.wait()
+own, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "t", folder)
+check(own is not None and not (folder / name).exists(), "a dead waiter's ticket is reclaimed")
+drop(own)
+
+# ---- a waiter that gives up leaves no ticket behind ----
+folder = fresh_folder()
+holder_burn, _ = box_lock.try_acquire(box_lock.EXCLUSIVE, "perf-sweep", folder)
+clock = FakeClock()
+try:
+    with box_lock.held(box_lock.SHARED, "lane-gate", 30, folder=folder, poll_seconds=5, report=quiet,
+                       clock=clock, sleep=clock.sleep):
+        check(False, "a gate waits out its timeout behind a sweep that never yields")
+except box_lock.BoxLockTimeout as exc:
+    check(clock.now >= 30 * 60 and "perf-sweep" in str(exc),
+          f"the timeout comes at the fake deadline and names the holder ({exc})")
+check(tickets(folder) == [], "a timed-out waiter removes its ticket")
+drop(holder_burn)
+
+# ---- the acceptance run reports a lock timeout as UNKNOWN (exit 3), not a failed check ----
+sys.path.insert(0, str(ROOT / "tests"))
+import run_acceptance  # noqa: E402
+
+
+@contextlib.contextmanager
+def never_free(*_args, **_kwargs):
+    raise box_lock.BoxLockTimeout("box load lock: no gate slot after 30 min -- held by burn pid 1 (perf-sweep)")
+    yield  # pragma: no cover
+
+
+real_held = box_lock.held
+box_lock.held = never_free
+try:
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        code = run_acceptance.main()
+finally:
+    box_lock.held = real_held
+check(code == box_lock.TIMEOUT_EXIT and "UNKNOWN" in out.getvalue() and "FAIL" not in out.getvalue(),
+      f"a lock timeout is exit 3 with an UNKNOWN line, never a FAIL ({code}, {out.getvalue()!r})")
 
 _h.report_and_exit("test_box_lock")

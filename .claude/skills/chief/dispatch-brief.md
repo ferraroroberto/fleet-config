@@ -131,5 +131,5 @@ the box is quiet. Never start a burn yourself while a lane gates. The helper
 enforces the same rule as a backstop: it holds the box load lock
 (`skills/_lib/box_lock.py`) exclusively, waits while any gate holds it shared,
 and exits 3 without burning if the gate outlasts `--lock-timeout-minutes`.
-Tell the worker that exit 3 means "gates are running, wait for the chief",
+The same exit 3 on a gate means the lock stayed busy and the gate did not run (`UNKNOWN box_load_lock`): not a red gate, rerun it. Tell the worker that exit 3 from a burn means "gates are running, wait for the chief",
 never "retry with a longer timeout".

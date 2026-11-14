@@ -514,8 +514,9 @@ def main() -> int:
                            report=lambda line: print(line, flush=True)):
             return _run_all()
     except box_lock.BoxLockTimeout as exc:
-        print(f"FAIL  box_load_lock: {exc}")
-        return 1
+        # The checks never ran, so nothing is known about the tree: exit 3, not a red run.
+        print(f"UNKNOWN  box_load_lock: {exc}; the acceptance run did not start, this is not a failed check")
+        return box_lock.TIMEOUT_EXIT
 
 
 def _run_all() -> int:

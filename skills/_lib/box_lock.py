@@ -13,11 +13,22 @@ holder's own write. Acquiring writes the marker *first* and then looks for a
 conflicting holder, backing off (marker removed, jittered retry) if one is
 there, so two racing acquirers can both back off but never both proceed.
 
+The lock is **fair**: an acquirer that finds it busy takes a numbered queue
+ticket (``wait.<mode>.<pid>.<ns>.<token>.json``) and keeps it until it holds
+the lock or gives up. Every acquirer defers to an older ticket whose mode
+conflicts with its own, and one without a ticket counts as newest. So a holder
+that releases and immediately asks again (the perf sweep, one app after the
+next) finds the waiting gate ahead of it and the gate gets the gap. A ticket
+whose pid is confirmed gone is reclaimed like a dead holder; an unsettled pid
+keeps its place.
+
 A marker whose pid is confirmed gone is reclaimed: a crashed burn or gate
 frees the lock on the next look. A pid whose state cannot be established, or a
 lock directory that cannot be listed, counts as **held**: an unknown state is
 never treated as free. Waiting is bounded; on timeout the caller gets
-``BoxLockTimeout`` naming the holders, never an indefinite hang.
+``BoxLockTimeout`` naming the holders, never an indefinite hang. A timeout
+means the lock stayed busy, not that the gate failed: ``run`` reports it as an
+``UNKNOWN`` line with exit 3, and the gate's own verdict is not established.
 
 The lock is advisory and machine-local. CLI, for gates outside this repo:
 
@@ -25,8 +36,8 @@ The lock is advisory and machine-local. CLI, for gates outside this repo:
                                        [--timeout-minutes M] -- <gate command>
     python skills/_lib/box_lock.py status
 
-``run`` exits with the command's own code, or 3 when the lock could not be
-taken in time. ``status`` lists live holders.
+``run`` exits with the command's own code, or 3 (``UNKNOWN``, the command never
+ran) when the lock could not be taken in time. ``status`` lists live holders.
 
 stdlib only.
 """
@@ -65,6 +76,7 @@ POLL_SECONDS = 5.0
 # it is alive without flooding the log.
 REPORT_EVERY_SECONDS = 60.0
 TIMEOUT_EXIT = 3
+QUEUE = "wait"
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +96,14 @@ def _parse_marker(name: str) -> Optional[Dict[str, object]]:
     return {"mode": parts[0], "pid": int(parts[1]), "name": name}
 
 
+def _parse_ticket(name: str) -> Optional[Dict[str, object]]:
+    parts = name.split(".")
+    if (len(parts) != 6 or parts[0] != QUEUE or parts[1] not in MODES
+            or not parts[2].isdigit() or not parts[3].isdigit() or parts[5] != "json"):
+        return None
+    return {"mode": parts[1], "pid": int(parts[2]), "ns": int(parts[3]), "name": name, "queued": True}
+
+
 def _describe(holder: Dict[str, object], folder: Path) -> Dict[str, object]:
     """Add repo and start time from the marker body, best effort (display only)."""
     try:
@@ -95,31 +115,37 @@ def _describe(holder: Dict[str, object], folder: Path) -> Dict[str, object]:
     return {**holder, "repo": body.get("repo", "?"), "started": body.get("started", "?")}
 
 
-def holders(folder: Optional[Path] = None,
-            probe: Callable[[int], Optional[bool]] = pid_state) -> Optional[List[Dict[str, object]]]:
-    """Live holders of the lock, or ``None`` when the directory can't be listed.
+def _scan(folder: Path, probe: Callable[[int], Optional[bool]]) -> Optional[tuple]:
+    """``(live holders, live queue tickets oldest first)``, or ``None`` when unlistable.
 
-    A marker whose pid is confirmed gone is reclaimed (unlinked) here. A pid the
-    probe cannot settle stays in the list: unknown is held, never free.
+    A marker or ticket whose pid is confirmed gone is reclaimed (unlinked). A pid
+    the probe cannot settle stays: unknown is held, never free.
     """
-    folder = folder or lock_dir()
     try:
         names = [entry.name for entry in folder.iterdir()]
     except FileNotFoundError:
-        return []
+        return [], []
     except OSError:
         return None
-    live = []
+    live, queue = [], []
     for name in names:
-        holder = _parse_marker(name)
-        if holder is None:
+        entry = _parse_marker(name) or _parse_ticket(name)
+        if entry is None:
             continue
-        if probe(int(holder["pid"])) is False:
+        if probe(int(entry["pid"])) is False:
             with contextlib.suppress(OSError):
                 (folder / name).unlink()
             continue
-        live.append(_describe(holder, folder))
-    return live
+        (queue if entry.get("queued") else live).append(_describe(entry, folder))
+    queue.sort(key=lambda t: (t["ns"], t["name"]))
+    return live, queue
+
+
+def holders(folder: Optional[Path] = None,
+            probe: Callable[[int], Optional[bool]] = pid_state) -> Optional[List[Dict[str, object]]]:
+    """Live holders of the lock, or ``None`` when the directory can't be listed."""
+    scanned = _scan(folder or lock_dir(), probe)
+    return None if scanned is None else scanned[0]
 
 
 def _conflicts(mode: str, live: List[Dict[str, object]], own: str) -> List[Dict[str, object]]:
@@ -129,21 +155,39 @@ def _conflicts(mode: str, live: List[Dict[str, object]], own: str) -> List[Dict[
     return [h for h in others if h["mode"] == EXCLUSIVE]
 
 
+def _ahead(mode: str, queue: List[Dict[str, object]], ticket: Optional[str]) -> List[Dict[str, object]]:
+    """Queued tickets of a conflicting mode that an acquirer holding ``ticket`` must let go first.
+
+    Without a ticket the acquirer has not queued yet, so every conflicting ticket is older.
+    """
+    older = []
+    for entry in queue:
+        if entry["name"] == ticket:
+            break
+        older.append(entry)
+    return _conflicts(mode, older, "")
+
+
 def describe_holders(live: Optional[List[Dict[str, object]]]) -> str:
     if live is None:
         return "the lock state could not be read (treated as held)"
     if not live:
         return "no holders"
-    return "; ".join(f"{h['mode']} pid {h['pid']} ({h['repo']}, since {h['started']})" for h in live)
+    return "; ".join(
+        f"{'queued ' if h.get('queued') else ''}{h['mode']} pid {h['pid']} ({h['repo']}, since {h['started']})"
+        for h in live)
 
 
 def try_acquire(mode: str, repo: str, folder: Optional[Path] = None,
-                probe: Callable[[int], Optional[bool]] = pid_state) -> tuple:
+                probe: Callable[[int], Optional[bool]] = pid_state,
+                ticket: Optional[str] = None) -> tuple:
     """One attempt: ``(marker_path, None)`` on success, ``(None, blockers)`` if not.
 
-    ``blockers`` is the conflicting holder list, or ``None`` for an unreadable
-    lock state. The own marker is written before the look and removed again on
-    a conflict, so a racing acquirer always sees it.
+    ``blockers`` is the conflicting holders plus the older queued tickets this
+    acquirer defers to, or ``None`` for an unreadable lock state. ``ticket`` is
+    the caller's own queue ticket name from ``enqueue``, if it has one. The own
+    marker is written before the look and removed again on a conflict, so a
+    racing acquirer always sees it.
     """
     if mode not in MODES:
         raise ValueError(f"unknown lock mode {mode!r}")
@@ -158,13 +202,38 @@ def try_acquire(mode: str, repo: str, folder: Optional[Path] = None,
         }))
     except OSError:
         return None, None
-    live = holders(folder, probe)
-    blockers = None if live is None else _conflicts(mode, live, name)
+    scanned = _scan(folder, probe)
+    blockers = None if scanned is None else _conflicts(mode, scanned[0], name) + _ahead(mode, scanned[1], ticket)
     if blockers == []:
         return marker, None
     with contextlib.suppress(OSError):
         marker.unlink()
     return None, blockers
+
+
+def enqueue(mode: str, repo: str, folder: Optional[Path] = None,
+            now_ns: Callable[[], int] = time.time_ns) -> Optional[str]:
+    """Take a queue ticket and return its file name, or ``None`` if it cannot be written.
+
+    No ticket only costs the fairness: the caller still polls for the lock.
+    """
+    folder = folder or lock_dir()
+    name = f"{QUEUE}.{mode}.{os.getpid()}.{now_ns()}.{uuid.uuid4().hex}.json"
+    try:
+        runtime_files.make_dirs(folder, parents=True, exist_ok=True)
+        atomic_write_text(folder / name, json.dumps({
+            "pid": os.getpid(), "repo": repo, "mode": mode,
+            "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }))
+    except OSError:
+        return None
+    return name
+
+
+def dequeue(ticket: Optional[str], folder: Optional[Path] = None) -> None:
+    if ticket is not None:
+        with contextlib.suppress(OSError):
+            ((folder or lock_dir()) / ticket).unlink()
 
 
 def release(marker: Path) -> None:
@@ -176,26 +245,37 @@ def release(marker: Path) -> None:
 def held(mode: str, repo: str, timeout_minutes: float = DEFAULT_TIMEOUT_MINUTES,
          folder: Optional[Path] = None, poll_seconds: float = POLL_SECONDS,
          probe: Callable[[int], Optional[bool]] = pid_state,
-         report: Callable[[str], None] = log.info) -> Iterator[Path]:
+         report: Callable[[str], None] = log.info,
+         clock: Callable[[], float] = time.monotonic,
+         sleep: Callable[[float], None] = time.sleep) -> Iterator[Path]:
     """Hold the lock in ``mode`` for the body, waiting at most ``timeout_minutes``.
 
-    Raises ``BoxLockTimeout`` when it is still held (or unreadable) at the deadline.
+    The first busy look queues a ticket (see the module doc), so the wait is in
+    arrival order. Raises ``BoxLockTimeout`` when it is still held (or unreadable)
+    at the deadline. ``clock`` and ``sleep`` are injectable so a wait is testable
+    without real time.
     """
-    deadline = time.monotonic() + timeout_minutes * 60
+    deadline = clock() + timeout_minutes * 60
     last_report = None
-    while True:
-        marker, blockers = try_acquire(mode, repo, folder, probe)
-        if marker is not None:
-            break
-        now = time.monotonic()
-        if now >= deadline:
-            raise BoxLockTimeout(
-                f"box load lock: no {mode} slot after {timeout_minutes:g} min -- "
-                f"held by {describe_holders(blockers)}")
-        if last_report is None or now - last_report >= REPORT_EVERY_SECONDS:
-            report(f"ℹ️ box load lock: waiting for a {mode} slot -- {describe_holders(blockers)}")
-            last_report = now
-        time.sleep(min(poll_seconds * random.uniform(0.5, 1.5), max(0.0, deadline - now)))
+    ticket = None
+    try:
+        while True:
+            marker, blockers = try_acquire(mode, repo, folder, probe, ticket)
+            if marker is not None:
+                break
+            if ticket is None:
+                ticket = enqueue(mode, repo, folder)
+            now = clock()
+            if now >= deadline:
+                raise BoxLockTimeout(
+                    f"box load lock: no {mode} slot after {timeout_minutes:g} min -- "
+                    f"held by {describe_holders(blockers)}")
+            if last_report is None or now - last_report >= REPORT_EVERY_SECONDS:
+                report(f"ℹ️ box load lock: waiting for a {mode} slot -- {describe_holders(blockers)}")
+                last_report = now
+            sleep(min(poll_seconds * random.uniform(0.5, 1.5), max(0.0, deadline - now)))
+    finally:
+        dequeue(ticket, folder)
     try:
         yield marker
     finally:
@@ -236,7 +316,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return subprocess.run([program, *command[1:]], stdout=sys.stdout.fileno(),
                                   stderr=sys.stderr.fileno(), creationflags=NO_WINDOW).returncode
     except BoxLockTimeout as exc:
-        print(f"❌ {exc}", file=sys.stderr, flush=True)
+        print(f"UNKNOWN box_load_lock: {exc}; the command did not run, this is not a failure of it",
+              file=sys.stderr, flush=True)
         return TIMEOUT_EXIT
 
 
