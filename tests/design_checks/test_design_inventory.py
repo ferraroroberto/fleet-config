@@ -313,4 +313,18 @@ check(_six["findings"] == [] and [f["id"] for f in _merged_six["findings"]] == [
 check(json.dumps(_keyed, sort_keys=True) == json.dumps(inv.compare([_sel, _two], REF, CATALOG), sort_keys=True),
       "option counts and group keys keep the output deterministic, whatever the input order")
 
+# ---- unclassified text is never compared (INV-01 must not read a caption-shaped run as `body`) -----------------------------
+
+
+def _text_screen(target: str, text: list) -> dict:
+    return {"target": target, "run": "r", "source": "s", "screens": [{"id": "desktop-light-home", "inventory": {"unmeasured": None, "controls": [], "text": text}}]}
+
+
+_variant = lambda px, w: {"family": "system-ui", "px": px, "weight": w, "runs": 1}  # noqa: E731
+_unc = inv.compare([_text_screen("app-a", [{"role": "body", "runs": 1, "variants": [_variant(16, "400")]},
+                                           {"role": "unclassified", "runs": 2, "variants": [_variant(12, "600"), _variant(20, "700")]}]),
+                    _text_screen("app-b", [{"role": "body", "runs": 1, "variants": [_variant(16, "400")]},
+                                           {"role": "unclassified", "runs": 1, "variants": [_variant(14, "600")]}])], REF, CATALOG)
+check(_unc["findings"] == [], f"unclassified text is left out of INV-01: apps that agree on `body` raise nothing -- {[f['id'] for f in _unc['findings']]}")
+
 _h.report_and_exit("test_design_inventory", skip_code=SKIP_EXIT)

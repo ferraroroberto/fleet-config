@@ -27,7 +27,8 @@ is never matched. A control whose component is `unknown` (an inventory taken wit
 for nothing but its choice kind. A select or combobox counts its options only when the entry carries
 `options`; an inventory taken before that lists it as unclassified. A segmented or range-tab
 group's option count is its entries on that screen, one group per component and `group` key per screen
-(an inventory with no `group` merges them into one group per component). Whatever the DOM cannot decide is listed
+(an inventory with no `group` merges them into one group per component). Text whose class names no role arrives as the role
+`unclassified` and is left out of INV-01. Whatever the DOM cannot decide is listed
 under `unclassified` for Step 6's per-app readers. This module never guesses.
 
 **Filing-safe.** A filing line carries finding ids, counts, app names, renderings (family, px, weight,
@@ -92,6 +93,8 @@ ROLE_TOKENS: Dict[str, Tuple[str, Optional[str]]] = {
     "body": ("body", None),
 }
 ROOT_PX = 16.0
+# The capture tags text whose class names no role with this, and the comparator never guesses a role for it.
+UNCLASSIFIED_ROLE = "unclassified"
 
 # A short label names its action through one of these words; first match wins, so destructive outranks commit.
 ACTION_LABEL_MAX_WORDS = 4
@@ -326,6 +329,8 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
             if inv.get("unmeasured"):
                 uncatalogued += 1
             for tr in inv.get("text") or []:
+                if tr.get("role") == UNCLASSIFIED_ROLE:
+                    continue
                 for v in tr.get("variants") or []:
                     _note(text, str(tr.get("role")), _variant(v.get("family"), v.get("px"), v.get("weight")), t, sid)
             groups: Dict[Tuple[str, str, str], dict] = {}

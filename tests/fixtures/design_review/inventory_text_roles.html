@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text roles</title>
+<style>
+  body { font: 16px/1.5 system-ui; margin: 16px; }
+  .count { font-size: 12px; font-weight: 600; }
+  .field-label { font-size: 14px; font-weight: 600; }
+  .hint { font-size: 14px; font-weight: 400; }
+  .panel-title-big { font-size: 20px; font-weight: 700; }
+</style>
+</head>
+<body>
+<!-- Only prose in a paragraph is `body`; text whose class names no role (a count, a field label, a bare title) is `unclassified`, never body. -->
+<p>A paragraph of ordinary prose.</p>
+<div class="count">12 items</div>
+<div class="field-label">Name</div>
+<div class="panel-title-big">Plain heading drawn as a div</div>
+<div class="hint">A hint line</div>
+</body>
+</html>

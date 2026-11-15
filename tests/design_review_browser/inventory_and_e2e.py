@@ -86,6 +86,17 @@ check(_ch_groups == {"div.segmented": 3, "div.segmented~2": 2, "div#scope": 2},
 check(bool(_ch_out[0]) and _ch_out[0] == _ch_out[1],
       f"inventory: two runs over the choices page are byte-identical ({len(_ch_out[0])} vs {len(_ch_out[1])} bytes)")
 
+# text roles: only paragraph prose is `body`; text whose class names no role is `unclassified`, so the cross-app comparator
+# never reads a caption-, label- or title-shaped run as a body that renders many ways
+_tr_out = _walk_run([str(interp), str(FIX / "inventory_driver.py"), (FIX / "inventory_text_roles.html").as_uri(), str(_ch_params)],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+_tr = json.loads(_tr_out.stdout) if _tr_out.returncode == 0 and _tr_out.stdout else {}
+_tr_roles = {t["role"]: sorted((v["px"], v["weight"]) for v in t["variants"]) for t in _tr.get("text", [])}
+check(_tr_roles.get("body") == [(16, "400")],
+      f"inventory text: body is the paragraph's own 16px/400 and nothing else -- {_tr_roles}")
+check(_tr_roles.get("unclassified") == [(12, "600"), (14, "600"), (20, "700")] and _tr_roles.get("secondary") == [(14, "400")],
+      f"inventory text: a count, a field label and a bare title are unclassified, a `.hint` stays secondary -- {_tr_roles} ({_tr_out.stderr[-300:]})")
+
 # measure --e2e (#1498): a throwaway copy of the fixture target, project-scaffolding's vendored surface() hook
 # copied in as an adopter vendors it; its own pytest suite captures two surfaces (one on a Pixel 7 context).
 _e2e_hook = scaffold / "tests" / "e2e" / "_surface.py"

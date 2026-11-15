@@ -527,8 +527,10 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       if (e.matches(CONTROL)) return 'button-label';
       if (/^(SMALL|FIGCAPTION|CAPTION)$/.test(t)) return 'caption';
       return null; };
+    // Only paragraph prose is `body`. Text whose class names no role is `unclassified`: the comparator skips it, because
+    // calling a count, a field label or a bare title `body` would make `body` render in every size and weight the app has.
     const textRole = (el) => { for (let e = el; e && e.nodeType === 1 && e !== document.body; e = e.parentElement) { const r = roleAt(e); if (r) return r; }
-      return 'body'; };
+      return el.closest('p, blockquote') ? 'body' : 'unclassified'; };
     const byRole = {};
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
