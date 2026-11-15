@@ -114,6 +114,10 @@ ACTION_VOCAB: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("copy", re.compile(r"\bcopy\b")),
 )
 ROW_COMPONENT = "vendored:action-row"
+# An "Add …" control that opens a dialog or menu is an opener, not a commit: it keeps the secondary tier (the capture
+# marks it `opens`). A label holding another commit word ("Add and save") is still a commit.
+ADD_WORD = re.compile(r"\badd\b")
+OTHER_COMMIT_WORD = re.compile(r"\b(save|apply|confirm|done|ok|submit|create|send)\b")
 
 # A bespoke control of this kind has this vendored equivalent, when the catalog carries it.
 KIND_COMPONENT: Dict[str, str] = {
@@ -239,6 +243,8 @@ def action_of(control: dict) -> Tuple[Optional[str], Optional[str]]:
         return None, R_LONG_LABEL
     for name, rx in ACTION_VOCAB:
         if rx.search(label):
+            if name == "commit" and control.get("opens") is True and ADD_WORD.search(label) and not OTHER_COMMIT_WORD.search(label):
+                return "open", None
             return name, None
     return None, R_SHORT_NO_WORD
 

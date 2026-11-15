@@ -474,6 +474,11 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       if (t === 'INPUT') return ({checkbox: 'checkbox', radio: 'radio', range: 'slider', search: 'searchbox', number: 'spinbutton',
         button: 'button', submit: 'button', reset: 'button', image: 'button'})[typeOf(el)] || 'textbox';
       return ''; };
+    // A control opens a dialog or menu when it declares aria-haspopup (anything but false) or aria-controls names a dialog,
+    // menu or listbox in the DOM; the comparator reads that so an "Add ..." opener is not grouped with commit buttons.
+    const opensOf = (el) => { const hp = (el.getAttribute('aria-haspopup') || '').toLowerCase(); if (hp && hp !== 'false') return true;
+      const id = el.getAttribute('aria-controls'), t = id && document.getElementById(id);
+      return !!t && (t.tagName === 'DIALOG' || /^(dialog|alertdialog|menu|listbox)$/.test((t.getAttribute('role') || '').toLowerCase())); };
     const mask = (s) => (s || '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 40);
     // The control's name, never a field's value: aria-label, its <label>, a placeholder or title, else (a button) its text.
     const nameOf = (el) => mask(el.getAttribute('aria-label') || (el.labels && el.labels.length ? el.labels[0].innerText : '')
@@ -506,6 +511,7 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       const component = componentOf(el), kind = kindOf(el, component), f = fontOf(el);
       const entry = {key: keyOf(el), kind, component, role: roleOf(el), label: nameOf(el), family: f.family, px: f.px, weight: f.weight};
       if (kind === 'select' || kind === 'combobox') { const o = optionsOf(el); if (o !== null) entry.options = o; }
+      if ((kind === 'button' || kind === 'link') && opensOf(el)) entry.opens = true;
       if (kind === 'segmented' || kind === 'range-tab') entry.group = groupOf(el);
       const id = JSON.stringify(entry), had = seen.get(id);
       if (had) had.n++; else seen.set(id, Object.assign(entry, {n: 1}));
