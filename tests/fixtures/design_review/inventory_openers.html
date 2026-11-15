@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Openers, disclosures and glyph actions</title>
+<style>
+  body { font: 16px/1.5 system-ui; margin: 16px; }
+  button, summary { min-height: 44px; min-width: 44px; }
+  svg { width: 20px; height: 20px; }
+</style>
+</head>
+<body>
+<!-- An icon-only Add that declares aria-haspopup opens a dialog: the capture marks it `opens`. -->
+<button type="button" id="addJob" aria-label="Add job" aria-haspopup="dialog"><svg aria-hidden="true"><use href="#i-plus"></use></svg></button>
+<!-- A labelled Add that declares aria-haspopup stays an opener, and is a button, not a disclosure. -->
+<button type="button" id="addMenu" aria-haspopup="menu" aria-expanded="false">Add task</button>
+<!-- An icon-only Add that opens nothing is not an opener. -->
+<button type="button" id="addPlain" aria-label="Add note"><svg aria-hidden="true"><use href="#i-plus"></use></svg></button>
+<!-- Glyph-only actions: a composer's Send and a turn header's Copy. -->
+<button type="button" id="sendGlyph" aria-label="Send"><svg aria-hidden="true"><use href="#i-send"></use></svg></button>
+<button type="button" id="copyGlyph" aria-label="Copy reply"><svg aria-hidden="true"><use href="#i-copy"></use></svg></button>
+<!-- A fold title toggles a region: its words ("Done") are not a verb. -->
+<button type="button" id="foldTitle" aria-expanded="false" aria-controls="doneBody">Done today</button>
+<div id="doneBody" hidden>Nothing yet</div>
+<!-- A details summary is a disclosure whatever it says. -->
+<details open><summary id="moreSummary">More options</summary><p>Body</p></details>
+<!-- A row whose trailing glyph is a chevron navigates to a sheet or route. -->
+<button type="button" id="navRow"><span>Context filter</span><svg aria-hidden="true"><use href="#i-chevron-right"></use></svg></button>
+<!-- A labelled button with no chevron stays a plain button. -->
+<button type="button" id="plainFilter">Filter</button>
+</body>
+</html>

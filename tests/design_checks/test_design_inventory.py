@@ -143,6 +143,19 @@ check(inv.action_of({"label": "Add section", "component": "bespoke"}) == ("commi
 check(inv.action_of({"label": "Save", "component": "bespoke", "opens": True}) == ("commit", None)
       and inv.action_of({"label": "Add and save", "component": "bespoke", "opens": True}) == ("commit", None),
       "only a plain Add is carved out; another commit word keeps the label a commit")
+check(inv.action_of({"label": "Add job", "kind": "icon-button", "component": "vendored:icon-button", "opens": True}) == ("open", None),
+      "an icon-only Add that opens a dialog is an opener too")
+check(inv.action_of({"label": "Send", "kind": "icon-button", "component": "vendored:icon-button"}) == ("send glyph", None)
+      and inv.action_of({"label": "Send", "kind": "button", "component": "vendored:button"}) == ("commit", None),
+      "a glyph-only Send is its own action; a labelled Send stays a commit")
+check(inv.action_of({"label": "Copy reply", "kind": "icon-button", "component": "vendored:icon-button"}) == ("copy glyph", None)
+      and inv.action_of({"label": "Copy", "kind": "button", "component": "vendored:button"}) == ("copy", None),
+      "a glyph-only Copy is its own action; a labelled Copy stays copy")
+check(inv.action_of({"label": "Send and delete", "kind": "icon-button", "component": "bespoke"}) == ("destructive", None),
+      "a glyph carve-out never hides a destructive word")
+check(inv.action_of({"label": "Context filter", "kind": "button", "component": "bespoke", "navigates": True}) == ("row open", None)
+      and inv.action_of({"label": "Context filter", "kind": "button", "component": "bespoke"}) == ("filter", None),
+      "a row that navigates is a row open whatever its words say; the same words on a plain button keep their word")
 
 # no catalog: INV-03 still uses the vendored components the inventories show, and says the catalog was missing
 no_cat = inv.compare(_apps(), REF, None, "no scaffold checkout")
@@ -312,6 +325,11 @@ _commit_apps = lambda s: {a for f in s["findings"] if f["id"] == "INV-02-commit"
 check(not _commit_apps(_sec_open) and not any(f["id"] == "INV-02-open" for f in _sec_open["findings"]),
       "an Add opener is not grouped with the commit buttons, and alone it is no finding")
 check(_commit_apps(_sec_plain) == {"app-plain"}, "an Add that opens nothing is still grouped with the commit buttons")
+# A disclosure (a fold title, a details summary) is no action, no overflow menu and never unclassified.
+_sec_disc = inv.compare([_one_screen("app-fold", [_ctl("disclosure", "bespoke", "Done today"), _ctl("disclosure", "bespoke", "More options"),
+                                                  _ctl("button", "vendored:button", "Save")])], {}, CATALOG)
+check(not _sec_disc["findings"] and not _sec_disc["unclassified"],
+      f"a disclosure is no action, no overflow menu and not unclassified -- {_sec_disc['findings']} {_sec_disc['unclassified']}")
 _keyed = inv.compare([_two, _sel], REF, CATALOG)
 check(_keyed["unclassified"] == [], f"a select with an option count is placed in its bucket, not unclassified -- {_keyed['unclassified']}")
 _by = {f["id"]: f for f in _keyed["findings"]}

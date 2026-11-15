@@ -118,6 +118,10 @@ ROW_COMPONENT = "vendored:action-row"
 # marks it `opens`). A label holding another commit word ("Add and save") is still a commit.
 ADD_WORD = re.compile(r"\badd\b")
 OTHER_COMMIT_WORD = re.compile(r"\b(save|apply|confirm|done|ok|submit|create|send)\b")
+# A glyph-only Send (a composer's) or Copy (a turn header's) is the icon-button tier wherever it sits, so it is its own
+# action rather than a commit or a labelled copy; only a label with no other commit word is carved out.
+GLYPH_VERBS = {"commit": ("send", re.compile(r"\bsend\b")), "copy": ("copy", re.compile(r"\bcopy\b"))}
+GLYPH_OTHER_COMMIT_WORD = re.compile(r"\b(save|apply|confirm|done|ok|submit|create|add)\b")
 
 # A bespoke control of this kind has this vendored equivalent, when the catalog carries it.
 KIND_COMPONENT: Dict[str, str] = {
@@ -233,7 +237,7 @@ def _slug(text: str) -> str:
 
 def action_of(control: dict) -> Tuple[Optional[str], Optional[str]]:
     """`(action, None)` when the DOM decides it, else `(None, why)`."""
-    if control.get("component") == ROW_COMPONENT:
+    if control.get("component") == ROW_COMPONENT or control.get("navigates") is True:
         return "row open", None
     label = str(control.get("label") or "").lower().strip()
     words = label.split()
@@ -245,6 +249,9 @@ def action_of(control: dict) -> Tuple[Optional[str], Optional[str]]:
         if rx.search(label):
             if name == "commit" and control.get("opens") is True and ADD_WORD.search(label) and not OTHER_COMMIT_WORD.search(label):
                 return "open", None
+            verb = GLYPH_VERBS.get(name)
+            if verb and control.get("kind") == "icon-button" and verb[1].search(label) and not GLYPH_OTHER_COMMIT_WORD.search(label):
+                return f"{verb[0]} glyph", None
             return name, None
     return None, R_SHORT_NO_WORD
 
