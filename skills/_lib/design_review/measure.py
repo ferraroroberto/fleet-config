@@ -62,7 +62,7 @@ present on a successful run:
               key of its parent, `~N` in document order when several share one),
               controls_count, kinds {kind: n}, components {component: n}, text [{role, runs, variants [{family, px,
               weight, runs}]}], text_count -- every visible control by kind and component and every text role by the
-              fonts it renders in; read only, never a rule input yet; the cross-app comparator reads it
+              fonts it renders in (`body` is paragraph prose only; text whose class names no role is `unclassified`); read only, never a rule input yet; the cross-app comparator reads it
     glance   (tab screens only, added by walk.py from GLANCE_READ_JS) state (measured | no_card | not_idle |
               card_gone | stopped | unavailable | error), card, first_px, settled_px, grew_px, below,
               changes [{ms, from_px, to_px, sel}] (sample of GLANCE_CHANGE_CAP), change_count, idle, idle_ms, pending [path]
