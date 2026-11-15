@@ -156,6 +156,12 @@ check(inv.action_of({"label": "Send and delete", "kind": "icon-button", "compone
 check(inv.action_of({"label": "Context filter", "kind": "button", "component": "bespoke", "navigates": True}) == ("row open", None)
       and inv.action_of({"label": "Context filter", "kind": "button", "component": "bespoke"}) == ("filter", None),
       "a row that navigates is a row open whatever its words say; the same words on a plain button keep their word")
+check(all(inv.action_of({"label": label, "kind": "button", "component": "bespoke"}) == ("load more", None)
+          for label in ("Load more", "Show more", "Load more results")),
+      "a verb before 'more' is pagination, its own action and never an overflow menu")
+check(all(inv.action_of({"label": label, "kind": "icon-button", "component": "vendored:icon-button"}) == ("overflow menu", None)
+          for label in ("More", "More actions", "Actions", "Menu", "Options")),
+      "a bare More, a kebab and the menu/actions/options words stay the overflow menu")
 
 # no catalog: INV-03 still uses the vendored components the inventories show, and says the catalog was missing
 no_cat = inv.compare(_apps(), REF, None, "no scaffold checkout")
