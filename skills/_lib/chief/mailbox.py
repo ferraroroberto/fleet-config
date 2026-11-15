@@ -37,7 +37,11 @@ CLAIMED_DIRNAME = ".claimed"
 # not handed its own batch twice.
 CLAIM_STALE_SECONDS = 900.0
 EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input",
-                   "job-failed": "job failed", "ci-failed": "ci failed"}
+                   "job-failed": "job failed", "ci-failed": "ci failed",
+                   "machine-critical": "machine critical"}
+# Offender rows past this many are left out of the rendered batch: the hub verdict
+# the event links to carries the full list, and the chief reads it there.
+MACHINE_OFFENDERS_SHOWN = 5
 # With the doorbell on, the chief keeps one long waiter that wakes it only for
 # an event that has waited this long: well past a ring's few seconds, so it
 # never races the doorbell, short enough to bound a silently dead one.
@@ -205,7 +209,7 @@ def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
             dropped += 1
             continue
         events.append({**event, "id": event_id})
-    return events, reoffered, dropped
+    return collapse_incidents(events), reoffered, dropped
 
 
 def ack_events(inbox: Path, ids: List[str]) -> Tuple[List[str], List[str]]:
@@ -276,6 +280,62 @@ def _ci_failed_lines(event: Dict[str, Any]) -> List[str]:
                   f"jobs={names} url={field('run_url')}"]
 
 
+def _machine_critical_lines(event: Dict[str, Any]) -> List[str]:
+    """A `machine-critical` event's head line, a detail line and one line per top offender.
+
+    The launcher's health publisher writes it, so there is no repo, issue or sid.
+    A field the producer left out reads `-` rather than rejecting the event: it
+    still wakes the chief, which reads the hub verdict itself. `repeats=<n>` is
+    set by `collapse_incidents` when later events of the same incident were folded in.
+    """
+    def show(row: Dict[str, Any], name: str) -> str:
+        value = row.get(name)
+        return "-" if value in (None, "") else str(value)
+
+    head = (f"- machine {show(event, 'host')} critical metric={show(event, 'metric')} "
+            f"value={show(event, 'value')} threshold={show(event, 'threshold')}")
+    repeats = len(event.get("duplicate_ids") or [])
+    if repeats:
+        head += f" repeats={repeats}"
+    lines = [head, f"  first_seen={show(event, 'first_seen')} verdict={show(event, 'verdict_url')}"]
+    offenders = event.get("offenders")
+    rows = offenders if isinstance(offenders, list) else []
+    for row in rows[:MACHINE_OFFENDERS_SHOWN]:
+        row = row if isinstance(row, dict) else {}
+        lines.append(f"  offender {show(row, 'name')} pid={show(row, 'pid')} owner={show(row, 'owner')} "
+                     f"repo={show(row, 'repo')} value={show(row, 'value')}")
+    if len(rows) > MACHINE_OFFENDERS_SHOWN:
+        lines.append(f"  offenders: {len(rows) - MACHINE_OFFENDERS_SHOWN} more at the verdict")
+    elif not rows:
+        lines.append("  offenders: none listed")
+    return lines
+
+
+def collapse_incidents(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fold `machine-critical` events of one incident (host + metric + first_seen) into the first.
+
+    The kept event carries `duplicate_ids`, which the batch's `ACK=` line also
+    names, so one ack retires them all and a chief that dies mid-batch is
+    re-offered every file. Nothing is deleted here. An event missing any of the
+    three key fields is never folded: an incident that cannot be identified
+    must not hide another.
+    """
+    kept: List[Dict[str, Any]] = []
+    first_of: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for event in events:
+        host, metric, first_seen = (event.get(name) for name in ("host", "metric", "first_seen"))
+        if (event.get("kind") != "machine-critical"
+                or not all(isinstance(part, str) and part for part in (host, metric, first_seen))):
+            kept.append(event)
+            continue
+        owner = first_of.setdefault((host, metric, first_seen), event)
+        if owner is event:
+            kept.append(event)
+        else:
+            owner.setdefault("duplicate_ids", []).append(event["id"])
+    return kept
+
+
 def _cap_raised_lines(event: Dict[str, Any]) -> List[str]:
     """A `cap-raised` event's one line: the Settings worker cap went up, so the chief fills the new slots.
 
@@ -314,6 +374,8 @@ def _kind_lines(event: Dict[str, Any]) -> Optional[List[str]]:
         return _job_failed_lines(event)
     if kind == "ci-failed":
         return _ci_failed_lines(event)
+    if kind == "machine-critical":
+        return _machine_critical_lines(event)
     if kind == "cap-raised":
         return _cap_raised_lines(event)
     if kind == "proposals":
@@ -367,7 +429,8 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
         else:
             lines.append(_event_line(event, moment) + tail + again_mark)
         lines.extend(_excerpt_lines(event))
-    lines.append("ACK=chief_ops.py ack " + " ".join(event["id"] for event in events))
+    ack_ids = [event_id for event in events for event_id in [event["id"], *(event.get("duplicate_ids") or [])]]
+    lines.append("ACK=chief_ops.py ack " + " ".join(ack_ids))
     lines.append(f"Next: handle each (a re-offered id may already be handled), then run the ACK line; "
                  f"an unacked batch is re-offered after {int(stale_after // 60)}m.")
     return "\n".join(lines)
