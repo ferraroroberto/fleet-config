@@ -97,6 +97,23 @@ check(_tr_roles.get("body") == [(16, "400")],
 check(_tr_roles.get("unclassified") == [(12, "600"), (14, "600"), (20, "700")] and _tr_roles.get("secondary") == [(14, "400")],
       f"inventory text: a count, a field label and a bare title are unclassified, a `.hint` stays secondary -- {_tr_roles} ({_tr_out.stderr[-300:]})")
 
+# openers, disclosures, glyph actions and navigation rows: the capture reads a control's job from its DOM, never its words
+_op_out = _walk_run([str(interp), str(FIX / "inventory_driver.py"), (FIX / "inventory_openers.html").as_uri(), str(_ch_params)],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+_op = json.loads(_op_out.stdout) if _op_out.returncode == 0 and _op_out.stdout else {}
+_op_by = {c["key"]: c for c in _op.get("controls", [])}
+_op_why = f"{sorted((k, c['kind'], c.get('opens'), c.get('navigates')) for k, c in _op_by.items())} ({_op_out.stderr[-300:]})"
+check(_op_by.get("button#addJob", {}).get("kind") == "icon-button" and _op_by["button#addJob"].get("opens") is True
+      and _op_by.get("button#addMenu", {}).get("kind") == "button" and _op_by["button#addMenu"].get("opens") is True
+      and "opens" not in _op_by.get("button#addPlain", {"opens": 1}),
+      f"inventory: an icon-button with aria-haspopup is an opener, and an icon-button without one is not -- {_op_why}")
+check(_op_by.get("button#foldTitle", {}).get("kind") == "disclosure" and _op_by.get("summary#moreSummary", {}).get("kind") == "disclosure"
+      and _op_by.get("button#plainFilter", {}).get("kind") == "button",
+      f"inventory: a summary and an aria-expanded fold toggle are disclosures, an aria-haspopup toggle stays a button -- {_op_why}")
+check(_op_by.get("button#navRow", {}).get("navigates") is True and "navigates" not in _op_by.get("button#plainFilter", {"navigates": 1})
+      and "navigates" not in _op_by.get("button#sendGlyph", {"navigates": 1}),
+      f"inventory: a button whose trailing glyph is a chevron navigates; one without a chevron does not -- {_op_why}")
+
 # measure --e2e (#1498): a throwaway copy of the fixture target, project-scaffolding's vendored surface() hook
 # copied in as an adopter vendors it; its own pytest suite captures two surfaces (one on a Pixel 7 context).
 _e2e_hook = scaffold / "tests" / "e2e" / "_surface.py"

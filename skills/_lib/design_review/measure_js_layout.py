@@ -463,6 +463,9 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       if (role === 'checkbox' || role === 'radio' || (tag === 'INPUT' && /^(checkbox|radio)$/.test(typeOf(el)))) return 'checkbox';
       if (tag === 'TEXTAREA') return 'textarea';
       if (tag === 'INPUT' && !/^(button|submit|reset|image)$/.test(typeOf(el))) return 'input';
+      // A summary and a toggle that expands a region it does not pop up are disclosures: a fold title or a "More options"
+      // summary names what it folds, not an action, so the comparator never reads its words as a verb.
+      if (tag === 'SUMMARY' || (el.hasAttribute('aria-expanded') && !opensOf(el))) return 'disclosure';
       if (role === 'link' || (tag === 'A' && !role)) return 'link';
       // A button that renders no text of its own is an icon button, whatever its classes say.
       return comp === 'vendored:icon-button' || !(el.innerText || '').trim() ? 'icon-button' : 'button'; };
@@ -479,6 +482,13 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
     const opensOf = (el) => { const hp = (el.getAttribute('aria-haspopup') || '').toLowerCase(); if (hp && hp !== 'false') return true;
       const id = el.getAttribute('aria-controls'), t = id && document.getElementById(id);
       return !!t && (t.tagName === 'DIALOG' || /^(dialog|alertdialog|menu|listbox)$/.test((t.getAttribute('role') || '').toLowerCase())); };
+    // A row's job is navigation when its last child is a chevron glyph with no text: the tap opens a sheet or a route, so
+    // its words (a settings row named "Context filter") are a destination, not a verb.
+    const NAV_GLYPH = /(chevron|caret|angle|arrow)[-_]?right/i;
+    const navigatesOf = (el) => { const l = el.lastElementChild; if (!l || (l.innerText || '').trim()) return false;
+      const ref = [l.getAttribute('class'), l.getAttribute('data-icon'), l.getAttribute('data-lucide')]
+        .concat([...l.querySelectorAll('use')].map(u => u.getAttribute('href') || u.getAttribute('xlink:href')));
+      return ref.some(r => r && NAV_GLYPH.test(r)); };
     const mask = (s) => (s || '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 40);
     // The control's name, never a field's value: aria-label, its <label>, a placeholder or title, else (a button) its text.
     const nameOf = (el) => mask(el.getAttribute('aria-label') || (el.labels && el.labels.length ? el.labels[0].innerText : '')
@@ -511,7 +521,8 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       const component = componentOf(el), kind = kindOf(el, component), f = fontOf(el);
       const entry = {key: keyOf(el), kind, component, role: roleOf(el), label: nameOf(el), family: f.family, px: f.px, weight: f.weight};
       if (kind === 'select' || kind === 'combobox') { const o = optionsOf(el); if (o !== null) entry.options = o; }
-      if ((kind === 'button' || kind === 'link') && opensOf(el)) entry.opens = true;
+      if (/^(button|icon-button|link|menuitem)$/.test(kind) && opensOf(el)) entry.opens = true;
+      if ((kind === 'button' || kind === 'link') && navigatesOf(el)) entry.navigates = true;
       if (kind === 'segmented' || kind === 'range-tab') entry.group = groupOf(el);
       const id = JSON.stringify(entry), had = seen.get(id);
       if (had) had.n++; else seen.set(id, Object.assign(entry, {n: 1}));
