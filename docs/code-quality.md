@@ -229,6 +229,7 @@ The system is mostly independent of this repository's agent tooling. A project c
 
 **The fastest route is the public adoption kit.** The source repository ships [adopting-ratchets guide](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/adopting-ratchets.md) as the single entry point for a codebase outside this fleet. It lists the prerequisites (Python 3.11 or newer, `git`, and `ruff` plus Node only for the static ratchet), then two scripts do the work:
 
+<!-- bare-command-exempt: the target is a codebase outside this repository, so its interpreter is unknown -->
 ```sh
 python <scaffold>/scripts/adopt_ratchets.py <target> [--ratchets comment,structure,runtime_write]
 python scripts/run_ratchets.py --tests python -m pytest -q     # run in the target; wire into its gate or CI
@@ -254,6 +255,7 @@ The manual steps below are what those scripts automate.
 
 3. Run the scripts from one gate command that stops on any non-zero exit. The contract is only the exit code, so any task runner or CI job works:
 
+   <!-- bare-command-exempt: the adopting project is outside this repository, so its interpreter is unknown -->
    ```sh
    python scripts/structure_ratchet.py          # check; this is what the gate runs
    python scripts/structure_ratchet.py --init   # once, to record today's debt
