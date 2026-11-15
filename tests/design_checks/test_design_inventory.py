@@ -135,6 +135,14 @@ check(sec["missing"] == ["app-west"] and [a["target"] for a in sec["apps"]] == [
 check(inv.action_of({"label": "Delete old backups from the archive", "component": "bespoke"}) == (None, inv.R_LONG_LABEL),
       "a long whole-row label is never matched, even when it holds an action word")
 check(inv.action_of({"label": "x", "component": inv.ROW_COMPONENT})[0] == "row open", "a vendored action-row tap is the row-open action")
+check(inv.action_of({"label": "Add section", "component": "bespoke", "opens": True}) == ("open", None),
+      "an Add control that opens a dialog or menu is an opener, not a commit")
+check(inv.action_of({"label": "Add section", "component": "bespoke"}) == ("commit", None)
+      and inv.action_of({"label": "Add section", "component": "bespoke", "opens": False}) == ("commit", None),
+      "an Add control that opens nothing stays a commit")
+check(inv.action_of({"label": "Save", "component": "bespoke", "opens": True}) == ("commit", None)
+      and inv.action_of({"label": "Add and save", "component": "bespoke", "opens": True}) == ("commit", None),
+      "only a plain Add is carved out; another commit word keeps the label a commit")
 
 # no catalog: INV-03 still uses the vendored components the inventories show, and says the catalog was missing
 no_cat = inv.compare(_apps(), REF, None, "no scaffold checkout")
@@ -295,6 +303,15 @@ _two = _one_screen("app-two", [_ctl("segmented", "vendored:segmented", "Day", gr
                                _ctl("segmented", "vendored:segmented", "Sort by name", group="div#order"), _ctl("segmented", "vendored:segmented", "Sort by date", group="div#order")])
 _merged = _one_screen("app-two", [{k: v for k, v in c.items() if k != "group"} for c in _two["screens"][0]["inventory"]["controls"]])
 _sel = _one_screen("app-sel", [_ctl("select", "vendored:select-native", "Range", options=3)])
+# An Add opener on the secondary tier beside a vendored Save: INV-02 groups only the commit. The same Add with no `opens` is a commit.
+_add_open = _one_screen("app-open", [_ctl("button", "bespoke", "Add section", opens=True), _ctl("button", "vendored:button", "Save")])
+_add_plain = _one_screen("app-plain", [_ctl("button", "bespoke", "Add section"), _ctl("button", "vendored:button", "Save")])
+_sec_open = inv.compare([_add_open], {}, CATALOG)
+_sec_plain = inv.compare([_add_plain], {}, CATALOG)
+_commit_apps = lambda s: {a for f in s["findings"] if f["id"] == "INV-02-commit" for a in f["divergent"]}  # noqa: E731
+check(not _commit_apps(_sec_open) and not any(f["id"] == "INV-02-open" for f in _sec_open["findings"]),
+      "an Add opener is not grouped with the commit buttons, and alone it is no finding")
+check(_commit_apps(_sec_plain) == {"app-plain"}, "an Add that opens nothing is still grouped with the commit buttons")
 _keyed = inv.compare([_two, _sel], REF, CATALOG)
 check(_keyed["unclassified"] == [], f"a select with an option count is placed in its bucket, not unclassified -- {_keyed['unclassified']}")
 _by = {f["id"]: f for f in _keyed["findings"]}
