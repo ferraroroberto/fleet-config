@@ -108,6 +108,8 @@ ACTION_VOCAB: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("refresh", re.compile(r"\b(refresh|reload|retry)\b")),
     ("settings", re.compile(r"\bsettings\b")),
     ("theme", re.compile(r"\b(theme|dark mode|light mode)\b")),
+    # Pagination ("Load more", "Show more") is not the kebab: a verb before `more` makes it its own action, ahead of overflow.
+    ("load more", re.compile(r"\b(load|show|see|view)\s+more\b")),
     ("overflow menu", re.compile(r"\b(more|menu|actions|options)\b")),
     ("edit", re.compile(r"\b(edit|rename)\b")),
     ("search", re.compile(r"\bsearch\b")),
