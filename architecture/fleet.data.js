@@ -38,7 +38,6 @@ window.FLEET = {
     {"ic": "🎛️", "nm": "stream-deck", "ds": "Elgato Stream Deck plugin: one-key tray launchers and app actions for the fleet.", "tag": ["→", "Stream Deck"], "deps": [{"repo": "fleet-config"}, {"repo": "home-automation"}]}
   ],
   "web": [
-    {"ic": "🗂️", "nm": "folder-explorer", "port": ":8453", "ds": "Disk-space explorer and search: folder tree, largest files, file types, folder and mail search.", "deps": [{"repo": "project-scaffolding"}]},
     {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice audit, HA voice commands + product search.", "tag": ["uses", "hub + whisper"], "deps": [{"repo": "local-llm-hub"}, {"repo": "voice-transcriber"}]},
     {"ic": "💬", "nm": "whatsapp-radar", "port": ":8455", "ds": "Cut attention load from busy chats.", "tag": ["uses", "hub"], "deps": [{"repo": "home-automation"}, {"repo": "local-llm-hub"}, {"repo": "project-scaffolding"}, {"repo": "task-os"}]},
     {"ic": "🎤", "nm": "facilitation-suite", "port": ":8449", "ds": "<b>facilitation-suite</b> — live workshop app: stage, cockpit, Zoom chat, live copilot.", "chips": ["public: cloudflared quiz.robertoferraro.net → :8451 /play", "this PC: http://127.0.0.1:8456 (loopback)"], "deps": [{"repo": "local-llm-hub"}]},
@@ -47,6 +46,7 @@ window.FLEET = {
     {"ic": "🌱", "nm": "life-os", "ds": "Personal productivity skills plus a shared document-archive engine and Outlook email tooling", "tag": ["via", "launcher"], "deps": [{"repo": "app-launcher"}, {"repo": "local-llm-hub"}, {"repo": "folder-explorer"}, {"repo": "fleet-config"}], "owns": ["personal productivity skills", "document archive engine", "Outlook email tooling"], "not_owns": ["task list", "session hosting", "LLM routing", "hooks"]},
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant, Tesla.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Tesla", "Telegram"], "deps": [{"repo": "local-llm-hub"}, {"repo": "project-scaffolding"}, {"repo": "voice-transcriber"}]},
     {"ic": "📊", "nm": "github-copilot-usage", "port": ":8377", "ds": "Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs."},
+    {"ic": "🗂️", "nm": "folder-explorer", "port": ":8453", "ds": "Disk-space explorer with folder tree, largest files, file types, and folder and mail search.", "deps": [{"repo": "project-scaffolding"}]},
     {"ic": "🅿️", "nm": "parking-manager", "port": ":8450", "ds": "Household parking: which days to book, time off and the Thursday release; books them itself.", "deps": [{"repo": "fleet-config"}]},
     {"ic": "🪞", "nm": "robertoferraro", "ds": "robertoferraro.net off Squarespace: same URLs, own design system and form service."},
     {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking.", "tag": ["→", "GitHub"], "deps": [{"repo": "folder-explorer"}, {"repo": "local-llm-hub"}, {"repo": "voice-transcriber"}]},
