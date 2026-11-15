@@ -30,6 +30,13 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "ci-failed event (head line, detail line, excerpt, missing fields as -, "
      "sha shortened), counts and acks it like every kind, and leaves v1, v2, "
      "job-failed and needs-input lines unchanged (fleet-config#1973)"),
+    ("chief_machine_critical", "chief_ops/test_chief_machine_critical.py",
+     "a critical machine metric through the mailbox -- the real inbox "
+     "renders a machine-critical event (head, detail, offender rows, missing "
+     "fields as -, offender cap), counts and acks it like every kind, folds "
+     "two events of one incident into one with a single ACK line, keeps "
+     "other incidents apart, and leaves v2 worker lines unchanged "
+     "(fleet-config#2083)"),
     ("chief_cap_raised", "chief_ops/test_chief_cap_raised.py",
      "a raised Settings worker cap through the mailbox -- the real inbox "
      "renders a cap-raised event (old/new, a non-integer bound as -), "

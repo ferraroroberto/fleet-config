@@ -49,7 +49,7 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed`, `ci-failed`, `cap-raised` or `proposals`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `ci-failed` is a red GitHub Actions run on a fleet repo's default branch, see [CI events](#ci-events-kind-ci-failed). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). A `proposals` is the weekly learning-log run offering candidate issues, see [Proposal events](#proposal-events-kind-proposals). |
+| `kind` | `turn-end`, `session-end`, `needs-input`, `job-failed`, `ci-failed`, `machine-critical`, `cap-raised` or `proposals`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live. A `job-failed` is an app-launcher Job run that failed, see [Job events](#job-events-kind-job-failed). A `ci-failed` is a red GitHub Actions run on a fleet repo's default branch, see [CI events](#ci-events-kind-ci-failed). A `machine-critical` is the local-llm-hub health watch reaching `act` on a critical machine metric, see [Machine events](#machine-events-kind-machine-critical). A `cap-raised` is the Settings worker cap saved higher, see [Cap events](#cap-events-kind-cap-raised). A `proposals` is the weekly learning-log run offering candidate issues, see [Proposal events](#proposal-events-kind-proposals). |
 | `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so a v1 reader would still name the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
@@ -146,6 +146,47 @@ A failed GitHub Actions run on a fleet repo's default branch is published as one
 | `excerpt`, `excerpt_source` | At most ~1,500 characters from the failed step's log, with `excerpt_source: "ci-log"`. The producer redacts it by the `job-failed` rule: no private data (secrets, tokens, private paths and the like). `excerpt` and `excerpt_source` are `null`, with `excerpt_unavailable`, when no failed step log can be read. |
 
 The dedupe key is `repo` + `run_id`: the producer writes one event per failed run and never a second for the same pair, and the event `id` is the claim and ack key as for every event. Readers render the event as `ci <workflow> failed repo=<repo> sha=<sha7> run=<run_id>` (`-` for any missing field), then a `conclusion=… event=… at=… jobs=… url=…` line, then the excerpt lines. How the chief handles one: `.claude/skills/chief/ci-failed.md`.
+
+### Machine events (`kind: "machine-critical"`)
+
+When the local-llm-hub health watch reaches its `act` verdict on a critical metric of a host (ephemeral ports above all), the launcher's health publisher writes one `machine-critical` event, so the chief learns of a machine in trouble when it starts, not when the owner asks. A host is not a worker: `launcher_sid`, `repo`, `number`, `agent` and `dispatch_id` are always `null`, and `excerpt` is omitted. The publisher writes the file and never imports from `hooks/`.
+
+```json
+{
+  "v": 2,
+  "id": "5e6f708192a3b4c5d6e7f80910213243",
+  "kind": "machine-critical",
+  "event": "MachineCritical",
+  "host": "example-host",
+  "metric": "tcp_ephemeral_ports",
+  "value": 61200,
+  "threshold": 60000,
+  "offenders": [
+    {"name": "example-app-webapp", "pid": 4242, "owner": "fleet", "repo": "example-app", "value": 18400},
+    {"name": "other.exe", "pid": 977, "owner": "non-fleet", "repo": null, "value": 9100}
+  ],
+  "verdict_url": "http://127.0.0.1:8000/admin/api/machines/health",
+  "first_seen": "2026-11-15T16:20:05Z",
+  "launcher_sid": null,
+  "repo": null,
+  "number": null,
+  "agent": null,
+  "dispatch_id": null,
+  "ts": "2026-11-15T16:21:00Z"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `host` | The machine's name, as the hub spells it. |
+| `metric`, `value`, `threshold` | Which metric is critical, its current reading and the threshold it crossed. Any scalar. |
+| `offenders` | The top consumers, highest first. Each row: `name`, `pid`, `owner` (`fleet`, `non-fleet` or `unknown`: the publisher's classification, never the chief's guess), `repo` (the owning fleet repo, or `null`) and `value`. A row that is not an object reads as an empty row. |
+| `verdict_url` | The hub page that holds the full verdict, the chief's first read. |
+| `first_seen` | When the incident began, UTC, second precision, `Z` suffix: the identity of the incident. |
+
+**Dedupe: one event per host + metric per incident.** An incident is a host + metric from the moment the verdict reaches `act` until it clears; `first_seen` is its start, and the publisher writes **one** event for it and a new one only after the verdict has cleared and reached `act` again (a new `first_seen`). A reader still collapses what slips through: within one `inbox` batch, events with the same `host`, `metric` and `first_seen` render as one (the oldest file), `repeats=<n>` on its head line, and its `ACK=` line names every folded id so one ack retires them all. An event missing any of the three key fields is never folded: an incident that cannot be identified must not hide another. Nothing is deleted at fold time, so a chief that dies mid-batch is re-offered every file. Across batches the chief dedupes by the incident key it journaled with `note`.
+
+Readers render the event as `machine <host> critical metric=<m> value=<v> threshold=<t>` (`-` for a missing field; ` repeats=<n>` when events were folded), then a `first_seen=… verdict=…` line, then up to five `offender <name> pid=… owner=… repo=… value=…` lines (`offenders: <n> more at the verdict` past five, `offenders: none listed` when empty). How the chief handles one: `.claude/skills/chief/machine-critical.md`.
 
 ### Cap events (`kind: "cap-raised"`)
 
@@ -285,5 +326,6 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/chief_ops/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, the pending-call excerpt over synthetic transcripts, no typed message, Telegram on no chief or a failed write), and the real `inbox` batch line for it.
 - `tests/chief_ops/test_chief_job_failed.py`: a synthetic `job-failed` event through the real `inbox` (the head line, the detail line, the excerpt, a null `exit_code` and `repo`, `not-confirmed`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2 and `needs-input` events rendering unchanged beside it.
 - `tests/chief_ops/test_chief_ci_failed.py`: a synthetic `ci-failed` event through the real `inbox` (the head line with the 7-character sha, the detail line, the excerpt, missing fields reading `-`), the event counted as pending by file name, claimed and acked like any kind, and v1, v2, `job-failed` and `needs-input` events rendering unchanged beside it.
+- `tests/chief_ops/test_chief_machine_critical.py`: a synthetic `machine-critical` event through the real `inbox` (head line, detail line, offender rows, missing fields reading `-`, the offender cap), the event counted as pending by file name, claimed and acked like any kind, two events of one incident collapsing to one with a single `ACK=` line that retires both, events of different incidents or without a full key staying separate, and v2 worker lines rendering unchanged beside it.
 - `tests/chief_ops/test_chief_cap_raised.py`: a synthetic `cap-raised` event through the real `inbox` (the one-line render, a non-integer bound reading `-`), the event counted as pending by file name, claimed and acked like any kind, and worker lines rendering unchanged beside it.
 - `tests/chief_ops/test_proposals.py`: the `chief_weekly_proposals` switch (off, missing and unreadable write nothing), screening (at most four candidates, public repos only, open-issue and in-batch duplicates), one `proposals` event per week through the real `inbox` (head and candidate lines), claimed and acked like any kind, and the answers ledger: a declined idea is not published again without new evidence.
