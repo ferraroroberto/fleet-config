@@ -76,7 +76,6 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 
 | | Repo | What it is | Port |
 |---|---|---|---|
-| 🗂️ | `folder-explorer` | Disk-space explorer and search: folder tree, largest files, file types, folder and mail search. | :8453 |
 | 🛒 | `grocery-shopping-automation` | Inventory + shopping PWA, voice audit, HA voice commands + product search. | :8502 |
 | 💬 | `whatsapp-radar` | Cut attention load from busy chats. | :8455 |
 | 🎤 | `facilitation-suite` | **facilitation-suite** — live workshop app: stage, cockpit, Zoom chat, live copilot. | :8449 |
@@ -85,6 +84,7 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 🌱 | `life-os` | Personal productivity skills plus a shared document-archive engine and Outlook email tooling | — |
 | 🌡️ | `home-automation` | Home automation: AC, solar, per-circuit energy, alarm, network health, Home Assistant, Tesla. | :8447 |
 | 📊 | `github-copilot-usage` | Local GitHub Copilot usage dashboard: credits, models and sessions from Copilot's own logs. | :8377 |
+| 🗂️ | `folder-explorer` | Disk-space explorer with folder tree, largest files, file types, and folder and mail search. | :8453 |
 | 🅿️ | `parking-manager` | Household parking: which days to book, time off and the Thursday release; books them itself. | :8450 |
 | 🪞 | `robertoferraro` | robertoferraro.net off Squarespace: same URLs, own design system and form service. | — |
 | ✅ | `task-os` | One task list: projects, Inbox capture, calendar, voice add, mail archiving, time tracking. | :8448 |
