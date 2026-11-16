@@ -116,6 +116,8 @@ ACTION_VOCAB: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     ("copy", re.compile(r"\bcopy\b")),
 )
 ROW_COMPONENT = "vendored:action-row"
+# A Settings row opens a setting; an action row goes somewhere. They are two actions, told apart by the component.
+SETTING_COMPONENT = "vendored:settings-group"
 # An "Add …" control that opens a dialog or menu is an opener, not a commit: it keeps the secondary tier (the capture
 # marks it `opens`). A label holding another commit word ("Add and save") is still a commit.
 ADD_WORD = re.compile(r"\badd\b")
@@ -239,6 +241,8 @@ def _slug(text: str) -> str:
 
 def action_of(control: dict) -> Tuple[Optional[str], Optional[str]]:
     """`(action, None)` when the DOM decides it, else `(None, why)`."""
+    if control.get("component") == SETTING_COMPONENT:
+        return "setting open", None
     if control.get("component") == ROW_COMPONENT or control.get("navigates") is True:
         return "row open", None
     label = str(control.get("label") or "").lower().strip()
