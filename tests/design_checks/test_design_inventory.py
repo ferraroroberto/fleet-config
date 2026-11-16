@@ -368,4 +368,34 @@ _unc = inv.compare([_text_screen("app-a", [{"role": "body", "runs": 1, "variants
                                            {"role": "unclassified", "runs": 1, "variants": [_variant(14, "600")]}])], REF, CATALOG)
 check(_unc["findings"] == [], f"unclassified text is left out of INV-01: apps that agree on `body` raise nothing -- {[f['id'] for f in _unc['findings']]}")
 
+# ---- a Settings row opens a setting; an action row goes somewhere ---------------------------------------------------------
+
+check(inv.action_of({"label": "Theme", "kind": "button", "component": inv.SETTING_COMPONENT, "opens": True}) == ("setting open", None)
+      and inv.action_of({"label": "x", "kind": "button", "component": inv.SETTING_COMPONENT, "navigates": True}) == ("setting open", None),
+      "a vendored settings-group row is the setting-open action, whatever its label or whether the capture marked it navigating")
+check(inv.action_of({"label": "Context filter", "kind": "button", "component": "bespoke", "navigates": True}) == ("row open", None)
+      and inv.action_of({"label": "x", "kind": "button", "component": inv.ROW_COMPONENT}) == ("row open", None),
+      "an action-row and any other navigating row stay the row-open action")
+
+
+def _row_screen(target: str, controls: list) -> dict:
+    return {"target": target, "run": "r", "source": "s", "screens": [{"id": "desktop-light-home", "inventory": {"unmeasured": None, "controls": controls, "text": []}}]}
+
+
+def _row(component: str, kind: str = "button", px: int = 16, **extra) -> dict:
+    return {"key": "k", "kind": kind, "component": component, "role": "button", "label": "x", "family": "system-ui", "px": px, "weight": "400", "n": 1, **extra}
+
+
+_both = inv.compare([_row_screen("app-a", [_row(inv.SETTING_COMPONENT, opens=True), _row(inv.ROW_COMPONENT)]),
+                     _row_screen("app-b", [_row(inv.SETTING_COMPONENT, opens=True), _row(inv.ROW_COMPONENT)])], REF, CATALOG + ["settings-group"])
+check([f for f in _both["findings"] if f["class"] == "INV-02"] == [],
+      f"a settings-group row and an action-row in the same app no longer read as two renderings of one action: {[f['id'] for f in _both['findings']]}")
+_split = inv.compare([_row_screen("app-a", [_row(inv.SETTING_COMPONENT, opens=True)]),
+                      _row_screen("app-b", [_row(inv.SETTING_COMPONENT, opens=True, px=14)]),
+                      _row_screen("app-c", [_row(inv.ROW_COMPONENT)]),
+                      _row_screen("app-d", [_row("bespoke", navigates=True)])], REF, CATALOG + ["settings-group"])
+_ids = {f["id"]: f["divergent"] for f in _split["findings"] if f["class"] == "INV-02"}
+check(_ids == {"INV-02-setting-open": ["app-a", "app-b"], "INV-02-row-open": ["app-d"]},
+      f"two renderings of the same setting-open or row-open action still fail INV-02, each under its own action: {_ids}")
+
 _h.report_and_exit("test_design_inventory", skip_code=SKIP_EXIT)
