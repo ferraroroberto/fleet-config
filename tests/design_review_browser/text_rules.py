@@ -324,3 +324,17 @@ if _cs_good:
     _clash = sorted(i["text"] for e in _r_mixed["TYPE-06"]["evidence"] for i in e["items"])
     check(_r_mixed["TYPE-06"]["status"] == "fail" and _clash == ["Open Settings", "Running"] and _r_mixed["TYPE-05"]["status"] == "pass",
           f"TYPE-06: the capitalised stat label and the Title Case button are the minority of their classes across the two tabs -- {_clash}")
+
+# data-user-content: a row button holding the user's own words is no casing choice of the app (marked on a span inside or
+# on the button itself), while the same lowercase text unmarked still is one
+cs_user = _walk_casing("user")
+if all(_walk_failure(s) is None for s in cs_user) and len(cs_user) == 2:
+    _user_texts = {lab["text"] for s in cs_user for lab in s["metrics"]["casing"]["labels"]}
+    check(_user_texts == {"Recordings", "Options", "Recent takes", "Start recording", "Text size", "Copy text", "call anna"},
+          f"casing: buttons inside data-user-content record no label, the unmarked lowercase button does -- {sorted(_user_texts)}")
+    _r_user = _casing_rules(cs_user)
+    _user_clash = sorted(i["text"] for e in _r_user["TYPE-06"]["evidence"] for i in e["items"])
+    check(_r_user["TYPE-06"]["status"] == "fail" and _user_clash == ["call anna"],
+          f"TYPE-06: only the unmarked lowercase button clashes with its class -- {_user_clash}")
+else:
+    check(False, f"casing: the user case walks its tabs with metrics -- {[_walk_failure(s) or s['id'] for s in cs_user]}")

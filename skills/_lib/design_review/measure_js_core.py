@@ -180,14 +180,16 @@ MEASURE_JS_CORE = r"""
   // the style is of the rendered text. Whether two styles of one class clash across the run is evaluate.py's call
   // (TYPE-06). A label with a hyphen or other identifier character is data or a name, not a casing choice,
   // and is not recorded, nor is a label with a digit or a control made of several text elements; a brand-cased word
-  // inside a label (iPhone, PDF) is skipped when judging the rest.
+  // inside a label (iPhone, PDF) is skipped when judging the rest. Text inside an element carrying
+  // `data-user-content`, or under one, is the user's own words and no casing choice of the app, so it is not read:
+  // a button holding only such text records nothing. The marker exempts casing alone.
   section('casing', () => {
     const ROW = 'li, tr, [role=listitem], [role=row], [role=option], [role=gridcell]';
     const STAT = /(?:^|[-_])(?:stat|stats|label|counter|count|metric|kpi|tally)(?:$|[-_])/i;
     const MINOR = new Set(['a','an','and','as','at','but','by','for','in','nor','of','on','or','the','to','via','vs','with']);
     const WORD = /^\p{L}[\p{L}'’]*$/u, PLAIN = /^\p{Lu}?\p{Ll}[\p{Ll}'’]*$/u;
     const textOf = (el) => { const parts = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      while (w.nextNode()) { const n = w.currentNode, p = n.parentElement; if (!p || p.closest('svg, script, style, noscript')) continue;
+      while (w.nextNode()) { const n = w.currentNode, p = n.parentElement; if (!p || p.closest('svg, script, style, noscript, [data-user-content]')) continue;
         const r = p.getBoundingClientRect(); if (r.width <= 1 && r.height <= 1) continue; parts.push(n.nodeValue); }
       return parts.join(' ').replace(/\s+/g, ' ').trim(); };
     const words = (text) => { const out = [];

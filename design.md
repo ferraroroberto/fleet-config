@@ -278,7 +278,11 @@ introduce ad-hoc sizes.
   `TYPE-05`, fleet-config#1365). And each kind of label (buttons, tabs, menu
   items, headings, stat labels) is cased one way across the whole app, sentence
   case throughout or title case throughout, never one tab's counters
-  capitalised and another's lowercase (measured as `TYPE-06`).
+  capitalised and another's lowercase (measured as `TYPE-06`). Text the user
+  wrote (a task title on a row's open button) is no casing choice of the app:
+  put `data-user-content` on the element holding it, or on an ancestor inside
+  the control, and the casing measure skips it. The marker exempts `TYPE-05`
+  and `TYPE-06` only, never size, contrast or touch rules.
 
 ## Layout
 
