@@ -4,8 +4,9 @@ Native UI (a `<select>` option list, date pickers, scrollbars) is drawn from
 `color-scheme`. `light dark` follows the OS, so an app whose user chose the dark
 theme on a light OS drew those controls light. The page must resolve
 `color-scheme` from the chosen `data-theme`: `:root[data-theme="light"]` is
-`light` and `:root[data-theme="dark"]` is `dark`; the vendored `base/base.css`
-ships exactly these rules. A declaration inside `@media (prefers-color-scheme)`
+`light` and `:root[data-theme="dark"]` is `dark`; the vendored
+`color-scheme/color-scheme.css` ships exactly these rules, and `base/base.css`
+carries them too. A declaration inside `@media (prefers-color-scheme)`
 follows the OS again, so it never counts as following the theme.
 
 An app that declares no `color-scheme` at all is NA: this contract judges a
@@ -86,8 +87,8 @@ def _check_color_scheme_follows_theme(ctx: _ContractsCtx) -> List[dict]:
         rules = ", ".join(f':root[data-theme="{t}"] {{ color-scheme: {t}; }}' for t in missing)
         return [_result("color-scheme-theme", "FAIL",
             "color-scheme follows the OS, not the theme the user chose, so native controls "
-            f"(select list, date picker, scrollbar) draw in the wrong theme; add {rules} "
-            "(design.md Colors, theme switching) or vendor base/base.css, which ships them",
+            f"(select list, date picker, scrollbar) draw in the wrong theme; missing {rules} "
+            "(design.md Colors, theme switching): vendor color-scheme/ (or base/, which carries them)",
             declared[0])]
     return [_result("color-scheme-theme", "PASS",
         "color-scheme resolves from data-theme for both themes", covered[_THEMES[0]])]

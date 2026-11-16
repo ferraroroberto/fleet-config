@@ -230,7 +230,9 @@ The page's **`color-scheme` follows the chosen theme**, not the OS: `:root` is
 `dark`. Native UI (a `<select>` option list, date and time pickers,
 scrollbars) is drawn from `color-scheme`. Key the rules to `:root[data-theme]`
 (specificity 0,2,0) so they beat an app's bare `:root` rule whatever the load
-order; the vendored `base/base.css` ships exactly these three rules.
+order. The vendored `color-scheme/color-scheme.css` ships exactly these three
+rules, and `base/base.css` carries them too: an app that vendors `base` needs
+nothing more; an app without `base` vendors `color-scheme/`.
 Reference impls: home-automation `app/webapp/static/index.html` + `main.js`
 (JS swap); app-launcher `app/webapp/static/index.html` + `main.js` (CSS swap).
 
