@@ -227,8 +227,8 @@ read.
     or a per-element rule such as `[data-theme="dark"] select`), or a bare
     single-scheme `:root { color-scheme: light; }` for the theme it names. A
     rule inside `@media (prefers-color-scheme)` follows the OS again and never
-    counts. The detail names the missing rules; the vendored `base/base.css`
-    ships all three and passes. NA when no `color-scheme` is declared. Reads
+    counts. The detail names the missing rules; the vendored
+    `color-scheme/color-scheme.css` (or `base/base.css`) ships all three and passes. NA when no `color-scheme` is declared. Reads
     app-authored CSS plus inline `<style>` blocks.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
