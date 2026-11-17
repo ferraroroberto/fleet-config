@@ -302,7 +302,7 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
 
   // ---- overlay: a destructive control in a dialog or menu is quiet (#1364). The surfaces the walk opens are a
   // dialog, a role=menu and the body of an open popover disclosure (a row's kebab menu). Inside one, a control
-  // labelled delete / remove / clear / discard must draw no fill at rest (the outlined recipe: transparent on a
+  // labelled delete / remove / clear / discard (bar a view reset such as Clear search) must draw no fill at rest (the outlined recipe: transparent on a
   // hairline) and must not be the largest labelled control there. Fill is measured against the surface behind
   // it, so a button painted the surface's own colour is not filled; hover and focus are not at rest. A confirm
   // dialog is measured like any other: its destructive verb is outlined too, never tinted (#1403).
@@ -310,6 +310,8 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
     const SURFACE = 'dialog[open], [role=dialog], [role=menu]';
     const CONTROLS = 'button, a[href], [role=button], [role=menuitem]';
     const DESTRUCTIVE = /\b(delete|remove|clear|discard)\b/i;
+    // "Clear search / filters / selection / query" resets what the view shows and destroys nothing, so it is not destructive.
+    const VIEW_RESET = /\bclear\s+(?:all\s+)?(?:search|filters?|selection|query)\b/i;
     const popoverBodies = [...document.querySelectorAll('details[open]')].flatMap(d => [...d.children]
       .filter(c => c.tagName !== 'SUMMARY' && /^(absolute|fixed)$/.test(getComputedStyle(c).position)));
     // With a dialog open only that dialog is measured, as in every section: a menu left open on the page behind it is not on this screen.
@@ -320,7 +322,7 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       if (!byOwner.has(s)) byOwner.set(s, []); byOwner.get(s).push(c); });
     const found = [];
     byOwner.forEach((controls, surface) => {
-      const isDestructive = (c) => DESTRUCTIVE.test(labelOf(c));
+      const isDestructive = (c) => DESTRUCTIVE.test(labelOf(c).replace(VIEW_RESET, ''));
       // "Largest" is among controls that carry a visible text label, so a lone close glyph never makes Delete the biggest.
       const others = controls.filter(c => !isDestructive(c) && (c.textContent || '').trim());
       const biggest = others.reduce((m, c) => Math.max(m, area(c)), 0);
