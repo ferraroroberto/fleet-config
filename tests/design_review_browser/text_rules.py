@@ -9,6 +9,7 @@ from design_review_support import L10_MISSING as _L10_MISSING
 from design_review_support import c18_of as _c18_of
 from design_review_support import doc as _doc
 from design_review_support import specs as _specs
+from loopback import QuietStaticHandler
 
 # label fit and container overflow at the 390px phone leg: the camera dialog that scored clean while broken (#1325)
 lf = {}
@@ -124,10 +125,7 @@ import time as _gl_time
 import urllib.parse as _gl_parse
 
 
-class _LateReads(_gl_http.SimpleHTTPRequestHandler):
-    def log_message(self, *a):  # noqa: D401 -- keep the test output clean
-        pass
-
+class _LateReads(QuietStaticHandler):
     def do_GET(self):  # noqa: N802 -- http.server's name
         url = _gl_parse.urlparse(self.path)
         if url.path != "/late":
