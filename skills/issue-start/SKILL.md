@@ -246,7 +246,9 @@ stops end-of-flow rework; the conformance gate runs later in `/issue-finish`. `S
 The `ux`/`design` arg forces the load; `no-ux` suppresses it.
 
 **Surface map.** When `applies` also printed `SURFACE_MAP_FILE=<path>` (not
-`none`), read that file too — it lists every surface a person can reach, each
+`none`), read that file too — normally the app's `docs/ux-surfaces.yaml`, the
+source you edit (a `docs/ux-surface-map.md` beside it is generated from it and
+never hand-edited); it lists every surface a person can reach, each
 with a stable id that the code carries as `data-surface`. Name in the plan, or
 in fast mode in the first build note, the entries the issue touches: **new**,
 **changed** or **removed**. A surface the issue adds gets its entry and its

@@ -96,6 +96,7 @@ allow_refs = [
   "scripts/site_serve.py", "scripts/serve.py",
   "docs/screenshots/manifest.json", "tests/e2e", "tests/e2e/*",
   ".claude/skills/journal-daily/SKILL.md",
+  "docs/ux-surfaces.yaml", "docs/ux-surface-map.md",
 ]
 
 [dead_code_ratchet]

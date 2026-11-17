@@ -598,12 +598,12 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   open or perform as a unit: a screen, drill-in, menu, sheet, dialog, popover,
   Settings row, state, gesture or key. Its id is lowercase, in the e2e capture
   name form (`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`, e.g. `today.row-menu`); it has one
-  entry in the app's `docs/ux-surface-map.md`, and the same id is a constant
+  entry in the app's `docs/ux-surfaces.yaml`, and the same id is a constant
   `data-surface` attribute on the surface's root element. A surface with no
   element of its own (a gesture, a key) is listed with its reason and carries no
   attribute. The UX surface ratchet in each app's gate enforces the pairing; an
   app that has not adopted the map is not refused. The convention and the entry
-  shape: project-scaffolding's `docs/ux-surface-map.md`.
+  shape: project-scaffolding's `docs/ux-surface-map.md` (the page generated from that file is never edited).
 
 ## Components
 

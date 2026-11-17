@@ -4,20 +4,20 @@
 
 ## Surface map
 
-A web app that adopted project-scaffolding's UX surface map keeps a UX surface map file under its own docs folder beside `data-surface` ids in its markup, held by its own vendored ratchet script (opt-in `[ux_surface_ratchet]` in `.fleet.toml`). Two pieces of `ux_surface.py` bring that into the workflow:
+A web app that adopted project-scaffolding's UX surface map keeps `docs/ux-surfaces.yaml` (the source people and agents edit) and `docs/ux-surface-map.md` (the page generated from it, never hand-edited) under its own docs folder beside `data-surface` ids in its markup, held by its own vendored ratchet script (opt-in `[ux_surface_ratchet]` in `.fleet.toml`). Two pieces of `ux_surface.py` bring that into the workflow:
 
-- `applies` also prints `SURFACE_MAP_FILE=<path>|none`, the map file the repo has (the table's `map` key, defaulting to the scaffold's standard name). `/issue-start` reads it and names the entries an issue adds, changes or removes.
-- `surface-map <repo> [--base <ref>]` runs the repo's ratchet when the diff touches the UX surface or the map file, and prints `SURFACE_MAP=` with the ratchet's hits quoted as `RATCHET:` lines. `/issue-finish` (step 3b) and `/issue-yolo` (Phase 3e) call it and stop on a refusal.
+- `applies` also prints `SURFACE_MAP_FILE=<path>|none`, the map file the repo has (the table's `map` key, else `docs/ux-surfaces.yaml`; an app not yet converted has only the Markdown page, which is returned instead). `/issue-start` reads it and names the entries an issue adds, changes or removes.
+- `surface-map <repo> [--base <ref>]` runs the repo's ratchet when the diff touches the UX surface, the map or the generated page, and prints `SURFACE_MAP=` with the ratchet's hits quoted as `RATCHET:` lines. `/issue-finish` (step 3b) and `/issue-yolo` (Phase 3e) call it and stop on a refusal.
 
 | `SURFACE_MAP=` | Meaning | Exit |
 |---|---|---|
 | `in-sync` | The ratchet ran and passed | 0 |
 | `refused` | The ratchet exited 1: a count rose or the map or baseline is missing | 1 |
-| `not-confirmed` | The ratchet is enabled but could not answer: script not vendored, bad config (its exit 2), could not read the tree (its exit 3), timeout, or an unreadable `.fleet.toml` | 3 |
+| `not-confirmed` | The ratchet is enabled but could not answer: script not vendored, bad config (its exit 2; a Markdown `map` is one, and the reason says to convert it to the YAML), could not read the tree (its exit 3), timeout, or an unreadable `.fleet.toml` | 3 |
 | `not-adopted` | No `[ux_surface_ratchet]` with `enabled = true`: reported as such, never as in sync | 0 |
 | `not-applicable` | The design spec does not apply, or the diff touched neither the UX surface nor the map | 0 |
 
-A repo that has not adopted the map keeps working unchanged. Tested in `tests/web_review/test_ux_surface.py` with a stub ratchet per exit code.
+A repo that has not adopted the map keeps working unchanged, and so does one not yet converted from a Markdown map: the vendored ratchet decides, so an older one that reads the Markdown is `in-sync` and a newer one that refuses it is `not-confirmed` with the note. Tested in `tests/web_review/test_ux_surface.py` with a stub ratchet per exit code, for a YAML-map and a Markdown-map repo.
 
 ## Visual proof (merge gate)
 
