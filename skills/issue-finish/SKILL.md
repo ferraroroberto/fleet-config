@@ -140,6 +140,28 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 [`ux-conformance.md`](E:/automation/fleet-config/skills/issue-finish/ux-conformance.md)
 now: it holds both legs (token check, visual proof, visual check).
 
+**Surface map (every UI diff, any `TOUCHED`).** Ask the one helper whether the
+app's UX surface map still matches its `data-surface` ids:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py surface-map .
+```
+
+It prints `SURFACE_MAP=` and, on a refusal, quotes the ratchet's hits
+(`unmapped-surface`, `stale-entry`, `duplicate-surface`, `unmarked-surface`,
+`invalid-surface-id`).
+
+- `in-sync` → carry on.
+- `refused` (exit 1) or `not-confirmed` (exit 3) → **stop**: do not push. Quote
+  the hits in the report, fix the map or the markup in this branch (an entry and
+  its `data-surface` appear and disappear together), and re-run. Never raise the
+  baseline to get past it.
+- `not-adopted` / `not-applicable` → report it as written (`surface map: not
+  adopted`), never as in sync.
+
+State the result in the step-7 summary as `surface map: in sync | refused |
+not adopted | not applicable | not confirmed`.
+
 **Overrides** (words in the finish invocation): `ux`/`design` forces the gate
 even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
 entry. Always **state** the gate decision (ran / skipped / `ux-full`, plus any

@@ -148,6 +148,11 @@ Pick the smallest mode that genuinely covers the change:
   refuses the merge where `ENFORCED=yes`, a missing `.proof/<PR>` page
   everywhere), and stamp and send the page after the merge. Overrides: `ux`/`design` force it, `no-ux` skips it, `ux-full` checks every
   `KEY_VIEWS`. `SPEC_APPLIES=no` / `TOUCHED=no` → nothing to do here.
+
+  Then, for every UI diff, run the **surface-map check** exactly as `/issue-finish`
+  step 3b says (`ux_surface.py surface-map .`): `refused` or `not-confirmed`
+  stops the run like a red gate, hits quoted; `not-adopted` is reported as such,
+  never as in sync. Put `surface map: <state>` in the final report.
 - **CLI change:** invoke the CLI with realistic arguments against realistic
   input and show the actual output, not "the function returns X".
 - **Library change:** add a probe call from the project root (`-m
