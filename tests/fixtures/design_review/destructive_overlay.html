@@ -9,6 +9,8 @@
        tintdialog  Delete on the 16% danger tint (a fill, however pale)          -> filled
        bigdialog   Delete outlined but wider and taller than Redo                -> largest
        confirmdialog  a confirm: only Cancel beside a tinted Delete (no confirm exemption, #1403) -> filled
+       resetdialog  Clear search and Clear filters, filled and larger than Done: they only reset a view (#2098) -> pass
+       historydialog  Clear history, filled: it destroys data                                  -> filled
      A Clear button on the page, outside every dialog and menu, is filled on purpose: the rule reads overlay surfaces only.
      Asserted by tests/design_review/. -->
 <html lang="en">
@@ -83,5 +85,12 @@
   <dialog id="bigdialog"><h3>Take</h3><div class="row">
     <button type="button" class="small">Redo</button>
     <button type="button" class="big danger">Delete</button></div></dialog>
+  <dialog id="resetdialog"><h3>Nothing found</h3><div class="row">
+    <button type="button" class="small">Done</button>
+    <button type="button" class="big danger fill">Clear search</button>
+    <button type="button" class="big danger fill">Clear filters</button></div></dialog>
+  <dialog id="historydialog"><h3>Activity</h3><div class="row">
+    <button type="button" class="small">Done</button>
+    <button type="button" class="small danger fill">Clear history</button></div></dialog>
 </body>
 </html>

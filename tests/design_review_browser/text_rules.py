@@ -249,12 +249,14 @@ def _overlay(view: str) -> dict:
     return ((dos.get(f"desktop-light-{view}") or {}).get("metrics") or {}).get("overlay") or {}
 
 _do_bad = {v: (_overlay(v).get("destructive_bad_count"), [d.get("why") for d in _overlay(v).get("destructive_bad", [])])
-           for v in ("menu", "menubad", "dialog-okdialog", "dialog-filldialog", "dialog-tintdialog", "dialog-bigdialog", "dialog-confirmdialog")}
+           for v in ("menu", "menubad", "dialog-okdialog", "dialog-filldialog", "dialog-tintdialog", "dialog-bigdialog", "dialog-confirmdialog",
+                     "dialog-resetdialog", "dialog-historydialog")}
 check(_do_bad == {"menu": (0, []), "menubad": (1, ["filled"]), "dialog-okdialog": (0, []),
                   "dialog-filldialog": (1, ["filled"]), "dialog-tintdialog": (1, ["filled"]), "dialog-bigdialog": (1, ["largest"]),
-                  "dialog-confirmdialog": (1, ["filled"])},
+                  "dialog-confirmdialog": (1, ["filled"]), "dialog-resetdialog": (0, []), "dialog-historydialog": (1, ["filled"])},
       f"COMP-08: a filled Delete (solid or tinted) or one larger than Redo fails; an unfilled last menu Delete and an outlined one "
-      f"as wide as Copy pass, and the tinted Delete of a confirm dialog that holds only Cancel beside it fails like any other (#1403) -- {_do_bad} ({proc_do.stderr[-300:]})")
+      f"as wide as Copy pass, and the tinted Delete of a confirm dialog that holds only Cancel beside it fails like any other (#1403); "
+      f"a filled, oversized Clear search / Clear filters only resets a view and passes, a filled Clear history still fails (#2098) -- {_do_bad} ({proc_do.stderr[-300:]})")
 check(all(_overlay(v).get("destructive") for v in ("menu", "dialog-okdialog")) and _overlay("menu").get("surfaces", 0) >= 1,
       f"COMP-08: the passing menu and dialog still report the destructive control they measured -- {_overlay('menu')}")
 
