@@ -29,11 +29,16 @@ REDIRECTS = load_redirects()
 
 
 class Handler(BaseHTTPRequestHandler):
+    # HTTP/1.1 keep-alive: a browser reuses its sockets instead of parking one loopback port in TIME_WAIT per request.
+    # Every response below carries a Content-Length, which keep-alive needs.
+    protocol_version = "HTTP/1.1"
+
     def do_GET(self) -> None:  # noqa: N802 - http.server's method name
         path = urlsplit(self.path).path
         if path in REDIRECTS:
             self.send_response(REDIRECTS[path][1])
             self.send_header("Location", REDIRECTS[path][0])
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         rel = path.strip("/") or "index"

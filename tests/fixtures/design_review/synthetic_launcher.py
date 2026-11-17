@@ -15,6 +15,8 @@ from pathlib import Path
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"  # keep-alive: a browser reuses its sockets instead of parking a loopback port per request
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 — the stdlib's signature
         pass
 

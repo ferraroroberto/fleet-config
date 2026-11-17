@@ -9,6 +9,7 @@ from design_review import capture, measure
 from design_review import evaluate as ev
 from design_review_support import FIX, RUBRIC, rubric
 from design_review_support import specs as _specs
+from loopback import QuietStaticHandler
 
 # inventory over the scaffold's own component gallery, served read-only from its checkout (#1497)
 _demo_dir = scaffold / "app" / "webapp" / "static" / "_vendored"
@@ -19,10 +20,7 @@ else:
     import functools
     import http.server
     import threading
-    class _InvQuiet(http.server.SimpleHTTPRequestHandler):
-        def log_message(self, *a):  # noqa: D401 -- keep the test output clean
-            pass
-    _inv_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_InvQuiet, directory=str(_demo_dir)))
+    _inv_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(QuietStaticHandler, directory=str(_demo_dir)))
     threading.Thread(target=_inv_srv.serve_forever, daemon=True).start()
     _inv_url = f"http://127.0.0.1:{_inv_srv.server_address[1]}/demo.html"
     (STATE / "inv-params.json").write_text(json.dumps(measure.default_params(components=_inv_cat["components"])), encoding="utf-8")

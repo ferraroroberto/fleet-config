@@ -372,6 +372,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "static fixture pages through a sibling venv's Playwright, skipped honestly "
      "when none has it. ~34 min, so the gate routes it by diff "
      "(`gate_routing.ROUTED_SURFACES`; GATE_FULL=1 forces it) (fleet-config#1481)"),
+    ("loopback", "harness/test_loopback.py",
+     "the browser suites' loopback helper -- the fixture static handler keeps one client socket across "
+     "requests (HTTP/1.1 keep-alive), and a failure carrying ERR_ADDRESS_IN_USE is reported as "
+     "PORT POOL EXHAUSTED rather than as a page defect (fleet-config#2096)"),
     ("gate_routing", "e2e/test_gate_routing.py",
      "which diffs run the slow browser suite -- a path matches a routed prefix "
      "exactly or under a directory, an empty or unreadable diff never narrows "

@@ -6,6 +6,7 @@ from design_review import evaluate as ev
 from design_review import report as report_mod
 from design_review_support import FIX, rubric
 from design_review_support import specs as _specs
+from loopback import QuietStaticHandler
 from measure_fixture import by_id
 
 # layers: a control covered by a fixed bar is not an overlap; a list must scroll clear of the bar (#1019, #1094)
@@ -118,11 +119,7 @@ import functools  # noqa: E402
 import http.server
 import threading
 
-
-class _Quiet(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *a):  # noqa: D401 -- keep the test output clean
-        pass
-_hc_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Quiet, directory=str(FIX)))
+_hc_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(QuietStaticHandler, directory=str(FIX)))
 threading.Thread(target=_hc_srv.serve_forever, daemon=True).start()
 hc = {}
 for _kind in ("pass", "fail", "script"):

@@ -28,14 +28,22 @@ from __future__ import annotations
 
 from typing import List
 
+from loopback import PORT_POOL_HEADLINE, is_port_pool_failure
+
 
 class CheckHarness:
     def __init__(self) -> None:
         self.fails: List[str] = []
         self.skips: List[str] = []
+        self.port_pool: List[str] = []
 
     def check(self, cond: bool, msg: str) -> None:
         if not cond:
+            if is_port_pool_failure(msg):
+                # A browser that could not connect because the host ran out of loopback ports failed on capacity,
+                # not on the page under test: name it so a gate reader does not debug the page.
+                self.port_pool.append(msg)
+                msg = f"PORT POOL EXHAUSTED -- {msg}"
             self.fails.append(msg)
 
     def skip(self, msg: str) -> None:
@@ -63,6 +71,9 @@ class CheckHarness:
             print(f"FAILED {len(self.fails)} check(s):")
             for f in self.fails:
                 print(f"  - {f}")
+            if self.port_pool:
+                print(f"PORT POOL EXHAUSTED ({len(self.port_pool)} of {len(self.fails)} failure(s)):")
+                print(f"  {PORT_POOL_HEADLINE}")
             raise SystemExit(1)
         if self.skips:
             print(f"SKIPPED {len(self.skips)} check(s):")
