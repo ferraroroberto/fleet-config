@@ -60,7 +60,7 @@ typography:
   body-sm:    { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 400, lineHeight: 1.45 }   # 14px — every secondary line: paths, status, "last run", row meta, helper copy
   label:      { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 600, lineHeight: 1.1 }   # 14px — field and control labels, button text
   caption:    { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1 }   # 12px — chips, badges and timestamps only
-  overline:   { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.06em", textTransform: uppercase }   # 12px — list group headers only (date groups); the one legal caps use
+  overline:   { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.06em", textTransform: uppercase }   # 12px — list group headers only (date groups); the one legal caps use, never a Settings group label
 rounded:
   sm:   8px
   md:   12px
@@ -100,7 +100,8 @@ components:
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — structural, identical to Light (see design.md)
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — structural, identical to Light (see design.md)
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — structural, identical to Light (see design.md)
-  action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # tap the row = primary action — structural, identical to Light (see design.md)
+  settings-group: { pageInset: 20px, rounded: 20px, border: none, contentPadding: "0 {spacing.md}", labelSize: 1rem, labelWeight: 700, labelColor: "{colors.fg-muted}", labelCase: sentence }   # the full Settings page: inset groups — structural, identical to Light (see design.md)
+  action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}", filterSheetAt: 2 }   # tap the row = primary action — structural, identical to Light (see design.md)
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, statusReadout: 1, actionSize: "{components.hit-target.min}" }   # every pane's first element — structural, identical to Light (see design.md)
