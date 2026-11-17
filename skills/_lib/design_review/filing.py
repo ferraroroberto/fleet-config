@@ -70,8 +70,8 @@ import git_run  # noqa: E402
 from design_lint.accepted import accepted_array  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 
-from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 from . import surface_ids  # noqa: E402
+from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 from .report import SEVERITY_ORDER, worst_screen  # noqa: E402
 
 KIND = "design-review"
