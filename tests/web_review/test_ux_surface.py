@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -344,6 +345,69 @@ _leaks = [str(p.relative_to(_LIB)) for p in _LIB.rglob("*.py")
           if p.name != "ux_surface.py" and ("ux_surface._load_block" in p.read_text(encoding="utf-8")
                                             or "ux_surface._default_base" in p.read_text(encoding="utf-8"))]
 check(_leaks == [], f"nothing outside ux_surface reaches its private block loader or base resolver -- {_leaks}")
+
+
+# ---- surface_map(): the UX surface map decision the finish skills share ----
+
+
+def _map_repo(fleet_toml_text, exit_code=None, block=BLOCK):
+    """A temp repo; `exit_code` vendors a stub ratchet that prints a hit and exits with it."""
+    repo = Path(tempfile.mkdtemp(prefix="test_ux_map_"))
+    (repo / "CLAUDE.md").write_text(block, encoding="utf-8")
+    if fleet_toml_text is not None:
+        (repo / ".fleet.toml").write_text(fleet_toml_text, encoding="utf-8")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "ux-surface-map.md").write_text("# map\n", encoding="utf-8")
+    if exit_code is not None:
+        (repo / "scripts").mkdir()
+        (repo / "scripts" / "ux_surface_ratchet.py").write_text(
+            f"import sys\nprint('a.html:2: [unmapped-surface] x.new has no entry')\nsys.exit({exit_code})\n",
+            encoding="utf-8")
+    return repo
+
+
+_ON = "[ux_surface_ratchet]\nenabled = true\n"
+_UI = ["app/webapp/static/a.html"]
+_cases = [
+    ("no .fleet.toml", None, 0, _UI, "not-adopted", 0),
+    ("table absent", "[other]\nx = 1\n", 0, _UI, "not-adopted", 0),
+    ("enabled = false", "[ux_surface_ratchet]\nenabled = false\n", 0, _UI, "not-adopted", 0),
+    ("malformed .fleet.toml", "[ux_surface_ratchet\n", 0, _UI, "not-confirmed", 3),
+    ("untouched diff", _ON, 0, ["README.md"], "not-applicable", 0),
+    ("ratchet exit 0", _ON, 0, _UI, "in-sync", 0),
+    ("ratchet exit 1", _ON, 1, _UI, "refused", 1),
+    ("ratchet exit 2 (bad config)", _ON, 2, _UI, "not-confirmed", 3),
+    ("ratchet exit 3 (not confirmed)", _ON, 3, _UI, "not-confirmed", 3),
+    ("enabled but script not vendored", _ON, None, _UI, "not-confirmed", 3),
+    ("a map-only diff still runs it", _ON, 1, ["docs/ux-surface-map.md"], "refused", 1),
+]
+
+for _name, _toml, _code, _files, _state, _exit in _cases:
+    _r = _map_repo(_toml, _code)
+    try:
+        _m = ux.surface_map(_r, changed=_files)
+    finally:
+        shutil.rmtree(_r, ignore_errors=True)
+    check(_m.state == _state and _m.exit_code == _exit,
+          f"surface_map: {_name} -> {_state} (exit {_exit}) -- got {_m.state} (exit {_m.exit_code})")
+    check(_m.state != "refused" or any("unmapped-surface" in ln for ln in _m.lines),
+          f"surface_map: {_name}: a refusal quotes the ratchet's hit -- {_m.lines!r}")
+
+_r = _map_repo(_ON, 0, block="# no block\n")
+try:
+    _m = ux.surface_map(_r, changed=_UI)
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+check(_m.state == "not-applicable", f"surface_map: a repo whose design spec does not apply is not-applicable, not in-sync -- {_m!r}")
+
+_r = _map_repo('[ux_surface_ratchet]\nenabled = true\nmap = "docs/alt.md"\n', 0)
+(_r / "docs" / "alt.md").write_text("# alt\n", encoding="utf-8")
+try:
+    check(ux.surface_map_file(_r) == "docs/alt.md", "surface_map_file: follows the table's `map` key")
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+_out = _applies_out(BLOCK, _ON)
+check(any(line.startswith("SURFACE_MAP_FILE=") for line in _out), f"applies: prints SURFACE_MAP_FILE -- {_out!r}")
 
 
 _h.report_and_exit("ux_surface")

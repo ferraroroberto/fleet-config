@@ -2,6 +2,23 @@
 
 `skills/_lib/ux_surface.py` is the second cross-skill primitive — it decides, deterministically, whether an issue's change touched a web app's UX so the issue-workflow skills can gate the fleet design check on the *diff* rather than re-deriving a glob match in three places. A repo declares its surface in a `## UX surface` block in its own `CLAUDE.md` (`design spec applies`, `paths`, `key views`); a repo without one — `fleet-config` itself, any non-web repo, a Streamlit spike — yields `SPEC_APPLIES=no`, so the gate is a permanent no-op there. `applies <repo>` (block only, no git) drives the cheap design-aware spec-load at `/issue-start`; `check <repo>` adds `git diff --name-only <main>...HEAD` and reports `TOUCHED` + the `MATCHED` files for the gate at `/issue-finish` (step 3b) and `/issue-yolo` (Phase 3e). A diff that *fails* (bad base ref, unreadable repo) reports `TOUCHED=unknown`, never `no` — the shared `git_run.changed_files()` returns `None` rather than an empty list precisely so a failed probe can't render as a clean one, and all three diff-keyed gates (`ux_surface`, `deploy_coverage`, `docs_shots_plan`) treat `unknown` as touched. When the diff *did* touch UX, the gate fixes material token drift in-branch (not file-and-defer — that's `/design-sync`'s periodic job) and visually verifies the touched view via the repo's own launch skill, else Claude Code's built-in `run` skill. **The screenshot is inspected in-session only and never attached to a PR/issue/comment** — every repo is treated as public, so an uploaded UI screenshot is an information breach; the PR carries a text-only conformance line instead. Its block parser, brace expansion, glob→regex, and diff intersection are pure-logic unit-tested (`tests/web_review/test_ux_surface.py`, reached from the one acceptance gate).
 
+## Surface map
+
+A web app that adopted project-scaffolding's UX surface map keeps a UX surface map file under its own docs folder beside `data-surface` ids in its markup, held by its own vendored ratchet script (opt-in `[ux_surface_ratchet]` in `.fleet.toml`). Two pieces of `ux_surface.py` bring that into the workflow:
+
+- `applies` also prints `SURFACE_MAP_FILE=<path>|none`, the map file the repo has (the table's `map` key, defaulting to the scaffold's standard name). `/issue-start` reads it and names the entries an issue adds, changes or removes.
+- `surface-map <repo> [--base <ref>]` runs the repo's ratchet when the diff touches the UX surface or the map file, and prints `SURFACE_MAP=` with the ratchet's hits quoted as `RATCHET:` lines. `/issue-finish` (step 3b) and `/issue-yolo` (Phase 3e) call it and stop on a refusal.
+
+| `SURFACE_MAP=` | Meaning | Exit |
+|---|---|---|
+| `in-sync` | The ratchet ran and passed | 0 |
+| `refused` | The ratchet exited 1: a count rose or the map or baseline is missing | 1 |
+| `not-confirmed` | The ratchet is enabled but could not answer: script not vendored, bad config (its exit 2), could not read the tree (its exit 3), timeout, or an unreadable `.fleet.toml` | 3 |
+| `not-adopted` | No `[ux_surface_ratchet]` with `enabled = true`: reported as such, never as in sync | 0 |
+| `not-applicable` | The design spec does not apply, or the diff touched neither the UX surface nor the map | 0 |
+
+A repo that has not adopted the map keeps working unchanged. Tested in `tests/web_review/test_ux_surface.py` with a stub ratchet per exit code.
+
 ## Visual proof (merge gate)
 
 Both subcommands also print `SPEC_KIND`: `web-page` for a public static site (a block answer of `design spec applies: web-page`, or `.fleet.toml` `shape = "static-site"` even with the gate off), held to `design.web.md`; `web-app` otherwise, held to `design.md` + `design.dark.md`. A `web-page` answer makes `SPEC_APPLIES=yes`, so every consumer of the gate keeps reading one yes/no; `/design-sync` and `design_sweep_scan.py` read the kind to pick the spec and the lint lenses (`design_lint --surface web-page`).

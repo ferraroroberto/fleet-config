@@ -23,7 +23,7 @@ Subcommands:
 
   applies <repo-root>
       Parse the block only (no git). Prints `SPEC_APPLIES=yes|no`,
-      `SPEC_KIND=web-app|web-page` and `KEY_VIEWS=...`. Used at `/issue-start`, where no diff exists yet — the
+      `SPEC_KIND=web-app|web-page`, `KEY_VIEWS=...` and `SURFACE_MAP_FILE=<path>|none`. Used at `/issue-start`, where no diff exists yet — the
       agent still judges whether the *issue* is UX-likely; this just answers
       "does this repo even have a design-gated UX surface?".
 
@@ -36,6 +36,15 @@ Subcommands:
       repo's main branch. `TOUCHED=unknown` means the diff itself could not be
       taken (bad base ref, unreadable repo) — the gate treats it as touched,
       never as a silent `no`.
+
+  surface-map <repo> [--base <ref>]
+      Hold the repo's UX surface map (`docs/ux-surface-map.md`) to its
+      `data-surface` ids by running the repo's own `scripts/ux_surface_ratchet.py`
+      when `.fleet.toml` enables `[ux_surface_ratchet]` and the diff touches the
+      UX surface or the map. Prints `SURFACE_MAP=in-sync|refused|not-adopted|
+      not-applicable|not-confirmed` (+ the ratchet's hits, quoted); exit 0 for the
+      first, third and fourth, 1 refused, 3 not-confirmed. A repo that has not
+      adopted the map is `not-adopted`, never `in-sync`.
 
 A repo with no `## UX surface` block (or `design spec applies: no`) yields
 `SPEC_APPLIES=no` / `TOUCHED=no`, so the gate is a permanent no-op there.
@@ -52,7 +61,9 @@ stdlib + the `git` CLI only (matches the _lib module contract).
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -327,6 +339,7 @@ def cmd_applies(repo: Path) -> int:
     print(f"SPEC_APPLIES={'yes' if applies else 'no'}")
     print(f"SPEC_KIND={repo_spec_kind(repo)}")
     print(f"KEY_VIEWS={views}")
+    print(f"SURFACE_MAP_FILE={surface_map_file(repo) or 'none'}")
     return 0
 
 
@@ -372,6 +385,101 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     return 0
 
 
+# ---- UX surface map (project-scaffolding docs/ux-surface-map.md) ----------
+
+RATCHET_SCRIPT = "scripts/ux_surface_ratchet.py"
+DEFAULT_MAP = "docs/ux-surface-map.md"
+# The ratchet gets a minute: it reads the app's HTML/JS once and never starts the app.
+RATCHET_TIMEOUT_S = 120
+
+
+def _ratchet_table(repo: Path) -> "tuple[Optional[Dict[str, object]], Optional[str]]":
+    """`(table, error)`: `[ux_surface_ratchet]` when it enables the stage, else `(None, None)`.
+
+    A malformed `.fleet.toml` is an error string, never a quiet "not adopted".
+    """
+    data, error = fleet_toml.load_checked(repo)
+    if error:
+        return None, error
+    table = (data or {}).get("ux_surface_ratchet")
+    if isinstance(table, dict) and table.get("enabled") is True:
+        return table, None
+    return None, None
+
+
+def surface_map_file(repo: Path) -> Optional[str]:
+    """The repo's UX surface map path (repo-relative) when the file exists, else `None`."""
+    table, _ = _ratchet_table(repo)
+    name = table.get("map") if table else None
+    rel = name.replace("\\", "/").strip("/") if isinstance(name, str) and name.strip() else DEFAULT_MAP
+    return rel if (repo / rel).is_file() else None
+
+
+@dataclass(frozen=True)
+class SurfaceMap:
+    """One surface-map decision: `state` is one of the `SURFACE_MAP=` words, `lines` the ratchet's output."""
+
+    state: str
+    reason: str = ""
+    lines: tuple = ()
+
+    @property
+    def exit_code(self) -> int:
+        return {"refused": 1, "not-confirmed": 3}.get(self.state, 0)
+
+
+def surface_map(repo: Path, base: Optional[str] = None, changed: Optional[List[str]] = None) -> SurfaceMap:
+    """Run the repo's UX surface ratchet when the change can have moved the map.
+
+    `not-adopted` when `[ux_surface_ratchet]` is not enabled (no `.fleet.toml`, no
+    table, `enabled = false`); `not-applicable` when the design spec does not apply
+    or the diff touched neither the UX surface nor the map; otherwise the ratchet
+    runs and exit 0 is `in-sync`, 1 `refused`, and anything else (a missing script,
+    bad config, exit 2 or 3, a timeout, an unreadable diff) `not-confirmed`.
+    """
+    table, error = _ratchet_table(repo)
+    if error:
+        return SurfaceMap("not-confirmed", f".fleet.toml unreadable: {error}")
+    if table is None:
+        return SurfaceMap("not-adopted", "no [ux_surface_ratchet] enabled in .fleet.toml")
+    found = trigger(repo, base, changed)
+    if not found.applies:
+        return SurfaceMap("not-applicable", "the design spec does not apply to this repo")
+    map_rel = surface_map_file(repo) or str(table.get("map") or DEFAULT_MAP)
+    if found.touched == "no":
+        # trigger() skips docs/**, but a map-only edit can still drift from the code.
+        files = changed if changed is not None else git_run.changed_files(repo, base or _default_base(repo))
+        if files is not None and map_rel not in [f.replace("\\", "/") for f in files]:
+            return SurfaceMap("not-applicable", "the diff touches neither the UX surface nor the map")
+    script = repo / RATCHET_SCRIPT
+    if not script.is_file():
+        return SurfaceMap("not-confirmed", f"{RATCHET_SCRIPT} is not vendored here; the stage is enabled but cannot run")
+    try:
+        done = subprocess.run(
+            [sys.executable, "-P", str(script)], cwd=str(repo), capture_output=True, timeout=RATCHET_TIMEOUT_S,
+            env={**os.environ, "PYTHONUTF8": "1"}, creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return SurfaceMap("not-confirmed", f"the ratchet did not finish: {exc}")
+    out = (done.stdout or b"").decode("utf-8", errors="replace") + (done.stderr or b"").decode("utf-8", errors="replace")
+    lines = tuple(line.rstrip() for line in out.splitlines() if line.strip())
+    if done.returncode == 0:
+        return SurfaceMap("in-sync", "", lines)
+    if done.returncode == 1:
+        return SurfaceMap("refused", "the map and the data-surface ids disagree", lines)
+    return SurfaceMap("not-confirmed", f"the ratchet exited {done.returncode} (2 bad config, 3 could not read)", lines)
+
+
+def cmd_surface_map(repo: Path, base: Optional[str]) -> int:
+    found = surface_map(repo, base)
+    print(f"SURFACE_MAP={found.state}")
+    if found.reason:
+        print(f"REASON={found.reason}")
+    for line in found.lines:
+        print(f"RATCHET: {line}")
+    return found.exit_code
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="UX-surface trigger for the issue-* skills.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -383,6 +491,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_check.add_argument("repo", type=Path)
     p_check.add_argument("--base", default=None, help="ref to diff against (default: repo main)")
 
+    p_map = sub.add_parser("surface-map", help="does the UX surface map still match the data-surface ids?")
+    p_map.add_argument("repo", type=Path)
+    p_map.add_argument("--base", default=None, help="ref to diff against (default: repo main)")
+
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     if not repo.is_dir():
@@ -390,6 +502,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     if args.cmd == "applies":
         return cmd_applies(repo)
+    if args.cmd == "surface-map":
+        return cmd_surface_map(repo, args.base)
     return cmd_check(repo, args.base)
 
 
