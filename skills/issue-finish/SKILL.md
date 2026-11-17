@@ -149,7 +149,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 It prints `SURFACE_MAP=` and, on a refusal, quotes the ratchet's hits
 (`unmapped-surface`, `stale-entry`, `duplicate-surface`, `unmarked-surface`,
-`invalid-surface-id`).
+`invalid-surface-id`, `dangling-link`, `stale-generated`). The app's
+`docs/ux-surfaces.yaml` is the map you edit; `docs/ux-surface-map.md` is generated
+from it (`python scripts/ux_surface_map.py`), never hand-edited, and a page not
+regenerated is the `stale-generated` hit.
 
 - `in-sync` → carry on.
 - `refused` (exit 1) or `not-confirmed` (exit 3) → **stop**: do not push. Quote

@@ -350,14 +350,16 @@ check(_leaks == [], f"nothing outside ux_surface reaches its private block loade
 # ---- surface_map(): the UX surface map decision the finish skills share ----
 
 
-def _map_repo(fleet_toml_text, exit_code=None, block=BLOCK):
-    """A temp repo; `exit_code` vendors a stub ratchet that prints a hit and exits with it."""
+def _map_repo(fleet_toml_text, exit_code=None, block=BLOCK, map_file="docs/ux-surfaces.yaml"):
+    """A temp repo; `exit_code` vendors a stub ratchet that prints a hit and exits with it.
+
+    `map_file` is the map it keeps: the YAML source by default, or the Markdown page of an app not yet converted."""
     repo = Path(tempfile.mkdtemp(prefix="test_ux_map_"))
     (repo / "CLAUDE.md").write_text(block, encoding="utf-8")
     if fleet_toml_text is not None:
         (repo / ".fleet.toml").write_text(fleet_toml_text, encoding="utf-8")
     (repo / "docs").mkdir()
-    (repo / "docs" / "ux-surface-map.md").write_text("# map\n", encoding="utf-8")
+    (repo / map_file).write_text("# map\n", encoding="utf-8")
     if exit_code is not None:
         (repo / "scripts").mkdir()
         (repo / "scripts" / "ux_surface_ratchet.py").write_text(
@@ -379,7 +381,8 @@ _cases = [
     ("ratchet exit 2 (bad config)", _ON, 2, _UI, "not-confirmed", 3),
     ("ratchet exit 3 (not confirmed)", _ON, 3, _UI, "not-confirmed", 3),
     ("enabled but script not vendored", _ON, None, _UI, "not-confirmed", 3),
-    ("a map-only diff still runs it", _ON, 1, ["docs/ux-surface-map.md"], "refused", 1),
+    ("a map-only diff still runs it", _ON, 1, ["docs/ux-surfaces.yaml"], "refused", 1),
+    ("a page-only diff still runs it", _ON, 1, ["docs/ux-surface-map.md"], "refused", 1),
 ]
 
 for _name, _toml, _code, _files, _state, _exit in _cases:
@@ -400,10 +403,42 @@ finally:
     shutil.rmtree(_r, ignore_errors=True)
 check(_m.state == "not-applicable", f"surface_map: a repo whose design spec does not apply is not-applicable, not in-sync -- {_m!r}")
 
-_r = _map_repo('[ux_surface_ratchet]\nenabled = true\nmap = "docs/alt.md"\n', 0)
-(_r / "docs" / "alt.md").write_text("# alt\n", encoding="utf-8")
+_r = _map_repo('[ux_surface_ratchet]\nenabled = true\nmap = "docs/alt.yaml"\n', 0)
+(_r / "docs" / "alt.yaml").write_text("# alt\n", encoding="utf-8")
 try:
-    check(ux.surface_map_file(_r) == "docs/alt.md", "surface_map_file: follows the table's `map` key")
+    check(ux.surface_map_file(_r) == "docs/alt.yaml", "surface_map_file: follows the table's `map` key")
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+
+# A YAML-map repo: the source is the map the skills load, the generated page never is.
+_r = _map_repo(_ON, 0)
+(_r / "docs" / "ux-surface-map.md").write_text("# generated\n", encoding="utf-8")
+try:
+    check(ux.surface_map_file(_r) == "docs/ux-surfaces.yaml", "surface_map_file: the YAML source wins over the generated page")
+    check(ux.surface_map(_r, changed=_UI).state == "in-sync", "surface_map: a YAML-map repo whose ratchet passes is in-sync")
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+
+# A not-yet-converted repo: only the Markdown page exists. It is still the map a skill loads; the state follows
+# the ratchet (an older ratchet reads it: in-sync), and a ratchet that refuses a Markdown `map` is not-confirmed
+# with a note to convert, never a refusal and never in-sync.
+_r = _map_repo(_ON, 0, map_file="docs/ux-surface-map.md")
+try:
+    check(ux.surface_map_file(_r) == "docs/ux-surface-map.md", "surface_map_file: a repo with only the Markdown page still has a map")
+    check(ux.surface_map(_r, changed=_UI).state == "in-sync", "surface_map: an unconverted repo whose ratchet passes is in-sync")
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+_r = _map_repo('[ux_surface_ratchet]\nenabled = true\nmap = "docs/ux-surface-map.md"\n', 2, map_file="docs/ux-surface-map.md")
+try:
+    _m = ux.surface_map(_r, changed=_UI)
+    check(_m.state == "not-confirmed" and _m.exit_code == 3 and "convert it to docs/ux-surfaces.yaml" in _m.reason,
+          f"surface_map: a Markdown `map` the ratchet refuses is not-confirmed and says to convert -- {_m!r}")
+finally:
+    shutil.rmtree(_r, ignore_errors=True)
+_r = _map_repo(_ON, 0)
+(_r / "docs" / "ux-surfaces.yaml").unlink()
+try:
+    check(ux.surface_map_file(_r) is None, "surface_map_file: no map file at all is None")
 finally:
     shutil.rmtree(_r, ignore_errors=True)
 _out = _applies_out(BLOCK, _ON)

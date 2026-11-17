@@ -583,19 +583,34 @@ check("1 surface captured by the app&#x27;s own e2e suite" in report_mod._method
 
 # ---- #2101: surfaces the run opened with no data-surface id, and map entries it never opened ----
 
-_MAP = """# Map
-
-## Chrome
-
-**`today.add` Add dialog** — *Root:* `data-surface`. *Reach:* the plus button.
-
-**`today.row-menu` Row menu** — *Root:* `data-surface`. *Reach:* a kebab.
-
-**`today.swipe` Swipe** — *Root:* none — a gesture has no element of its own.
-
-```
-**`fenced.entry` Not an entry**
-```
+_MAP = """# the generator's header comment
+app: demo
+areas:
+  - id: today
+    title: Today
+surfaces:
+  - id: today.add          # a trailing comment
+    area: today
+    title: Add dialog
+    root: data-surface
+    reach:
+      - the plus button
+    links:
+      - to: today.row-menu
+        via: a kebab
+  - id: "today.row-menu"
+    area: today
+    title: Row menu
+    root: data-surface
+  - id: today.swipe
+    area: today
+    title: Swipe
+    root:
+      none: a gesture has no element of its own
+  - id: Bad_Id
+    area: today
+    title: Skipped
+    root: data-surface
 """
 
 
@@ -607,8 +622,29 @@ def _sid_screen(name, ids, roots, source="e2e"):
 _entries = surface_ids.parse_map(_MAP)
 check(_entries == [{"id": "today.add", "rootless": False}, {"id": "today.row-menu", "rootless": False},
                    {"id": "today.swipe", "rootless": True}],
-      f"the map reader takes bold-backticked ids outside a fence and reads `Root: none — reason` as root-less -- {_entries}")
-_map_doc = {"file": "docs/ux-surface-map.md", "entries": _entries, "error": None}
+      f"the YAML reader takes each surfaces item's id, reads `root: none: <reason>` as root-less and skips an invalid id -- {_entries}")
+check(surface_ids.parse_map("surfaces:\n- id: a.b\n  root:\n    none: why\n- id: c.d\n  root:\n    none:\n")
+      == [{"id": "a.b", "rootless": True}, {"id": "c.d", "rootless": False}],
+      "the YAML reader takes unindented `surfaces` items, and a bare `none:` (no reason) is not root-less")
+try:
+    surface_ids.parse_map("surfaces:\n  - area: today\n    id: today.add\n")
+    check(False, "a surfaces item that does not open with `id:` is an error, not an empty map")
+except ValueError as _exc:
+    check("line 2" in str(_exc), f"a surfaces item that does not open with `id:` names its line -- {_exc}")
+_yaml_repo = throwaway_dir("sid-yaml-")
+(_yaml_repo / "docs").mkdir()
+(_yaml_repo / "docs" / "ux-surfaces.yaml").write_text(_MAP, encoding="utf-8")
+(_yaml_repo / "docs" / "ux-surface-map.md").write_text("# generated\n", encoding="utf-8")
+_read = surface_ids.read_map(_yaml_repo, "docs/ux-surfaces.yaml")
+check(_read["file"] == "docs/ux-surfaces.yaml" and _read["error"] is None and _read["entries"] == _entries,
+      f"read_map reads the YAML source -- {_read}")
+_legacy = surface_ids.read_map(_yaml_repo, "docs/ux-surface-map.md")
+check(_legacy["file"] == "docs/ux-surface-map.md" and _legacy["entries"] == [] and "convert it" in _legacy["error"],
+      f"a Markdown map reads as unreadable with a note to convert, never a refusal -- {_legacy}")
+_legacy_report = surface_ids.report({"screens": [_sid_screen("today.add", ["today.add"], [])], "surface_map": _legacy})
+check(_legacy_report["never_walked"] is None and any("convert it" in i for i in surface_ids.report_items(_legacy_report)),
+      "a Markdown map leaves never-walked unknown and the report says to convert it")
+_map_doc = {"file": "docs/ux-surfaces.yaml", "entries": _entries, "error": None}
 
 
 def _sid(screens, smap=_map_doc):

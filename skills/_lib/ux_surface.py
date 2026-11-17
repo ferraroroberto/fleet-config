@@ -38,7 +38,7 @@ Subcommands:
       never as a silent `no`.
 
   surface-map <repo> [--base <ref>]
-      Hold the repo's UX surface map (`docs/ux-surface-map.md`) to its
+      Hold the repo's UX surface map (`docs/ux-surfaces.yaml`, the source; `docs/ux-surface-map.md` is generated) to its
       `data-surface` ids by running the repo's own `scripts/ux_surface_ratchet.py`
       when `.fleet.toml` enables `[ux_surface_ratchet]` and the diff touches the
       UX surface or the map. Prints `SURFACE_MAP=in-sync|refused|not-adopted|
@@ -385,10 +385,12 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     return 0
 
 
-# ---- UX surface map (project-scaffolding docs/ux-surface-map.md) ----------
+# ---- UX surface map (project-scaffolding docs/ux-surface-map.md; the source is docs/ux-surfaces.yaml) ----
 
 RATCHET_SCRIPT = "scripts/ux_surface_ratchet.py"
-DEFAULT_MAP = "docs/ux-surface-map.md"
+DEFAULT_MAP = "docs/ux-surfaces.yaml"
+# The generated page; also the whole map of an app that has not moved to the YAML source yet.
+DEFAULT_PAGE = "docs/ux-surface-map.md"
 # The ratchet gets a minute: it reads the app's HTML/JS once and never starts the app.
 RATCHET_TIMEOUT_S = 120
 
@@ -408,11 +410,16 @@ def _ratchet_table(repo: Path) -> "tuple[Optional[Dict[str, object]], Optional[s
 
 
 def surface_map_file(repo: Path) -> Optional[str]:
-    """The repo's UX surface map path (repo-relative) when the file exists, else `None`."""
+    """The repo's UX surface map path (repo-relative) when the file exists, else `None`.
+
+    The table's `map` key, else the YAML source; an app not yet converted has only the Markdown page, which is
+    returned so `/issue-start` still reads it."""
     table, _ = _ratchet_table(repo)
     name = table.get("map") if table else None
-    rel = name.replace("\\", "/").strip("/") if isinstance(name, str) and name.strip() else DEFAULT_MAP
-    return rel if (repo / rel).is_file() else None
+    if isinstance(name, str) and name.strip():
+        rel = name.replace("\\", "/").strip("/")
+        return rel if (repo / rel).is_file() else None
+    return next((rel for rel in (DEFAULT_MAP, DEFAULT_PAGE) if (repo / rel).is_file()), None)
 
 
 @dataclass(frozen=True)
@@ -446,10 +453,11 @@ def surface_map(repo: Path, base: Optional[str] = None, changed: Optional[List[s
     if not found.applies:
         return SurfaceMap("not-applicable", "the design spec does not apply to this repo")
     map_rel = surface_map_file(repo) or str(table.get("map") or DEFAULT_MAP)
+    page_rel = str(table.get("page") or DEFAULT_PAGE).replace("\\", "/")
     if found.touched == "no":
-        # trigger() skips docs/**, but a map-only edit can still drift from the code.
+        # trigger() skips docs/**, but a map or page edit can still drift from the code.
         files = changed if changed is not None else git_run.changed_files(repo, base or _default_base(repo))
-        if files is not None and map_rel not in [f.replace("\\", "/") for f in files]:
+        if files is not None and not {map_rel, page_rel} & {f.replace("\\", "/") for f in files}:
             return SurfaceMap("not-applicable", "the diff touches neither the UX surface nor the map")
     script = repo / RATCHET_SCRIPT
     if not script.is_file():
@@ -467,7 +475,10 @@ def surface_map(repo: Path, base: Optional[str] = None, changed: Optional[List[s
         return SurfaceMap("in-sync", "", lines)
     if done.returncode == 1:
         return SurfaceMap("refused", "the map and the data-surface ids disagree", lines)
-    return SurfaceMap("not-confirmed", f"the ratchet exited {done.returncode} (2 bad config, 3 could not read)", lines)
+    reason = f"the ratchet exited {done.returncode} (2 bad config, 3 could not read)"
+    if map_rel.lower().endswith(".md"):
+        reason += f"; the map is Markdown ({map_rel}): convert it to {DEFAULT_MAP}, the source the ratchet reads"
+    return SurfaceMap("not-confirmed", reason, lines)
 
 
 def cmd_surface_map(repo: Path, base: Optional[str]) -> int:

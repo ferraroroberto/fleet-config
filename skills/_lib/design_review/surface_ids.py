@@ -2,7 +2,7 @@
 
 Pure: reads a `metrics.json` document, returns one JSON-able record. The scaffold's UX surface ratchet checks ids
 statically, so a dialog, drill-in or state built with no id at all is invisible to it; the walk and the e2e capture
-open surfaces for real, which makes them the cross-check (project-scaffolding `docs/ux-surface-map.md`).
+open surfaces for real, which makes them the cross-check (project-scaffolding `docs/ux-surface-map.md`; the map is the app's `docs/ux-surfaces.yaml`).
 
 Two lists, both coverage findings and never part of the grade:
 
@@ -12,7 +12,7 @@ Two lists, both coverage findings and never part of the grade:
                   no id.
   * `never_walked` map entries with an element root whose id no screen showed and no capture named.
 
-A root-less map entry (`*Root:* none — <reason>`) is exempt from both: it has no element to carry an id.
+A root-less map entry (`root:` with `none: <reason>`) is exempt from both: it has no element to carry an id.
 `status` is `unknown` when no measured screen carries the listing (metrics captured before it existed), and
 `never_walked` is `None` when the app has no map, so a missing input never reads as "nothing missed".
 
@@ -35,61 +35,82 @@ from typing import Dict, List, Optional
 from . import measure
 
 ID_RE = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
-DEFAULT_MAP = "docs/ux-surface-map.md"
+DEFAULT_MAP = "docs/ux-surfaces.yaml"
 SAMPLE = 8            # ids named per line in the report and the issue; the counts stay true
 SEVERITY = "P2"
 CODES = ("SURF-01", "SURF-02")
-STANDARD = "project-scaffolding docs/ux-surface-map.md (Code carries the id)"
+STANDARD = "project-scaffolding docs/ux-surface-map.md (Code carries the id)"  # the convention page keeps this name
 
-# The scaffold ratchet's own entry grammar, so both read one map the same way.
-_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*`(?P<id>[^`]*)`")
-_HEADING = re.compile(r"^#{1,6}\s")
-_FENCE = re.compile(r"^\s*(```|~~~)")
-_ROOT_NONE = re.compile(r"\*Root:?\*:?\s*none\b(?P<reason>[^.*]*)", re.IGNORECASE)
+_ITEM_ID = re.compile(r"^(?P<indent>\s*)-\s+id:\s*(?P<id>.*)$")
+_ITEM_START = re.compile(r"^\s*-\s")
+_KEY = re.compile(r"^(?P<key>[A-Za-z_][\w-]*):(?:\s+(?P<value>.*))?$")
+
+
+def _value(text: Optional[str]) -> str:
+    """A scalar's text: the trailing ` # comment` and one pair of quotes dropped (an id never holds either)."""
+    text = re.sub(r"\s+#.*$", "", (text or "").strip())
+    return text[1:-1] if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"" else text
 
 
 def parse_map(text: str) -> List[Dict[str, object]]:
-    """`[{id, rootless}]` for every entry (a line opening with a bold backticked id, outside a fence).
+    """`[{id, rootless}]` for every `surfaces` item of a `docs/ux-surfaces.yaml`.
 
-    An entry with an invalid id is skipped: the ratchet reports it, this report only compares."""
+    Reads only what the comparison needs: each item's `id` (its first key, as the scaffold's template writes it) and
+    whether its `root` is `none: <reason>` (rootless) rather than `data-surface`. The scaffold ratchet validates the
+    full schema, so an entry with an invalid id is skipped here, but a `surfaces` item that does not open with `id:`
+    raises `ValueError` naming the line rather than reading it as nothing."""
+    lines = text.splitlines()
     entries: List[Dict[str, object]] = []
-    current: Optional[tuple] = None
-    fenced = False
+    in_surfaces = False
+    item: Optional[tuple] = None   # (id, key_indent, root_state) while inside an item
 
     def close() -> None:
-        if current is None:
-            return
-        match = _ROOT_NONE.search(" ".join(current[1]))
-        entries.append({"id": current[0], "rootless": bool(match and match.group("reason").strip(" \t—–-:(") != "")})
+        if item is not None and ID_RE.match(item[0]):
+            entries.append({"id": item[0], "rootless": item[2] == "none"})
 
-    for raw in text.splitlines():
-        if _FENCE.match(raw):
-            fenced = not fenced
+    for number, raw in enumerate(lines, 1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        if fenced:
-            continue
-        entry = _ENTRY.match(raw)
-        if entry or _HEADING.match(raw):
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent == 0 and not (in_surfaces and _ITEM_START.match(raw)):   # YAML allows `surfaces:` items unindented
             close()
-            current = None
-        if entry and ID_RE.match(entry.group("id")):
-            current = (entry.group("id"), [raw])
-        elif current is not None:
-            current[1].append(raw)
+            item = None
+            in_surfaces = raw.split("#")[0].strip() == "surfaces:"
+            continue
+        if not in_surfaces:
+            continue
+        found = _ITEM_ID.match(raw)
+        if found and (item is None or indent <= item[1] - 2):
+            close()
+            item = (_value(found.group("id")), indent + 2, "")
+            continue
+        if _ITEM_START.match(raw) and (item is None or indent <= item[1] - 2):
+            raise ValueError(f"line {number}: a surfaces item must open with `id:`")
+        if item is None or indent < item[1]:
+            continue
+        key = _KEY.match(raw.strip())
+        if indent == item[1] and key and key.group("key") == "root":
+            item = (item[0], item[1], "element" if _value(key.group("value")) else "pending")
+        elif item[2] == "pending" and indent > item[1] and key and key.group("key") == "none":
+            item = (item[0], item[1], "none" if _value(key.group("value")) else "element")
     close()
     return entries
 
 
 def read_map(root: Optional[Path], rel: Optional[str] = None) -> Dict[str, object]:
-    """The target's surface map as `{file, entries, error}`; `file` is None when it has none (not adopted: no refusal)."""
+    """The target's surface map as `{file, entries, error}`; `file` is None when it has none (not adopted: no refusal).
+
+    A map still in Markdown is read as unreadable with a note to convert it: never-walked entries are then unknown."""
     path = Path(root or ".") / (rel or DEFAULT_MAP)
     if not root or not path.is_file():
         return {"file": None, "entries": [], "error": None}
+    name = rel or DEFAULT_MAP
+    if path.suffix.lower() not in (".yaml", ".yml"):
+        return {"file": name, "entries": [], "error": f"{path.name} is a Markdown map: convert it to docs/ux-surfaces.yaml"}
     try:
-        text = path.read_text(encoding="utf-8")
+        return {"file": name, "entries": parse_map(path.read_text(encoding="utf-8")), "error": None}
     except (OSError, ValueError) as exc:
-        return {"file": (rel or DEFAULT_MAP), "entries": [], "error": f"{path.name}: {exc}"}
-    return {"file": (rel or DEFAULT_MAP), "entries": parse_map(text), "error": None}
+        return {"file": name, "entries": [], "error": f"{path.name}: {exc}"}
 
 
 def _listed(s: dict) -> Optional[dict]:
@@ -179,7 +200,7 @@ def report_items(rep: Optional[dict]) -> List[str]:
     elif not smap:
         pass    # a run without `--e2e` read no map, so it compared none
     elif rep.get("never_walked") is None:
-        items.append("no surface map in this repo (docs/ux-surface-map.md): map entries the walk never opened are unknown")
+        items.append("no surface map in this repo (docs/ux-surfaces.yaml): map entries the walk never opened are unknown")
     elif rep["never_walked"]:
         n = rep["never_walked"]
         items.append(f"never walked: {len(n)} map entr{'ies' if len(n) != 1 else 'y'} with an element root no screen showed "
