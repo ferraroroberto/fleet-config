@@ -14,6 +14,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/design_review_we
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -67,6 +68,9 @@ else:
     check(doc["preview"]["source"] == "scripts/serve.py", f"the repo's own preview script is found: {doc.get('preview')}")
     check(len(screens) == 12 and all(s["status"] == "ok" for s in screens.values()),
           f"4 pages x 3 viewports measured: {[(k, s.get('reason')) for k, s in screens.items() if s['status'] != 'ok']}")
+    walk_contexts = json.loads((run_dir / "raw.json").read_text(encoding="utf-8")).get("walk_contexts")
+    check(walk_contexts == len(measure_web.DEVICES),
+          f"the walk reuses one context per viewport for all {len(pages)} pages, not one per page ({walk_contexts})")
     check(capture.probe_listening(str(doc["base_url"]), timeout=3)["status"] != "listening", "the preview it started is stopped afterwards")
     check(all(Path(str(s.get("screenshot"))).is_file() for s in screens.values()), "a full-page screenshot per page and viewport")
 

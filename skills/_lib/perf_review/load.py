@@ -240,7 +240,11 @@ class CdpLeg:
 
 
 def _cold_sample(browser, pw, ctx_url: str, ctx_base: str, a, trusted: bool) -> Optional[int]:
-    """One more cold load in a fresh context (its own empty HTTP cache); its ready_ms, or None."""
+    """One more cold load in a fresh context (its own empty HTTP cache); its ready_ms, or None.
+
+    The empty cache is the measurement, so a context per sample stays; `--cold-samples` (default 3) bounds them
+    and they run one after another.
+    """
     ctx = browser.new_context(ignore_https_errors=not trusted, **pw.devices["Pixel 7"])
     try:
         page = ctx.new_page()

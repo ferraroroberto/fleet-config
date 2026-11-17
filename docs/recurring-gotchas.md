@@ -112,8 +112,10 @@ netsh int ipv4 show dynamicport tcp
 ```
 Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use". Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (a normal afternoon on this host oscillates ~325–800, routinely the top state).
 
+**Known burst causes:** a poller with no backoff, a retry with no backoff, a health check with no session reuse, and an ad-hoc browser capture walk that opens a browser context per screenshot — a fresh context has an empty HTTP cache, so every module and stylesheet is fetched again and each closed connection leaves a `TIME_WAIT` socket on the target port (one such walk left 180–258 on one disposable port and took every local app's outbound sockets down). Count them by port: `netstat -n -p tcp | Select-String TIME_WAIT | Select-String ':<port> '`. The walk's fix is one reused context and page, bounded parallelism, and `TIME_WAIT` on the target port held under about 40 (`tests/e2e/_paced_browser.py` in a repo that vendors it; the rule is the scaffold's `docs/playwright-ui-testing.md`, "One paced, reused browser for every walk"). A worker brief that drives a browser carries that point (`.claude/skills/chief/dispatch-brief.md`).
+
 **Fix hierarchy — cheapest and most targeted first:**
-1. Fix the leak: stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
+1. Fix the leak: stop whatever opens short-lived outbound connections in a burst/loop (see the known causes above).
 2. Pool connections: module-level `requests.Session` (or equivalent), never a bare `requests.get`/`urlopen` per call inside a loop; back off a failing endpoint instead of retrying at full rate; never point an e2e suite at a live production app.
 3. Last resort, machine-level, needs elevation + a reboot — **Roberto's call, never applied unattended by an agent:** `TcpTimedWaitDelay = 30` at `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters` (valid 30–300), ~4x effective capacity without touching the range. Re-measure its effect on the Windows 11 stack after applying, don't assume it.
 

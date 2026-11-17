@@ -33,7 +33,11 @@ def _size(text: str) -> Dict[str, int]:
 
 
 def _leg(browser, args: argparse.Namespace, label: str, size: Dict[str, int], theme: str) -> Dict[str, object]:
-    """Load the URL in a fresh context for one viewport x theme, reach the state, screenshot it."""
+    """Load the URL in a fresh context for one viewport x theme, reach the state, screenshot it.
+
+    A leg owns its context because the colour scheme and the pre-paint theme seed are context-level and must not
+    leak between legs. The loop is the explicit viewport x theme list the caller passes, walked one leg at a time.
+    """
     png = Path(args.out) / f"{label}-{theme}.png"
     ctx = browser.new_context(viewport=size, color_scheme=theme, ignore_https_errors=True)
     try:
