@@ -99,6 +99,22 @@ needs to unblock its own step stays in that lane.
 "UI proof per `/issue-finish` step 3b: capture before and after, `ui_proof build`
 the `.proof/<PR>` page, `ui_proof check --pr` before merge, send the page privately."
 
+**A brief whose work drives a browser (a screenshot walk, a design pass, a
+docs capture, an e2e run) adds the browser-walk point, never left to the
+worker's habit** (fleet-config#2106). One browser context and one page, reused
+for every capture: a context per screenshot starts with an empty HTTP cache,
+so every module and stylesheet is fetched again and each closed connection
+parks a `TIME_WAIT` socket on the target port, and every local web app on the
+host draws from that one ephemeral pool (the 2026-11-17 walk took the whole
+fleet's ports down for minutes). Parallelism is stated in the brief and
+bounded: one page at a time unless it names a number (at most 4), never a
+thread pool over `new_context()`. Keep `TIME_WAIT` on the target port under
+about 40 while walking and pause when it is above. Use the scaffold's vendored
+`tests/e2e/_paced_browser.py` (`launch_paced_walk`; `docs/playwright-ui-testing.md`,
+"One paced, reused browser for every walk") where the repo has it. A pass that
+truly needs a clean cache or storage per capture says why in the walk's code.
+Never change the machine's port range or `TcpTimedWaitDelay`.
+
 **A brief for a timing or retry fix asks for a deterministic proof first.**
 Reproduce the race with an injected delay, a fake clock, a mocked timeout or a
 readiness signal, add a mutation check, and guard the fix with that test. Ask

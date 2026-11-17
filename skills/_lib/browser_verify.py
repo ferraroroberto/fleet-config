@@ -128,6 +128,14 @@ def playwright_launch_kwargs(profile_dir: str) -> Dict[str, object]:
 
 THEMES = ("light", "dark")
 
+# A context per capture refetches every asset on an empty cache and leaves a TIME_WAIT socket per closed
+# connection on the app's port, a pool every local web app shares: drive CAPTURES through one context.
+WALK_PACING = (
+    "one browser context and one page for every capture (change theme with page.emulate_media, never a new "
+    "context); one page at a time; keep TIME_WAIT on the app port under ~40 (tests/e2e/_paced_browser.py "
+    "where the repo vendors it)"
+)
+
 
 def _slug(view: str) -> str:
     """A filesystem-safe stem for a view path (`/settings` -> `settings`)."""
@@ -354,6 +362,7 @@ def cmd_plan(repo: Path, base_url: str, iab_available: bool, check_app: bool) ->
     print(f"LAUNCH_KWARGS={json.dumps(playwright_launch_kwargs(str(Path(scratch) / 'profile')))}")
     print(f"INIT_SCRIPT={WEBDRIVER_INIT_SCRIPT}")
     print(f"CAPTURES={json.dumps(capture_plan(key_views, base_url, scratch))}")
+    print(f"PACING={WALK_PACING}")
     return 0
 
 

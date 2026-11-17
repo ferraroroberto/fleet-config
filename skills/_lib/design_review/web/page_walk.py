@@ -176,7 +176,10 @@ def measure_page(page: Page, url: str, device: str, params: Dict[str, Any], shot
 
 
 def cold_load(browser: Any, url: str) -> Dict[str, Any]:
-    """One cold phone-profile load under throttling: Web Vitals, bytes and requests, fonts, render-blocking hosts."""
+    """One cold phone-profile load under throttling: Web Vitals, bytes and requests, fonts, render-blocking hosts.
+
+    A fresh context per page is the measurement itself (empty cache, storage and workers), one load per page.
+    """
     ctx = browser.new_context(**DEVICES["phone"], reduced_motion="reduce")
     try:
         page = ctx.new_page()
@@ -223,26 +226,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     base = args.url.rstrip("/")
     pages = [p for p in args.pages.split(",") if p]
     devices = [d for d in args.devices.split(",") if d in DEVICES]
-    raw: Dict[str, Any] = {"base_url": base, "devices": devices, "pages": {}}
+    raw: Dict[str, Any] = {"base_url": base, "devices": devices, "pages": {}, "walk_contexts": 0}
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
+        # One context and one page per device for the whole walk, walked one page at a time. A context per
+        # page starts with an empty HTTP cache and refetches every stylesheet and script, and every closed
+        # connection leaves a TIME_WAIT socket on the preview port, a pool shared by every local web app.
+        contexts = {d: browser.new_context(**DEVICES[d], reduced_motion="reduce") for d in devices}
+        walkers = {d: ctx.new_page() for d, ctx in contexts.items()}
+        raw["walk_contexts"] = len(contexts)
         try:
             for path in pages:
                 entry: Dict[str, Any] = {"devices": {}}
                 for device in devices:
-                    ctx = browser.new_context(**DEVICES[device], reduced_motion="reduce")
-                    try:
-                        page = ctx.new_page()
-                        entry["devices"][device] = guarded(measure_page, page, base + path, device, params,
-                                                           out / "screens" / f"{device}-{slug(path)}.png")
-                    finally:
-                        ctx.close()
+                    entry["devices"][device] = guarded(measure_page, walkers[device], base + path, device, params,
+                                                       out / "screens" / f"{device}-{slug(path)}.png")
                     print(f"walked {device} {path}", file=sys.stderr, flush=True)
                 if not args.no_perf:
                     entry["perf"] = guarded(cold_load, browser, base + path)
                     print(f"cold load {path}", file=sys.stderr, flush=True)
                 raw["pages"][path] = entry
         finally:
+            for ctx in contexts.values():
+                ctx.close()
             browser.close()
     runtime_files.save_text(out / "raw.json", json.dumps(raw, indent=1), encoding="utf-8")
     return 0
