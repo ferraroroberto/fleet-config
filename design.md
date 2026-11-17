@@ -61,7 +61,7 @@ typography:
   body-sm:    { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 400, lineHeight: 1.45 }   # 14px — every secondary line: paths, status, "last run", row meta, helper copy
   label:      { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 600, lineHeight: 1.1 }   # 14px — field and control labels, button text
   caption:    { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1 }   # 12px — chips, badges and timestamps only
-  overline:   { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.06em", textTransform: uppercase }   # 12px — list group headers only (date groups); the one legal caps use
+  overline:   { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.06em", textTransform: uppercase }   # 12px — list group headers only (date groups); the one legal caps use, never a Settings group label (that is `settings-group.label*`)
 rounded:
   sm:   8px
   md:   12px
@@ -100,8 +100,9 @@ components:
   chat-turn:      { promptFill: "{colors.accent-soft}", promptBorder: "{colors.accent-border-soft}", promptText: "{colors.fg}", promptMaxWidth: "min(85%, 560px)", promptRounded: "{rounded.lg} {rounded.lg} 4px {rounded.lg}", headerMinHeight: "{rows.sm}", stepLineMinHeight: "{rows.sm}", stepLine: "{typography.body-sm}", stepLineColor: "{colors.fg-muted}", partsGap: 12px }   # one exchange with an agent: prompt bubble, then the agent's turn as one block on the canvas (no card)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
-  list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
-  action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
+  list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat rows spanning the card's width on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
+  settings-group: { pageInset: 20px, rounded: 20px, border: none, contentPadding: "0 {spacing.md}", labelSize: 1rem, labelWeight: 700, labelColor: "{colors.fg-muted}", labelCase: sentence }   # the full Settings page: iOS-style inset groups, label outside and above each card (the vendored settings-group, project-scaffolding#850)
+  action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}", filterSheetAt: 2 }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, statusReadout: 1, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + Settings gear, always both, on every tab, plus at most one status readout
@@ -776,8 +777,15 @@ hand-picked per app.
   a `matchMedia` change so one renderer and one set of handlers serve
   both. A non-modal `<dialog>` cannot host the pane, because the nav hides
   whenever any dialog is open (voice-transcriber#266).
+- **list section** — every list section is **inset**, on a phone and on
+  desktop: rounded `card`s inside the page gutter (`spacing.gutter`), never
+  rows that run edge to edge of the screen. A full-bleed list section is not
+  used. One app or screen going full-bleed while its siblings stay inset was
+  the real inconsistency (task-os#723; rationale in `docs/design-system.md`,
+  fleet decision project-scaffolding#847). The rows inside the card are the
+  `list-row` / `action-row` below, which span the card's own width.
 - **list-row** (`list-row`) — how a card renders a **repeating list** of entries
-  (history, activity, request log): flat full-bleed rows, `list-row.rowPadding`
+  (history, activity, request log): flat rows spanning the card's width, `list-row.rowPadding`
   (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
   (`border-muted`) top hairline on every row after the first (`.row + .row`) —
   **never** nested `canvas-subtle` cards with their own border/radius per entry.
@@ -867,7 +875,13 @@ hand-picked per app.
   changes, Clear beside Done, and on a phone a footer that ends the sheet in
   the flow instead of pinned over its last rows. Its trigger is an
   `icon-button` beside the field that shows the active count, with an
-  accessible name that spells the filters out (task-os#395). **Inside a
+  accessible name that spells the filters out (task-os#395). **One sheet,
+  named Filters & sort:** a view with two or more filters, sorts or view
+  toggles (`action-row.filterSheetAt`: a Week/Status switch, a people
+  filter, "show all") shows one filter field, and every one of them sits in
+  that single sheet, never as a second control row on the view. The count
+  badge on the trigger is how filtered-out content never disappears
+  silently (project-scaffolding#847). **Inside a
   card** (a glance card's rows) the row drops its own inline padding so its
   text lines up with the card's text edge, and a row that does nothing on
   tap drops its pressed background (grocery-shopping-automation#257–#261
@@ -928,9 +942,10 @@ hand-picked per app.
   only (a `mouse` `pointerType` is ignored), the row sets
   `touch-action: pan-y`, one row rests open at a time, a scroll or a tap
   elsewhere closes it, and reduced motion snaps instead of sliding. A
-  swiping list may run **full-bleed on a phone** (under 520px: edge to
-  edge, no side border, radius 0, its text keeping its inset; shipped in
-  app-launcher#1503, its on-device check still open). Reference impl:
+  swiping list is **inset like every list**: the swipe works on rows inside a
+  card, and the reveal panes **clip to the card's rounded corners** (the
+  card's `overflow: hidden`), so a pane never squares off the radius. Swipe
+  never needs full-bleed (task-os#723; project-scaffolding#847). Reference impl:
   app-launcher session rows (app-launcher#1025, tap the row + one kebab;
   every tab on the one anatomy since app-launcher#1432; swipe since
   app-launcher#1503).
@@ -1050,8 +1065,15 @@ hand-picked per app.
   is status colour as decoration ("modes are not alarms", the status chip).
   Its mode toggles (Append, Incognito) are labelled pills beside or under
   it, never glyph-only (voice-transcriber#262, owner decision 1 on #260).
-- **settings group** — the Settings pane is **inset groups** under
-  `overline` headers: each row a lead `icons.size.title` glyph, a label, the
+- **settings group** (`settings-group`) — Settings is a **full page** opened
+  from the header gear, never a small pop-up (its back/close sits in the
+  header). On a phone it fills the screen; on desktop it is a centred column
+  at `layout.measure`. It is **iOS-style inset groups**: each card inset
+  `settings-group.pageInset` (about 20px) from the page edge, radius about
+  20px, **no border**, its content `spacing.md` inside. A **group label sits
+  outside and above its card**: sentence case, 16px/700 (`labelSize`,
+  `labelWeight`), `fg-muted`, never all caps. The `overline` role is not a
+  Settings label (it stays the date-group header). Each row a lead `icons.size.title` glyph, a label, the
   current value in `fg-muted` and a chevron opening a detail sheet. A setting
   changed often stays inline (a `switch`, a segmented control). A setting
   saves as it changes (text and numbers on blur), with a `toast`; an editor
@@ -1386,7 +1408,9 @@ byte-for-byte components.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Do** ship the persisted Small / Default / Large text-size setting (`<app>.textsize`, stamped pre-paint as `html[data-textsize]`) — it is what makes the zoom lock acceptable.
-- **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
+- **Do** render a repeating list of entries (history, activity log) as flat rows spanning their card on a hairline divider — never nested cards per entry.
+- **Do** inset every list section (rounded cards inside the gutter) on phone and desktop, keep swipe actions on those inset rows with the reveal clipped to the card's radius, and put every filter, sort and view toggle of a view with two or more into one **Filters & sort** sheet whose trigger shows the active count.
+- **Do** open Settings as a full page from the header gear: inset groups about 20px in, radius about 20px, no border, with a sentence-case 16px/700 muted label above each card.
 - **Do** make a list row's primary action the row itself, with one leading slot (avatar, toggle or time), one trailing kebab for the rest, one shared renderer per kind of row (a variation is an optional field, never a fork), and a filter field above any list that can exceed ~12 rows.
 - **Do** give every fact one home: other tabs show the same component in a smaller form, or nothing.
 - **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.
@@ -1402,6 +1426,7 @@ byte-for-byte components.
 - **Don't** draw inline code at `caption` size or on `canvas-subtle`, and don't give each fragment of one agent turn its own card and header.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
+- **Don't** run a list section full-bleed (edge to edge), open Settings as a small pop-up, or label a Settings group in all caps.
 - **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. Only a view whose content is two-dimensional (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window, and the app declares it in `wide_views`.
 - **Don't** use status colors decoratively — they signal state only: chip only an exception, in the one status chip tone map (never a chip style per surface, never a `success` chip), and let the avatar badge alone say a process is alive.
 - **Don't** call the browser's `confirm()`, `prompt()` or `alert()` — confirm, rename and detail use the vendored dialog.
