@@ -64,7 +64,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import measure, plan
+from . import measure, plan, surface_ids
 from .rubric import Rubric, Rule, resolve_params, resolve_threshold
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # skills/_lib, as design_review.rubric does
@@ -946,6 +946,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "absent_screens": [str(s.get("id")) for s in doc.get("screens", []) if s.get("status") == ABSENT],
         "theme_mismatch_screens": theme_mismatches(doc.get("screens", [])),
         "overlay_coverage": overlay_coverage(doc.get("screens") or []),
+        "surface_ids": surface_ids.report(doc),
         "rules": rules,
         "categories": categories,
         "overall": score_overall(categories, rubric),

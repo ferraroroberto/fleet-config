@@ -306,6 +306,11 @@ def _print_summary(doc: Dict[str, object]) -> None:
     # Overlay surfaces no walked screen opened: coverage, never part of the grade above.
     print(f"NOT_WALKED={cov['not_walked_count'] if cov.get('status') == 'measured' else 'unknown'}"
           + (f" ({','.join(cov.get('not_walked') or [])})" if cov.get("not_walked") else ""))
+    sid = doc.get("surface_ids") if isinstance(doc.get("surface_ids"), dict) else {}
+    # Surface ids vs the walk (surface_ids.py): coverage, never part of the grade. `unknown` = nothing was listed.
+    print(f"SURFACE_NO_ID={len(sid.get('no_id') or []) if sid.get('status') == 'measured' else 'unknown'}")
+    never = sid.get("never_walked")
+    print(f"SURFACE_NEVER_WALKED={len(never) if never is not None else 'unknown'}")
     j = doc.get("judgment")
     print(f"JUDGMENT={(j.get('status') or 'unknown') if isinstance(j, dict) else 'none'}")
 

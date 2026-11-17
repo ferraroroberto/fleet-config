@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from _suite import STATE, _h, check  # noqa: E402
-from design_review import capture, measure, plan  # noqa: E402
+from design_review import capture, filing, measure, plan, surface_ids  # noqa: E402
 from design_review import evaluate as ev
 from design_review import report as report_mod  # noqa: E402
 from design_review_support import (  # noqa: E402
@@ -580,5 +580,89 @@ check("e2e suite not captured: E2E_FAILED" in report_mod._method(_ev_e) and "e2e
 _doc_e["e2e"] = dict(_e_ok)
 check("1 surface captured by the app&#x27;s own e2e suite" in report_mod._method(ev.evaluate(_doc_e, rubric, _specs("compliant"))),
       "the report counts the surfaces the e2e suite captured")
+
+# ---- #2101: surfaces the run opened with no data-surface id, and map entries it never opened ----
+
+_MAP = """# Map
+
+## Chrome
+
+**`today.add` Add dialog** — *Root:* `data-surface`. *Reach:* the plus button.
+
+**`today.row-menu` Row menu** — *Root:* `data-surface`. *Reach:* a kebab.
+
+**`today.swipe` Swipe** — *Root:* none — a gesture has no element of its own.
+
+```
+**`fenced.entry` Not an entry**
+```
+"""
+
+
+def _sid_screen(name, ids, roots, source="e2e"):
+    metrics = {"coverage": {"overlays": [], "overlay_count": 0, "surface_ids": ids, "open_roots": roots}}
+    return {"id": f"desktop-light-{name or 'walk'}", "status": "ok", "source": source, "surface": name, "metrics": metrics}
+
+
+_entries = surface_ids.parse_map(_MAP)
+check(_entries == [{"id": "today.add", "rootless": False}, {"id": "today.row-menu", "rootless": False},
+                   {"id": "today.swipe", "rootless": True}],
+      f"the map reader takes bold-backticked ids outside a fence and reads `Root: none — reason` as root-less -- {_entries}")
+_map_doc = {"file": "docs/ux-surface-map.md", "entries": _entries, "error": None}
+
+
+def _sid(screens, smap=_map_doc):
+    return surface_ids.report({"screens": screens, "surface_map": smap} if smap is not None else {"screens": screens})
+
+
+_bare = _sid([_sid_screen("today.add", [], [{"key": "dialog#add", "id": None}]),
+              _sid_screen("today.row-menu", ["today.row-menu"], [{"key": "div[role=menu]", "id": "today.row-menu"}])])
+check(_bare["status"] == "measured" and [r["surface"] for r in _bare["no_id"]] == ["today.add"]
+      and _bare["no_id"][0]["root"] == "dialog#add" and _bare["no_id"][0]["found"] is None,
+      f"an e2e capture whose open dialog carries no data-surface is listed under 'opened with no id' -- {_bare}")
+_diff = _sid([_sid_screen("today.add", ["today.other"], [{"key": "dialog#add", "id": "today.other"}])])
+check(_diff["no_id"] and _diff["no_id"][0]["found"] == "today.other"
+      and "page shows `today.other`" in surface_ids.report_items(_diff)[0],
+      f"an id that differs from the capture name is listed and names the id the page carries -- {_diff}")
+_never = _sid([_sid_screen("today.add", ["today.add"], [{"key": "dialog#add", "id": "today.add"}])])
+check(_never["no_id"] == [] and _never["never_walked"] == ["today.row-menu"],
+      f"a map entry no screen showed is 'never walked'; a root-less entry never is -- {_never}")
+_clean = _sid([_sid_screen("today.add", ["today.add"], [{"key": "dialog#add", "id": "today.add"}]),
+               _sid_screen("today.row-menu", ["today.row-menu"], [{"key": "div[role=menu]", "id": "today.row-menu"}])])
+check(_clean["status"] == "measured" and _clean["no_id"] == [] and _clean["never_walked"] == []
+      and surface_ids.report_items(_clean) == [] and surface_ids.summaries(_clean) == [],
+      f"every opened surface carrying the id its capture names reports both lists empty -- {_clean}")
+_rootless = _sid([_sid_screen("today.swipe", [], [])])
+check(_rootless["no_id"] == [], "a capture named for a root-less map entry is not an id-less surface")
+_walked = _sid([_sid_screen(None, ["today.row-menu"], [{"key": "dialog#x", "id": None}], source=None)])
+check([r["root"] for r in _walked["no_id"]] == ["dialog#x"] and "today.row-menu" not in _walked["never_walked"],
+      f"a walked screen's open root with no id is listed, and an id it shows counts as walked -- {_walked}")
+_nomap = _sid([_sid_screen("today.add", ["today.add"], [])], smap={"file": None, "entries": [], "error": None})
+check(_nomap["never_walked"] is None and any("no surface map" in i for i in surface_ids.report_items(_nomap)),
+      "no map in the repo: never-walked is unknown and said so, never an empty list")
+_plain = _sid([_sid_screen("today.add", ["today.add"], [])], smap=None)
+check(_plain["map"] is None and surface_ids.report_items(_plain) == [], "a run that read no map says nothing about one")
+_unlisted = surface_ids.report({"screens": [{"id": "a", "status": "ok", "metrics": {"coverage": {"overlays": []}}}], "surface_map": _map_doc})
+check(_unlisted["status"] == "unknown" and _unlisted["never_walked"] is None and surface_ids.summaries(_unlisted) == [],
+      "metrics with no surface listing are unknown, never 'nothing missed'")
+_both = _sid([_sid_screen("today.add", [], [{"key": "dialog#add", "id": None}])])
+_sum = {s["id"]: s for s in surface_ids.summaries(_both)}
+check(set(_sum) == {"SURF-01", "SURF-02"} and "today.add" in _sum["SURF-01"]["detail"],
+      f"the filing carries one line per list that has entries -- {_sum}")
+_body = filing.file_body(_doc("compliant") | {"surface_ids": _both}, "r1", None, "", extra=list(_sum.values()),
+                         today="2026-01-01", accepted={}, problems=[])["body"]
+check("**SURF-01**" in _body and "**SURF-02**" in _body, "the managed issue body lists both surface-id findings")
+_lines = filing.parse_body(_body)["sections"][filing.SEC_FINDINGS]
+check(surface_ids.carry_statuses(_lines, _clean) == {"SURF-01": "pass", "SURF-02": "pass"}
+      and surface_ids.carry_statuses(_lines, _unlisted) == {"SURF-01": "unmeasured", "SURF-02": "unmeasured"}
+      and surface_ids.carry_statuses(_lines, _nomap) == {"SURF-01": "pass", "SURF-02": "unmeasured"},
+      "a line that no longer fails is fixed only when the comparison ran; an unrun comparison carries it, never clears it")
+_ev_sid = ev.evaluate(_doc("compliant") | {"surface_map": _map_doc}, rubric, _specs("compliant"))
+check(_ev_sid["surface_ids"]["status"] in ("measured", "unknown")
+      and [r["status"] for r in _ev_sid["rules"]] == [r["status"] for r in ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))["rules"]],
+      "evaluate carries the surface-id record and it never moves a rule")
+check(capture.read_surface_map(plan.Target("t", None, "http://x"))["file"] is None
+      and surface_ids.read_map(throwaway_dir("sid-empty-"))["file"] is None,
+      "a target with no root or no map file reads as no map: a note, never a refusal")
 
 _h.report_and_exit("test_plan_and_e2e")

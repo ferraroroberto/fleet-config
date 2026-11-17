@@ -232,3 +232,15 @@ for _dev in ("desktop", "iphone"):
           f"TOUCH-02 {_dev}: touching flow controls below the fold still overlap (#1155) -- {_t.get('overlaps')}")
     check(_m.get("nav", {}).get("pane_header_visible") is True,
           f"TOUCH-02 {_dev}: the scroll that brought the pair into view is put back before the next section (#1155)")
+
+# surface ids: an open overlay root that carries no `data-surface` is listed, one that does is not (#2101)
+_, ids_none, _ = _overlay_walk("", _drawer_step)
+_, ids_drawer, _ = _overlay_walk("ids", _drawer_step)
+_, ids_all, _ = _overlay_walk("allids", _drawer_step)
+_roots = lambda res: sorted(r["root"] for r in (res.get("surface_ids") or {}).get("no_id") or [])  # noqa: E731
+check(_roots(ids_none) == ["aside#taskDrawer", "dialog#confirmDialog"],
+      f"a walk lists each open overlay root with no data-surface (#2101) -- {ids_none.get('surface_ids')}")
+check(_roots(ids_drawer) == ["dialog#confirmDialog"],
+      f"a root that carries a data-surface id is not listed (#2101) -- {ids_drawer.get('surface_ids')}")
+check(ids_all["surface_ids"]["status"] == "measured" and _roots(ids_all) == [],
+      f"every open root carrying an id reports an empty list, not an unknown one (#2101) -- {ids_all.get('surface_ids')}")

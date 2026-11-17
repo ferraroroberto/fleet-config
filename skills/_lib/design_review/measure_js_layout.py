@@ -427,7 +427,19 @@ MEASURE_JS_LAYOUT = r"""  // ---- layout
       const key = keyOf(el), open = isOpen(el), seen = byKey.get(key);
       if (seen) seen.open = seen.open || open; else byKey.set(key, {key, kind: kindOf(el), open}); });
     const all = [...byKey.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    return { overlays: all.slice(0, CAP), overlay_count: all.length };
+    // The ids the page declares for the surfaces it shows now (`data-surface`, project-scaffolding's
+    // ux-surface-map.md): every visible carrier, and for each open overlay root (a menu counts here though it is not
+    // a coverage overlay) its own or nearest ancestor's id, null when none carries one. surface_ids.py compares them
+    // with the capture name and the map; a root that names no surface is exactly what that comparison finds.
+    const shown = (el) => !el.closest('[aria-hidden=true], [inert]') && visible(el);
+    const ids = new Set();
+    document.querySelectorAll('[data-surface]').forEach(el => { if (!(EXCLUDE && el.closest(EXCLUDE)) && shown(el)) ids.add(el.getAttribute('data-surface')); });
+    const roots = [];
+    document.querySelectorAll(OVERLAYS + ', [role=menu]').forEach(el => { if (EXCLUDE && el.closest(EXCLUDE)) return;
+      if (!isOpen(el)) return; const carrier = el.closest('[data-surface]');
+      roots.push({key: keyOf(el), id: carrier ? carrier.getAttribute('data-surface') : null}); });
+    return { overlays: all.slice(0, CAP), overlay_count: all.length,
+             surface_ids: [...ids].sort().slice(0, CAP), open_roots: roots.slice(0, CAP) };
   });
 
   // ---- inventory: every visible control by kind and component, every text role by the fonts it renders in (#1497).
