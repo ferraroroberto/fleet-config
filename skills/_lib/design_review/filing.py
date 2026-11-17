@@ -71,6 +71,7 @@ from design_lint.accepted import accepted_array  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 
 from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
+from . import surface_ids  # noqa: E402
 from .report import SEVERITY_ORDER, worst_screen  # noqa: E402
 
 KIND = "design-review"
@@ -439,7 +440,11 @@ def file_run(run_dir: Path, repo: Optional[str], dry_run: bool, root: Optional[P
     if not repo:
         raise ValueError("no --repo given and the target's origin remote is not a GitHub repo")
     existing = fetch(repo, KIND)
-    out = file_body(doc, run_id, root, str(existing.get("body") or ""), today)
+    body = str(existing.get("body") or "")
+    sid = doc.get("surface_ids")
+    sid_lines = parse_body(body)["sections"].get(SEC_FINDINGS) or []
+    out = file_body(doc, run_id, root, body, today, extra=surface_ids.summaries(sid),
+                    extra_statuses=surface_ids.carry_statuses(sid_lines, sid))
     out.update({"repo": repo, "issue": existing.get("number"), "duplicates": existing.get("duplicates") or [],
                 "dry_run": dry_run, "url": None, "run_id": run_id, "target": doc.get("target")})
     body_path = run_dir / ISSUE_BODY_NAME

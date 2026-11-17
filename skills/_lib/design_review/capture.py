@@ -68,6 +68,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import browser_verify  # noqa: E402
 import git_run  # noqa: E402
+import ux_surface  # noqa: E402
 from fleet_core import (
     fleet_toml,  # noqa: E402
     hooks_state,  # noqa: E402
@@ -75,7 +76,7 @@ from fleet_core import (
 )
 from no_window import NO_WINDOW  # noqa: E402
 
-from . import measure  # noqa: E402
+from . import measure, surface_ids  # noqa: E402
 from .evaluate import theme_mismatches  # noqa: E402
 from .plan import (  # noqa: E402
     E2E_HOOK,
@@ -432,8 +433,16 @@ def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], d
     doc = _measure_walk(target, rubric, spec_light, devices, python_override, scaffold, run_dir, walk_timeout, synthetic)
     if e2e:
         doc["e2e"] = measure_e2e(doc, target, run_dir, scaffold)
+        doc["surface_map"] = read_surface_map(target)
         _write(doc, run_dir)
     return doc
+
+
+def read_surface_map(target: Target) -> Dict[str, object]:
+    """The target's UX surface map for the surface-id comparison; `file` is None when it has none (no refusal)."""
+    root = Path(target.root) if target.root else None
+    rel = ux_surface.surface_map_file(root) if root else None
+    return surface_ids.read_map(root, rel)
 
 
 def _measure_walk(target: Target, rubric: Rubric, spec_light: Dict[str, str], devices: List[str],

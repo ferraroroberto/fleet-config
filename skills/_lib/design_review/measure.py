@@ -54,7 +54,9 @@ present on a successful run:
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
-              DOM, open or not; walk coverage for the report, never a rule input
+              DOM, open or not; walk coverage for the report, never a rule input.
+              surface_ids [id], open_roots [{key, id|null}] -- the `data-surface` ids visible now, and each open
+              overlay root's own or nearest ancestor's id (null: none); surface_ids.py compares them
     inventory unmeasured (null, or why no component catalog was passed in), controls [{key, kind, component, role,
               label, family, px, weight, n, options?, group?}] (one entry per distinct rendering, `n` elements, capped at
               INVENTORY_CAP; `options` on a select or combobox is its option count -- a <select>'s, a datalist's or an
@@ -404,7 +406,7 @@ def metric_paths() -> List[str]:
         "dialogs": ["count", "with_commit", "quiet_commit", "quiet_commit_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
-        "coverage": ["overlays", "overlay_count"],
+        "coverage": ["overlays", "overlay_count", "surface_ids", "open_roots"],
         "inventory": ["unmeasured", "controls", "controls_count", "kinds", "components", "text", "text_count"],
         "glance": ["state", "card", "first_px", "settled_px", "grew_px", "below", "changes", "change_count", "idle", "idle_ms", "pending"],
     }

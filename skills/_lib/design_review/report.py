@@ -72,7 +72,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 
 from fleet_core import runtime_files
 
-from . import mockups
+from . import mockups, surface_ids
 from .evaluate import EVIDENCE_ITEMS
 
 SEVERITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
@@ -406,6 +406,7 @@ def _method(doc: dict) -> str:
     elif cov.get("status") == "unknown" and ok:
         items.append("overlay coverage not established: no measured screen listed its overlay surfaces (metrics captured "
                      "before the listing existed, or the listing failed), so surfaces the walk never opened are unknown, not none")
+    items.extend(surface_ids.report_items(doc.get("surface_ids")))
     for s in bad:
         items.append(f"screen {s.get('id')} not measured: {s.get('reason') or 'walk error'} — its rules report unmeasured, never pass")
     for s in absent:

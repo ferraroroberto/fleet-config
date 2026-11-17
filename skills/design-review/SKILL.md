@@ -177,7 +177,13 @@ per failing rule). Prints `EVALUATE=`, `GRADE=`, `SCORE=`,
 `[popover]`, `[role=dialog]`) present in the DOM that no walked screen
 showed open, read from the DOM only. Coverage, never graded: the report's
 method list names them and asks for an `extra_steps` entry; carry the line
-into the summary (fleet-config#1353). Keep
+into the summary (fleet-config#1353). With
+`measure --e2e` it also prints `SURFACE_NO_ID=<n>|unknown` (surfaces the run
+opened with no matching `data-surface`) and
+`SURFACE_NEVER_WALKED=<n>|unknown` (map entries with an element root it never
+opened, read from the repo's `docs/ux-surface-map.md`); both are coverage, and
+`file` lists them as `SURF-01` / `SURF-02` in the managed issue; no map means
+`unknown` plus a note, never a refusal (fleet-config#2101). Keep
 `evaluate.json` in the run directory — #974 diffs runs from it.
 
 ### 4. Judge — the bounded checklist (skip with `--no-judgment`)
