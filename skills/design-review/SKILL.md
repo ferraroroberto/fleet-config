@@ -134,7 +134,8 @@ Prints `TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE= DETAIL=`. Read `PROBE=`:
 Runs the walk as a child of the **target repo's** `.venv` interpreter (Playwright
 lives there; this repo's venv is stdlib-only), over the fixed matrix `iphone` (WebKit, 390px) / `android` (Chromium) / `desktop` (Chromium) ×
 light / dark — every primary tab, every `<dialog>`, the Settings pane behind
-the header gear, and any `[design.review].extra_steps` the target's `.fleet.toml` opts into. A full
+the header gear, and any `[design.review].extra_steps` the target's `.fleet.toml` opts into (a step that
+opens a sheet, dialog or menu declares `overlay = true`, and `primary = "<selector>"` for its main button, so LAYOUT-11 can hold it to the phone screen). A full
 app-launcher matrix takes ~4 minutes and leaves ~144 PNGs; run it once per
 review, never in a loop.
 

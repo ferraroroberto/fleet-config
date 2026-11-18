@@ -87,6 +87,7 @@ DERIVED_METRICS = (
     "feedback.empty_state_no_action",
     "layout.repeated_turn_header",
     "glance.card_growth_px",
+    "fit.violation_count",
 )
 
 
@@ -109,6 +110,7 @@ class Rule:
     mockup: str
     threshold_token: Optional[str] = None
     adopt: str = ""
+    absent_unmeasured: bool = False  # a step declared `overlay` whose target never attached is `unmeasured`, not absent
     theme_dependent: bool = False  # judges the rendered palette: unmeasured on a screen that did not render the requested theme
     devices: List[str] = field(default_factory=list)
     screens: List[str] = field(default_factory=list)
@@ -219,6 +221,7 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             threshold_token=str(raw["threshold_token"]) if raw.get("threshold_token") else None,
             adopt=str(raw.get("adopt") or "").strip(),
             theme_dependent=bool(raw.get("theme_dependent", False)),
+            absent_unmeasured=bool(raw.get("absent_unmeasured", False)),
             severity=str(raw["severity"]), standard=str(raw["standard"]), fix_template=str(raw["fix_template"]),
             owner=str(raw["owner"]), mockup=str(raw["mockup"]),
             devices=[str(d) for d in raw.get("devices", []) or []],

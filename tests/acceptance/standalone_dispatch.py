@@ -346,6 +346,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "unmeasured lattice -- a dead target, failed tab or failed section "
      "is never read as a pass -- are testable on their own (fleet- "
      "config#971)"),
+    ("design_review_overlay_fit", "design_review/test_overlay_fit.py",
+     "design_review's LAYOUT-11 -- a too-tall sheet fails and a fitting "
+     "one passes, a menu past the screen fails, and a dialog that "
+     "rendered no box or a step whose overlay never opened is not "
+     "confirmed, never a pass -- are testable on their own (fleet- "
+     "config#2110)"),
     ("design_review_plan", "design_review/test_plan_and_e2e.py",
      "design_review's plan resolution, the missing-target and theme- "
      "mismatch states, the synthetic instance and `measure --e2e` are "

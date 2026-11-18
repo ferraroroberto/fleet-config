@@ -234,7 +234,8 @@
    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
    "WARNING FAIL desktop-light-root-crash: boom",
    "WARNING FAIL desktop-light-root-waiterr: element detached",
-   "INFO ok desktop-light-home-fine"
+   "INFO ok desktop-light-home-fine",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -274,6 +275,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -474,6 +478,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -557,6 +564,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -589,6 +599,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -633,6 +646,9 @@
       "#danger"
      ]
     ]
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -683,6 +699,9 @@
     "#crash"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -715,6 +734,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -1118,7 +1140,8 @@
    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
    "WARNING FAIL desktop-light-root-crash: boom",
    "WARNING FAIL desktop-light-root-waiterr: element detached",
-   "INFO ok desktop-light-home-fine"
+   "INFO ok desktop-light-home-fine",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -1158,6 +1181,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -1358,6 +1384,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -1398,6 +1427,9 @@
     }
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -1430,6 +1462,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -1474,6 +1509,9 @@
       "#danger"
      ]
     ]
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -1524,6 +1562,9 @@
     "#crash"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -1556,6 +1597,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -1959,7 +2003,8 @@
    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
    "WARNING FAIL desktop-light-root-crash: boom",
    "WARNING FAIL desktop-light-root-waiterr: element detached",
-   "INFO ok desktop-light-home-fine"
+   "INFO ok desktop-light-home-fine",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -1999,6 +2044,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -2199,6 +2247,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -2249,6 +2300,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -2281,6 +2335,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -2325,6 +2382,9 @@
       "#danger"
      ]
     ]
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -2375,6 +2435,9 @@
     "#crash"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -2407,6 +2470,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -2810,7 +2876,8 @@
    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
    "WARNING FAIL desktop-light-root-crash: boom",
    "WARNING FAIL desktop-light-root-waiterr: element detached",
-   "INFO ok desktop-light-home-fine"
+   "INFO ok desktop-light-home-fine",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -2850,6 +2917,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -3050,6 +3120,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -3104,6 +3177,9 @@
     "gear"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -3136,6 +3212,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -3180,6 +3259,9 @@
       "#danger"
      ]
     ]
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -3230,6 +3312,9 @@
     "#crash"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -3262,6 +3347,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -3665,7 +3753,8 @@
    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
    "WARNING FAIL desktop-light-root-crash: boom",
    "WARNING FAIL desktop-light-root-waiterr: element detached",
-   "INFO ok desktop-light-home-fine"
+   "INFO ok desktop-light-home-fine",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -3705,6 +3794,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -3905,6 +3997,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -3945,6 +4040,9 @@
     }
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -3977,6 +4075,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -4021,6 +4122,9 @@
       "#danger"
      ]
     ]
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -4071,6 +4175,9 @@
     "#crash"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -4103,6 +4210,9 @@
      "state": "attached",
      "timeout": 5000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -4365,6 +4475,9 @@
     "requestfailed"
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -4399,6 +4512,16 @@
       "state": "unavailable",
       "idle": true,
       "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
      }
     },
     "theme_applied": false,
@@ -4426,6 +4549,16 @@
       "state": "unavailable",
       "idle": true,
       "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
      }
     },
     "theme_applied": false,
@@ -4448,7 +4581,17 @@
     "screenshot_full": "android-dark-dialog-edit-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4470,7 +4613,17 @@
     "screenshot_full": "android-dark-gear-settings-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4492,7 +4645,17 @@
     "screenshot_full": "android-dark-missing-menu-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4514,7 +4677,17 @@
     "screenshot_full": "android-dark-board-pick-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4546,7 +4719,8 @@
    "INFO opened 2 details on android-dark-board-pick",
    "INFO clipped the full-page capture of android-dark-board-pick to 10922 of 40000 CSS px",
    "WARNING theme not applied: asked for dark, rendered light",
-   "INFO ok android-dark-board-pick"
+   "INFO ok android-dark-board-pick",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -4594,6 +4768,9 @@
    ],
    [
     "ctx.new_cdp_session"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -4680,6 +4857,17 @@
     "android-dark-board.png",
     false,
     null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
    ],
    [
     "evaluate",
@@ -4793,6 +4981,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_DETAILS_JS",
     []
    ],
@@ -4880,6 +5079,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_SCOPE_DETAILS_JS",
     []
    ],
@@ -4951,6 +5161,9 @@
     ]
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -5006,6 +5219,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_SCOPE_DETAILS_JS",
     []
    ],
@@ -5068,6 +5292,9 @@
     "evaluate",
     "measure.RENDERED_THEME_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -5121,6 +5348,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_SCOPE_DETAILS_JS",
     []
    ],
@@ -5183,6 +5421,9 @@
     "evaluate",
     "measure.RENDERED_THEME_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -5249,6 +5490,17 @@
     "android-dark-board-pick.png",
     false,
     null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
    ],
    [
     "evaluate",
@@ -5323,7 +5575,7 @@
    ]
   ]
  },
- "android-touch-lost": {
+ "android-fit-open": {
   "screens": [
    {
     "id": "android-light-board",
@@ -5331,15 +5583,58 @@
     "theme": "light",
     "view": "board",
     "kind": "tab",
-    "status": "error",
-    "reason": "TOUCH_LOST",
-    "error": "(pointer: coarse) is false after re-applying touch emulation",
-    "screenshot": null,
-    "screenshot_full": null,
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-light-board.png",
+    "screenshot_full": "android-light-board-full.png",
     "note": null,
-    "metrics": null,
-    "theme_applied": null,
-    "theme_observed": null
+    "metrics": {
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
    },
    {
     "id": "android-light-dialog-edit",
@@ -5347,15 +5642,53 @@
     "theme": "light",
     "view": "dialog-edit",
     "kind": "dialog",
-    "status": "error",
-    "reason": "TOUCH_LOST",
-    "error": "(pointer: coarse) is false after re-applying touch emulation",
-    "screenshot": null,
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-light-dialog-edit.png",
     "screenshot_full": null,
     "note": null,
-    "metrics": null,
-    "theme_applied": null,
-    "theme_observed": null
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
    },
    {
     "id": "android-light-gear-settings",
@@ -5363,26 +5696,116 @@
     "theme": "light",
     "view": "gear-settings",
     "kind": "step",
-    "status": "error",
-    "reason": "TOUCH_LOST",
-    "error": "(pointer: coarse) is false after re-applying touch emulation",
-    "screenshot": null,
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-light-gear-settings.png",
     "screenshot_full": null,
     "note": null,
-    "metrics": null,
-    "theme_applied": null,
-    "theme_observed": null
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-light-board-sheet",
+    "device": "android",
+    "theme": "light",
+    "view": "board-sheet",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-light-board-sheet.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "overlay": true
    }
   ],
   "log": [
-   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
-   "WARNING FAIL android-light-board: (pointer: coarse) is false after re-applying touch emulation",
-   "INFO opened 1 details on android-light-dialog-edit",
-   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
-   "WARNING FAIL android-light-dialog-edit: (pointer: coarse) is false after re-applying touch emulation",
-   "INFO opened 1 details on android-light-gear-settings",
-   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
-   "WARNING FAIL android-light-gear-settings: (pointer: coarse) is false after re-applying touch emulation"
+   "INFO ok android-light-board",
+   "INFO ok android-light-dialog-edit",
+   "INFO ok android-light-gear-settings",
+   "INFO ok android-light-board-sheet",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -5426,6 +5849,9 @@
    ],
    [
     "ctx.new_cdp_session"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -5515,6 +5941,1853 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 412,
+     "height": 839
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-board-full.png",
+    true,
+    null
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "android-light-dialog-edit.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 412,
+     "height": 839
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 412,
+     "height": 839
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#open"
+   ],
+   [
+    "first",
+    "#open"
+   ],
+   [
+    "wait_for",
+    "#open",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "click",
+    "#open"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-light-board-sheet.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": "#done",
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": "#done",
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": "#done",
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 412,
+     "height": 839
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "_SETTLE_TRANSITIONS_JS",
+    [
+     1500
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_POINTER_COARSE_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "iphone-fit-open": {
+  "screens": [
+   {
+    "id": "iphone-dark-board",
+    "device": "iphone",
+    "theme": "dark",
+    "view": "board",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-dark-board.png",
+    "screenshot_full": "iphone-dark-board-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "iphone-dark-dialog-edit",
+    "device": "iphone",
+    "theme": "dark",
+    "view": "dialog-edit",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-dark-dialog-edit.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "iphone-dark-gear-settings",
+    "device": "iphone",
+    "theme": "dark",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-dark-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       },
+       {
+        "viewport": "390x844",
+        "vw": 390,
+        "vh": 844,
+        "roots": [
+         {
+          "key": "dialog#sheet",
+          "id": "x.sheet",
+          "inside": true,
+          "overflow": 0,
+          "primary": null
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok iphone-dark-board",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok iphone-dark-dialog-edit",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok iphone-dark-gear-settings",
+   "INFO ✅ paced walk: trace"
+  ],
+  "trace": [
+   [
+    "launch",
+    "webkit"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "dark",
+     "viewport": {
+      "width": 390,
+      "height": 664
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "iphone-dark-board.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-dark-board-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "iphone-dark-dialog-edit.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-dark-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 844
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "set_viewport_size",
+    {
+     "width": 390,
+     "height": 664
+    }
+   ],
+   [
+    "wait_for_timeout",
+    400
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "iphone-fit-closed": {
+  "screens": [
+   {
+    "id": "iphone-light-board",
+    "device": "iphone",
+    "theme": "light",
+    "view": "board",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-light-board.png",
+    "screenshot_full": "iphone-light-board-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "iphone-light-dialog-edit",
+    "device": "iphone",
+    "theme": "light",
+    "view": "dialog-edit",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-light-dialog-edit.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "iphone-light-gear-settings",
+    "device": "iphone",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-light-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok iphone-light-board",
+   "INFO ok iphone-light-dialog-edit",
+   "INFO ok iphone-light-gear-settings",
+   "INFO ✅ paced walk: trace"
+  ],
+  "trace": [
+   [
+    "launch",
+    "webkit"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 390,
+      "height": 664
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "iphone-light-board.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-light-board-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "iphone-light-dialog-edit.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "android-touch-lost": {
+  "screens": [
+   {
+    "id": "android-light-board",
+    "device": "android",
+    "theme": "light",
+    "view": "board",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "android-light-dialog-edit",
+    "device": "android",
+    "theme": "light",
+    "view": "dialog-edit",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "android-light-gear-settings",
+    "device": "android",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "error",
+    "reason": "TOUCH_LOST",
+    "error": "(pointer: coarse) is false after re-applying touch emulation",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-board: (pointer: coarse) is false after re-applying touch emulation",
+   "INFO opened 1 details on android-light-dialog-edit",
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-dialog-edit: (pointer: coarse) is false after re-applying touch emulation",
+   "INFO opened 1 details on android-light-gear-settings",
+   "WARNING pointer read fine on a touch leg; re-applying touch emulation before measuring",
+   "WARNING FAIL android-light-gear-settings: (pointer: coarse) is false after re-applying touch emulation",
+   "INFO ✅ paced walk: trace"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 412,
+      "height": 839
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
+   ],
+   [
+    "ctx.new_cdp_session"
+   ],
+   [
+    "pace.wait_for_budget"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-light-board.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_DETAILS_JS",
     []
    ],
@@ -5592,6 +7865,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_SCOPE_DETAILS_JS",
     []
    ],
@@ -5646,6 +7930,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -5698,6 +7985,17 @@
     "android-light-gear-settings.png",
     false,
     null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
    ],
    [
     "evaluate",
@@ -5782,6 +8080,16 @@
       "state": "unavailable",
       "idle": true,
       "idle_ms": 400
+     },
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
      }
     },
     "theme_applied": null,
@@ -5800,7 +8108,17 @@
     "screenshot_full": null,
     "note": "full-page capture skipped: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "fit": {
+      "viewports": [
+       {
+        "viewport": "390x664",
+        "vw": 390,
+        "vh": 664,
+        "roots": []
+       }
+      ]
+     }
     },
     "theme_applied": null,
     "theme_observed": null
@@ -5813,7 +8131,8 @@
    "INFO opened 1 details on iphone-dark-gear-settings",
    "WARNING skipped the full-page capture of iphone-dark-gear-settings: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
    "WARNING could not read the rendered theme: page closed",
-   "INFO ok iphone-dark-gear-settings"
+   "INFO ok iphone-dark-gear-settings",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -5854,6 +8173,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -5917,6 +8239,17 @@
    ],
    [
     "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
+   ],
+   [
+    "evaluate",
     "_OPEN_DETAILS_JS",
     []
    ],
@@ -5964,6 +8297,9 @@
     "evaluate",
     "_DIALOG_IDS_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -6018,6 +8354,17 @@
     "iphone-dark-gear-settings.png",
     false,
     null
+   ],
+   [
+    "evaluate",
+    "measure_js_fit.FIT_JS",
+    [
+     {
+      "primary": null,
+      "primaryFallback": null,
+      "exclude": []
+     }
+    ]
    ],
    [
     "evaluate",
@@ -6192,7 +8539,8 @@
    "WARNING theme not applied: asked for dark, rendered light",
    "INFO ok desktop-dark-root-s2",
    "WARNING theme not applied: asked for dark, rendered light",
-   "INFO ok desktop-dark-root-s3"
+   "INFO ok desktop-dark-root-s3",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -6232,6 +8580,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -6354,6 +8705,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -6437,6 +8791,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -6512,6 +8869,9 @@
     "evaluate",
     "measure.RENDERED_THEME_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -6855,7 +9215,8 @@
    "INFO ok desktop-light-root-huge",
    "INFO ok desktop-light-root-neg",
    "INFO ok desktop-light-root-flag",
-   "INFO ok desktop-light-root-none"
+   "INFO ok desktop-light-root-none",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -6895,6 +9256,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -7197,6 +9561,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -7268,6 +9635,9 @@
     "evaluate",
     "measure.RENDERED_THEME_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -7371,6 +9741,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -7403,6 +9776,9 @@
      "state": "attached",
      "timeout": 12000
     }
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -7472,6 +9848,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -7539,6 +9918,9 @@
     []
    ],
    [
+    "pace.wait_for_budget"
+   ],
+   [
     "goto",
     "https://127.0.0.1:1",
     {
@@ -7604,6 +9986,9 @@
     "evaluate",
     "measure.RENDERED_THEME_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -7750,7 +10135,8 @@
   ],
   "log": [
    "INFO ok desktop-light-root",
-   "INFO ok desktop-light-gear-settings"
+   "INFO ok desktop-light-gear-settings",
+   "INFO ✅ paced walk: trace"
   ],
   "trace": [
    [
@@ -7790,6 +10176,9 @@
    [
     "on",
     "requestfailed"
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",
@@ -7892,6 +10281,9 @@
     "evaluate",
     "_DIALOG_IDS_JS",
     []
+   ],
+   [
+    "pace.wait_for_budget"
    ],
    [
     "goto",

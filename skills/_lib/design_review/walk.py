@@ -28,6 +28,15 @@ What it does, per device x theme, and nothing else:
      dialog or else the page, measure. Every click is vetoed when the
      element about to be clicked sits inside a `no_go` selector.
 
+Every screen on a phone leg also records `metrics.fit` (LAYOUT-11): the open overlays' boxes, primary
+actions and sideways overflow, read as the overlay opened (before any disclosure is opened in it) at the two phone
+viewports a sheet is judged at, 390x664 and 390x844. The page is resized for that read only when an overlay is open, and put
+back. A step may declare `primary = "<selector>"` (the action that must stay on screen) and `overlay = true` (it opens
+a sheet, dialog or menu, so a target that never attaches is not confirmed rather than absent).
+
+Every navigation first waits on the shared paced helper's TIME_WAIT budget for the target's port
+(`tests/e2e/_paced_browser.py`; a `file://` target has no port and is not paced).
+
 Disclosures are opened on every screen kind so folded content is measured
 open. One that stays closed -- an exclusive accordion
 closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
@@ -75,9 +84,11 @@ import sys
 import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measure  # noqa: E402
+import measure_js_fit  # noqa: E402
 import plan  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -104,6 +115,7 @@ _STREAM_TYPES = frozenset({"eventsource", "websocket"})
 # The vendored home-head gear is an icon-only button named "Settings": found by role and name.
 _SETTINGS_NAME = re.compile(r"^\s*settings\s*$", re.I)
 DEFAULT_TIMEOUT_MS = 15000
+FIT_SETTLE_MS = 400     # after a viewport resize: the overlay re-lays out on the media query and the resize event
 # Neither engine captures an image over this many device px on a side: an iPhone (3x) page
 # over ~10,900 CSS px tall fails its full-page screenshot.
 SCREENSHOT_MAX_PX = 32767
@@ -205,6 +217,28 @@ def load_geometry_js(scaffold_root: Optional[str]) -> Optional[str]:
         return None
     js = getattr(module, "EFFECTIVE_RECT_JS", None) or getattr(module, "_EFFECTIVE_RECT_JS", None)
     return str(js) if js else None
+
+
+def load_pacer(ctx, url: str) -> Optional[object]:
+    """The shared `PacedWalk` over `ctx` for a loopback URL with a port, else `None` (a `file://` page has no port).
+
+    The helper is project-scaffolding's vendored `tests/e2e/_paced_browser.py`, read from this repo's checkout. A
+    helper that cannot be loaded is logged and the walk goes unpaced, which `walk.log` says: it is never silent.
+    """
+    port = urlparse(url).port
+    if port is None:
+        return None
+    path = Path(__file__).resolve().parents[3] / "tests" / "e2e" / "_paced_browser.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_fleet_paced_browser", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"no loader for {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.PacedWalk(ctx, port)
+    except Exception as exc:  # noqa: BLE001 — a missing or broken helper is an unpaced walk, said so
+        log.warning("⚠️ PACING NOT CONFIRMED: could not load %s (%s); the walk is not held to a TIME_WAIT budget", path, exc)
+        return None
 
 
 class TouchLost(Exception):
@@ -380,8 +414,10 @@ class _Leg:
 
     def __init__(self, page, device: str, theme: str, args: argparse.Namespace, script: str, params: dict,
                  shots: Path, retouch: Optional[Callable[[], None]], tab_selector: str, no_go: List[str],
-                 inflight: _Inflight, tab_ready: Optional[Dict[str, str]] = None) -> None:
+                 inflight: _Inflight, tab_ready: Optional[Dict[str, str]] = None, phone: bool = False,
+                 pace: Optional[object] = None) -> None:
         self.page, self.device, self.theme, self.args = page, device, theme, args
+        self.phone, self.pace = phone, pace
         self.script, self.params, self.shots, self.retouch = script, params, shots, retouch
         self.tab_selector, self.no_go = tab_selector, no_go
         self.tab_ready = tab_ready or {}
@@ -414,6 +450,8 @@ class _Leg:
         return {"theme_applied": applied, "theme_observed": seen}
 
     def open_base(self) -> None:
+        if self.pace is not None:
+            self.pace.wait_for_budget()   # type: ignore[attr-defined]
         self.page.goto(self.args.url, wait_until="domcontentloaded")
         self.stamp_theme()
         self.page.wait_for_timeout(SETTLE_MS)
@@ -466,15 +504,53 @@ class _Leg:
         glance.update(idle)
         return glance
 
+    def read_fit(self, primary: Optional[str]) -> Optional[Dict[str, object]]:
+        """The open overlays' fit at each of `plan.FIT_VIEWPORTS`; `None` off a phone leg, where no sheet is judged.
+
+        Read first at the leg's own viewport, which is enough when nothing is open. With an overlay open the page is
+        resized to each phone viewport in turn (the one it already has is not resized) and put back, with the touch
+        emulation a Chromium resize drops.
+        """
+        if not self.phone:
+            return None
+        page = self.page
+        params = {"primary": primary, "primaryFallback": self.params.get("primarySelector"),
+                  "exclude": self.params.get("excludeSelectors") or []}
+        start = dict(page.viewport_size or {})
+        native = page.evaluate(measure_js_fit.FIT_JS, params)
+        if not native.get("roots"):
+            return {"viewports": [{"viewport": f"{native['vw']}x{native['vh']}", **native}]}
+        views: List[Dict[str, object]] = []
+        try:
+            for size in plan.FIT_VIEWPORTS:
+                if size != start:
+                    page.set_viewport_size(size)
+                    page.wait_for_timeout(FIT_SETTLE_MS)
+                    seen = page.evaluate(measure_js_fit.FIT_JS, params)
+                else:
+                    seen = native
+                views.append({"viewport": f"{size['width']}x{size['height']}", **seen})
+        finally:
+            if dict(page.viewport_size or {}) != start:
+                page.set_viewport_size(start)
+                page.wait_for_timeout(FIT_SETTLE_MS)
+                if self.retouch is not None:
+                    self.retouch()
+        return {"viewports": views}
+
     def capture(self, sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None,
-                **extra: object) -> None:
+                primary: Optional[str] = None, **extra: object) -> None:
         """Screenshot, open the scope's details, measure and record the screen in front of the walk.
 
-        `before_record` runs after the theme is read and before the record lands (a dialog closes there).
+        The overlay's fit is read first, as it opened: opening every disclosure in it afterwards would grow it past
+        what a person sees. `before_record` runs after the theme is read and before the record lands (a dialog closes there).
         """
         shot = _shot(self.page, self.shots, sid)
+        fit = self.read_fit(primary)
         full, note = _open_scope_details(self.page, self.shots, sid, self.retouch)
         metrics = read_metrics(self.page, self.script, self.params, self.retouch)
+        if fit is not None and isinstance(metrics, dict):
+            metrics["fit"] = fit
         observed = self.theme_fields()
         if before_record:
             before_record()
@@ -525,12 +601,15 @@ def _walk_tabs(leg: _Leg) -> None:
             ready: Dict[str, object] = leg.open_tab(tab["index"]) if tab["index"] is not None else {}
             glance = leg.read_glance()
             shot = _shot(page, leg.shots, sid)
+            fit = leg.read_fit(None)
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
             full, note = _full_shot(page, leg.shots, sid, leg.retouch)
             metrics = read_metrics(page, leg.script, leg.params, leg.retouch)
             if isinstance(metrics, dict):
                 metrics["glance"] = glance
+                if fit is not None:
+                    metrics["fit"] = fit
             leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="tab",
                                        screenshot=shot, screenshot_full=full, note=note, metrics=metrics,
                                        **leg.theme_fields(), **ready))
@@ -597,6 +676,8 @@ def _walk_extra_steps(leg: _Leg, review: dict) -> None:
             continue
         wait_ms = bounded_wait_ms(step.get("wait_ms"), STEP_TARGET_WAIT_MS)
         declared_wait = {"wait_ms": wait_ms} if "wait_ms" in step else {}
+        opens_overlay = step.get("overlay") is True
+        primary = str(step["primary"]) if step.get("primary") else None
         try:
             leg.open_base()
             tab_id = step.get("tab")
@@ -610,9 +691,11 @@ def _walk_extra_steps(leg: _Leg, review: dict) -> None:
             for selector in clicks:
                 leg.guarded(selector, wait_ms).click()
                 page.wait_for_timeout(STEP_SETTLE_MS)
-            leg.capture(sid, view, "step", **declared_wait)
+            leg.capture(sid, view, "step", primary=primary, **({"overlay": True} if opens_overlay else {}), **declared_wait)
         except Exception as exc:  # noqa: BLE001
             leg.step_failed(sid, view, exc, TargetAbsent, "STEP_TARGET_ABSENT")
+            if opens_overlay:
+                leg.screens[-1]["overlay"] = True   # an absent overlay is not confirmed, never read as no overlay
 
 
 def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: str,
@@ -640,8 +723,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     no_go_src = synth.get("no_go") if args.synthetic and isinstance(synth.get("no_go"), list) else review.get("no_go", [])
     declared_ready = review.get("tab_ready") if isinstance(review.get("tab_ready"), dict) else {}
     tab_ready = {str(k): str(v) for k, v in declared_ready.items() if k and v}
+    pace = load_pacer(ctx, args.url)
+    phone = bool(ctx_args.get("has_touch")) and int((ctx_args.get("viewport") or {}).get("width") or 0) <= plan.PHONE_MAX_WIDTH
     leg = _Leg(page, device, theme, args, script, params, shots, retouch, tab_selector,
-               [str(s) for s in no_go_src], inflight, tab_ready)
+               [str(s) for s in no_go_src], inflight, tab_ready, phone, pace)
 
     try:
         leg.open_base()
@@ -657,6 +742,8 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     _walk_settings_gear(leg)
     _walk_extra_steps(leg, review)
 
+    if pace is not None:
+        log.info("✅ %s", pace.report())  # type: ignore[attr-defined]
     ctx.close()
     browser.close()
     return leg.screens

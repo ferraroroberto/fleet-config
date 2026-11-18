@@ -48,6 +48,7 @@
     "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
     "glance": {"state": "measured", "card": "section.card.glance", "first_px": 176, "settled_px": 176, "grew_px": 0, "below": true, "changes": [], "change_count": 0, "idle": true, "idle_ms": 400},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": true},
+    "fit": {"viewports": [{"viewport": "390x664", "vw": 390, "vh": 664, "roots": []}]},
     "headings": ["H2:Home@24px"]
    }
   },
