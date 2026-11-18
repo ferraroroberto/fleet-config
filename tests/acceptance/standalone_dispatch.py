@@ -164,12 +164,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "held, never free"),
     ("context_purge_check", "audit/test_context_purge_check.py",
      "the purge's mechanical preservation rules -- marked-block "
-     "byte-identity and quoted trigger survival in SKILL.md descriptions "
-     "-- are testable on their own (fleet-config#287)"),
-    ("context_purge_history", "audit/test_context_purge_history.py",
-     "the history pass deletes markdown only when the text is proven to "
-     "live on an issue: detection, comment round-trip and the "
-     "removed-history verdict"),
+     "byte-identity and quoted trigger survival in SKILL.md descriptions -- "
+     "plus the history pass, which deletes markdown only when the text is "
+     "proven to live on an issue (detection, comment round-trip and the "
+     "removed-history verdict), and the skip-unchanged ledger's "
+     "parse/render/diff core, all testable on their own without gh "
+     "(fleet-config#287)"),
     ("context_audit", "audit/test_context_audit.py",
      "/context-audit's skill-description cap gate -- the apostrophe regression "
      "pinned against `chief`'s real pre-fix text (29 reported vs 58 actual), "
@@ -183,21 +183,15 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("config_map_check", "audit/test_config_map_check.py",
      "/config-map step 1 runs only the config-map check, not the full acceptance run that outlived the "
      "job's watchdog, and a stale config.data.js still fails it while a fresh one passes (fleet-config#2018)"),
-    ("context_purge_gate", "audit/test_context_purge_gate.py",
-     "the skip-unchanged ledger's parse/render/diff core, testable "
-     "without gh (fleet-config#287)"),
     ("prompt_audit_lint", "prompt_audit/test_lint_and_inventory.py",
      "/prompt-audit's deterministic half -- exact lint counts on planted and "
      "clean fixtures, file/section audience classification, scaffold and lite "
      "dedup, all four freshness-gate verdicts, the rubric-keyed "
      "skip-unchanged plan, and a digest that never folds unmeasured into "
      "compliant -- against a synthetic fleet, with no gh, fetch, or real "
-     "state touched"),
-    ("prompt_audit_runs", "prompt_audit/test_runs_and_drift.py",
-     "scan-anyway on a changed guide, the one-line chat ping and the "
-     "prompt-drift issue routing and backlog merge"),
-    ("prompt_audit_skills", "prompt_audit/test_skill_structure.py",
-     "the skill-structure rules, the coverage check and leads intake, each "
+     "state touched; plus scan-anyway on a changed guide, the one-line chat "
+     "ping and the prompt-drift issue routing and backlog merge, and the "
+     "skill-structure rules, the coverage check and leads intake, each "
      "failing loudly on malformed input"),
     ("prompt_audit_evals", "prompt_audit/test_evals_and_contracts.py",
      "skill-eval verdict tiers, weekly eval rotation and the rules.md / "
@@ -354,7 +348,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "facts, the search facts against a stubbed preview, preview resolution, "
      "and a whole metrics document scored by design.web.rubric.toml with "
      "Lighthouse and a failed cold load unmeasured, never passed -- is "
-     "testable on its own"),
+     "testable on its own; plus the web-page design standard -- design.web.md "
+     "keeps every colour value out of its contract half and front matter, "
+     "names every contract token, budgets each page type, and the page rubric "
+     "loads through design_review.rubric with every threshold and param token "
+     "resolving from the spec; install.ps1 and global-CLAUDE.md reach the file"),
     ("design_review_web_browser", "design_review_web_browser/test_design_review_web_browser.py",
      "the web-page review end to end against a fixture static site through a "
      "sibling venv's Playwright: its own preview started and stopped, and the "
@@ -419,13 +417,6 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "screenshot path in any line; and with no inventory the digest, "
      "bodies and scores unchanged -- is testable on its own, with no real "
      "issue touched (fleet-config#1500)"),
-    ("design_web_spec", "design_checks/test_design_web_spec.py",
-     "the web-page design standard -- design.web.md keeps every colour "
-     "value out of its contract half and front matter, names every "
-     "contract token, budgets each page type, and the page rubric loads "
-     "through design_review.rubric with every threshold and param token "
-     "resolving from the spec; install.ps1 and global-CLAUDE.md reach the "
-     "file -- is testable on its own from file reads"),
     ("perf_sweep","web_review/test_perf_sweep.py",
      "/perf-sweep's population (web apps with a port, dormant ones named not "
      "walked, a named repo still runs), the per-app box lock (a busy box "
@@ -561,13 +552,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "now routes through, and -- the load-bearing half -- that a "
      "Claude-shaped payload is returned as the *identical object*, so a "
      "change that reaches the whole fleet the moment it merges cannot "
-     "alter Claude behaviour (fleet-config#491)"),
-    ("payload_normalization_grok_aliases",
-     "payload_normalization/test_grok_snake_aliases.py",
-     "Grok's snake_case alias keys (`hook_event_name: \"Stop\"` beside "
-     "`hookEventName: \"stop\"`) never override its own camelCase values in "
-     "either key order, so a session-end Stop stays `StopAtSessionEnd` "
-     "instead of reaching the chief inbox as a turn end"),
+     "alter Claude behaviour (fleet-config#491); and Grok's snake_case alias "
+     "keys never override its own camelCase values in either key order, so a "
+     "session-end Stop stays `StopAtSessionEnd` instead of reaching the chief "
+     "inbox as a turn end"),
     ("vendored_drift", "repo/test_vendored_drift.py",
      "the /propagate-vendored [vendored]-manifest drift core -- "
      "manifest parsing, the hash-diff/classify local-drift-vs-behind-HEAD "
@@ -705,17 +693,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "interactive cleanup request/result gates and portable skill contracts (#749)"),
     ("quota_snapshots", "claude_progress/test_quota_snapshots.py",
      "native source validation, account scope, freshness and atomic concurrent producer writes (#751)"),
-    ("codex_statusline", "statusline/test_codex_statusline.py",
-     "the opt-in Codex footer merger preserves custom settings/comments, appends native quota items, "
-     "and stays idempotent against synthetic config files (#752)"),
     ("grok_statusline", "statusline/test_grok_statusline.py",
      "the Grok status row labels Claude's limits as Claude's, never shows a Grok limit or a zero for "
      "an unknown, and the opt-in config merge only adds a row where none is set"),
     ("codex_model_policy", "harness/test_codex_model_policy.py",
      "the opt-in Codex model-policy merger preserves unrelated settings, validates the generated four-model catalog, "
-     "and leaves config untouched on a failed native preflight (#793)"),
-    ("session_retention", "hooks/test_session_retention.py",
-     "the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
+     "and leaves config untouched on a failed native preflight (#793); the opt-in Codex footer merger preserves "
+     "custom settings/comments, appends native quota items, and stays idempotent against synthetic config files "
+     "(#752); the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
     ("hook_dispatch", "hooks/test_hook_dispatch.py",
      "the one-process dispatcher's failure paths -- a crash, a raw "

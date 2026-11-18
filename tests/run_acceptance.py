@@ -73,7 +73,6 @@ from acceptance.architecture_guards import (  # noqa: E402
     _readme_layout_check,
     _settings_sync_split_check,
     _settings_template_sync_check,
-    _system_map_whatchanged_check,
 )
 from acceptance.checks_capture import (  # noqa: E402
     _conversation_capture_unit_checks,
@@ -400,10 +399,8 @@ def _run_repo_guards(tally: Tally) -> None:
     # ---- issue-reading skill steps also read comments ----
     tally.run_unit(_issue_comments_read_check)
 
-    # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
-    tally.run_unit(_system_map_whatchanged_check)
-
-    # ---- config-map: introspected config.data.js freshness + whatchanged ----
+    # ---- config-map: introspected config.data.js freshness + whatchanged, and the
+    # system-map week-over-week 'what changed' diff (whatchanged.py) ----
     # run_unit3: the freshness half sweeps sibling repos, so it reports as
     # skipped rather than failing this gate — same reason as #562's fleet_toml.
     tally.run_unit3(_config_map_check)

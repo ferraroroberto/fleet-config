@@ -1,10 +1,11 @@
-"""Focused tests for the opt-in, comment-preserving Codex model-policy merger."""
+"""Focused tests for the opt-in, comment-preserving user-scope config mergers: the Codex model policy, the native Codex footer status line and the session-retention settings."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -12,10 +13,20 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SPEC = importlib.util.spec_from_file_location("codex_model_policy", ROOT / "codex_model_policy.py")
-assert SPEC and SPEC.loader
-policy = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(policy)
+
+
+def _load_root_module(name: str):
+    """Load a repo-root module by file path, the way the installer runs it."""
+    spec = importlib.util.spec_from_file_location(name, ROOT / f"{name}.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+policy = _load_root_module("codex_model_policy")
+codex_statusline = _load_root_module("codex_statusline")
+session_retention = _load_root_module("session_retention")
 
 
 class CodexModelPolicyTests(unittest.TestCase):
@@ -146,6 +157,224 @@ class CodexModelPolicyTests(unittest.TestCase):
                 policy.build_catalog("codex")
             with self.assertRaisesRegex(policy.PolicyError, "did not load the policy within"):
                 policy.validate_cli('model_catalog_json = "x"\n', "{}", "codex")
+
+
+class MergeStatusLineTests(unittest.TestCase):
+    def test_fresh_config_gets_the_six_supported_items(self) -> None:
+        updated, added = codex_statusline.merge_status_line("")
+
+        self.assertEqual(added, codex_statusline.REQUIRED_STATUS_ITEMS)
+        self.assertEqual(tomllib.loads(updated)["tui"]["status_line"], list(added))
+
+    def test_existing_tui_table_receives_setting_without_duplicate_table(self) -> None:
+        original = "[tui]\nnotifications = false\n\n[history]\npersistence = 'save-all'\n"
+
+        updated, _ = codex_statusline.merge_status_line(original)
+
+        self.assertEqual(updated.count("[tui]"), 1)
+        self.assertIn("notifications = false\n\nstatus_line = [", updated)
+        self.assertIn("[history]\npersistence = 'save-all'", updated)
+        tomllib.loads(updated)
+
+    def test_custom_order_comments_and_unrelated_settings_are_preserved(self) -> None:
+        original = (
+            "model = 'custom-model'\n\n[tui]\n"
+            "# Hand-picked order stays first.\n"
+            "status_line = ['custom-item', \"model\"] # keep this note\n"
+            "terminal_title = ['project', 'git-branch']\n"
+        )
+
+        updated, added = codex_statusline.merge_status_line(original)
+
+        self.assertEqual(added[0], "context-used")
+        self.assertIn("['custom-item', \"model\", \"context-used\"", updated)
+        self.assertIn("] # keep this note", updated)
+        self.assertIn("terminal_title = ['project', 'git-branch']", updated)
+        self.assertEqual(tomllib.loads(updated)["tui"]["status_line"][:2], ["custom-item", "model"])
+
+    def test_commented_multiline_array_is_extended_in_place(self) -> None:
+        original = (
+            "[tui]\nstatus_line = [\n"
+            "    'custom#item', # custom field\n"
+            "    \"model\" # final item had no trailing comma\n"
+            "]\n"
+        )
+
+        updated, _ = codex_statusline.merge_status_line(original)
+
+        self.assertIn("\"model\", # final item had no trailing comma", updated)
+        self.assertIn("    \"context-used\", \"current-dir\"", updated)
+        self.assertIn("'custom#item', # custom field", updated)
+        self.assertEqual(tomllib.loads(updated)["tui"]["status_line"][0], "custom#item")
+
+    def test_multiline_comment_only_and_shared_closing_bracket_stay_valid(self) -> None:
+        comment_only = "[tui]\nstatus_line = [\n    # reserved for local choices\n]\n"
+        shared_close = "[tui]\nstatus_line = [\n    'custom-item'] # compact close\n"
+
+        updated_comment, _ = codex_statusline.merge_status_line(comment_only)
+        updated_shared, _ = codex_statusline.merge_status_line(shared_close)
+
+        self.assertIn("# reserved for local choices", updated_comment)
+        self.assertEqual(tomllib.loads(updated_comment)["tui"]["status_line"], list(codex_statusline.REQUIRED_STATUS_ITEMS))
+        self.assertIn("'custom-item', \"context-used\"", updated_shared)
+        self.assertIn("] # compact close", updated_shared)
+        self.assertEqual(tomllib.loads(updated_shared)["tui"]["status_line"][0], "custom-item")
+
+    def test_status_line_text_inside_multiline_string_is_not_an_assignment(self) -> None:
+        original = (
+            '[tui]\nhelp = """example config:\n'
+            "status_line = ['fake']\n"
+            '[history]\n"""\nnotifications = false\n'
+        )
+
+        updated, added = codex_statusline.merge_status_line(original)
+
+        self.assertEqual(added, codex_statusline.REQUIRED_STATUS_ITEMS)
+        self.assertIn("status_line = ['fake']", updated)
+        self.assertEqual(updated.count("status_line ="), 2)
+        self.assertEqual(tomllib.loads(updated)["tui"]["help"], "example config:\nstatus_line = ['fake']\n[history]\n")
+        self.assertEqual(tomllib.loads(updated)["tui"]["status_line"], list(added))
+
+    def test_top_level_dotted_status_line_is_extended_without_new_table(self) -> None:
+        original = "tui.status_line = ['custom-item']\ntui.terminal_title = ['project']\n"
+
+        updated, added = codex_statusline.merge_status_line(original)
+
+        self.assertNotIn("[tui]", updated)
+        self.assertIn("['custom-item', \"context-used\"", updated)
+        self.assertEqual(tomllib.loads(updated)["tui"]["status_line"], ["custom-item", *added])
+        self.assertEqual(tomllib.loads(updated)["tui"]["terminal_title"], ["project"])
+
+    def test_merge_is_idempotent_and_preserves_crlf(self) -> None:
+        original = "model = 'fixture'\r\n"
+        first, _ = codex_statusline.merge_status_line(original)
+        second, added = codex_statusline.merge_status_line(first)
+
+        self.assertEqual(second, first)
+        self.assertEqual(added, ())
+        self.assertNotIn("\n", first.replace("\r\n", ""))
+
+    def test_invalid_toml_is_rejected_before_write(self) -> None:
+        with self.assertRaises(codex_statusline.ConfigError):
+            codex_statusline.merge_status_line("[tui\nstatus_line = []\n")
+
+    def test_cli_apply_then_check_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config.toml"
+            config.write_bytes(b"[tui]\r\nterminal_title = ['project']\r\n")
+            command = [sys.executable, str(ROOT / "codex_statusline.py")]
+
+            applied = subprocess.run(
+                [*command, "--apply", "--config", str(config)],
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                check=False,
+            )
+            checked = subprocess.run(
+                [*command, "--check", "--config", str(config)],
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            self.assertIn("status=updated added=6", applied.stdout)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertIn("status=unchanged added=0", checked.stdout)
+            config_bytes = config.read_bytes()
+            self.assertNotIn(b"\n", config_bytes.replace(b"\r\n", b""))
+            self.assertEqual(tomllib.loads(config_bytes.decode("utf-8"))["tui"]["terminal_title"], ["project"])
+
+    def test_installer_switch_is_scoped_and_forwarded(self) -> None:
+        installer = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        scoped_guard = next(
+            line for line in installer.splitlines()
+            if line.strip().startswith("if ($ConfigureCodexStatusline")
+        )
+
+        self.assertIn("[switch]$ConfigureCodexStatusline", installer)
+        self.assertIn("$ConfigureCodexStatusline", scoped_guard)
+        self.assertIn("$psArgs += '-ConfigureCodexStatusline'", installer)
+        self.assertIn("(Join-Path $RepoRoot 'codex_statusline.py') --apply", installer)
+
+
+class SessionRetentionTests(unittest.TestCase):
+    def test_claude_merge_preserves_unrelated_values_and_removes_opt_out(self) -> None:
+        original = {
+            "permissions": {"allow": ["Read"]},
+            "env": {"SECRET": "kept", "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"},
+            "cleanupPeriodDays": 30,
+        }
+        updated, changed = session_retention.merge_claude_settings(original)
+        self.assertEqual(updated["cleanupPeriodDays"], 730)
+        self.assertEqual(updated["env"], {"SECRET": "kept"})
+        self.assertEqual(original["cleanupPeriodDays"], 30)
+        self.assertEqual(set(changed), {
+            "cleanupPeriodDays", "env.CLAUDE_CODE_SKIP_PROMPT_HISTORY",
+        })
+
+    def test_codex_merge_preserves_comments_and_removes_cap(self) -> None:
+        original = (
+            "# keep me\r\n"
+            "model = \"gpt-example\"\r\n"
+            "\r\n[history] # local sessions\r\n"
+            "persistence = \"none\" # retain comment\r\n"
+            "max_bytes = 1024\r\n"
+            "\r\n[tui]\r\n"
+            "terminal_title = true\r\n"
+        )
+        updated, changed = session_retention.merge_codex_history(original)
+        parsed = tomllib.loads(updated)
+        self.assertEqual(parsed["history"], {"persistence": "save-all"})
+        self.assertIn("# keep me\r\n", updated)
+        self.assertIn("# retain comment\r\n", updated)
+        self.assertIn('terminal_title = true\r\n', updated)
+        self.assertEqual(set(changed), {"history.persistence", "history.max_bytes"})
+
+    def test_codex_merge_supports_dotted_key_and_is_idempotent(self) -> None:
+        first, _ = session_retention.merge_codex_history(
+            'history.persistence = "none"\nother = 42\n'
+        )
+        second, changed = session_retention.merge_codex_history(first)
+        self.assertEqual(tomllib.loads(first)["history"]["persistence"], "save-all")
+        self.assertEqual(second, first)
+        self.assertEqual(changed, ())
+
+    def test_codex_merge_adds_history_table(self) -> None:
+        updated, _ = session_retention.merge_codex_history('model = "example"\n')
+        self.assertEqual(tomllib.loads(updated)["history"]["persistence"], "save-all")
+
+    def test_apply_is_atomic_and_cli_check_reports_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            claude = root / "settings.json"
+            codex = root / "config.toml"
+            claude.write_text(json.dumps({"permissions": {"allow": ["Read"]}}), encoding="utf-8")
+            codex.write_text('[tui]\nterminal_title = true\n', encoding="utf-8")
+            states = session_retention.configure(claude, codex, apply=True)
+            self.assertEqual(states, ("updated", "updated"))
+            self.assertEqual(json.loads(claude.read_text(encoding="utf-8"))["cleanupPeriodDays"], 730)
+            self.assertEqual(tomllib.loads(codex.read_text(encoding="utf-8"))["history"]["persistence"], "save-all")
+            proc = subprocess.run(
+                [sys.executable, str(ROOT / "session_retention.py"), "--check",
+                 "--claude-settings", str(claude), "--codex-config", str(codex)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("claude=unchanged codex=unchanged days=730", proc.stdout)
+
+    def test_installer_switch_is_scoped_forwarded_and_invokes_helper(self) -> None:
+        installer = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        scoped_guard = next(
+            line for line in installer.splitlines()
+            if line.strip().startswith("if ($ConfigureCodexStatusline")
+        )
+        self.assertIn("[switch]$ConfigureSessionRetention", installer)
+        self.assertIn("$psArgs += '-ConfigureSessionRetention'", installer)
+        self.assertIn("(Join-Path $RepoRoot 'session_retention.py') --apply", installer)
+        self.assertIn("$ConfigureSessionRetention", scoped_guard)
 
 
 if __name__ == "__main__":
