@@ -327,6 +327,10 @@ wrapper_expectations = {
     "system-map": ('"/system-map"',),
 }
 
+# A wrapper that needs no model calls its own script directly: there is no stream, tool work or
+# delivery for the adapter to judge, and the script's exit code is the verdict.
+no_model_wrappers = {"weekly-burst": "burst.py"}
+
 # A slot claim — a weekday, a clock time, or "overnight" — restates live
 # app-launcher Jobs config, which moves on every Jobs-UI edit while the comment
 # stays put; three wrappers were outright fiction by the time it was noticed
@@ -341,10 +345,16 @@ slot_claim = re.compile(
 )
 
 wrappers = sorted((ROOT / ".claude" / "skills").glob("*/run-weekly.bat"))
-check(len(wrappers) == len(wrapper_expectations) == 14,
-      "the wiring test covers all fourteen scheduled wrappers")
+check(len(wrappers) == len(wrapper_expectations) + len(no_model_wrappers) == 15,
+      "the wiring test covers all fifteen scheduled wrappers")
 for wrapper in wrappers:
     text = wrapper.read_text(encoding="utf-8")
+    if wrapper.parent.name in no_model_wrappers:
+        script = no_model_wrappers[wrapper.parent.name]
+        check(script in text and "claude_progress" not in text and "claude -p" not in text.lower(),
+              f"{wrapper.parent.name}: runs {script} directly, with no model")
+        check(slot_claim.search(text) is None, f"{wrapper.parent.name}: states no schedule slot")
+        continue
     expected = wrapper_expectations.get(wrapper.parent.name, ())
     check("claude_progress.py" in text and "claude -p" not in text.lower(),
           f"{wrapper.parent.name}: uses the shared adapter, not direct claude -p")

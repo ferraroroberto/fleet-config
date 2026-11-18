@@ -193,11 +193,12 @@ fleet-config/
 │   ├── agents/pi/extensions/session_state.ts  # same junction — reports Pi lifecycle events into sessions-state.json
 │   └── conversation/hub_client.py  # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, upstream-sync, downstream-sync, codebase-audit, design-sync, design-review, perf-review, restart-webapp, retro, screen, _lib/, …
-├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map
+├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, perf-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-10x, fleet-health, insights-weekly, inspiration-scan, learning-log, prompt-audit, sota-watch, system-map, weekly-burst
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
+├── tests/run_weekly_units.py       # the burn, load and wall-clock units the gate leaves out, run weekly by `/weekly-burst`
 ├── scripts/                        # the nine ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
 │   ├── tray/tray_lifecycle.ps1     # this repo's own: junctioned via scripts/tray/ → ~/.claude/tray — the ONE machine-local copy; canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 │   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)

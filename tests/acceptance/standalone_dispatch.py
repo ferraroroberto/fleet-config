@@ -20,11 +20,6 @@ from acceptance.standalone_rows.chief import _CHIEF_UNIT_CHECKS
 _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("pi_policy_coverage", "harness/test_pi_policy_coverage.py",
      "Pi shared decisions and real extension middleware failure/composition boundaries"),
-    ("fleet_health", "audit/test_fleet_health.py",
-     "the three defects the weekly /fleet-health run kept surviving on hand-applied workarounds -- the "
-     "cp1252-under-capture crash at both entry points, the run date recomputed per invocation across "
-     "midnight, and peer addresses read from a hub config file they had moved out of -- are testable on "
-     "their own against synthetic runs and a temp ledger (fleet-config#812)"),
     ("inspiration_scan", "inspiration_scan/test_inspiration_scan.py",
      "per-source states, cross-day dedupe, the X launch helper and an escaped digest, on recorded feeds"),
     ("retro_digest", "audit/test_retro_digest.py",
@@ -61,8 +56,6 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "rules it enforces, the skip in dead_code_leads and prompt-audit lint for "
      "an adopted repo, and an unknown or non-adopted repo still scanned "
      "(fleet-config#1645)"),
-    ("hook_spawn_timeout", "acceptance/guard_checks/test_hook_spawn_timeout.py",
-     "the shared acceptance hook-spawn bound is a hang guard: a slow start passes it and fails the former 15s bound"),
     ("structural_scope", "acceptance/test_structural_scope.py",
      "the structural check's scope (repo-specific, generalizable, "
      "scaffold-owned, n/a; an unreadable scaffold catalog is unknown) and the "
@@ -165,11 +158,6 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a scheduled run ends in one declared RunState: the golden exit-code table "
      "over every combination of outcome facts, the evidence table, the refused "
      "illegal transitions and the documented exit codes"),
-    ("cpu_burn", "repo/test_cpu_burn.py",
-     "the load-proof helper runs its burners and the command under proof "
-     "below normal priority, so a burn can't starve scheduled jobs, and "
-     "stops only the burners it started, even when the helper is hard-killed "
-     "(fleet-config#1076)"),
     ("box_lock", "repo/test_box_lock.py",
      "gates share the box load lock and a CPU burn holds it alone, a dead "
      "holder's marker is reclaimed, and an unreadable lock state counts as "
@@ -687,6 +675,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the acceptance gate's per-unit run history -- ledger rows with tree hash and run id, the spawn probe "
      "counting a real child and staying inert without its env var, unit outcomes and medians -- against a "
      "temp state dir and repo (fleet-config#2120)"),
+    ("weekly_burst", "weekly_burst/test_burst.py",
+     "the weekly burst's verdicts -- a red unit exits 1 and is named, the hermetic legs run in a detached clone "
+     "without the working tree's ignored files, and a skipped leg, an unmakeable clone, missing gate history or "
+     "a green exit with no ledger row is not-confirmed (exit 3) -- against throwaway repos and a temp state dir "
+     "(fleet-config#2120)"),
     ("issue_state_gate", "repo/test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "
