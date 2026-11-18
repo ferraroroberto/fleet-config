@@ -98,3 +98,42 @@ SAFE_KILL_CASES: List[Case] = [
       "tool_input": {"command": "Stop-Process -Id 1234 -Force # targeting 127.0.0.1:8446"}},
      2),
 ]
+
+# Kills selected by process name or command line also stop other lanes' processes
+# (fleet-config#2118); the same kill by explicit PID or the project's own port passes.
+_NAMED_KILL_BLOCKED = [
+    ("PowerShell", "Stop-Process -Name node -Force"),
+    ("PowerShell", "Get-Process node | Stop-Process -Force"),
+    ("PowerShell", "Get-Process -Name node | ForEach-Object { Stop-Process -Id $_.Id }"),
+    ("PowerShell", "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve_pair*' } "
+                   "| ForEach-Object { Stop-Process -Id $_.ProcessId }"),
+    ("PowerShell", "Get-CimInstance Win32_Process -Filter \"Name='x.exe'\" | Invoke-CimMethod -MethodName Terminate"),
+    ("PowerShell", "Get-WmiObject Win32_Process | Where { $_.CommandLine -match 'x' } | % { $_.Terminate() }"),
+    ("PowerShell", "taskkill /IM node.exe /F"),
+    ("Bash", "taskkill //IM node.exe //F"),
+    ("Bash", "pkill -f serve_pair"),
+    ("Bash", "killall node"),
+    ("Bash", "kill $(pgrep -f serve_pair)"),
+    ("Bash", "ps aux | grep serve | awk '{print $2}' | xargs kill"),
+    ("Bash", "powershell -Command \"Stop-Process -Name node\""),
+]
+_NAMED_KILL_ALLOWED = [
+    ("PowerShell", "Stop-Process -Id 1234 -Force"),
+    ("PowerShell", "Get-Process -Id 1234 | Stop-Process"),
+    ("PowerShell", "Get-CimInstance Win32_Process -Filter \"ParentProcessId=12\" | % { Stop-Process -Id $_.ProcessId }"),
+    ("PowerShell", "taskkill /PID 1234 /F"),
+    ("Bash", "kill 1234"),
+    ("Bash", "kill -9 1234"),
+    ("PowerShell", "echo 'Stop-Process -Name node; taskkill /IM node.exe'"),
+    ("Bash", "echo pkill -f serve_pair"),
+    ("Bash", "rg 'killall' docs/"),
+]
+SAFE_KILL_CASES += [
+    (f"safe_kill: kill by name or command line -> block ({command[:48]}) (fleet-config#2118)",
+     "safe_kill_guard", {"tool_name": tool, "tool_input": {"command": command}}, 2)
+    for tool, command in _NAMED_KILL_BLOCKED
+] + [
+    (f"safe_kill: kill by PID, or text that only names a kill -> allow ({command[:48]}) (fleet-config#2118)",
+     "safe_kill_guard", {"tool_name": tool, "tool_input": {"command": command}}, 0)
+    for tool, command in _NAMED_KILL_ALLOWED
+]

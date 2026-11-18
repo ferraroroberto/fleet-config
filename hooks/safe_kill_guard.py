@@ -8,6 +8,11 @@ Triggers on `PreToolUse` for `Bash` and `PowerShell`. Blocks:
       - `Get-Process python* | Stop-Process`
       - `pkill -f python` / `killall python`
 
+  * Any kill selected by process name or command line, which also stops other
+    lanes' processes: `Stop-Process -Name <any>`, `Get-Process <name> | Stop-Process`,
+    a `Get-CimInstance Win32_Process` filter on name/command line feeding
+    `Stop-Process` / `Terminate`, `taskkill /IM`, `pkill`, `killall`, `kill $(pgrep …)`.
+
   * Port-scoped kills targeting a port in `[global].never_kill_ports`
     (sister hubs like :8000 LLM hub, :8090 whisper, :8446 session-host).
 
@@ -25,6 +30,7 @@ Triggers on `PreToolUse` for `Bash` and `PowerShell`. Blocks:
     shell. A target that is clearly another machine passes.
 
 Allow-listed (passes through):
+  * Kills by explicit PID: `Stop-Process -Id <n>`, `taskkill /PID <n>`, `kill <n>`.
   * Port-scoped kills against ports NOT in `never_kill_ports` —
     `Get-NetTCPConnection -LocalPort 8445 | ... Stop-Process` works fine.
   * `git push --force` to a feature branch (not main/master) — including one
@@ -313,18 +319,27 @@ def _unquote_word(token: str) -> str:
     return _lib._QUOTED_RUN_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), token)
 
 
-def command_invocations(cmd: str, _depth: int = 0) -> list[list[str]]:
-    """Every command `cmd` runs, each as its unquoted words, command word first.
+# Statement boundaries; `|`, parentheses and braces only split commands, so a
+# pipeline and its script blocks stay one statement.
+_STATEMENT_SEPARATORS = {"&&", "||", ";", "&", "\n"}
+
+
+def _scan_commands(cmd: str, _depth: int = 0) -> tuple[list[list[str]], list[list[list[str]]]]:
+    """Every command `cmd` runs as `(commands, statements)`: the commands in reading
+    order (each its unquoted words, command word first) and the same commands
+    grouped by statement.
 
     The same reading as `_lib.runs_git_commit`, on its tokenizer: heredoc and here-string bodies are
     data, a quoted string is one word, and leading `VAR=value` assignments and
     `_lib.COMMAND_PREFIX_WORDS` (with their options) are skipped so the command after
     them leads. Braces split commands too, so a PowerShell script block's first
     word is in command position. A nested shell's command line (`bash -c "…"`,
-    `cmd //c …`, `iex '…'`) is read as well.
+    `cmd //c …`, `iex '…'`) is read as well, as statements of its own.
     """
     text = _LINE_CONTINUATION_RE.sub(" ", _lib._PS_HERE_STRING_RE.sub("''", _lib.strip_heredoc_bodies(cmd)))
     found: list[list[str]] = []
+    statements: list[list[list[str]]] = []
+    current: list[list[str]] = []
     raw: list[str] = []
     after_prefix = False
     for token in [*_lib._COMMIT_TOKEN_RE.findall(text), "\n"]:
@@ -332,10 +347,16 @@ def command_invocations(cmd: str, _depth: int = 0) -> list[list[str]]:
             if raw:
                 words = [_unquote_word(t) for t in raw]
                 found.append(words)
+                current.append(words)
                 if _depth < _NESTED_DEPTH:
                     for line in _nested_command_lines(raw, words):
-                        found.extend(command_invocations(line, _depth + 1))
+                        nested_found, nested_statements = _scan_commands(line, _depth + 1)
+                        found.extend(nested_found)
+                        statements.extend(nested_statements)
             raw, after_prefix = [], False
+            if token in _STATEMENT_SEPARATORS and current:
+                statements.append(current)
+                current = []
             continue
         if not raw:
             if _lib._COMMIT_ENV_ASSIGN_RE.match(token):
@@ -346,7 +367,17 @@ def command_invocations(cmd: str, _depth: int = 0) -> list[list[str]]:
             if after_prefix and token.startswith("-"):
                 continue
         raw.append(token)
-    return found
+    return found, statements
+
+
+def command_invocations(cmd: str) -> list[list[str]]:
+    """Every command `cmd` runs, each as its unquoted words, command word first."""
+    return _scan_commands(cmd)[0]
+
+
+def command_statements(cmd: str) -> list[list[list[str]]]:
+    """The commands `cmd` runs, grouped by statement."""
+    return _scan_commands(cmd)[1]
 
 
 def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
@@ -368,6 +399,87 @@ def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
     if rest and not (len(rest) == 1 and rest[0][:1] in "\"'"):
         lines.append(" ".join(rest))
     return lines
+
+
+# ----- kills selected by process name or command line -----
+# A lane that stops "its" throwaway server by name or command-line match also
+# stops every other process that matches, other lanes' servers included. Only a
+# kill by an explicit PID (or the project's own port, which resolves to PIDs) is
+# safe. Read per statement in command position, so an `echo` or a search that
+# merely names one of these is not refused; a selection made in an earlier
+# statement (`$p = Get-Process x; $p | Stop-Process`) is not tracked.
+PS_KILL_CMDLETS = {"stop-process", "spps", "kill"}
+NAME_SELECTORS = {"get-process", "gps", "ps", "pgrep", "pidof"}
+CIM_PROCESS_QUERIES = {"get-ciminstance", "gcim", "get-wmiobject", "gwmi"}
+CIM_PROCESS_FILTER_RE = re.compile(r"\b(?:commandline|executablepath|name)\b")
+_TASKKILL_IMAGE_FILTERS = ("imagename", "windowtitle")
+
+
+def _long_param(arg: str, name: str, minimum: int) -> bool:
+    """True when `arg` spells PowerShell parameter `name`, abbreviated to at least `minimum` letters."""
+    spelled = arg.partition(":")[0].lower()
+    return spelled.startswith("-") and len(spelled) - 1 >= minimum and name.startswith(spelled[1:])
+
+
+def _selects_by_pid(stem: str, args: list[str]) -> bool:
+    spelled = {a.partition(":")[0].lower() for a in args}
+    return "-id" in spelled or (stem == "ps" and "-p" in spelled)
+
+
+def _is_kill_sink(words: list[str]) -> bool:
+    stem = command_stem(words[0])
+    low = [w.lower() for w in words[1:]]
+    if stem in PS_KILL_CMDLETS or stem == "remove-ciminstance":
+        return True
+    if stem in CIM_CMDLETS:
+        return "terminate" in low
+    return stem.endswith((".kill", ".terminate"))
+
+
+def _taskkill_by_name(args: list[str]) -> bool:
+    low = [a.lower() for a in args]
+    for i, arg in enumerate(low):
+        flag = _flag(arg)
+        if flag == "im":
+            return True
+        if flag == "fi" and i + 1 < len(low) and low[i + 1].startswith(_TASKKILL_IMAGE_FILTERS):
+            return True
+    return False
+
+
+def _statement_named_kill(statement: list[list[str]]) -> Optional[str]:
+    """What the statement kills by name or command line, or None when it kills by PID or not at all."""
+    sink = False
+    selector: Optional[str] = None
+    flat = " ".join(w.lower() for words in statement for w in words)
+    for words in statement:
+        stem = command_stem(words[0])
+        args = words[1:]
+        if stem in {"pkill", "killall"}:
+            return stem
+        if stem == "taskkill" and _taskkill_by_name(args):
+            return "taskkill /IM"
+        if stem in {"stop-process", "spps"} and any(_long_param(a, "name", 1) for a in args):
+            return "Stop-Process -Name"
+        if stem == "kill" and any(_long_param(a, "name", 2) for a in args):
+            return "kill -Name"
+        sink = sink or _is_kill_sink(words)
+        if stem in NAME_SELECTORS and (stem in {"pgrep", "pidof"} or not _selects_by_pid(stem, args)):
+            selector = selector or stem
+        elif stem in CIM_PROCESS_QUERIES and "win32_process" in flat and CIM_PROCESS_FILTER_RE.search(flat):
+            selector = selector or "a Win32_Process query on name or command line"
+    if sink and selector:
+        return "a kill fed by " + selector
+    return None
+
+
+def named_kill(cmd: str) -> Optional[str]:
+    """The first kill in `cmd` that is selected by process name or command line, or None."""
+    for statement in command_statements(cmd):
+        hit = _statement_named_kill(statement)
+        if hit:
+            return hit
+    return None
 
 
 # ----- host power: off, restart, sleep, hibernate -----
@@ -534,6 +646,18 @@ def main() -> None:
                 "`Get-NetTCPConnection -LocalPort <PORT> | Select -ExpandProperty OwningProcess | "
                 "ForEach-Object { Stop-Process -Id $_ -Force }`." + shell_note
             )
+
+    # 1b) Any other kill selected by process name or command line
+    by_name = named_kill(cmd)
+    if by_name:
+        _lib.block(
+            "Blocked: kill selected by process name or command line (" + by_name + "). "
+            "It also stops every other process that matches, other lanes' servers included. "
+            "Record the PID of each throwaway process you start and stop only those: "
+            "`Stop-Process -Id <pid>` / `taskkill /PID <pid>` / `kill <pid>`; "
+            "for your own port, `Get-NetTCPConnection -LocalPort <PORT> | "
+            "ForEach-Object { Stop-Process -Id $_.OwningProcess }`." + shell_note
+        )
 
     # 2) Git bypass flags
     bypass = git_bypass_flag(cmd)
