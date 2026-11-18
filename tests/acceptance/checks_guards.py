@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Tuple
 
+from acceptance.hook_cases.inproc import run_in_process
 from acceptance.shared import (
     HOOKS,
     REPO,
@@ -406,8 +407,8 @@ def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
     tmp = Path(tempfile.mkdtemp(prefix="secret_scan_gh_"))
     try:
         def verdict(command: str, cwd: Path = tmp, tool: str = "Bash") -> Tuple[int, str, str]:
-            return run("secret_scan_guard", {"tool_name": tool, "cwd": str(cwd),
-                                             "tool_input": {"command": command}})
+            return run_in_process("secret_scan_guard", {"tool_name": tool, "cwd": str(cwd),
+                                                        "tool_input": {"command": command}})
 
         publishers = ("gh issue create --title t", "gh pr create --title t",
                       "gh issue comment 5", "gh pr comment 5",

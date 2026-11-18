@@ -1,6 +1,7 @@
 """Case data for the hook-payload acceptance matrix (`acceptance.hook_matrix`).
 
-One module per hook family, each a list of `(label, hook, payload, expected exit)` records.
+One module per hook family, each a list of `(label, hook, payload, expected exit)` records,
+plus `inproc`, the in-process runner those cases and the sink suites answer through.
 """
 from __future__ import annotations
 

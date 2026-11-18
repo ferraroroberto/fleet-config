@@ -5,7 +5,8 @@ The hook reads the commit message a `git commit -F <file>` names and the body a
 A real trailer line or session link is refused and the refusal quotes the line
 to remove; ordinary clean bodies, prose that merely names a trailer, and a file
 the hook cannot read pass. Every verdict comes from the real hook subprocess
-against real temp files, because the sink is a filesystem read.
+against real temp files, because the sink is a filesystem read. The hook's `main()`
+runs in-process (`acceptance.hook_cases.inproc`); its one real spawn is in the hook matrix.
 """
 from __future__ import annotations
 
@@ -14,7 +15,8 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Tuple
 
-from acceptance.shared import _Checker, run
+from acceptance.hook_cases.inproc import run_in_process
+from acceptance.shared import _Checker
 
 HOOK = "pre_commit_no_ai_trailer"
 CO_AUTHOR = "Co-Authored-By: Claude <noreply@anthropic.com>"
@@ -200,8 +202,8 @@ def _attribution_scan_unit_checks() -> Tuple[int, int]:
         (tmp / "elsewhere").mkdir()
 
         def verdict(command: str, cwd: Path = tmp, tool: str = "Bash") -> Tuple[int, str, str]:
-            return run(HOOK, {"tool_name": tool, "cwd": str(cwd),
-                              "tool_input": {"command": command}})
+            return run_in_process(HOOK, {"tool_name": tool, "cwd": str(cwd),
+                                         "tool_input": {"command": command}})
 
         _commit_file_cases(check, verdict, tmp)
         _gh_body_cases(check, verdict, tmp)

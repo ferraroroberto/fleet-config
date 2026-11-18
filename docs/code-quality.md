@@ -194,7 +194,7 @@ The source repository carries ratchets this repository does not adopt because it
 
 The acceptance run also holds checks that are not baselines because they have nothing to burn down: they either pass or fail.
 
-- **Hook matrix** (`tests/acceptance/hook_matrix.py`): every hook is driven with sample payloads, per harness, and the expected exit code and output are asserted. A hook is not claimed to work until it has been driven through this.
+- **Hook matrix** (`tests/acceptance/hook_matrix.py`): every hook is driven with sample payloads, per harness, and the expected exit code and output are asserted. Every case calls the hook's `main()` in this process (`tests/acceptance/hook_cases/inproc.py`: fresh hook modules, the suite's isolated environment, captured stdio), and each hook keeps one real spawn whose exit code, stdout and stderr must equal the in-process answer for the same payload, so the fast path cannot drift from the wired process. A hook is not claimed to work until it has been driven through this.
 - **Spawn scanner** (`tests/acceptance/spawn_scanner.py`): a static scan that every subprocess spawn passes the no-window flag with the right value and that every `git` call goes through the wrapper.
 - **Tree boundary** (`tests/acceptance/tree_boundary.py`): the hooks tree and the skills tree are linked into the agent homes independently, so a hook must import nothing from the skills tree.
 - **Fleet-scope guard** (`tests/acceptance/fleet_scope_guard.py`): every route that enumerates repos fleet-wide honours the switch that excludes dormant ones, or is recorded as deliberately unfiltered with a reason.

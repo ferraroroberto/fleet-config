@@ -21,6 +21,7 @@ from acceptance.hook_cases.commit_guards import PRE_COMMIT_CASES, SECRET_SCAN_CA
 from acceptance.hook_cases.fakes import FAKE_AKIA, FAKE_GHP, FAKE_SK, FAKE_XOXB
 from acceptance.hook_cases.grok_shape import grok_cases
 from acceptance.hook_cases.host_power import HOST_POWER_CASES
+from acceptance.hook_cases.inproc import run_in_process, wiring_cases
 from acceptance.hook_cases.lifecycle_hooks import (
     NOTIFY_ON_IDLE_CASES,
     SESSION_START_CASES,
@@ -33,7 +34,7 @@ from acceptance.hook_cases.shell_guards import (
     VENV_CASES,
     WINDOWS_PATH_CASES,
 )
-from acceptance.shared import assert_exit, run
+from acceptance.shared import _Checker, assert_exit, run
 
 # Re-exported: `checks_dispatch` and `checks_guards` import the fakes from here.
 __all__ = ["FAKE_AKIA", "FAKE_GHP", "FAKE_SK", "FAKE_XOXB", "matrix_cases", "run_hook_matrix"]
@@ -62,14 +63,24 @@ def matrix_cases() -> Tuple[List[Case], Path]:
 
 
 def run_hook_matrix() -> Tuple[int, int]:
+    """Every case runs in-process; each hook then gets one real spawn as its wiring proof.
+
+    The spawn must answer the in-process run's exit code, stdout and stderr for the
+    same payload, so the fast path can never drift from what the harness executes."""
     cases, tmp = matrix_cases()
     failures = 0
     for name, hook, payload, expected in cases:
-        code, _stdout, stderr = run(hook, payload)
+        code, _stdout, stderr = run_in_process(hook, payload)
         if not assert_exit(name, expected, code, stderr):
             failures += 1
+
+    check = _Checker()
+    for name, hook, payload, _expected in wiring_cases(cases):
+        spawned, in_process = run(hook, payload), run_in_process(hook, payload)
+        check(f"hook wiring: {hook} as a real process answers as in-process does ({name})",
+              spawned == in_process, f"spawn={spawned!r} in-process={in_process!r}")
 
     # The py_syntax_check fixture files are only ever read by the cases just run.
     shutil.rmtree(tmp, ignore_errors=True)
 
-    return failures, len(cases)
+    return failures + check.failures, len(cases) + check.total
