@@ -1,4 +1,4 @@
-"""prompt-audit lint, audience and inventory: planted counts are exact and a clean fixture yields nothing, marker-scoped audiences, the synthetic-fleet inventory, all four diff-source verdicts, the ledger plan and the honest digest partition.
+"""prompt-audit lint, audience and inventory: planted counts are exact and a clean fixture yields nothing, marker-scoped audiences, the synthetic-fleet inventory, all four diff-source verdicts, the ledger plan and the honest digest partition; scan-anyway on a changed guide, the chat ping and prompt-drift routing; skill structure, the coverage check and leads intake.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/prompt_audit/test_lint_and_inventory.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import io
+import json
 import os
 import re
 import shutil
@@ -21,6 +22,7 @@ from _suite import (  # noqa: E402
     PLANTED,
     REPO,
     RULES,
+    SKILL,
     SKILL_BAD,
     SKILL_GOOD,
     _h,
@@ -353,5 +355,457 @@ nmd, nstatus = pa.render_digest({"date": "d", "scan_ran": True, "rubric": rub,
 check(nstatus == "complete" and "`guides=not-checked`" in nmd
       and "<!-- prompt-audit-digest run=d status=complete scan=posted guides=not-checked update-issue=none -->" in nmd,
       "every source not-checked still scans and stamps a delivered scan (#834)")
+
+
+# ======== scan-anyway, chat ping and prompt-drift routing ========
+
+# ---- scan anyway: a changed guide files the update issue and the scan still runs (#1132) ----
+
+SKILL_CHANGED = "VERDICT=changed|id=anthropic-skill-authoring|sha=y|marker=none|reason=sha x -> y"
+prov = pa.provisional_rules(RULES, CFG["sources"], [SKILL_CHANGED, "VERDICT=unchanged|id=anthropic-memory|sha=x|marker=none|reason=identical"])
+check({"R-11", "R-14", "R-15"} <= prov and "R-01" not in prov and "R-33" not in prov,
+      f"a rule is provisional when its Source: line cites a changed source; the appendix after R-33 never leaks into it (got {sorted(prov)})")
+check(pa.provisional_rules(RULES, CFG["sources"], [SKILL_CHANGED.replace("VERDICT=changed", "VERDICT=not-checked")]) == set()
+      and pa.provisional_rules(RULES, CFG["sources"], []) == set(),
+      "a not-checked or absent verdict makes nothing provisional")
+check("R-14" in pa.provisional_rules(RULES, CFG["sources"], ["VERDICT=new-guide|id=anthropic-memory|sha=y|marker=none|reason=r"]),
+      "a new-guide verdict counts as changed, matching a Source: URL without the .md suffix")
+both_run = {"date": "d", "scan_ran": True, "update_issue": "#900", "rubric": rub, "sources": [SKILL_CHANGED],
+            "plan": ["PLAN=r/.claude/skills/a/SKILL.md|action=scan|reason=new|sha=aaaaaaaaaaaa"],
+            "judgments": {"r/.claude/skills/a/SKILL.md": [
+                {"rule": "R-15", "verdict": "violation", "line": 3, "text": "description: I do x", "note": "first person"},
+                {"rule": "R-01", "verdict": "violation", "line": 5, "text": "MUST", "note": "caps"}]}}
+bmd, bstatus = pa.render_digest(both_run, RULES, provisional=prov)
+check(bstatus == "complete"
+      and "<!-- prompt-audit-digest run=d status=complete scan=posted guides=changed update-issue=#900 -->" in bmd,
+      f"a changed guide still scans: stamp carries the posted scan, guides=changed and the update issue (got {bmd[:300]!r})")
+r15 = next(l for l in bmd.splitlines() if "**R-15**" in l)
+r01 = next(l for l in bmd.splitlines() if "**R-01**" in l)
+check("provisional" in r15 and "provisional" not in r01,
+      f"only a finding whose rule cites a changed source is marked provisional (got {r15!r} / {r01!r})")
+check("#900" in bmd and "R-15" in bmd.split("**Findings in scanned files:**", 1)[0],
+      "the digest names the update issue and lists the provisional rules before the findings")
+check("_(provisional)_" not in pa.render_digest(both_run, RULES)[0],
+      "no provisional set, no provisional marks")
+bping = pa.render_ping(both_run, "https://github.com/o/r/issues/882#issuecomment-1", prov)
+check(bping.endswith("2 violation (1 provisional), 0 consider - rule-set update issue #900 - ledger https://github.com/o/r/issues/882#issuecomment-1"),
+      f"the ping of a scan with changed guides names the update issue and the provisional count (got {bping!r})")
+
+# ---- chat ping: one ASCII line for a delivered run, counts shared with the digest (#831) ----
+
+URL = "https://github.com/o/r/issues/882#issuecomment-1"
+ping_run = dict(run, judgments=dict(run["judgments"], **{"r/b.md": [{"rule": "R-13", "verdict": "consider", "line": 2}]}))
+ping = pa.render_ping(ping_run, URL)
+check(ping == f"prompt-audit 2026-09-13 - status=partial - guides=not-checked - scanned 2, skipped 1, unmeasured 1"
+             f" - 1 violation, 1 consider - ledger {URL}", f"scan-mode ping line (got {ping!r})")
+pmd_ping, _ = pa.render_digest(ping_run, RULES)
+check("scanned 2, skipped 1 (unchanged), unmeasured 1" in pmd_ping and "1 violation, 1 consider" in pmd_ping,
+      "the ping and the digest report the same counts")
+uping = pa.render_ping({"date": "d", "scan_ran": False, "update_issue": "#900",
+                       "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, URL)
+check(uping == f"prompt-audit d - status=complete - guides=changed - scan not run, rule-set update issue #900 - ledger {URL}",
+      f"update-mode ping names the update issue instead of scan counts (got {uping!r})")
+check(all(ord(c) < 128 for c in pa.render_ping(ping_run, URL + "·")), "the ping line is pure ASCII (#507)")
+
+ping_tmp = Path(tempfile.mkdtemp(prefix="prompt-audit-ping-"))
+try:
+    run_file = write(ping_tmp / "run.json", json.dumps(ping_run))
+    dry_file = write(ping_tmp / "dry.json", json.dumps(dict(ping_run, dry_run=True)))
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc_ping = pa.main(["ping", "--run", str(run_file), "--comment-url", URL])
+        rc_dry = pa.main(["ping", "--run", str(dry_file), "--comment-url", URL])
+    check(rc_ping == 0 and out.getvalue() == ping + "\n", "ping CLI prints exactly the rendered line")
+    check(rc_dry == 2 and "dry run" in err.getvalue(), "ping CLI refuses a dry run, so a dry run sends nothing")
+finally:
+    shutil.rmtree(ping_tmp, ignore_errors=True)
+
+skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+writes = next(l for l in skill_md.splitlines() if l.startswith("- **Writes are exactly these:**"))
+check("chat ping" in writes and "delivered run only" in writes, "the ping is listed among the skill's writes")
+step10 = skill_md.split("### 10.", 1)[-1]
+check("ping --run" in step10 and "notify_send.py --category log" in step10, "step 10 pipes the helper line to notify_send")
+check(all(m in step10 for m in ("PING=sent", "PING=not-delivered", "PING=not-sent")),
+      "a failed or skipped ping is reported as its own state, never as sent")
+check("never prints `SCHEDULED-RUN-FAILED`" in step10, "a failed ping never flips a delivered run to failed")
+
+# ---- prompt-drift issues: routing, tiers, living-backlog merge (fleet-config#833) ----
+
+MASTER = "# Scaffold\n\n## Streamlit conventions for every app\n\n- Keep secrets in the env file always.\n"
+SKILL_TXT = ('---\nname: s\ndescription: Does a thing, e.g. "/s".\n---\n\n# s\n\n'
+             "<!-- map:mermaid:start -->\nClaude diagram\n<!-- map:mermaid:end -->\n\nRoute Claude requests here.\n")
+drift_findings = [
+    {"path": "project-scaffolding/CLAUDE.md", "rule": "R-26", "verdict": "violation", "line": 3,
+     "text": "## Streamlit conventions for every app", "note": "procedure inline"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-26", "verdict": "consider", "line": 9,
+     "text": "## Streamlit conventions for every app", "note": "inherited"},
+    {"path": "beta/CLAUDE.md", "rule": "R-26", "verdict": "violation", "line": 12,
+     "text": "## Streamlit conventions for every app", "note": "inherited"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-17", "verdict": "violation", "line": 3,
+     "text": "Route Claude requests through the hub.", "note": "one vendor named"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-13", "verdict": "consider", "line": 5,
+     "text": "Never fork a local copy.", "note": "negative framing"},
+    {"path": "gamma/.claude/skills/s/SKILL.md", "rule": "R-17", "verdict": "violation", "line": 9,
+     "text": "Claude diagram", "note": "inside the marked block"},
+    {"path": "gamma/.claude/skills/s/SKILL.md", "rule": "R-15", "verdict": "violation", "line": 3,
+     "text": 'description: Does a thing, e.g. "/s".', "note": "prose"},
+    {"path": "fleet-config/global-CLAUDE.md", "rule": "R-03", "verdict": "violation", "line": 4,
+     "text": "Always double-check the result.", "note": "forced re-check"},
+]
+texts = {"gamma/.claude/skills/s/SKILL.md": SKILL_TXT, "alpha/CLAUDE.md": "# a\n"}
+per_repo = pa.drift_items(drift_findings, RULES, texts, MASTER, "")
+check(sorted(per_repo) == ["alpha", "fleet-config", "gamma", "project-scaffolding"],
+      f"violations route to their repo; considers alone file nothing (got {sorted(per_repo)})")
+shared = per_repo["project-scaffolding"]
+check(len(shared) == 1 and shared[0]["propagate"] == ["alpha", "beta"] and shared[0]["line"] == 3,
+      f"a line shared with the master is filed once there, propagating to every sister copy (got {shared})")
+check("beta" not in per_repo and all(i["rule"] != "R-26" for i in per_repo["alpha"]),
+      "neither sister's issue lists the shared line")
+check([i["rule"] for i in per_repo["alpha"]] == ["R-17"], "a consider never becomes a cleanup item")
+check(shared[0]["tier"] == "hard" and per_repo["fleet-config"][0]["tier"] == "hard",
+      "the scaffolding master and the global file are hard tier whatever the rule's own tier")
+check(per_repo["alpha"][0]["tier"] == "easy", "an easy rule in an ordinary file stays easy")
+gamma = {i["rule"]: i["tier"] for i in per_repo["gamma"]}
+check(gamma == {"R-17": "hard", "R-15": "easy"},
+      f"a fix inside a marked block is hard; description prose around the triggers stays easy (got {gamma})")
+check(pa.in_protected_span(SKILL_TXT, 2, "R-17") and not pa.in_protected_span(SKILL_TXT, 14, "R-17"),
+      "frontmatter lines are protected for every rule but the description-prose one")
+
+rub12 = "c" * 64
+body1, c1 = pa.merge_drift("", per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-13", rub12)
+check(c1["new"] == 1 and c1["tier"] == "easy" and c1["open"] == 1, f"first run creates the item (got {c1})")
+check("**Tier (`/cleanup-fleet` prompt-drift rule): easy** — 1 open item(s): 1 easy, 0 hard." in body1,
+      "the body states the issue's tier for the cleanup scorer")
+check(pa.parse_drift_body(body1)[0][0]["rule"] == "R-17", "an item round-trips through its hidden identity")
+check(".." not in pa.render_drift_item(dict(per_repo["alpha"][0], note="ends in a period."), RULES, "d"),
+      "a note that already ends in a period is not doubled")
+ticked = body1.replace("- [ ] **`CLAUDE.md:3`**", "- [x] **`CLAUDE.md:3`**")
+moved = [dict(per_repo["alpha"][0], line=7)]
+body2, c2 = pa.merge_drift(ticked, moved, {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check(body2.count("R-17") == body1.count("R-17") and "- [x] **`CLAUDE.md:3`**" in body2 and c2["new"] == 0,
+      "a second run merges into the same item and preserves the tick (no duplicate)")
+check(c2["tier"] == "none" and len(pa.parse_drift_body(body2)[1]) == 2, "the run log gains one line per run")
+body3, c3 = pa.merge_drift(body1, moved, {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check("**`CLAUDE.md:7`**" in body3 and c3["matched"] == 1, "an unticked re-matched item refreshes its line number")
+body4, c4 = pa.merge_drift(body1, [], set(), set(), RULES, "2026-09-20", rub12)
+check(c4["kept"] == 1 and c4["not_resurfaced"] == 0 and "not re-surfaced 2026" not in body4,
+      "an item for a file not rescanned (unchanged) is kept as it is")
+body5, c5 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check(c5["not_resurfaced"] == 1 and "- [ ] " in body5 and "not re-surfaced 2026-09-20" in body5 and c5["tier"] == "none",
+      "a finding gone from a rescanned file is tagged, never ticked or deleted, and no longer counts as open")
+body6, c6 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, {("alpha/CLAUDE.md", "R-17")}, RULES, "2026-09-20", rub12)
+check(c6["kept"] == 1 and "not re-surfaced 2026" not in body6, "an item whose rule was unmeasured this run is kept, not tagged")
+
+# #1477: a finding that vanished because the rubric changed (file bytes unchanged) is not "gone".
+rub_old, rub_new = "c" * 64, "d" * 64
+sha_a, sha_b = "a" * 12, "b" * 12
+filed, _ = pa.merge_drift("", per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-07", rub_old,
+                          {"alpha/CLAUDE.md": sha_a})
+rc_body, rc = pa.merge_drift(filed, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new,
+                             {"alpha/CLAUDE.md": sha_a})
+check(rc["rule_changed"] == 1 and rc["not_resurfaced"] == 0 and "rule changed 2026-10-15" in rc_body
+      and "not re-surfaced 2026" not in rc_body and "tick it" not in rc_body and "- [ ] " in rc_body,
+      f"rubric changed + file unchanged reads 'rule changed', never gone or tickable (got {rc})")
+gone_body, gone = pa.merge_drift(filed, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new,
+                                 {"alpha/CLAUDE.md": sha_b})
+check(gone["not_resurfaced"] == 1 and gone["rule_changed"] == 0 and "not re-surfaced 2026-10-15" in gone_body,
+      f"rubric changed + file changed and the finding is absent still reads gone (got {gone})")
+legacy = re.sub(r" rubric=\S+ sha=\S+", "", filed)  # a pre-#1477 item: only the run log knows the old rubric
+check("rubric=" not in legacy.split("## Audit run log")[0] and "rubric `cccccccccccc`" in legacy,
+      "fixture: the legacy body has no per-item rubric, only the run-log line")
+lg_body, lg = pa.merge_drift(legacy, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new)
+check(lg["rule_changed"] == 1 and lg["not_resurfaced"] == 0 and "not re-surfaced 2026" not in lg_body,
+      f"a legacy item whose run-log rubric differs and whose file sha is unknown reads 'rule changed' (got {lg})")
+again, ag = pa.merge_drift(rc_body, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-22", "e" * 64,
+                           {"alpha/CLAUDE.md": sha_a})
+check(ag["rule_changed"] == 1 and again.count("_(rule changed") == 1, "a second rule change replaces the tag, never stacks it")
+rematch, rm = pa.merge_drift(rc_body, per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-22", rub_new,
+                             {"alpha/CLAUDE.md": sha_a})
+check(rm["matched"] == 1 and "_(rule changed" not in rematch, "a re-raised finding drops the rule-changed tag")
+
+prov_repo = pa.drift_items(drift_findings, RULES, texts, MASTER, "", provisional={"R-15"})
+gamma_items = {i["rule"]: i for i in prov_repo["gamma"]}
+check(gamma_items["R-15"]["provisional"] and not gamma_items["R-17"]["provisional"]
+      and [i["id"] for i in prov_repo["gamma"]] == [i["id"] for i in per_repo["gamma"]],
+      "drift items carry the provisional flag without changing their identity (#1132)")
+prov_line = pa.render_drift_item(gamma_items["R-15"], RULES, "d")
+plain_line = pa.render_drift_item(gamma_items["R-17"], RULES, "d")
+check("Provisional:" in prov_line and "Provisional:" not in plain_line,
+      f"a provisional violation is marked in the prompt-drift body; others are not (got {prov_line!r})")
+check(pa.parse_drift_body(prov_line)[0][0]["rule"] == "R-15", "a provisional item still round-trips through its hidden identity")
+sbody, _ = pa.merge_drift("", shared, {"project-scaffolding/CLAUDE.md", "alpha/CLAUDE.md", "beta/CLAUDE.md"},
+                          set(), RULES, "2026-09-13", rub12)
+narrowed = [dict(shared[0], propagate=["alpha"])]
+sbody2, _ = pa.merge_drift(sbody, narrowed, {"project-scaffolding/CLAUDE.md", "alpha/CLAUDE.md"}, set(),
+                           RULES, "2026-09-20", rub12)
+check("Propagate to: alpha, beta." in sbody2, "a sister not rescanned this run stays on the propagate list")
+check(pa.DRIFT_KIND in __import__("audit_issue").KINDS, "prompt-drift is a managed kind")
+
+
+# ======== skill structure, coverage check and leads intake ========
+
+# ---- skill structure (#1126): fence length, R-15 frontmatter, R-34..R-37, skill-ref inventory ----
+
+# A four-backtick fence holds three-backtick lines; a toggle-on-every-fence parser lints its middle.
+NESTED_FENCE = "# N\n\n````md\n```bash\nCRITICAL inside the example\n```\n````\n\nKeep it short.\n"
+check(pa.lint_entry(entry_for(NESTED_FENCE), RULES, AUD).hits == [],
+      "a three-backtick line inside a four-backtick fence does not close it (fence length tracked)")
+
+
+def skill_text(body: str, name: str = "good", desc: str = "Audits the thing. E.g. \"/good\".") -> str:
+    return f"---\nname: {name}\ndescription: {desc}\n---\n\n# s\n\n{body}\n"
+
+
+def skill_hits(text: str, rule: str, vocab=None) -> list:
+    res = pa.lint_entry(entry_for(text, kind="skill", key="x/.claude/skills/s/SKILL.md"), RULES, AUD, mcp_vocab=vocab)
+    return by_rule(res, rule)
+
+
+check(len(skill_hits(skill_text("Body.", name="Bad_Name"), "R-15")) == 1, "R-15: a name outside [a-z0-9-] is a hit")
+check(len(skill_hits(skill_text("Body.", name="a" * 65), "R-15")) == 1, "R-15: a name over 64 chars is a hit")
+check(len(skill_hits(skill_text("Body.", desc="Audits <example>things</example>."), "R-15")) == 1,
+      "R-15: an XML tag in the description is a hit")
+check(skill_hits(skill_text("Body.", name="good-name-2"), "R-15") == [], "R-15: a valid name and plain description pass")
+
+R36 = skill_text("Run scripts\\helper.py next.\nOpen E:\\automation\\fleet-config\\docs now.\n"
+                 "Use `tools\\lint.py` too.\nUse scripts/helper.py and snake\\_case.\n"
+                 "Run `& .\\.venv\\Scripts\\python.exe -m x`.\n\n```bat\ncd /d E:\\automation\\x\n```")
+r36 = skill_hits(R36, "R-36")
+check(sorted((h.line, h.cap) for h in r36) == [(8, "violation"), (9, "consider"), (10, "violation"), (12, "consider")],
+      f"R-36: relative backslash path -> violation, drive or venv path -> consider, fence/forward/escape ignored (got {[(h.line, h.cap) for h in r36]})")
+check(skill_hits(skill_text("Use scripts/helper.py."), "R-36") == [], "R-36: forward-slash paths pass")
+
+vocab = pa.mcp_vocabulary(["Load `mcp__web__navigate` and `mcp__web__read_page`.", "`mcp__dev__computer_` prefix"])
+check(sorted(vocab) == ["navigate", "read_page"], f"R-37 vocabulary: qualified names only, prefix forms skipped (got {sorted(vocab)})")
+R37 = skill_text("Call `navigate` first.\nThen `mcp__web__read_page` (`read_page`).\nUse `other_tool`.\n\n```\n`navigate`\n```")
+r37 = skill_hits(R37, "R-37", vocab)
+check([h.line for h in r37] == [8], f"R-37: a bare known tool name is a hit; a line carrying the qualified form, unknown names and fences are not (got {[h.line for h in r37]})")
+check(skill_hits(R37, "R-37", {}) == [], "R-37: an empty vocabulary flags nothing")
+
+tmp2 = Path(tempfile.mkdtemp(prefix="prompt-audit-refs-"))
+try:
+    f2 = tmp2 / "automation"
+    sdir = f2 / "repo-c" / ".claude" / "skills" / "s1"
+    write(sdir / "SKILL.md", skill_text(
+        "See [the reference](reference.md) and `docs/shared.md`.\n"
+        "Delegate to [s2](../s2/SKILL.md). Cases: [c](evals/case/prompt.md), [t](conversations/t.md).\n"
+        "Not there: `missing.md`. Repo file: [readme](../../../CLAUDE.md)."))
+    write(sdir / "reference.md", "# Ref\n\nSee [leaf](leaf.md) and [shared](../../../docs/shared.md).\n"
+          "Mentions `other.md` without linking it.\n" + "x\n" * 120)
+    write(sdir / "other.md", "# Other\n")
+    write(sdir / "leaf.md", "# Leaf\n")
+    write(sdir / "evals" / "case" / "prompt.md", "# case\n")
+    write(sdir / "conversations" / "t.md", "# t\n")
+    write(f2 / "repo-c" / "docs" / "shared.md", "# Shared\n\n## Contents\n\n- one\n" + "y\n" * 120)
+    write(f2 / "repo-c" / ".claude" / "skills" / "s2" / "SKILL.md", skill_text("See [ref2](ref2.md)."))
+    write(f2 / "repo-c" / ".claude" / "skills" / "s2" / "ref2.md", "# Ref2\n\nSee [s1](../s1/SKILL.md).\n")
+    write(f2 / "repo-c" / "CLAUDE.md", CLEAN)
+    proj2 = write(tmp2 / "projects.toml", f'[repo-c]\ncwd_prefix = "{(f2 / "repo-c").as_posix()}"\n')
+    ents = pa.inventory(pa.fleet_repos(proj2), AUD)
+    refs = [e.key for e in ents if e.kind == "skill-ref"]
+    check(refs == ["repo-c/.claude/skills/s1/reference.md", "repo-c/docs/shared.md", "repo-c/.claude/skills/s2/ref2.md"],
+          f"skill-ref: linked and backticked references in order; delegation, evals/, conversations/, missing and CLAUDE.md excluded (got {refs})")
+    by_key = {e.key: e for e in ents}
+    s1 = pa.lint_entry(by_key["repo-c/.claude/skills/s1/SKILL.md"], RULES, AUD)
+    r34 = by_rule(s1, "R-34")
+    check(len(r34) == 1 and r34[0].line == 8 and r34[0].count == 1 and "leaf.md" in r34[0].text,
+          f"R-34: a reference that links a leaf SKILL.md does not reference is a hit at the SKILL.md line (got {[(h.line, h.text) for h in r34]})")
+    check(by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s2/SKILL.md"], RULES, AUD), "R-34") == [],
+          "R-34: a reference that only delegates to another skill's SKILL.md is not nesting")
+    r35 = by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s1/reference.md"], RULES, AUD), "R-35")
+    check(len(r35) == 1, "R-35: a reference over 100 lines with no contents heading is a hit")
+    check(by_rule(pa.lint_entry(by_key["repo-c/docs/shared.md"], RULES, AUD), "R-35") == [],
+          "R-35: a long reference with a Contents heading passes")
+    check(by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s2/ref2.md"], RULES, AUD), "R-35") == [],
+          "R-35: a short reference passes")
+    check(not any(h.rule in ("R-01", "R-13", "R-14") for e in ents if e.kind == "skill-ref"
+                  for h in pa.lint_entry(e, RULES, AUD).hits),
+          "skill-ref files are linted only by rules scoped to them")
+finally:
+    shutil.rmtree(tmp2, ignore_errors=True)
+
+# ---- skill structure, judgment half (#1127): R-39 and R-43 lint assists, consider-only guard ----
+
+LONG_FLOW = skill_text("## Steps\n\n" + "".join(f"### {i}. Step {i}\n\nDo thing {i}.\n\n" for i in range(1, 8)))
+r39 = skill_hits(LONG_FLOW, "R-39")
+check(len(r39) == 1 and r39[0].count == 7 and r39[0].line == 10,
+      f"R-39 assist: seven numbered step headings and no checklist is a candidate at the first step (got {[(h.line, h.count) for h in r39]})")
+check(skill_hits(LONG_FLOW + "\n```\n- [ ] 1. Step 1\n- [ ] 2. Step 2\n```\n", "R-39") == [],
+      "R-39 assist: a copyable checklist (fenced counts) clears it")
+check(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 6))), "R-39") == [],
+      "R-39 assist: a five-item numbered list is under the threshold")
+check(len(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 8))), "R-39")) == 1,
+      "R-39 assist: a seven-item top-level numbered list counts when there are no step headings")
+check(sorted(r for r, v in RULES.items() if v["consider_only"]) == [],
+      "no rule carries the consider-only first-cycle flag (R-39, R-41 and R-45..R-48 are normal rules)")
+CONSIDER_RULES = {**RULES, "R-39": {**RULES["R-39"], "consider_only": True}}
+r39_hits = [h for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
+                                               key="x/.claude/skills/s/SKILL.md"), CONSIDER_RULES, AUD).hits
+            if h.rule == "R-39"]
+check(r39_hits and all(h.cap == "consider" for h in r39_hits),
+      "a consider-only rule caps at consider even for a vendor-scoped reader")
+
+tmp3 = Path(tempfile.mkdtemp(prefix="prompt-audit-r43-"))
+try:
+    repo3 = tmp3 / "repo-d"
+    sk = repo3 / ".claude" / "skills" / "s3"
+    write(sk / "helper.py", "import json\nimport requests\nimport yaml\nfrom . import sibling\nimport localmod\n")
+    write(sk / "localmod.py", "X = 1\n")
+    write(sk / "clean.py", "import json\nimport localmod\n")
+    write(repo3 / "tests" / "test_x.py", "import pytest\n")
+    body43 = "Run `helper.py` to fetch.\nRun `clean.py` to tidy.\nNeeds the yaml package. Tests: `tests/test_x.py`.\n"
+    write(sk / "SKILL.md", skill_text(body43))
+    e43 = pa.Entry(key="repo-d/.claude/skills/s3/SKILL.md", path=sk / "SKILL.md", repo="repo-d", kind="skill",
+                   data=(sk / "SKILL.md").read_bytes(), repo_dir=repo3)
+    r43 = by_rule(pa.lint_entry(e43, RULES, AUD), "R-43")
+    check(len(r43) == 1 and r43[0].line == 8 and r43[0].count == 1 and "requests" in r43[0].text,
+          f"R-43 assist: a third-party import SKILL.md never names is a candidate; stdlib, local, relative and named imports are not (got {[(h.line, h.text) for h in r43]})")
+finally:
+    shutil.rmtree(tmp3, ignore_errors=True)
+
+# ---- coverage check (#1128): page cache, fence-aware sections, uncovered set, honesty, dedup ----
+
+COV_PAGE = """# Guide
+
+## Core
+
+### Alpha rule
+
+Text.
+
+### Beta rule
+
+````markdown
+### Not a section
+```bash
+### Still not a section
+```
+## Nor this
+````
+
+### Gamma rule
+
+- [ ] A checklist line
+
+## Lone leaf
+"""
+leaves, checklist = pa.page_sections(COV_PAGE)
+check(leaves == ["Alpha rule", "Beta rule", "Gamma rule", "Lone leaf"],
+      f"coverage parser: headings inside a four-backtick fence holding a three-backtick fence are not sections (got {leaves})")
+check(checklist == ["A checklist line"], f"coverage parser: checklist lines are read (got {checklist})")
+
+COV_RULES = """### R-90 Fixture        tags: [shared] [file: any] [tier: easy]
+Detect: lint — x
+Source: https://example.test/guide (Alpha rule; Core → Gamma rule)
+
+- appendix
+Source: https://example.test/guide · https://other.test/page (Beta rule)
+"""
+COV_SRC = {"url": "https://example.test/guide.md", "role": "instruction-files"}
+cov = pa.coverage("guide", COV_SRC, COV_PAGE, COV_RULES)
+check(cov["status"] == "checked" and cov["uncovered"] == ["Beta rule", "Lone leaf"] and cov["new"] == cov["uncovered"],
+      f"coverage: exactly the sections no Source line cites, another page's citation does not count (got {cov})")
+check(len(cov["unsectioned_sources"]) == 1 and "· https://other.test/page" in cov["unsectioned_sources"][0],
+      "coverage: a Source line citing the page with no section is named")
+check(pa.digest_line(cov).startswith("coverage: guide uncovered 2 (new 2)"), f"coverage digest line (got {pa.digest_line(cov)})")
+
+nc = pa.coverage("guide", COV_SRC, None, COV_RULES)
+check(nc["status"] == "not-checked" and pa.digest_line(nc) == "coverage: guide not-checked",
+      "coverage: an unreadable page is not-checked, never uncovered 0")
+check(pa.coverage("idx", {"role": "index"}, "## A\n", COV_RULES)["status"] == "not-applicable",
+      "coverage: an index page is not applicable")
+paren = pa.coverage("guide", COV_SRC, "## Personality (Friendly vs Pragmatic)\n\n## Tail\n",
+                    "Source: https://example.test/guide (Tail; Personality (Friendly vs Pragmatic))\n")
+check(paren["uncovered"] == [], f"coverage: a cited section title holding parentheses counts as cited (got {paren['uncovered']})")
+
+posted = pa.coverage_comment([cov])
+check(posted is not None and posted.count("prompt-audit-coverage: id=") == 2, "coverage: new sections make one comment")
+again = pa.coverage("guide", COV_SRC, COV_PAGE, COV_RULES, pa.known_items(posted))
+check(again["new"] == [] and again["uncovered"] == cov["uncovered"] and pa.coverage_comment([again]) is None,
+      "coverage dedup: a re-run with the same uncovered set adds no second comment")
+
+cov_run = {"date": "2026-10-04", "dry_run": False, "sources": ["VERDICT=unchanged|id=guide|sha=x|marker=|reason=identical"],
+           "update_issue": None, "scan_ran": True, "plan": [], "judgments": {}, "coverage": [cov]}
+cov_body, cov_status = pa.render_digest(cov_run, RULES)
+check(cov_status == "complete" and "guides=unchanged" in cov_body and "Rule-set update:" not in cov_body
+      and "coverage: guide uncovered 2" in cov_body,
+      "coverage: uncovered sections never put the run into update mode or stop the scan")
+check(pa.provisional_rules(RULES, {"guide": COV_SRC}, cov_run["sources"]) == set(),
+      "coverage: uncovered sections mark no rule provisional")
+check("coverage: not-checked" in pa.render_digest(dict(cov_run, coverage=None), RULES)[0],
+      "coverage: a run that never ran the check prints not-checked")
+
+cache_dir = Path(tempfile.mkdtemp(prefix="prompt-audit-cache-"))
+try:
+    os.environ["PROMPT_AUDIT_STATE_DIR"] = str(cache_dir)
+    page_file = write(cache_dir / "fetched" / "x.md", "")
+    page_file.write_bytes(b"## A\r\nbytes \xe2\x80\x94 verbatim\n")
+    sid0 = next(iter(CFG["sources"]))
+    with contextlib.redirect_stdout(io.StringIO()):
+        pa.main(["diff-source", "--id", sid0, "--file", str(page_file), "--cache"])
+    cached = cache_dir / "pages" / f"{sid0}.md"
+    check(cached.is_file() and cached.read_bytes() == page_file.read_bytes(),
+          "diff-source --cache keeps the fetched bytes verbatim in pages/<id>.md")
+finally:
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+    shutil.rmtree(cache_dir, ignore_errors=True)
+
+# ---- leads intake (#1129): parse, loud on malformed, traced never re-sent, state persists, unverified only reported ----
+
+seed = pa.load_leads(CFG["sources"])
+check(len(seed) == 1 and seed[0]["id"] == "skills-outdated-video" and len(seed[0]["claims"]) == 7,
+      f"leads.toml carries the video lead with its 7 claims (got {[(l['id'], len(l['claims'])) for l in seed]})")
+check(pa.resolve_leads(seed, {})["open"] == [], "every seeded claim is traced, so none is open")
+
+leads_dir = Path(tempfile.mkdtemp(prefix="prompt-audit-leads-"))
+try:
+    bad_toml = write(leads_dir / "bad.toml", "[leads.x\nurl = 1\n")
+    bad_schema = write(leads_dir / "schema.toml", '[leads.x]\nurl = "https://e.test"\nkind = "podcast"\nadded = 2026-10-02\nclaims = [{ text = "t" }]\n')
+    bad_trace = write(leads_dir / "trace.toml", '[leads.x]\nurl = "https://e.test"\nkind = "post"\nadded = 2026-10-02\nclaims = [{ text = "t", trace = "nope#Sec" }]\n')
+    for f, why in ((bad_toml, "invalid TOML"), (bad_schema, "unknown kind"), (bad_trace, "trace to an untracked source"),
+                   (leads_dir / "missing.toml", "missing file")):
+        try:
+            pa.load_leads(CFG["sources"], f)
+            raised = False
+        except pa.LeadsError:
+            raised = True
+        check(raised, f"leads: {why} fails loudly with LeadsError, never reads as no leads")
+
+    mixed = write(leads_dir / "mixed.toml", '[leads.y]\nurl = "https://e.test/p"\nkind = "post"\nadded = 2026-10-03\nclaims = [\n'
+                  '  { text = "Already traced", trace = "anthropic-skill-authoring#Token budgets" },\n'
+                  '  { text = "Needs tracing", trace = "" },\n'
+                  '  { text = "Nobody says this", trace = "" },\n]\n')
+    ml = pa.load_leads(CFG["sources"], mixed)
+    ids = {c["text"]: c["id"] for c in ml[0]["claims"]}
+    first = pa.resolve_leads(ml, {})
+    check(first["open"] == [ids["Needs tracing"], ids["Nobody says this"]],
+          "leads: only claims with an empty trace are open; a traced claim is never sent to the worker")
+    st = pa.mark_lead({}, ids["Needs tracing"], "traced", "anthropic-best-practices#Tool usage", dt.date(2026, 10, 4))
+    st = pa.mark_lead(st, ids["Nobody says this"], "unverified", "")
+    state_dir2 = leads_dir / "state"
+    os.environ["PROMPT_AUDIT_STATE_DIR"] = str(state_dir2)
+    __import__("prompt_audit.state", fromlist=["save_state"]).save_state(st)
+    again2 = pa.resolve_leads(ml, pa.load_state())
+    check(again2["open"] == [], "leads: trace results persist in state.json and a second run re-traces nothing")
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+
+    lines = pa.lead_digest_lines(again2)
+    check(any("**unverified**: Nobody says this" in l for l in lines) and "unverified 1" in lines[0],
+          f"leads: an untraced claim is listed as unverified in the digest (got {lines})")
+    lead_run = {"date": "2026-10-04", "dry_run": False, "sources": [], "update_issue": None, "scan_ran": True,
+                "plan": [], "judgments": {}, "coverage": [], "leads": again2}
+    lead_body, lead_status = pa.render_digest(lead_run, RULES)
+    check(lead_status == "complete" and "**unverified**: Nobody says this" in lead_body
+          and pa.partition_run(lead_run)["findings"] == [],
+          "leads: an unverified claim creates no finding, so no rule and no prompt-drift item")
+    check("**Leads:** not-checked" in pa.render_digest(dict(lead_run, leads=None), RULES)[0],
+          "leads: a run without the leads step prints not-checked")
+    sugg = pa.suggestions_comment(again2)
+    check(sugg is not None and 'trace = "anthropic-best-practices#Tool usage"' in sugg and "Nobody says this" not in sugg,
+          "leads: a traced result becomes a suggested trace value on the update issue; unverified does not")
+    check(pa.suggestions_comment(again2, sugg) is None, "leads: a suggestion already on the issue is not posted again")
+finally:
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+    shutil.rmtree(leads_dir, ignore_errors=True)
 
 _h.report_and_exit("test_lint_and_inventory")
