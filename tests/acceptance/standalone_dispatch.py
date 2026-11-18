@@ -683,6 +683,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "-- tracked edits, untracked files, identical commits, mid-run changes, "
      "a linked worktree and the untouched real index -- against temp repos "
      "(fleet-config#957)"),
+    ("unit_history", "unit_history/test_unit_history.py",
+     "the acceptance gate's per-unit run history -- ledger rows with tree hash and run id, the spawn probe "
+     "counting a real child and staying inert without its env var, unit outcomes and medians -- against a "
+     "temp state dir and repo (fleet-config#2120)"),
     ("issue_state_gate", "repo/test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "

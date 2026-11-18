@@ -21,6 +21,11 @@ Subcommands
         stdout line is ``EVIDENCE=recorded ...`` or ``EVIDENCE=not_recorded
         reason=...``.
 
+        With ``--units`` (implied when the command runs ``run_acceptance.py``) the
+        gate also reports each unit's outcome and seconds, and every process spawn
+        is counted; one ledger row per unit per run is appended to
+        ``<hooks state>/gate-unit-ledger.jsonl`` (see ``unit_history/ledger.py``).
+
   check --label <L> [--repo <path>] [--expect-cmd "<command>"]
         Prints exactly one of:
           FRESH     a recorded exit-0 run of ``L`` matches the current tree (exit 0)
@@ -55,9 +60,11 @@ import contextlib
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -71,6 +78,7 @@ from fleet_core import (
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 from git_run import run_git  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from unit_history import ledger as unit_ledger  # noqa: E402
 
 EVIDENCE_NAME = "gate-evidence.json"
 # A marker per running gate under the hooks-state dir, so a lane never compacts
@@ -229,11 +237,27 @@ def gate_in_flight(cwd: Path) -> Optional[bool]:
     return False
 
 
-def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
+def _wants_units(argv: List[str]) -> bool:
+    return any(Path(part).name == "run_acceptance.py" for part in argv)
+
+
+def _unit_env(run_dir: Path) -> Dict[str, str]:
+    """The child's environment with the unit/spawn report files and the spawn probe wired in."""
+    env = dict(os.environ)
+    env[unit_ledger.UNIT_REPORT_ENV] = str(run_dir / unit_ledger.UNITS_FILE)
+    env[unit_ledger.SPAWN_REPORT_ENV] = str(run_dir / unit_ledger.SPAWNS_FILE)
+    probe = str(unit_ledger.PROBE_DIR)
+    env["PYTHONPATH"] = probe + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+
+def run(repo: Path, label: str, argv: List[str], units: bool = False) -> Tuple[int, str]:
     """Run ``argv`` in ``repo``; ``(exit_code, EVIDENCE=... line)``."""
     before, reason = tree_hash(repo)
     sys.stdout.flush()
     sys.stderr.flush()
+    run_dir = Path(tempfile.mkdtemp(prefix="gate_units_")) if units or _wants_units(argv) else None
+    started = time.monotonic()
     try:
         # Explicit handles: with CREATE_NO_WINDOW and none passed, a console
         # child loses the inherited stdout/stderr and the gate's own FAIL
@@ -241,12 +265,16 @@ def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
         with inflight_marker(repo, label):
             # subprocess-timeout-exempt: foreground runner for the caller's gate, whose length is the caller's to set
             proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
-                                  stdout=_handle(sys.stdout), stderr=_handle(sys.stderr))
+                                  stdout=_handle(sys.stdout), stderr=_handle(sys.stderr),
+                                  env=_unit_env(run_dir) if run_dir else None)
         code = proc.returncode
     except OSError as exc:
         print(f"gate_evidence: could not start {argv[0]!r}: {exc}", file=sys.stderr)
         code = 127
+    seconds = time.monotonic() - started
     after, after_reason = tree_hash(repo) if before else (None, reason)
+    if run_dir is not None:
+        _record_units(run_dir, label, before, code, seconds)
 
     evidence_path = git_path(repo, EVIDENCE_NAME)
     if evidence_path is None:
@@ -267,6 +295,17 @@ def run(repo: Path, label: str, argv: List[str]) -> Tuple[int, str]:
                    "utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     _store(evidence_path, data)
     return code, f"EVIDENCE=recorded label={label} exit={code} wtree={after[:12]}"
+
+
+def _record_units(run_dir: Path, label: str, wtree: Optional[str], code: int, seconds: float) -> None:
+    """Fold the run's unit report into the ledger; a ledger problem is logged, never the gate's verdict."""
+    try:
+        written = unit_ledger.record_run(run_dir, label=label, wtree=wtree, exit_code=code, seconds=seconds)
+        print(f"gate_evidence: ledger rows={written}", file=sys.stderr)
+    except OSError as exc:
+        print(f"gate_evidence: unit ledger not written: {type(exc).__name__}", file=sys.stderr)
+    finally:
+        shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def check(repo: Path, label: str, expect_cmd: Optional[str] = None) -> Tuple[str, str]:
@@ -324,6 +363,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     run_p = sub.add_parser("run")
     run_p.add_argument("--label", required=True)
     run_p.add_argument("--repo", type=Path, default=Path.cwd())
+    run_p.add_argument("--units", action="store_true", help="record per-unit history for a gate that reports it")
     chk = sub.add_parser("check")
     chk.add_argument("--label", required=True)
     chk.add_argument("--repo", type=Path, default=Path.cwd())
@@ -337,7 +377,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "run":
         if not command:
             parser.error("run needs a command after --")
-        code, line = run(repo, args.label, command)
+        code, line = run(repo, args.label, command, units=args.units)
         sys.stdout.flush()
         print(line, flush=True)
         return code

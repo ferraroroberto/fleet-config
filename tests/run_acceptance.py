@@ -178,6 +178,7 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _skill_git_rules_check,
     _unattended_worktree_mandate_check,
 )
+from acceptance.run_history import unit_report  # noqa: E402
 from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
     _runtime_write_probe_check,
     _runtime_write_ratchet_check,
@@ -226,7 +227,9 @@ class _Tally:
         the running tally — the acceptance-matrix total is summed from real
         checks executed, never a hand-maintained constant that drifts
         silently when a check is added or removed (fleet-config#320)."""
-        failures, total = check_fn()
+        with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
+            failures, total = check_fn()
+            outcome["result"] = (failures, total, 0)
         self.add(failures, total)
 
     def run_unit3(self, check_fn: Callable[[], Tuple[int, int, int]]) -> None:
@@ -237,8 +240,17 @@ class _Tally:
         whose inputs are sibling checkouts) must land in neither Total nor
         Failed, so a run that verified less never reads identical to one that
         verified everything (fleet-config#461, #501, #562)."""
-        failures, total, skipped = check_fn()
+        with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
+            failures, total, skipped = check_fn()
+            outcome["result"] = (failures, total, skipped)
         self.add(failures, total, skipped)
+
+    def run_suite(self, label: str, test_file: str) -> None:
+        """One standalone suite file as a unit, reported under its table label."""
+        with unit_report.unit(label) as outcome:
+            outcome["result"] = _subprocess_unit_check(
+                label, test_file, routed_out=gate_routing.routed_out(label))
+        self.add(*outcome["result"])
 
 
 def _run_hook_checks(tally: _Tally) -> None:
@@ -374,7 +386,7 @@ def _run_suite_checks(tally: _Tally) -> None:
         # Three-state like run_unit3: a suite that exits shared.SKIP_EXIT could
         # not establish its facts (missing toolchain) and lands in Skipped, not
         # in a bare `OK` that verified nothing (fleet-config#679).
-        tally.add(*_subprocess_unit_check(_label, _test_file, routed_out=gate_routing.routed_out(_label)))
+        tally.run_suite(_label, _test_file)
 
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     tally.run_unit(_learning_log_unit_checks)
