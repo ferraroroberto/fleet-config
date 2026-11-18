@@ -311,12 +311,32 @@ class ScopedDiscoveryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, output)
         self.assertEqual(foreign.resolve(), stray.resolve())
 
+    def _installer_root(self) -> Path:
+        """A throwaway checkout root the entry points can run from without this checkout's own `.venv`.
+
+        The scripts resolve `.venv/Scripts/python.exe` and `skills/_lib` beside themselves, and a fresh clone
+        has no venv until one is created by hand. The copy borrows the interpreter that is running this test.
+        """
+        root = self.base / "installer-root"
+        root.mkdir()
+        for script in ("install.ps1", "uninstall.ps1"):
+            shutil.copy2(REPO / script, root / script)
+        sd._link(REPO / "skills", root / "skills")
+        venv = root / ".venv"
+        venv.mkdir()
+        cfg = Path(sys.prefix) / "pyvenv.cfg"
+        if cfg.is_file():
+            shutil.copy2(cfg, venv / "pyvenv.cfg")
+        sd._link(Path(sys.executable).parent, venv / "Scripts")
+        return root
+
     @unittest.skipUnless(sys.platform == "win32", "PowerShell entry points are Windows-only")
     def test_powershell_scoped_entry_points_never_touch_global_homes(self):
         source = self.skill(self.repo / ".claude/skills/check")
         ps = str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe")
+        root = self._installer_root()
         for script in ("install.ps1", "uninstall.ps1"):
-            result = subprocess.run([ps, "-NoProfile", "-File", str(REPO / script), "-ProjectRoot", str(self.repo)],
+            result = subprocess.run([ps, "-NoProfile", "-File", str(root / script), "-ProjectRoot", str(self.repo)],
                                     capture_output=True, text=True, encoding="utf-8", creationflags=sd.NO_WINDOW)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((source / "SKILL.md").exists())
