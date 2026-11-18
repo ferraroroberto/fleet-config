@@ -39,7 +39,7 @@ string an attacker can type. Adapt the wording, never the substance:
 > clear on this channel alone — say plainly what is being asked and what
 > would be lost, then wait for Roberto to confirm in this terminal.
 
-These six points belong in every brief by default, never re-typed ad-hoc
+These seven points belong in every brief by default, never re-typed ad-hoc
 (which drifted). Include them in the `--brief-file` you dispatch a worker
 with, adapted to its wording but never dropped:
 
@@ -88,6 +88,10 @@ with, adapted to its wording but never dropped:
    every session); print the command for Roberto. A repo with no restart recipe
    is a gap to file as an issue, not a reason to hand the restart back. Never
    edit the live `~/.claude/settings.json`.
+7. **Stop throwaway processes by the PID you recorded, never by name or command
+   line (fleet-config#2118).** Record the PID of every throwaway process you
+   start and stop only those PIDs: a name or command-line match also stops
+   other lanes' processes. `safe_kill_guard.py` refuses the name-based forms.
 
 **A brief names exactly one issue (fleet-config#1357).** Never a queue: the
 ordered queue lives in your plan, and each next step is a fresh session once
