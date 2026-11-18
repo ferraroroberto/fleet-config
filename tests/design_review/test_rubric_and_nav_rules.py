@@ -39,8 +39,8 @@ check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the eval
 
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
-check(rubric.version == "1.42.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 50, f"50 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.43.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 51, f"51 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")

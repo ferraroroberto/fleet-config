@@ -45,6 +45,12 @@ no `submit`, and every click is refused when its element sits inside a
     id       = "project-menu"
     open     = "details.projects" # optional: open this details first (not a click)
     clicks   = [".projects .row-kebab"]   # clicked in order, each vetoed by no_go
+    overlay  = true               # optional: the step opens a sheet, dialog or menu. LAYOUT-11 reads
+                                  # its fit on a phone; a target that never attaches is then *not
+                                  # confirmed* (unmeasured), not absent
+    primary  = "#sheet .done"     # optional: the action that must stay on screen in that overlay
+                                  # (default: the footer's primary button, else one named Done, Save,
+                                  # Add, Apply, OK or Confirm)
     synthetic = false             # true: only on the synthetic instance (below)
     [design.review.synthetic]     # optional: a throwaway instance with synthetic data
     command  = ["scripts/design_review_synthetic.py"]  # argv after the target's
@@ -99,6 +105,9 @@ DEVICES: Dict[str, dict] = {
     "desktop": {"engine": "chromium", "viewport": {"width": 1440, "height": 900}},
 }
 DEFAULT_DEVICES = ("iphone", "desktop", "android")
+# LAYOUT-11: the two phone viewports a sheet or dialog is judged at: an iPhone with Safari's toolbars up, and without.
+FIT_VIEWPORTS = ({"width": 390, "height": 664}, {"width": 390, "height": 844})
+PHONE_MAX_WIDTH = 520   # a touch context at most this wide is a phone leg, the same band design.md calls the phone
 THEMES = ("light", "dark")
 
 

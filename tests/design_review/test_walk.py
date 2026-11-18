@@ -62,6 +62,11 @@ check({"schema_version", "rubric_version", "target", "commit", "generated_at", "
 sys.path.insert(0, str(REPO / "skills" / "_lib" / "design_review"))
 import walk  # noqa: E402
 
+# The suite's interpreter has no Playwright, so the paced helper (which imports it) cannot load here. Every scenario
+# below walks unpaced unless it installs the recording pacer itself (`_walk_traced`); `load_pacer` has its own checks.
+_real_load_pacer = walk.load_pacer
+walk.load_pacer = lambda _ctx, _url: None
+
 check(walk.classify_error(TimeoutError("Timeout 15000ms exceeded")) == "TIMEOUT", "timeout classified")
 check(walk.classify_error(RuntimeError("net::ERR_CONNECTION_REFUSED at https://127.0.0.1:8445")) == "NOT_LISTENING", "refused classified")
 check(walk.classify_error(RuntimeError("Element is not visible")) == "RENDER_FAILED", "other -> RENDER_FAILED")
@@ -332,6 +337,7 @@ check(_walk_arms(goto_error=RuntimeError("net::ERR_CONNECTION_REFUSED")) == (
 WALK_GOLDEN = FIX / "walk_trace.json"
 _TRACE_JS = {value: name for name, value in vars(walk).items() if name.endswith("_JS") and isinstance(value, str)}
 _TRACE_JS[walk.measure.RENDERED_THEME_JS] = "measure.RENDERED_THEME_JS"
+_TRACE_JS[walk.measure_js_fit.FIT_JS] = "measure_js_fit.FIT_JS"
 for _gl_name in ("GLANCE_TRACK_JS", "GLANCE_READ_JS"):  # the glance tracker (#1354); a source without it fails the golden, never crashes here
     if hasattr(walk.measure, _gl_name):
         _TRACE_JS[getattr(walk.measure, _gl_name)] = f"measure.{_gl_name}"
@@ -381,6 +387,7 @@ class _TracePage:
         self.fail = cfg.get("fail", {})
         self.no_go_hits = cfg.get("no_go_hits", set())
         self.has_tablist = cfg.get("has_tablist", True)
+        self.viewport_size = dict(cfg.get("viewport", {"width": 390, "height": 664}))
 
     def log(self, *entry):
         self.trace.append(list(entry))
@@ -392,6 +399,10 @@ class _TracePage:
     def set_default_timeout(self, ms): self.log("set_default_timeout", ms)
     def wait_for_timeout(self, ms): self.log("wait_for_timeout", ms)
     def on(self, event, _handler): self.log("on", event)
+
+    def set_viewport_size(self, size):
+        self.log("set_viewport_size", size)
+        self.viewport_size = dict(size)
 
     def locator(self, sel):
         self.log("locator", sel)
@@ -425,6 +436,9 @@ class _TracePage:
             return {"dpr": 3, "width": 390, "height": 40000}
         if name == "_POINTER_COARSE_JS":
             return self.cfg.get("coarse", True)
+        if name == "measure_js_fit.FIT_JS":
+            roots = [{"key": "dialog#sheet", "id": "x.sheet", "inside": True, "overflow": 0, "primary": None}] if self.cfg.get("overlay_open") else []
+            return {"vw": self.viewport_size["width"], "vh": self.viewport_size["height"], "roots": roots}
         if name == "measure.GLANCE_READ_JS":
             return self.cfg.get("glance")
         if name == "measure.RENDERED_THEME_JS":
@@ -436,9 +450,20 @@ class _TracePage:
         return {"m": 1} if js == "MEASURE" else None
 
 
+class _TracePace:
+    """The paced helper's stand-in: every navigation's budget wait lands in the trace, in order."""
+
+    def __init__(self, trace: list) -> None:
+        self.trace = trace
+
+    def wait_for_budget(self) -> None: self.trace.append(["pace.wait_for_budget"])
+    def report(self) -> str: return "paced walk: trace"
+
+
 def _walk_traced(cfg: dict) -> dict:
     trace: list = []
     page = _TracePage(trace, cfg)
+    walk.load_pacer = lambda _ctx, _url: _TracePace(trace)
 
     class _Ctx:
         def add_init_script(self, script): trace.append(["ctx.add_init_script", _TRACE_JS.get(script, script)])
@@ -482,6 +507,7 @@ def _walk_traced(cfg: dict) -> dict:
             screens = walk.walk_context(pw, cfg["device"], cfg["theme"], args, "MEASURE", {"p": 1},
                                         cfg.get("review", {}), Path(tmp))
     finally:
+        walk.load_pacer = lambda _ctx, _url: None
         wlog.removeHandler(tap)
         wlog.setLevel(level)
     # A JSON round trip, so the in-memory result compares equal to the golden file's.
@@ -511,6 +537,13 @@ _TRACE_SCENARIOS = {
                                  "extra_steps": [{"id": "menu", "tab": "missing", "open": "#det"},
                                                  {"id": "pick", "tab": "board", "clicks": ["#a", ""]},
                                                  "not-a-step", {"click": "#no-id"}]}},
+    # LAYOUT-11 (#2110): a phone leg with an overlay open is read at both phone viewports and put back with its touch
+    # emulation, the iPhone's own 390x664 without a resize; with nothing open it is read once, in place.
+    "android-fit-open": {"device": "android", "theme": "light", "viewport": {"width": 412, "height": 839}, "overlay_open": True,
+                         "tabs": [{"index": 0, "id": "board"}], "dialogs": ["edit"],
+                         "review": {"extra_steps": [{"id": "sheet", "tab": "board", "click": "#open", "overlay": True, "primary": "#done"}]}},
+    "iphone-fit-open": {"device": "iphone", "theme": "dark", "overlay_open": True, "tabs": [{"index": 0, "id": "board"}], "dialogs": ["edit"]},
+    "iphone-fit-closed": {"device": "iphone", "theme": "light", "tabs": [{"index": 0, "id": "board"}], "dialogs": ["edit"]},
     # A touch leg that reads (pointer: fine) and stays fine after the re-apply is never measured (#1895).
     "android-touch-lost": {"device": "android", "theme": "light", "opened": 1, "coarse": False,
                            "tabs": [{"index": 0, "id": "board"}], "dialogs": ["edit"]},
@@ -611,5 +644,38 @@ if hasattr(walk, "_Inflight"):
     _ip.handlers["request"](_ip_read)
     _ip.handlers["requestfailed"](_ip_read)
     check(_inflight.wait_quiet(_ip)["idle"] is True, "a failed request is no longer in flight")
+
+# ---- walk.load_pacer: the shared TIME_WAIT-budget helper over the leg's context (fleet-config#2110) ----
+
+check(_real_load_pacer(object(), "file:///x.html") is None, "load_pacer: a file:// page has no port to pace, and is not paced")
+check(_real_load_pacer(object(), "https://localhost/") is None, "load_pacer: a URL with no explicit port has none to pace")
+_pace_tap, _pace_log = _LogTap(), logging.getLogger("design_review.walk")
+_pace_log.addHandler(_pace_tap)
+try:
+    _no_pw = _real_load_pacer(object(), "https://127.0.0.1:8445")
+finally:
+    _pace_log.removeHandler(_pace_tap)
+if "playwright" not in sys.modules and _no_pw is None:
+    check(any("PACING NOT CONFIRMED" in line for line in _pace_tap.lines),
+          f"load_pacer: a helper that cannot load says PACING NOT CONFIRMED, never a silent unpaced walk -- {_pace_tap.lines}")
+
+import types  # noqa: E402
+
+_stub = types.ModuleType("playwright.sync_api")
+for _n in ("Browser", "BrowserContext", "Page", "sync_playwright"):
+    setattr(_stub, _n, object)
+_stub.Error = type("Error", (Exception,), {})
+_saved = {k: sys.modules.get(k) for k in ("playwright", "playwright.sync_api")}
+sys.modules["playwright"], sys.modules["playwright.sync_api"] = types.ModuleType("playwright"), _stub
+try:
+    _pacer = _real_load_pacer(object(), "https://127.0.0.1:8445")
+finally:
+    for _k, _v in _saved.items():
+        if _v is None:
+            sys.modules.pop(_k, None)
+        else:
+            sys.modules[_k] = _v
+check(_pacer is not None and _pacer.port == 8445 and hasattr(_pacer, "wait_for_budget"),
+      "load_pacer: with the helper importable it returns a PacedWalk on the target's port")
 
 _h.report_and_exit("test_walk")

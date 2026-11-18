@@ -24,7 +24,7 @@ check(proc.returncode == 0 and lines.get("UNMEASURED") == "none" and lines.get("
       f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
 check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
 doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.42.0", "metrics.json records the interpreter + versions")
+check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.43.0", "metrics.json records the interpreter + versions")
 if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
     _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
 check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),

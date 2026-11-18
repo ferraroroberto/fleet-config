@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.42.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.43.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -515,6 +515,21 @@ standard = "design.md glance card: it never changes size as late reads land; eve
 fix_template = "The first card on {screen} grows {value}px after its first paint as its late reads land ({sample}); draw every row at first paint from the card's own markup, a dash for a value still loading, and fill each in place."
 mockup = "glance-steady"
 screens = ["tab"]
+
+[[rules]]
+id = "LAYOUT-11"
+category = "layout"
+title = "A sheet, dialog or menu does not fit the phone viewport"
+metric = "fit.violation_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "design.md modal: a sheet's footer action stays on screen; Apple HIG Sheets and Modality: a sheet is sized to its content and never hides its dismissing or confirming control. Measured on every phone screen, per open overlay (a dialog, popover, role=dialog or role=menu) as it opens, before any disclosure in it is opened, at the two phone viewports a sheet is judged at, 390x664 (an iPhone with Safari's toolbars up) and 390x844: the box sits inside the viewport, its primary action (the declared `primary`, else the footer's primary button, else a button named Done, Save, Add, Apply, OK or Confirm) is on screen and the element on top at its centre, and neither the page nor the overlay scrolls sideways. A sheet with no footer action is held to its box and its overflow. Phone legs only. A dialog the walk opened that rendered no box, a step declared `overlay = true` whose target never attached or that opened nothing, and a declared `primary` the overlay does not hold are unmeasured (not confirmed), never a pass (fleet-config#2110, from task-os#742, where the Filters sheet and then the Add task sheet had their main button cut off on an iPhone)"
+fix_template = "{count} overlay/viewport pairs on {screen} do not fit the phone screen ({sample}); size the sheet to the visible viewport (dvh, not vh) with the body scrolling inside it and the footer action pinned, so the main button never leaves the screen."
+mockup = "none"
+devices = ["iphone", "android"]
+absent_unmeasured = true
 
 # ---------------------------------------------------------------------------
 # Components

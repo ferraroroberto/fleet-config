@@ -64,7 +64,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import measure, plan, surface_ids
+from . import fit_rule, measure, plan, surface_ids
 from .rubric import Rubric, Rule, resolve_params, resolve_threshold
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # skills/_lib, as design_review.rubric does
@@ -583,7 +583,13 @@ def _d_glance_card_growth(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(grew), items, None
 
 
+def _d_fit_violations(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """LAYOUT-11: overlays that do not fit the phone viewport (`fit_rule.violations`)."""
+    return fit_rule.violations(m, ctx, NOT_APPLICABLE)
+
+
 DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
+    "fit.violation_count": _d_fit_violations,
     "targets.small_share": _d_small_share,
     "targets.overlap_count": _d_overlap_count,
     "text.under14_share": _d_under14_share,
@@ -736,7 +742,10 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
                 continue
             sid = str(screen.get("id"))
             if screen.get("status") == ABSENT:
-                tally.absent += 1
+                if rule.absent_unmeasured and screen.get("overlay"):
+                    tally.unmeasured.append(f"{sid}: the surface could not be opened ({screen.get('reason') or 'absent'}): not confirmed")
+                else:
+                    tally.absent += 1
                 continue
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
@@ -745,7 +754,8 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
                 tally.unmeasured.append(f"{sid}: {_theme_reason(screen)}")
                 continue
             value, items, why, facts = read_metric(screen["metrics"], rule,
-                                                   {**ctx, "view": screen.get("view"), "theme": screen.get("theme"), "specs": specs})
+                                                   {**ctx, "view": screen.get("view"), "theme": screen.get("theme"), "specs": specs,
+                                                    "kind": screen.get("kind"), "source": screen.get("source"), "overlay": screen.get("overlay")})
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""

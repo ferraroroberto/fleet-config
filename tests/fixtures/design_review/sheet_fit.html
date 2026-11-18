@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- Static fixture for LAYOUT-11, a sheet that must fit the phone viewport (fleet-config#2110). One tab with a button that
+     opens a bottom sheet, `data-surface="strip.sheet"`, a `Done` button in its footer. Walked on the phone legs (iphone
+     390x664, android 412x839, which the walk re-reads at 390x664 and 390x844).
+       ?case=tall   the sheet starts 80px down and is 760px tall: its box ends at 840, past a 664px viewport, and Done
+                    with it; it fits the 844px viewport                                            -> fail at 390x664 only
+       ?case=fits   the sheet fills from 80px down to the bottom edge, its body scrolls inside it and the footer stays
+                    in the flex column                                                              -> pass
+     Asserted by tests/design_review_browser/sheet_fit.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review sheet fit fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  [role=tablist] { display: flex; gap: 8px; }
+  button { min-height: 44px; min-width: 44px; font: inherit; }
+  .sheet { position: fixed; left: 0; right: 0; background: #ffffff; border: 1px solid #d0d7de; box-sizing: border-box; padding: 16px; }
+  .sheet[hidden] { display: none; }
+  .sheet .body { margin: 0; }
+  .sheet .done { width: 100%; }
+  .sheet.tall { top: 80px; height: 760px; display: flex; flex-direction: column; justify-content: space-between; }
+  .sheet.tall[hidden] { display: none; }
+  .sheet.fits { top: 80px; bottom: 0; display: flex; flex-direction: column; }
+  .sheet.fits[hidden] { display: none; }
+  .sheet.fits .body { flex: 1; overflow: auto; }
+</style>
+</head>
+<body>
+  <div role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="home">Home</button></div>
+  <main id="home">
+    <h2>Home</h2>
+    <p>Page content.</p>
+    <button type="button" id="open">Filters</button>
+  </main>
+  <section id="sheet" class="sheet" role="dialog" aria-label="Filters" data-surface="strip.sheet" hidden>
+    <div class="body"><h2>Filters</h2><p>Status, project and due window.</p></div>
+    <button type="button" class="done">Done</button>
+  </section>
+<script>
+  const sheet = document.getElementById("sheet");
+  sheet.classList.add(new URLSearchParams(location.search).get("case") === "tall" ? "tall" : "fits");
+  document.getElementById("open").addEventListener("click", () => { sheet.hidden = false; });
+</script>
+</body>
+</html>

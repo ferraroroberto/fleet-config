@@ -33,5 +33,7 @@ else:
     import popovers_and_walks  # noqa: F401
     # isort: split
     import inventory_and_e2e  # noqa: F401
+    # isort: split
+    import sheet_fit  # noqa: F401
 
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)
