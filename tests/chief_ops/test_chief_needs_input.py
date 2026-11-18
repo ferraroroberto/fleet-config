@@ -58,6 +58,10 @@ ENV_KEYS = ("APP_LAUNCHER_SESSION_ID", "APP_LAUNCHER_AGENT", "CLAUDE_CODE_ENTRYP
             "CLAUDE_HOOKS_STATE_DIR", "CLAUDE_HOOKS_PROJECTS_TOML", "CLAUDE_SESSIONS_DIR")
 saved_env = {key: os.environ.get(key) for key in ENV_KEYS}
 saved = (subprocess.run, notify_on_idle.notify_send.notify, notify_on_idle.board_link)
+# chief_live() refuses to spawn unless the checkout's own .venv interpreter exists, and a fresh clone has
+# none. The spawn is stubbed (fake_run), so the test's own interpreter stands in and the check stays hermetic.
+saved_chief_python = notify_on_idle.CHIEF_OPS_PYTHON
+notify_on_idle.CHIEF_OPS_PYTHON = Path(sys.executable)
 
 spawns: list = []
 telegram: list = []
@@ -298,6 +302,7 @@ try:
           "hooks/: no `🔔 chief-managed worker needs input` string remains")
 finally:
     subprocess.run, notify_on_idle.notify_send.notify, notify_on_idle.board_link = saved
+    notify_on_idle.CHIEF_OPS_PYTHON = saved_chief_python
     for key, value in saved_env.items():
         if value is None:
             os.environ.pop(key, None)

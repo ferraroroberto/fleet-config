@@ -244,13 +244,20 @@ check(p3.returncode == 0 and k3.get("REPORT") == str(tmp2 / "custom.html") and (
       f"render <metrics.json> evaluates first, writes evaluate.json beside it, honours --out ({p3.stdout[-300:]}{p3.stderr[-300:]})")
 p4 = _run("render", str(tmp / "nope.json"))
 check(p4.returncode == 2 and p4.stdout.startswith("ERROR="), "render on a missing file exits 2 with ERROR=")
-p5 = _run("probe", str(REPO), "--url", (FIX / "fixture.html").as_uri())
+# The probe resolves its target through hooks/projects.toml, which is machine-local and gitignored, and names
+# it from the checkout folder; both differ per machine, so the probe runs against a registry and repo built here.
+probe_repo = tmp / "probe-repo"
+probe_repo.mkdir()
+(probe_repo / "CLAUDE.md").write_text("# probe\n", encoding="utf-8")
+probe_registry = tmp / "projects.toml"
+probe_registry.write_text(f'[probe-repo]\ncwd_prefix = "{probe_repo.as_posix()}"\n', encoding="utf-8")
+p5 = _run("probe", str(probe_repo), "--projects-toml", str(probe_registry), "--url", (FIX / "fixture.html").as_uri())
 k5 = _kv(p5)
-check(p5.returncode == 0 and k5.get("PROBE") == "listening" and k5.get("TARGET") == "fleet-config" and k5.get("CLAUDE_MD", "").endswith("CLAUDE.md"),
+check(p5.returncode == 0 and k5.get("PROBE") == "listening" and k5.get("TARGET") == "probe-repo" and k5.get("CLAUDE_MD", "").endswith("CLAUDE.md"),
       f"probe with a file:// url is listening and names the target's CLAUDE.md ({p5.stdout}{p5.stderr[-200:]})")
-p6 = _run("probe", str(REPO), "--url", "http://127.0.0.1:1")
+p6 = _run("probe", str(probe_repo), "--projects-toml", str(probe_registry), "--url", "http://127.0.0.1:1")
 check(p6.returncode == 0 and _kv(p6).get("PROBE") == "NOT_LISTENING", "probe on a dead port reports NOT_LISTENING, exit 0")
-p7 = _run("probe", "no-such-repo-zzz")
+p7 = _run("probe", "no-such-repo-zzz", "--projects-toml", str(probe_registry))
 check(p7.returncode == 2 and p7.stdout.startswith("ERROR="), "probe on an unknown target exits 2")
 
 _h.report_and_exit("test_design_report", skip_code=SKIP_EXIT)

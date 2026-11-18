@@ -434,8 +434,10 @@ class ScheduledRunnerTests(unittest.TestCase):
         """fleet-config#911: the 118 log named a count, never which processes."""
         flags = subprocess.CREATE_NO_WINDOW
         good = "\n".join(json.dumps(e) for e in self.fixtures["Claude Code"])
+        # The base interpreter, not the checkout's venv one: the log truncates the command line at
+        # DESCENDANT_COMMAND_CHARS, and a long checkout path would push the marker past it.
         script = (f"import subprocess,sys;"
-                  f"subprocess.Popen([sys.executable,'-c','import time;time.sleep(4)',"
+                  f"subprocess.Popen([sys._base_executable,'-c','import time;time.sleep(4)',"
                   f"'orphan911marker','--token=sk-ant-abcdefghijklmnop'],"
                   f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags={flags});"
                   f"print({good!r},flush=True)")

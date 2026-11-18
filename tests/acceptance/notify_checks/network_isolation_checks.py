@@ -94,7 +94,7 @@ def _notify_network_isolation_unit_checks() -> Tuple[int, int]:
           f"{notify_send.NETWORK_BLOCK_ENV_VAR} is set in the environment — "
           "real fleet alerts are disabled")
 
-    _notify_reopened_source_case(check)
+    _notify_reopened_source_case(check, notify_send)
 
     # State isolation (the same root cause): a hook subprocess must never be
     # pointed at the live hooks/state/, which is junctioned into ~/.claude/hooks.
@@ -137,15 +137,17 @@ def _notify_blocked_transport_cases(check: _Checker, notify_send: Any) -> None:
             os.environ[notify_send.NETWORK_BLOCK_ENV_VAR] = saved
 
 
-def _notify_reopened_source_case(check: _Checker) -> None:
+def _notify_reopened_source_case(check: _Checker, notify_send: Any) -> None:
     """A real hook with a reopened token source is still stopped at the transport."""
     # The whole point of the transport half, proven end-to-end rather than by
     # construction: reopen a token source (exactly what adding a fifth one
     # would do) and a real hook subprocess must still send nothing and still
     # exit 0. Without the block this is precisely the run that posted to
     # Roberto's phone.
+    # The reopened source is a token in the environment, set here: reading the machine's own .env instead
+    # would make the case pass or fail on whether that file exists, and a fresh clone has none.
     leaky = hook_env()
-    leaky.pop("FLEET_CONFIG_ENV_PATH", None)
+    leaky[notify_send.TOKEN_ENV_VAR] = "fake-token-never-sent"
     res = subprocess.run(
         [PYTHON, str(HOOKS / "notify_on_idle.py")],
         input=json.dumps({"hook_event_name": "Notification",
