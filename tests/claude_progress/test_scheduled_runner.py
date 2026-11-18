@@ -797,13 +797,22 @@ class PosixScopeTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
 class WindowsScopeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # The acceptance dispatcher may itself use a base interpreter, and a fresh clone has no `.venv`.
+        # The ownership proof needs a real venv redirector (its launcher starts the base interpreter),
+        # so build a throwaway one rather than depend on a venv inside the checkout.
+        cls._venv_root = tempfile.TemporaryDirectory(prefix="scope_venv_")
+        cls.addClassCleanup(cls._venv_root.cleanup)
+        venv = Path(cls._venv_root.name) / "venv"
+        built = subprocess.run([sys._base_executable, "-m", "venv", "--without-pip", str(venv)],
+                               capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if built.returncode != 0:
+            raise RuntimeError(f"cannot build the throwaway venv: {built.stdout}{built.stderr}")
+        cls.venv_python = venv / "Scripts" / "python.exe"
+
     def setUp(self):
-        # The acceptance dispatcher may itself use a base interpreter. Always
-        # exercise this checkout's existing venv redirector, including the
-        # scope's bootstrap; a base-only run cannot prove this regression.
-        venv = ROOT / ".venv"
-        self.assertTrue((venv / "pyvenv.cfg").is_file(), "ownership proof requires the existing project venv")
-        executable = venv / "Scripts" / "python.exe"
+        executable = self.venv_python
         self.assertTrue(executable.is_file())
         executable_patch = patch.object(process_scope.sys, "executable", str(executable))
         executable_patch.start()

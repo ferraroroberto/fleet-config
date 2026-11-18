@@ -46,8 +46,11 @@ sys.path.insert(0, {str(REPO / "skills" / "_lib")!r})
 from acceptance.run_history import unit_report
 with unit_report.unit("spawning_unit") as o:
     subprocess.run([sys.executable, "-c", "pass"])
+    print("noise from a green unit")
     o["result"] = (0, 3, 0)
 with unit_report.unit("failing_unit") as o:
+    print("assertion text on stdout")
+    print("crash text on stderr", file=sys.stderr)
     o["result"] = (1, 2, 0)
 """
 
@@ -125,6 +128,23 @@ try:
     probe_text = (ledger.PROBE_DIR / "sitecustomize.py").read_text(encoding="utf-8")
     check(all(name in probe_text for name in (ledger.SPAWN_REPORT_ENV, ledger.CURRENT_UNIT_ENV)),
           "the probe's env names match the ledger's constants")
+
+    # --- a red unit keeps what it printed (both streams); a green one keeps nothing ---------------
+    kept = units["failing_unit"].get("output", "")
+    check("assertion text on stdout" in kept and "crash text on stderr" in kept,
+          f"a failed unit's ledger row carries its stdout and stderr ({kept!r})")
+    check("output" not in units["spawning_unit"], "a passing unit's row carries no output")
+    big = tmp / "big_gate.py"
+    big.write_text(FAKE_GATE.split("with unit_report.unit")[0]
+                   + 'with unit_report.unit("loud") as o:\n    print("x" * 50000 + "END")\n    o["result"] = (1, 1, 0)\n'
+                   + 'with unit_report.unit("raises") as o:\n    raise RuntimeError("boom-marker")\n', encoding="utf-8")
+    quiet(ge.run, repo, "big", [PY, str(big)], units=True)
+    big_rows = {r["unit"]: r for r in ledger.load(label="big") if r["kind"] == "unit"}
+    loud = big_rows["loud"]["output"]
+    check(len(loud) <= ledger.OUTPUT_TAIL_CHARS + 100 and loud.rstrip().endswith("END") and "cut" in loud,
+          f"a loud unit keeps a bounded tail, newest last, marked as cut ({len(loud)} chars)")
+    check("boom-marker" in big_rows["raises"]["output"] and big_rows["raises"]["status"] == "fail",
+          "a unit that raises keeps its traceback")
 
     # --- unit_report outcomes ----------------------------------------------------------------------
     report = tmp / "units.jsonl"

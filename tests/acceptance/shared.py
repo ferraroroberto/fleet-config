@@ -281,6 +281,7 @@ def _subprocess_unit_check(label: str, test_file: str, routed_out: str | None = 
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} {label}: pure-logic unit tests")
     if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
+        # stderr too: a crashed child (a node scanner dying with no report) says why only there.
+        for line in ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines():
             print(f"        | {line}")
     return (0 if ok else 1), 1, 0
