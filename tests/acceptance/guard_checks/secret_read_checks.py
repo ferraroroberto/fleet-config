@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple
 
-from acceptance.checks_dispatch import BASH_HOOKS, POWERSHELL_HOOKS, dispatch
+from acceptance.checks_dispatch import BASH_HOOKS, POWERSHELL_HOOKS, dispatch_spawn
 from acceptance.hook_matrix import FAKE_GHP
 from acceptance.shared import (
     HOOK_SPAWN_TIMEOUT_S,
@@ -157,11 +157,11 @@ def _git_and_switch_checks(check: _Checker, verdict: Callable[..., Tuple[int, st
 
 def _harness_checks(check: _Checker, root: Path) -> None:
     for tool, hooks in (("Bash", BASH_HOOKS), ("PowerShell", POWERSHELL_HOOKS)):
-        code, out, err = dispatch(hooks, _payload(tool, "cat .env", root))
+        code, out, err = dispatch_spawn(hooks, _payload(tool, "cat .env", root))
         check(f"secret_read: hook_dispatch {tool} list refuses `cat .env` (Claude exit 2)",
               code == 2 and b"secret-bearing file" in err and FAKE_VALUE.encode() not in out + err,
               f"{code} {err!r}")
-        code, out, err = dispatch(hooks, _payload(tool, "jq 'keys' config/webapp_config.json", root))
+        code, out, err = dispatch_spawn(hooks, _payload(tool, "jq 'keys' config/webapp_config.json", root))
         check(f"secret_read: hook_dispatch {tool} list allows a keys-only read",
               code == 0 and b"secret-bearing" not in out + err, f"{code} {out!r} {err!r}")
     entry = _codex_entry(root)

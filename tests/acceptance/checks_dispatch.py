@@ -19,6 +19,7 @@ import shutil
 import subprocess
 from typing import Any, Dict, List, Tuple
 
+from acceptance.hook_cases.inproc import run_in_process
 from acceptance.hook_matrix import FAKE_GHP, matrix_cases
 from acceptance.shared import HOOKS, PYTHON, REPO, _Checker, hook_env
 
@@ -34,24 +35,29 @@ POWERSHELL_HOOKS = [
     "context_filter_hook",
 ]
 
-Result = Tuple[int, bytes, bytes]
-
-
-def _spawn(argv: List[str], payload: Dict[str, Any], mode: str) -> Result:
-    env = hook_env({"FLEET_CONTEXT_FILTER_MODE": mode})
-    res = subprocess.run(
-        argv, input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        capture_output=True, timeout=30, env=env,
-    )
-    return res.returncode, res.stdout, res.stderr
+Result = Tuple[int, str, str]
 
 
 def standalone(hook: str, payload: Dict[str, Any], mode: str = "off") -> Result:
-    return _spawn([PYTHON, str(HOOKS / f"{hook}.py")], payload, mode)
+    """The hook's own answer, as its process would give it, run in-process."""
+    return run_in_process(hook, payload, {"FLEET_CONTEXT_FILTER_MODE": mode})
 
 
 def dispatch(hooks: List[str], payload: Dict[str, Any], mode: str = "off") -> Result:
-    return _spawn([PYTHON, str(HOOKS / "hook_dispatch.py"), *hooks], payload, mode)
+    """`hook_dispatch.py <hooks>`'s answer, run in-process."""
+    return run_in_process("hook_dispatch", payload, {"FLEET_CONTEXT_FILTER_MODE": mode}, args=hooks)
+
+
+def dispatch_spawn(hooks: List[str], payload: Dict[str, Any]) -> Tuple[int, bytes, bytes]:
+    """`hook_dispatch.py <hooks>` as a real process, answering in raw bytes: the spawn
+    that proves its wiring (UTF-8 stdin in, UTF-8 stderr out, over real pipes). The
+    secret-read suite, which is not in-process, calls it too."""
+    res = subprocess.run(
+        [PYTHON, str(HOOKS / "hook_dispatch.py"), *hooks],
+        input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        capture_output=True, timeout=30, env=hook_env({"FLEET_CONTEXT_FILTER_MODE": "off"}),
+    )
+    return res.returncode, res.stdout, res.stderr
 
 
 def bash(command: str, **extra: Any) -> Dict[str, Any]:
@@ -77,18 +83,18 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
     # pipe is refused, and no rewritten command reaches stdout.
     code, out, err = dispatch(BASH_HOOKS, bash("cmd.exe /c dir | head -5"), "rewrite")
     check("hook_dispatch: a refusal drops context_filter_hook's rewrite",
-          code == 2 and out == b"" and b"cmd.exe /c" in err, f"{code} {out!r} {err!r}")
+          code == 2 and out == "" and "cmd.exe /c" in err, f"{code} {out!r} {err!r}")
 
     code, out, err = dispatch(BASH_HOOKS, bash("cmd.exe /c dir && git push --force origin main"))
     check("hook_dispatch: two refusals both reach stderr, in order",
-          code == 2 and err.find(b"cmd.exe /c") < err.find(b"git push --force") and err.count(b"Blocked:") == 2,
+          code == 2 and err.find("cmd.exe /c") < err.find("git push --force") and err.count("Blocked:") == 2,
           f"{code} {err!r}")
 
     payload = bash("git log --oneline | head -5")
     code, out, err = dispatch(BASH_HOOKS, payload, "rewrite")
     want = standalone("context_filter_hook", payload, "rewrite")
     check("hook_dispatch: a lone rewrite is byte-identical to context_filter_hook's own",
-          (code, out) == want[:2] and b"updatedInput" in out, f"{code} {out!r} want {want!r}")
+          (code, out) == want[:2] and "updatedInput" in out, f"{code} {out!r} want {want!r}")
 
     payload = bash("git log %USERPROFILE% | head -5")
     code, out, _err = dispatch(BASH_HOOKS, payload, "rewrite")
@@ -107,11 +113,18 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
 
     payload = bash(r"ls E:\automation\café")
     want, got = standalone("bash_windows_path_guard", payload), dispatch(BASH_HOOKS, payload)
-    check("hook_dispatch: non-ASCII survives stdin and the refusal's UTF-8 stderr",
-          got[0] == 2 and want[2] in got[2] and "café".encode("utf-8") in got[2], f"{got!r}")
+    # The one real process: UTF-8 has to survive actual pipes, which a call inside
+    # this interpreter cannot show.
+    spawned = dispatch_spawn(BASH_HOOKS, payload)
+    check("hook_dispatch: non-ASCII survives stdin and the refusal's UTF-8 stderr (real process)",
+          spawned[0] == 2 and want[2].strip().encode("utf-8") in spawned[2]
+          and "café".encode("utf-8") in spawned[2],
+          f"{spawned!r}")
+    check("hook_dispatch: non-ASCII survives stdin and the refusal's stderr, in-process",
+          got[0] == 2 and want[2] in got[2] and "café" in got[2], f"{got!r}")
 
     code, out, err = dispatch(BASH_HOOKS, bash("git status"))
-    check("hook_dispatch: an innocuous command is a silent allow", (code, out, err) == (0, b"", b""),
+    check("hook_dispatch: an innocuous command is a silent allow", (code, out, err) == (0, "", ""),
           f"{code} {out!r} {err!r}")
 
     code, out, err = dispatch(POWERSHELL_HOOKS, {**bash("Stop-Process -Name python -Force"),
@@ -122,11 +135,11 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
     for tool, hooks in (("Bash", BASH_HOOKS), ("PowerShell", POWERSHELL_HOOKS)):
         code, out, err = dispatch(hooks, {**bash(f'git commit -m "fix: x\n\n{trailer}"'), "tool_name": tool})
         check(f"hook_dispatch: the {tool} list refuses a session-link trailer (fleet-config#1288)",
-              code == 2 and b"AI attribution" in err, f"{code} {err!r}")
+              code == 2 and "AI attribution" in err, f"{code} {err!r}")
 
     code, out, err = dispatch(["no_such_hook"], bash("git status"))
     check("hook_dispatch: a missing module alone is a non-blocking error (exit 1)",
-          code == 1 and b"no_such_hook" in err, f"{code} {err!r}")
+          code == 1 and "no_such_hook" in err, f"{code} {err!r}")
     code, _out, _err = dispatch(["no_such_hook", "safe_kill_guard"], bash("git push --force origin main"))
     check("hook_dispatch: a missing module never disarms the guards beside it", code == 2, str(code))
 
@@ -135,6 +148,6 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
             "cwd": str(REPO), "sessionId": "grok-acceptance"}
     code, out, _err = dispatch(BASH_HOOKS, grok)
     check("hook_dispatch: a Grok refusal keeps its stdout deny decision",
-          code == 2 and json.loads(out or b"{}").get("decision") == "deny", f"{code} {out!r}")
+          code == 2 and json.loads(out or "{}").get("decision") == "deny", f"{code} {out!r}")
 
     return check.failures, check.total
