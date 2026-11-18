@@ -324,9 +324,10 @@ def _unquote_word(token: str) -> str:
 _STATEMENT_SEPARATORS = {"&&", "||", ";", "&", "\n"}
 
 
-def command_statements(cmd: str, _depth: int = 0) -> list[list[list[str]]]:
-    """Every command `cmd` runs, grouped by statement: a list of commands, each as
-    its unquoted words, command word first.
+def _scan_commands(cmd: str, _depth: int = 0) -> tuple[list[list[str]], list[list[list[str]]]]:
+    """Every command `cmd` runs as `(commands, statements)`: the commands in reading
+    order (each its unquoted words, command word first) and the same commands
+    grouped by statement.
 
     The same reading as `_lib.runs_git_commit`, on its tokenizer: heredoc and here-string bodies are
     data, a quoted string is one word, and leading `VAR=value` assignments and
@@ -336,6 +337,7 @@ def command_statements(cmd: str, _depth: int = 0) -> list[list[list[str]]]:
     `cmd //c …`, `iex '…'`) is read as well, as statements of its own.
     """
     text = _LINE_CONTINUATION_RE.sub(" ", _lib._PS_HERE_STRING_RE.sub("''", _lib.strip_heredoc_bodies(cmd)))
+    found: list[list[str]] = []
     statements: list[list[list[str]]] = []
     current: list[list[str]] = []
     raw: list[str] = []
@@ -344,10 +346,13 @@ def command_statements(cmd: str, _depth: int = 0) -> list[list[list[str]]]:
         if token in _lib._COMMIT_SEPARATORS:
             if raw:
                 words = [_unquote_word(t) for t in raw]
+                found.append(words)
                 current.append(words)
                 if _depth < _NESTED_DEPTH:
                     for line in _nested_command_lines(raw, words):
-                        statements.extend(command_statements(line, _depth + 1))
+                        nested_found, nested_statements = _scan_commands(line, _depth + 1)
+                        found.extend(nested_found)
+                        statements.extend(nested_statements)
             raw, after_prefix = [], False
             if token in _STATEMENT_SEPARATORS and current:
                 statements.append(current)
@@ -362,12 +367,17 @@ def command_statements(cmd: str, _depth: int = 0) -> list[list[list[str]]]:
             if after_prefix and token.startswith("-"):
                 continue
         raw.append(token)
-    return statements
+    return found, statements
 
 
 def command_invocations(cmd: str) -> list[list[str]]:
     """Every command `cmd` runs, each as its unquoted words, command word first."""
-    return [words for statement in command_statements(cmd) for words in statement]
+    return _scan_commands(cmd)[0]
+
+
+def command_statements(cmd: str) -> list[list[list[str]]]:
+    """The commands `cmd` runs, grouped by statement."""
+    return _scan_commands(cmd)[1]
 
 
 def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
