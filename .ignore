@@ -15,4 +15,5 @@
 /scripts/structure_band.py
 /scripts/structure_layout.py
 /scripts/structure_ratchet.py
+/tests/e2e/_paced_browser.py
 # END vendored-copies

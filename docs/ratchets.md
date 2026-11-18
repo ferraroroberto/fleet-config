@@ -55,6 +55,7 @@ Every rule the vendored script knows, and whether this repo turns it on.
 | `state-literal` | on | a lifecycle string compared or stored as a state (`status == "running"`) outside a declared machine is an implicit-state-machine suspect; the baseline is empty and the declared machines are in [state-machines.md](state-machines.md) |
 | `state-set-repeat` | on | one set of lifecycle states spelled in more than one module lets two readers disagree about which states count |
 | `state-write` | on | a lifecycle flag written from more than one module has no single owner |
+| `browser-per-iteration` | on | a script or test that opens a browser or context inside a loop refetches every asset per pass and leaves a `TIME_WAIT` socket per closed connection on the target port, a pool every local web app shares; one reused context, or `# browser-per-iteration-exempt: <why>` where a fresh one is the point (`tests/e2e/_paced_browser.py`) |
 | `secret-compare` | off | the repo has no constant-time compare helper to route compares through |
 | `password-input-vendored` | off | the repo ships no sign-in page |
 | `login-lockout` | off | the repo serves no password route |

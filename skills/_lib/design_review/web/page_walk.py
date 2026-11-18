@@ -232,7 +232,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         # One context and one page per device for the whole walk, walked one page at a time. A context per
         # page starts with an empty HTTP cache and refetches every stylesheet and script, and every closed
         # connection leaves a TIME_WAIT socket on the preview port, a pool shared by every local web app.
-        contexts = {d: browser.new_context(**DEVICES[d], reduced_motion="reduce") for d in devices}
+        # browser-per-iteration-exempt: the loop runs once per device (at most 3), not per page; each device needs its own viewport and the context is reused for every page
+        contexts ={d: browser.new_context(**DEVICES[d], reduced_motion="reduce") for d in devices}
         walkers = {d: ctx.new_page() for d, ctx in contexts.items()}
         raw["walk_contexts"] = len(contexts)
         try:
