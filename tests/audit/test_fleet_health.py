@@ -23,7 +23,7 @@ below is pinned here so the scheduled run stops depending on rediscovery:
    inventory now carries `ip` per machine, so it is the single source.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/audit/test_fleet_health.py`
-(also invoked by tests/run_acceptance.py)
+(also invoked by tests/run_weekly_units.py)
 """
 
 from __future__ import annotations

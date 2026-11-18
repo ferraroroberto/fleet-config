@@ -14,7 +14,7 @@ dies with a `NoneType` error. A child interpreter with `PYTHONUTF8` and
 `PYTHONIOENCODING` removed drives `shared.run` against such a hook, because
 this process may already be in UTF-8 mode.
 
-Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/guard_checks/test_hook_spawn_timeout.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/guard_checks/test_hook_spawn_timeout.py`  (also invoked by tests/run_weekly_units.py)
 """
 
 from __future__ import annotations

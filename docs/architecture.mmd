@@ -134,6 +134,7 @@ report.py: budgets.toml verdict · ledger.jsonl under ~/.claude/hooks/state/perf
     CONTEXTAUDIT["context-audit\naudit.py — fleet-wide description cap gate\nbootstrap_loads.py — per-skill auto-load budget"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py · digest.py · delivery_check.py"]
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
+    WEEKLYBURST["weekly-burst\nburst.py (no model) — weekly units · fresh-clone hermetic gate · ledger medians"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
     INSPIRATION["inspiration-scan\nscan.py · feeds.py · score.py · render.py · ideas.py\nx_reader.py + x_session.py under app-launcher .venv"]
     FLEET10X["fleet-10x\nfleet10x.py select · brief · rank · footer\nSonnet researcher per repo → Opus synthesis"]
@@ -211,6 +212,7 @@ RunEvidence -> decide() -> RunState: the one declared run outcome"]
 
   subgraph tests["tests/ — run_acceptance.py (thin dispatcher) + acceptance/ package (fleet-config#502)"]
     TESTS["run_acceptance.py\nsums + prints the summary line"]
+    WEEKLYUNITS["run_weekly_units.py\nweekly/units.py: burn · load · wall-clock units"]
     ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards · spawn_scanner · single_home_gate · dead_function_gate ·\ntree_boundary · nine *_ratchet_gate stages (vendored scripts/ vs each .*-ratchet-baseline.json; exit 3 = NOT CONFIRMED, fails; index docs/ratchets.md) · docs_index/ (docs/ratchets.md + docs/skills.md held to the tree) · standalone_dispatch ·\nchecks_* per domain (#680): context_filter · notify · guards ·\nsession_state · cross_agent · capture · skill_helpers ·\nhook_cases/ (hook-matrix case data) · context_filter_sections/ (context-filter sections + tables) ·
 guard_checks/ · notify_checks/ · prose_guards/ (domains continued past one module)"]
     TESTS --> ACCPKG

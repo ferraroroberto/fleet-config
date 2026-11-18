@@ -50,6 +50,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [`/insights-weekly`](skills/insights-weekly.md) — week-over-week diff of Claude Code's `/insights` report
 - [`/learning-log`](skills/learning-log.md) — weekly journey and productivity lens over the GitHub work stream
 - [`/fleet-health`](skills/fleet-health.md) — weekly hardware checkup of every fleet machine
+- [`/weekly-burst`](skills/weekly-burst.md) — the burn, load and wall-clock acceptance units plus a fresh-clone hermetic re-run, once a week
 - [`/sota-watch`](skills/sota-watch.md) — recurring state-of-the-art watch over adopted choices
 - [`/inspiration-scan`](skills/inspiration-scan.md) — daily digest of ideas from the sources the owner follows
 - [`/fleet-10x`](skills/fleet-10x.md) — per-repo 10x-better research with an Opus synthesis

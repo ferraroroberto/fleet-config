@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Callable, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -59,7 +58,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 
 import box_lock  # noqa: E402
-from acceptance import gate_routing  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
     _advisory_semantics_check,
     _config_map_check,
@@ -138,7 +136,6 @@ from acceptance.guard_checks.attribution_scan_checks import (
     _attribution_scan_unit_checks,  # noqa: E402
 )
 from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
-from acceptance.guard_checks.host_power_checks import _host_power_codex_unit_checks  # noqa: E402
 from acceptance.guard_checks.lane_compact_checks import _lane_compact_unit_checks  # noqa: E402
 from acceptance.guard_checks.restart_cmd_checks import (  # noqa: E402
     _restart_cmd_registry_check,
@@ -178,13 +175,13 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _skill_git_rules_check,
     _unattended_worktree_mandate_check,
 )
-from acceptance.run_history import unit_report  # noqa: E402
+from acceptance.run_history.tally import Tally  # noqa: E402
 from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
     _runtime_write_probe_check,
     _runtime_write_ratchet_check,
     _runtime_write_snapshot_check,
 )
-from acceptance.shared import _subprocess_unit_check, seed_fleet_list_env  # noqa: E402
+from acceptance.shared import seed_fleet_list_env  # noqa: E402
 from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
@@ -209,51 +206,7 @@ _RATCHET_CHECKS = (
 _SINGLE_HOME_CHECKS = (_single_home_unit_check, _git_globals_unit_checks, _dead_function_unit_check)
 
 
-class _Tally:
-    """The gate's running Total / Failed / Skipped, summed from the checks that ran."""
-
-    def __init__(self) -> None:
-        self.failures = 0
-        self.total = 0
-        self.skipped = 0
-
-    def add(self, failures: int, total: int, skipped: int = 0) -> None:
-        self.failures += failures
-        self.total += total
-        self.skipped += skipped
-
-    def run_unit(self, check_fn: Callable[[], Tuple[int, int]]) -> None:
-        """Call one check function and fold its own `(failures, total)` into
-        the running tally — the acceptance-matrix total is summed from real
-        checks executed, never a hand-maintained constant that drifts
-        silently when a check is added or removed (fleet-config#320)."""
-        with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
-            failures, total = check_fn()
-            outcome["result"] = (failures, total, 0)
-        self.add(failures, total)
-
-    def run_unit3(self, check_fn: Callable[[], Tuple[int, int, int]]) -> None:
-        """`run_unit` for the checks that also report a third state — `skipped`.
-
-        A check that *couldn't establish* a fact (no live settings.json to
-        compare against) or that *may not gate this repo* (fleet-wide freshness,
-        whose inputs are sibling checkouts) must land in neither Total nor
-        Failed, so a run that verified less never reads identical to one that
-        verified everything (fleet-config#461, #501, #562)."""
-        with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
-            failures, total, skipped = check_fn()
-            outcome["result"] = (failures, total, skipped)
-        self.add(failures, total, skipped)
-
-    def run_suite(self, label: str, test_file: str) -> None:
-        """One standalone suite file as a unit, reported under its table label."""
-        with unit_report.unit(label) as outcome:
-            outcome["result"] = _subprocess_unit_check(
-                label, test_file, routed_out=gate_routing.routed_out(label))
-        self.add(*outcome["result"])
-
-
-def _run_hook_checks(tally: _Tally) -> None:
+def _run_hook_checks(tally: Tally) -> None:
     """The per-hook unit checks, in the order the gate has always printed them."""
     # ---- hook-payload acceptance matrix + foreign-harness (Grok) parity ----
     tally.run_unit(run_hook_matrix)
@@ -337,7 +290,7 @@ def _run_hook_checks(tally: _Tally) -> None:
     tally.run_unit(_conversation_index_unit_checks)
 
 
-def _run_guard_checks(tally: _Tally) -> None:
+def _run_guard_checks(tally: Tally) -> None:
     """The restart helper and the blocking and nudging guard hooks."""
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
     tally.run_unit(_restart_webapp_unit_checks)
@@ -346,7 +299,6 @@ def _run_guard_checks(tally: _Tally) -> None:
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     tally.run_unit(_safe_kill_force_push_unit_checks)
     tally.run_unit(_safe_kill_git_bypass_unit_checks)  # #1303
-    tally.run_unit(_host_power_codex_unit_checks)
     tally.run_unit(_attribution_scan_unit_checks)  # #1914
     tally.run_unit(_venv_junction_guard_unit_checks)
 
@@ -377,7 +329,7 @@ def _run_guard_checks(tally: _Tally) -> None:
     tally.run_unit(_branch_before_edit_guard_unit_checks)
 
 
-def _run_suite_checks(tally: _Tally) -> None:
+def _run_suite_checks(tally: Tally) -> None:
     """The standalone test-file suites, then the skill helpers that ride with them."""
     # ---- standalone pure-logic test-file dispatch: one row per suite in
     # acceptance/standalone_dispatch.py's table -- new suite = one row added
@@ -392,7 +344,7 @@ def _run_suite_checks(tally: _Tally) -> None:
     tally.run_unit(_learning_log_unit_checks)
 
 
-def _run_repo_guards(tally: _Tally) -> None:
+def _run_repo_guards(tally: Tally) -> None:
     """Fleet-map freshness, the fleet registry, skill-prose rules and the docs inventory."""
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
     tally.run_unit3(_system_map_coverage_check)
@@ -473,7 +425,7 @@ def _run_repo_guards(tally: _Tally) -> None:
     tally.run_unit(_docs_index_check)
 
 
-def _run_wiring_checks(tally: _Tally) -> None:
+def _run_wiring_checks(tally: Tally) -> None:
     """Agent hook wiring and transports, settings sync, spawn conventions and the ratchets."""
     # ---- Codex hook wiring: direct Python commands with bounded timeouts ----
     tally.run_unit(_codex_hooks_config_check)
@@ -533,7 +485,7 @@ def main() -> int:
 
 def _run_all() -> int:
     seed_fleet_list_env()
-    tally = _Tally()
+    tally = Tally()
     # The runtime write bracket spans every check, so a log or state file any of
     # them leaves under a code folder fails the probe by name.
     tally.run_unit(_runtime_write_snapshot_check)
