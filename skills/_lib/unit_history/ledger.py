@@ -8,7 +8,7 @@ it through the env vars below, and puts `spawn_probe/` on `PYTHONPATH`. The gate
 
 Ledger rows (`<state dir>/gate-unit-ledger.jsonl`, one JSON object per line):
 
-  kind "unit"  run_id, utc, label, wtree, unit, status (pass|fail|skip), seconds, spawns
+  kind "unit"  run_id, utc, label, wtree, unit, status (pass|fail|skip), seconds, spawns, output (fail only)
   kind "run"   run_id, utc, label, wtree, exit, seconds, spawns, units
 
 `wtree` is the working-tree hash the run started on, or null when it could not be computed.
@@ -39,6 +39,9 @@ SPAWNS_FILE = "spawns.jsonl"
 PROBE_DIR = Path(__file__).resolve().parent / "spawn_probe"
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
+
+# A red unit keeps this much of what it printed (the tail), so one failure cannot bloat the ledger.
+OUTPUT_TAIL_CHARS = 8000
 
 
 def ledger_path() -> Path:
@@ -78,7 +81,8 @@ def record_run(run_dir: Path, *, label: str, wtree: Optional[str], exit_code: in
         spawns[str(row.get("unit") or "")] += 1
     base = {"run_id": run_id, "utc": utc, "label": label, "wtree": wtree}
     out = [{**base, "kind": "unit", "unit": u.get("unit"), "status": u.get("status"),
-            "seconds": u.get("seconds"), "spawns": spawns.pop(str(u.get("unit")), 0)} for u in units]
+            "seconds": u.get("seconds"), "spawns": spawns.pop(str(u.get("unit")), 0),
+            **({"output": str(u["output"])[-OUTPUT_TAIL_CHARS:]} if u.get("output") else {})} for u in units]
     # Spawns made outside any unit (the lock wait, the bracket) stay in the run total.
     out.append({**base, "kind": "run", "exit": exit_code, "seconds": round(seconds, 2),
                 "spawns": sum(r["spawns"] for r in out) + sum(spawns.values()), "units": len(units)})
