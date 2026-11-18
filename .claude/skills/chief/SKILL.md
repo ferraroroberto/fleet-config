@@ -387,6 +387,9 @@ A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn 
 
 **Read [ideas.md](ideas.md) whenever your terminal receives a message starting `Idea from the Board:`**: file it with `/issue-add` (the owner's prompt as grounding, no attachment posted) or drop it, and record either outcome only through `scan.py ideas apply|filter`.
 
+## Propose systemic fixes (fleet-config#2107)
+**Read [systemic-fixes.md](systemic-fixes.md) whenever an incident, lane failure, repeated steer or review finding shows a class of problem (2+ occurrences, or a mechanism that repeats by construction)**: one `plan ask` per pattern with the smallest sound fix, filed only after the owner says yes, journalled either way.
+
 ## Verify before you trust a worker's report
 
 **Never take a worker's self-reported "shipped ✅"/"built ✅" on trust** — a
