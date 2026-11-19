@@ -19,7 +19,9 @@
     <python> C:/Users/rober/.claude/skills/_lib/design_review file <run_dir>
         [--file] [--repo OWNER/NAME] [--projects-toml FILE]
     <python> C:/Users/rober/.claude/skills/_lib/design_review fleet
-        [--devices iphone,desktop,android] [--file | --dry-run] [--projects-toml FILE] [--out-dir DIR] ...
+        [--devices iphone,desktop,android] [--file | --dry-run | --inventory] [--projects-toml FILE] [--out-dir DIR] ...
+    <python> C:/Users/rober/.claude/skills/_lib/design_review fleet-report <fleet_dir>
+        [--file] [--scaffold DIR] [--projects-toml FILE]
 
 `probe`, `measure`, `judge-prompt`, `judge-merge`, `ledger`, `render`,
 `file` and `fleet` print KEY=VALUE lines (the `ux_surface` CLI style) so a
@@ -41,6 +43,10 @@ skill can read the result back without parsing JSON:
     fleet         FLEET_DIR= APPS=<n> APP=<name> probe= unmeasured= grade= score= failed= fixed= regressed= new= run=
                   MEASURED=<n> UNMEASURED_APPS=<name:reason,...>|none SPEC= SCAFFOLD= PROMOTED= JUDGMENT=skipped
                   FILING=dry-run|filed [ISSUE=<repo> <url|body path>] DIGEST= DIGEST_HTML=
+                  with --inventory, and from fleet-report, also: SWEEP_APP=<name> unmeasured= e2e= tree= surfaces= never_walked=
+                  not_walked= screens= classified= unclassified= repeat=identical|changed|commit changed|first|unmeasured
+                  NOT_WALKED_NONZERO=<name:n|unknown,...>|none CLASSIFY=<name> entries= answered= PROMPT= ANSWERS=
+                  [CLASSIFY_PROBLEM=<name> <why>] DIVERGENCES=<name:n,...>|none
 
 `ledger` records the run (`ledger.py`) and writes `diff` into
 `evaluate.json`, so it runs after `judge-merge` and before `render`. `file`
@@ -93,6 +99,7 @@ from . import (  # noqa: E402
     evaluate,
     filing,
     fleet,
+    fleet_inventory,
     inventory,
     judgment,
     ledger,
@@ -561,8 +568,55 @@ def cmd_fleet(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir) if args.out_dir else None
     if out_dir:
         runtime_files.make_dirs(out_dir, parents=True, exist_ok=True)
-    dig = fleet.run_fleet(rb, specs, devices, projects_toml, file_issues=bool(args.file), out_dir=out_dir,
-                          scaffold=args.scaffold, walk_timeout=args.walk_timeout, python_override=args.python)
+    if args.inventory:
+        dig = fleet_inventory.run_inventory_capture(rb, specs, devices, projects_toml, out_dir=out_dir, scaffold=args.scaffold,
+                                                    walk_timeout=args.walk_timeout, python_override=args.python)
+    else:
+        dig = fleet.run_fleet(rb, specs, devices, projects_toml, file_issues=bool(args.file), out_dir=out_dir,
+                              scaffold=args.scaffold, walk_timeout=args.walk_timeout, python_override=args.python)
+    _print_fleet(dig)
+    return 0
+
+
+def cmd_fleet_report(args: argparse.Namespace) -> int:
+    try:
+        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    specs = rubric_mod.load_specs(Path(args.spec) if args.spec else None, Path(args.spec_dark) if args.spec_dark else None)
+    try:
+        dig = fleet_inventory.run_inventory_report(rb, specs, Path(args.fleet_dir),
+                                                   Path(args.projects_toml) if args.projects_toml else None,
+                                                   file_issues=bool(args.file), scaffold=args.scaffold)
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    _print_fleet(dig)
+    return 0
+
+
+def _print_sweep(sweep: dict) -> None:
+    def n(v: object) -> str:
+        return "unknown" if v is None else str(v)
+    for a in sweep["apps"]:
+        print(f"SWEEP_APP={a['target']} unmeasured={a.get('unmeasured') or 'none'} e2e={a['e2e']} tree={a.get('e2e_tree') or 'none'} surfaces={n(a['surfaces'])} "
+              f"never_walked={n(a['never_walked'])} not_walked={n(a['not_walked'])} screens={a['screens']} "
+              f"classified={a['classified']} unclassified={a['unclassified']} repeat={a['repeat']}")
+    for a in sweep["apps"]:
+        if a.get("e2e_tree") == "restore_failed":
+            print(f"E2E_TREE_RESTORE_FAILED={a['target']}")  # the suite left that checkout changed: look before anything else
+    nonzero = [f"{a['target']}:{n(a['not_walked'])}" for a in sweep["apps"] if a.get("not_walked") != 0]
+    print(f"NOT_WALKED_NONZERO={','.join(nonzero) or 'none'}")  # `unknown` is listed too: it is not 0
+    for app, c in sweep["classification"].items():
+        print(f"CLASSIFY={app} entries={c['entries']} answered={c['answered']} PROMPT={c['prompt']} ANSWERS={c['answers']}")
+        for p in c["problems"]:
+            print(f"CLASSIFY_PROBLEM={app} {p}")
+    per = sweep["summary"]["per_app"]
+    print("DIVERGENCES=" + (",".join(f"{app}:{c['total']}" for app, c in per.items()) or "none"))
+
+
+def _print_fleet(dig: dict) -> None:
     print(f"FLEET_DIR={dig['out_dir']}")
     print(f"APPS={len(dig['apps'])}")
     for a in dig["apps"]:
@@ -582,13 +636,45 @@ def cmd_fleet(args: argparse.Namespace) -> int:
     if dig.get("inventory"):
         counts = dig["inventory"]["counts"]
         print("INVENTORY=" + " ".join(f"{k}:{counts[k]}" for k in (*inventory.CLASSES, "app", "fleet")))
+    if dig.get("inventory_sweep"):
+        _print_sweep(dig["inventory_sweep"])
     print("JUDGMENT=skipped")
     print(f"FILING={dig['filing']['mode']}")
     for repo, where in dig["filing"]["issues"].items():
         print(f"ISSUE={repo} {where}")
     print(f"DIGEST={Path(dig['out_dir']) / fleet.DIGEST_JSON}")
     print(f"DIGEST_HTML={Path(dig['out_dir']) / fleet.DIGEST_HTML}")
-    return 0
+
+
+def _add_fleet_parsers(sub: argparse._SubParsersAction) -> None:
+    """`fleet` (the sweep, `--inventory` its capture leg) and `fleet-report` (the inventory report leg)."""
+    fl = sub.add_parser("fleet", help="every projects.toml web app, serially: probe, measure, evaluate, ledger, render; one digest; judgment skipped")
+    fl.add_argument("--devices", default=",".join(plan.DEFAULT_DEVICES), help="subset of iphone,desktop,android")
+    fl.add_argument("--file", action="store_true", help="upsert the app issues and the two digest issues; default is a dry run")
+    fl.add_argument("--dry-run", action="store_true", help="the default, spelled out: write every would-be body beside the digest, file nothing")
+    fl.add_argument("--python", help="interpreter to run every walk with (tests)")
+    fl.add_argument("--scaffold", default=capture.DEFAULT_SCAFFOLD, help="project-scaffolding root (tests/e2e/_geometry.py)")
+    fl.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
+    fl.add_argument("--spec", help="override the light spec path (tests)")
+    fl.add_argument("--spec-dark", help="override the dark spec path (tests)")
+    fl.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    fl.add_argument("--out-dir", help="override the fleet digest directory (tests); default is under the hooks state dir")
+    fl.add_argument("--walk-timeout", type=float, default=capture.WALK_TIMEOUT_S)
+    fl.add_argument("--inventory", action="store_true",
+                    help="the inventory sweep's capture leg: every app with --e2e on its synthetic instance, reader prompts "
+                         "for what the DOM cannot decide, a dry-run digest; file afterwards with fleet-report")
+    fl.set_defaults(fn=cmd_fleet)
+
+    fr = sub.add_parser("fleet-report", help="the inventory sweep's report leg: re-compare a captured sweep with the readers' "
+                                             "answers and rebuild its digest and bodies, measuring nothing (dry run unless --file)")
+    fr.add_argument("fleet_dir", help="the FLEET_DIR a `fleet --inventory` run printed")
+    fr.add_argument("--file", action="store_true", help="upsert the app issues and the two digest issues; default is a dry run")
+    fr.add_argument("--scaffold", default=capture.DEFAULT_SCAFFOLD, help="project-scaffolding root (the component catalog)")
+    fr.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
+    fr.add_argument("--spec", help="override the light spec path (tests)")
+    fr.add_argument("--spec-dark", help="override the dark spec path (tests)")
+    fr.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    fr.set_defaults(fn=cmd_fleet_report)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -667,23 +753,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     f.add_argument("--existing-body", help="merge over this file instead of the managed issue's body (tests; no gh call, implies dry run)")
     f.set_defaults(fn=cmd_file)
 
-    fl = sub.add_parser("fleet", help="every projects.toml web app, serially: probe, measure, evaluate, ledger, render; one digest; judgment skipped")
-    fl.add_argument("--devices", default=",".join(plan.DEFAULT_DEVICES), help="subset of iphone,desktop,android")
-    fl.add_argument("--file", action="store_true", help="upsert the app issues and the two digest issues; default is a dry run")
-    fl.add_argument("--dry-run", action="store_true", help="the default, spelled out: write every would-be body beside the digest, file nothing")
-    fl.add_argument("--python", help="interpreter to run every walk with (tests)")
-    fl.add_argument("--scaffold", default=capture.DEFAULT_SCAFFOLD, help="project-scaffolding root (tests/e2e/_geometry.py)")
-    fl.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
-    fl.add_argument("--spec", help="override the light spec path (tests)")
-    fl.add_argument("--spec-dark", help="override the dark spec path (tests)")
-    fl.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
-    fl.add_argument("--out-dir", help="override the fleet digest directory (tests); default is under the hooks state dir")
-    fl.add_argument("--walk-timeout", type=float, default=capture.WALK_TIMEOUT_S)
-    fl.set_defaults(fn=cmd_fleet)
+    _add_fleet_parsers(sub)
 
     args = ap.parse_args(argv)
     if getattr(args, "cmd", None) == "fleet" and args.file and args.dry_run:
         ap.error("--file and --dry-run are mutually exclusive")
+    if getattr(args, "cmd", None) == "fleet" and args.file and args.inventory:
+        ap.error("--inventory never files: classify, then run `fleet-report <FLEET_DIR> --file`")
     if getattr(args, "cmd", None) == "file" and args.file and args.existing_body:
         ap.error("--existing-body is a test override and implies a dry run; drop --file")
     return int(args.fn(args))

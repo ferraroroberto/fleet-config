@@ -416,7 +416,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "fleet-config's through filing.py on a dry run; no label, key or "
      "screenshot path in any line; and with no inventory the digest, "
      "bodies and scores unchanged -- is testable on its own, with no real "
-     "issue touched (fleet-config#1500)"),
+     "issue touched (fleet-config#1500); and the inventory sweep -- stable "
+     "unclassified ids, reader-answer validation, answers applied in the "
+     "comparison, per-app rows with unknown never 0, the repeat check, and "
+     "the capture + report legs on fixture runs (fleet-config#1501)"),
     ("perf_sweep","web_review/test_perf_sweep.py",
      "/perf-sweep's population (web apps with a port, dormant ones named not "
      "walked, a named repo still runs), the per-app box lock (a busy box "

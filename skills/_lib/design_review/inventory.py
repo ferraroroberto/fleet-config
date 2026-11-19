@@ -29,7 +29,9 @@ for nothing but its choice kind. A select or combobox counts its options only wh
 group's option count is its entries on that screen, one group per component and `group` key per screen
 (an inventory with no `group` merges them into one group per component). Text whose class names no role arrives as the role
 `unclassified` and is left out of INV-01. Whatever the DOM cannot decide is listed
-under `unclassified` for Step 6's per-app readers. This module never guesses.
+under `unclassified`, each entry with a stable `id` (`unclassified_id`), for the per-app readers of
+`/design-review fleet inventory`. This module never guesses: a reader's validated answer (`classify.py`) comes
+back as `classified` and is applied as if the DOM had decided it.
 
 **Filing-safe.** A filing line carries finding ids, counts, app names, renderings (family, px, weight,
 component) and screen ids. It never carries a label, a control key, captured text or a screenshot path.
@@ -41,21 +43,22 @@ give byte-identical output.
 The digest's `inventory` section (present only when at least one app has an inventory):
 
     {"schema_version": 1,
-     "apps":         [{"target", "run", "source", "screens", "uncatalogued_screens"}],
+     "apps":         [{"target", "run", "source", "screens", "uncatalogued_screens", "classified"}],
      "missing":      [target],                      # no measured inventory in any run
      "catalog":      {"components": [name], "error": str|null},
      "counts":       {"INV-01": n, .., "app": n, "fleet": n},
      "findings":     [{"id", "class", "group", "scope", "reference", "reference_source",
                        "renderings": [{"rendering", "apps", "count"}], "apps", "divergent",
                        "examples": {app: screen id}, "counts": {app: n}}],
-     "unclassified": [{"app", "kind", "component", "key", "label", "screen", "reason", "n"}]}
+     "unclassified": [{"id", "app", "kind", "component", "key", "label", "screen", "reason", "n"}]}
 
 Public surface:
 
     app_inventory(target, metrics, run, source)      -> dict | None
     newest_inventory(target, state_root=None)        -> dict | None
     type_reference(spec)                             -> {role: "family Npx/weight"}
-    compare(apps, reference, catalog, catalog_error, targets) -> the `inventory` section
+    compare(apps, reference, catalog, catalog_error, targets, classified) -> the `inventory` section
+    unclassified_id(entry)                           -> "u-<12 hex>"
     summaries(section, scope, target=None)           -> [filing summary]
     carry_statuses(existing_body, section, target)   -> {INV id: pass | fail | unmeasured}
     render_section(section)                          -> html
@@ -64,6 +67,7 @@ stdlib only.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -149,9 +153,13 @@ FEW_OPTIONS_MAX = 5
 CHOICE_REFERENCE = {"2-5": "segmented", "6-plus": "select"}
 
 R_SHORT_NO_WORD = "no action word in a short label"
-R_LONG_LABEL = "long label: a whole-row tap, read by Step 6"
+R_LONG_LABEL = "long label: a whole-row tap, for the sweep's reader"
 R_EMPTY_LABEL = "no label"
 R_NO_OPTIONS = "option count not in the inventory"
+# The reasons a reader answers with an action; the other one (R_NO_OPTIONS) is answered with an option count.
+ACTION_REASONS = (R_SHORT_NO_WORD, R_LONG_LABEL, R_EMPTY_LABEL)
+# The id hashes the control, not the reason: the reason follows from these fields, and rewording it keeps every id.
+UNCLASSIFIED_FIELDS = ("app", "kind", "component", "key", "label")
 
 _STAMP_RE = re.compile(r"^\d{8}T\d{6}Z")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -274,6 +282,12 @@ def _bucket(options: int) -> str:
     return "2-5" if options <= FEW_OPTIONS_MAX else "6-plus"
 
 
+def unclassified_id(entry: dict) -> str:
+    """A stable id for one unclassified entry: the same app, control and reason give the same id on every run."""
+    raw = json.dumps([str(entry.get(f) or "") for f in UNCLASSIFIED_FIELDS])
+    return "u-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+
 def _rendering(control: dict) -> str:
     comp, kind = str(control.get("component")), str(control.get("kind"))
     name = comp if comp == f"vendored:{kind}" else f"{comp} {kind}"
@@ -320,9 +334,34 @@ def _finding(cls: str, group: str, renderings: Dict[str, Dict[str, str]], refere
             "divergent": divergent, "examples": examples, "counts": {}}
 
 
+def _note_text(text: Seen, inv: dict, app: str, screen: str) -> None:
+    """Tally one screen's text roles; text whose class names no role is never compared."""
+    for tr in inv.get("text") or []:
+        if tr.get("role") == UNCLASSIFIED_ROLE:
+            continue
+        for v in tr.get("variants") or []:
+            _note(text, str(tr.get("role")), _variant(v.get("family"), v.get("px"), v.get("weight")), app, screen)
+
+
+def _apply_answer(answer: dict, entry: dict, control: dict, choices: Seen, actions: Seen) -> None:
+    """Compare an answered unclassified entry as if the DOM had decided it; an action of `None` compares nothing."""
+    app, screen = entry["app"], entry["screen"]
+    if entry["reason"] == R_NO_OPTIONS:
+        kind = str(answer.get("kind") or entry["kind"])
+        _note(choices, f"{choice_of([entry['label']])}|{_bucket(int(answer['options']))}", kind, app, screen)
+    elif answer.get("action"):
+        _note(actions, str(answer["action"]) + (" in menu" if entry["kind"] == "menuitem" else ""), _rendering(control), app, screen)
+
+
 def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Iterable[str]] = None,
-            catalog_error: Optional[str] = None, targets: Optional[Iterable[str]] = None) -> dict:
-    """Pure: the digest's `inventory` section from each app's `app_inventory` result."""
+            catalog_error: Optional[str] = None, targets: Optional[Iterable[str]] = None,
+            classified: Optional[Dict[str, dict]] = None) -> dict:
+    """Pure: the digest's `inventory` section from each app's `app_inventory` result.
+
+    `classified` maps an unclassified entry's `id` to a validated reader answer (`classify.py`): `{"action": name}`
+    or `{"action": None}` (no action: left out), or `{"options": n, "kind": "select" | "combobox"}`. An answered
+    entry is compared as if the DOM had decided it and leaves the `unclassified` list."""
+    classified = classified or {}
     apps = sorted((a for a in apps if a), key=lambda a: a["target"])
     text: Seen = {}
     actions: Seen = {}
@@ -331,12 +370,18 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
     unclassified: Dict[str, dict] = {}
     observed_vendored = set()
     app_rows = []
+    answered: Dict[str, int] = {}
 
     def unclass(app: str, screen: str, c: dict, why: str, n: int) -> None:
         entry = {"app": app, "kind": str(c.get("kind")), "component": str(c.get("component")), "key": str(c.get("key") or ""),
                  "label": str(c.get("label") or ""), "screen": screen, "reason": why, "n": 0}
-        k = json.dumps([entry[f] for f in ("app", "kind", "component", "key", "label", "reason")])
-        cur = unclassified.setdefault(k, entry)
+        uid = unclassified_id(entry)
+        answer = classified.get(uid)
+        if answer is not None:
+            answered[app] = answered.get(app, 0) + n
+            _apply_answer(answer, entry, c, choices, actions)
+            return
+        cur = unclassified.setdefault(uid, {"id": uid, **entry})
         cur["screen"] = min(cur["screen"], screen)
         cur["n"] += n
 
@@ -347,11 +392,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
             sid, inv = screen["id"], screen["inventory"]
             if inv.get("unmeasured"):
                 uncatalogued += 1
-            for tr in inv.get("text") or []:
-                if tr.get("role") == UNCLASSIFIED_ROLE:
-                    continue
-                for v in tr.get("variants") or []:
-                    _note(text, str(tr.get("role")), _variant(v.get("family"), v.get("px"), v.get("weight")), t, sid)
+            _note_text(text, inv, t, sid)
             groups: Dict[Tuple[str, str, str], dict] = {}
             for c in inv.get("controls") or []:
                 kind, comp, n = str(c.get("kind")), str(c.get("component")), int(c.get("n") or 1)
@@ -384,7 +425,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
                 options = g["options"] if g["options"] is not None else g["n"]
                 _note(choices, f"{choice_of(sorted(g['labels']))}|{_bucket(options)}", kind, t, sid)
         app_rows.append({"target": t, "run": app.get("run"), "source": app.get("source"),
-                         "screens": len(app["screens"]), "uncatalogued_screens": uncatalogued})
+                         "screens": len(app["screens"]), "uncatalogued_screens": uncatalogued, "classified": answered.get(t, 0)})
 
     findings = _inventory_findings(text, actions, choices, bespoke, reference, catalog, observed_vendored)
 

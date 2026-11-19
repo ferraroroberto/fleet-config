@@ -398,4 +398,177 @@ _ids = {f["id"]: f["divergent"] for f in _split["findings"] if f["class"] == "IN
 check(_ids == {"INV-02-setting-open": ["app-a", "app-b"], "INV-02-row-open": ["app-d"]},
       f"two renderings of the same setting-open or row-open action still fail INV-02, each under its own action: {_ids}")
 
+# ---- the inventory sweep (fleet-config#1501): stable ids, reader answers, rows, capture + report legs -------------------
+
+from design_review import classify, cli, fleet_inventory  # noqa: E402
+from design_review import inventory_sweep as isw  # noqa: E402
+
+unc = {(u["app"], u["reason"]): u for u in sec["unclassified"]}
+ids = [u["id"] for u in sec["unclassified"]]
+check(all(len(i) == 14 and i.startswith("u-") for i in ids) and len(set(ids)) == len(ids)
+      and ids == [u["id"] for u in third["unclassified"]],
+      f"every unclassified entry has a distinct stable id, the same in any input order: {ids}")
+east_sel, north_word, south_long = (unc[("app-east", inv.R_NO_OPTIONS)], unc[("app-north", inv.R_SHORT_NO_WORD)],
+                                    unc[("app-south", inv.R_LONG_LABEL)])
+
+# validate: the valid answers kept, each bad one dropped with a reason that names no label
+entries = sec["unclassified"]
+good = {"app": "app-east", "answers": [{"id": east_sel["id"], "options": 7, "kind": "select"}]}
+got, probs = classify.validate(json.dumps(good), "app-east", classify.entries_for(sec, "app-east"))
+check(got == {east_sel["id"]: {"options": 7, "kind": "select"}} and probs == [], f"a well-formed option-count answer is kept: {got} {probs}")
+bad = {"answers": [{"id": "u-000000000000", "action": "commit"}, {"id": north_word["id"], "action": "frobnicate"},
+                   {"id": north_word["id"], "options": 3}, {"id": east_sel["id"], "options": 0},
+                   {"id": east_sel["id"], "action": "commit"}, {"id": south_long["id"], "action": "none"},
+                   {"id": south_long["id"], "action": "commit"}, {"id": north_word["id"], "action": "commit"}]}
+got, probs = classify.validate(json.dumps(bad), "app-x", entries)
+check(got == {south_long["id"]: {"action": None}, north_word["id"]: {"action": "commit"}} and len(probs) == 6,
+      f"unknown id, off-vocabulary action, wrong field, non-positive count and a second answer are dropped: {got} {probs}")
+check(not [p for p in probs for w in CAPTURED if w in p], "a dropped answer's reason names ids only, never a label")
+check(classify.validate("not json", "a", entries)[0] == {} and classify.validate('{"app": "app-north", "answers": []}', "app-east", entries)[1],
+      "an unreadable file or another app's answers answer nothing")
+
+# compare with the answers: answered entries leave `unclassified` and are compared as if the DOM had decided them
+answers = {east_sel["id"]: {"options": 7, "kind": "select"}, north_word["id"]: {"action": "commit"}, south_long["id"]: {"action": None}}
+ans = inv.compare(_apps(), REF, CATALOG, None, targets=list(APPS) + ["app-west"], classified=answers)
+ans_by = {f["id"]: f for f in ans["findings"]}
+check(ans["unclassified"] == [] and {a["target"]: a["classified"] for a in ans["apps"]} == {"app-east": 2, "app-north": 1, "app-south": 1},
+      f"every answered entry left the unclassified list and is counted per app: {ans['unclassified']} {ans['apps']}")
+check("app-east" in {a for r in ans_by["INV-04-other-6-plus"]["renderings"] for a in r["apps"]}
+      and "app-east" not in ans_by["INV-04-other-6-plus"]["divergent"],
+      "a select answered with 7 options joins the 6+ bucket on design.md's control, so it does not diverge")
+check("app-north" in {a for r in ans_by["INV-02-commit"]["renderings"] for a in r["apps"]},
+      "a control answered `commit` is compared with the other commit renderings")
+check({f["id"] for f in sec["findings"]} <= set(ans_by) and json.dumps(ans) == json.dumps(
+          inv.compare(shuffled, REF, list(reversed(CATALOG)), None, targets=["app-west"] + list(reversed(APPS)), classified=answers)),
+      "answers add renderings, never drop a finding, and the result stays byte-identical in any input order")
+check(json.dumps(inv.compare(_apps(), REF, CATALOG, None, targets=list(APPS) + ["app-west"], classified={})) == json.dumps(sec),
+      "no answers -> the comparison is exactly what it was")
+
+# the reader prompt: local only, deterministic, every entry with its question and screenshot
+shots = {"desktop-light-home": "C:/run/shots/desktop-light-home.png"}
+p1 = classify.prompt("app-east", classify.entries_for(sec, "app-east"), shots, "C:/sweep/classify-app-east.json")
+check(p1 == classify.prompt("app-east", classify.entries_for(sec, "app-east"), shots, "C:/sweep/classify-app-east.json")
+      and east_sel["id"] in p1 and "C:/sweep/classify-app-east.json" in p1 and "how many options" in p1,
+      "the prompt is deterministic and names each entry's id, its question and the answers path")
+check(("desktop-light-home.png" in p1) == (east_sel["screen"] == "desktop-light-home") and "leave this entry out" in
+      classify.prompt("app-east", classify.entries_for(sec, "app-east"), {}, "x"),
+      "an entry with no screenshot tells the reader to leave it out, never to guess")
+
+# rows, the repeat check and the summary
+h = isw.inventory_hash(fixtures["app-east"])
+check(h and h == isw.inventory_hash(json.loads(json.dumps(fixtures["app-east"]))) and isw.inventory_hash(None) is None
+      and h != isw.inventory_hash(fixtures["app-north"]), "the inventory hash is stable, per app, and None with no inventory")
+check([isw.repeat_state(p, c, d) for p, c, d in (
+          (None, "abc", h), ({"commit": "abc", "hash": h}, "abc", h), ({"commit": "abc", "hash": "x"}, "abc", h),
+          ({"commit": "old", "hash": h}, "abc", h), ({"commit": "abc", "hash": h}, "abc", None))]
+      == ["first", "identical", "changed", "commit changed", "unmeasured"],
+      "repeat: first / identical / changed at one commit / commit changed / unmeasured, never identical across commits")
+row_doc = {"overlay_coverage": {"status": "measured", "not_walked_count": 0},
+           "surface_ids": {"status": "measured", "map": {"file": "docs/ux-surfaces.yaml", "entries": 12, "error": None}, "never_walked": ["sheet.a"]},
+           "e2e": {"unmeasured": None, "warning": None, "surfaces": ["a", "b"], "tree": {"state": "restore_failed"}}}
+r_ok = isw.app_row({"target": "app-east", "unmeasured": None, "commit": "abc"}, row_doc, fixtures["app-east"])
+r_unm = isw.app_row({"target": "app-x", "unmeasured": "SYNTHETIC_UNDECLARED", "commit": None},
+                    {"overlay_coverage": {"status": "unknown"}, "surface_ids": {"status": "unknown", "map": None, "never_walked": None}}, None)
+check((r_ok["surfaces"], r_ok["never_walked"], r_ok["not_walked"], r_ok["e2e"], r_ok["e2e_surfaces"], r_ok["screens"], r_ok["e2e_tree"])
+      == (12, 1, 0, "ok", 2, 2, "restore_failed"),
+      f"an adopted app's row: map entries, never walked, NOT_WALKED overlays, e2e outcome, screens: {r_ok}")
+check((r_unm["surfaces"], r_unm["never_walked"], r_unm["not_walked"], r_unm["e2e"], r_unm["screens"]) == (None, None, None, "not run", 0),
+      "an unmeasured app's counts are unknown (None), never 0")
+summ = isw.summary(sec)
+check([i["id"] for i in summ["by_role"]] == ["INV-01-caption", "INV-01-heading-4", "INV-01-secondary"]
+      and [i["id"] for i in summ["by_action"]] == ["INV-02-commit", "INV-02-destructive"]
+      and summ["per_app"]["app-east"] == {"INV-01": 2, "INV-02": 2, "INV-03": 1, "INV-04": 1, "total": 6}
+      and sum(c["total"] for c in summ["per_app"].values()) == sum(len(f["divergent"]) for f in sec["findings"]),
+      f"the summary groups by role and action and counts divergences per app: {summ['per_app']}")
+
+# the two legs end to end, on fixture runs with a fake filing layer
+capture.utc_now = lambda: FIXED_NOW
+runs = WORK / "runs"
+sweep_docs = {}
+for t in APPS:
+    rd = runs / t / "20261018T000000Z"
+    rd.mkdir(parents=True)
+    m = _metrics(t)
+    for s in m["screens"]:
+        s["screenshot"] = f"{s['id']}.png"
+    (rd / "metrics.json").write_text(json.dumps(m), encoding="utf-8")
+    d = json.loads(json.dumps(compliant))
+    d.update(target=t, commit="c0ffee0", e2e={"unmeasured": None, "warning": None, "surfaces": ["home"]},
+             overlay_coverage={"status": "measured", "not_walked_count": 0},
+             surface_ids={"status": "measured", "no_id": [], "walked": 3,
+                          "map": {"file": "docs/ux-surfaces.yaml", "entries": 3, "error": None},
+                          "never_walked": ["sheet.fixture"] if t == "app-north" else []})
+    (rd / "evaluate.json").write_text(json.dumps(d), encoding="utf-8")
+    sweep_docs[t] = (rd, d)
+
+
+def _sweep_review(name: str, table: dict) -> dict:
+    rd, d = sweep_docs[name]
+    r = _review(name, table)
+    r["row"].update(run_dir=str(rd), run_id=rd.name, commit="c0ffee0")
+    return {**r, "doc": json.loads(json.dumps(d))}
+
+
+sweep_sent: list = []
+fake = {"fetch": lambda r, k: (sweep_sent.append(("fetch", r)), {"number": None, "body": ""})[1], "today": "2026-10-18",
+        "catalog": {"components": {c: {} for c in CATALOG}, "error": None}}
+cap_dir = WORK / "sweep" / "20261018T120000Z"
+cap_dir.mkdir(parents=True)
+cap = fleet_inventory.run_inventory_capture(rubric, specs, ["desktop"], projects, out_dir=cap_dir, reviewer=_sweep_review, **fake)
+sw = cap["inventory_sweep"]
+check(sw["phase"] == "capture" and [a["repeat"] for a in sw["apps"]] == ["first"] * 3
+      and [(a["surfaces"], a["not_walked"]) for a in sw["apps"]] == [(3, 0)] * 3
+      and {a["target"]: a["never_walked"] for a in sw["apps"]} == {"app-north": 1, "app-south": 0, "app-east": 0},
+      f"capture: one row per app with its surface count, NOT_WALKED 0 and the repeat check (first run): {sw['apps']}")
+check(sorted(sw["classification"]) == ["app-east", "app-north", "app-south"]
+      and all((cap_dir / f"classify-{t}.md").is_file() for t in sw["classification"])
+      and (cap_dir / fleet_inventory.MANIFEST).is_file() and cap["filing"]["mode"] == "dry-run",
+      "capture writes the manifest and one reader prompt per app with unclassified controls, and files nothing")
+check(str(sweep_docs["app-east"][0] / "shots" / f"{east_sel['screen']}.png") in (cap_dir / "classify-app-east.md").read_text(encoding="utf-8"),
+      "the prompt names each screenshot by its absolute path under the run's shots/ directory, so a reader can open it")
+check("**SURF-02** (P2, app)" in (cap_dir / "issue-app-north.md").read_text(encoding="utf-8")
+      and "SURF-0" not in (cap_dir / "issue-app-east.md").read_text(encoding="utf-8"),
+      "the sweep's app bodies carry the surface-map line where a map entry was never walked, and only there")
+again_dir = WORK / "sweep" / "20261018T130000Z"
+again_dir.mkdir(parents=True)
+again_cap = fleet_inventory.run_inventory_capture(rubric, specs, ["desktop"], projects, out_dir=again_dir, reviewer=_sweep_review, **fake)
+check([a["repeat"] for a in again_cap["inventory_sweep"]["apps"]] == ["identical"] * 3,
+      "a re-run on unchanged trees gives identical inventories for every app, and the sweep says so")
+
+(cap_dir / "classify-app-east.json").write_text(json.dumps({"app": "app-east", "answers": [{"id": east_sel["id"], "options": 7}]}), encoding="utf-8")
+(cap_dir / "classify-app-north.json").write_text(json.dumps({"app": "app-north", "answers": [
+    {"id": north_word["id"], "action": "commit"}, {"id": "u-ffffffffffff", "action": "commit"}]}), encoding="utf-8")
+west_projects = WORK / "projects-west.toml"
+west_projects.write_text(projects.read_text(encoding="utf-8") + f'[app-west]\ncwd_prefix = "{(WORK / "app-west").as_posix()}"\nwebapp_port = 9\n', encoding="utf-8")
+rep_dig = fleet_inventory.run_inventory_report(rubric, specs, cap_dir, west_projects, upsert=lambda *a: sweep_sent.append(("upsert",)), **fake)
+rs = rep_dig["inventory_sweep"]
+check(rs["phase"] == "report" and {a["target"]: (a["classified"], a["unclassified"]) for a in rs["apps"] if a["target"] in APPS}
+      == {"app-east": (2, 0), "app-north": (1, 0), "app-south": (0, 1)},
+      f"report: the valid answers are applied per app, the unanswered app keeps its entry: {rs['apps']}")
+check(rs["classification"]["app-north"]["problems"] == ["answer 1: unknown id 'u-ffffffffffff'"]
+      and rs["classification"]["app-south"]["problems"] == ["no answers file: every entry stays unclassified"],
+      f"a dropped answer and a missing answers file are reported, not silent: {rs['classification']}")
+west = next(a for a in rep_dig["apps"] if a["target"] == "app-west")
+check(west["unmeasured"] == fleet_inventory.NOT_IN_SWEEP and next(a for a in rs["apps"] if a["target"] == "app-west")["surfaces"] is None,
+      "an app the capture never measured is unmeasured in the report, its counts unknown, never clean")
+check(not any(s[0] == "upsert" for s in sweep_sent), f"a dry-run report sends nothing: {sweep_sent}")
+sweep_bodies = [p.read_text(encoding="utf-8") for p in cap_dir.glob("issue-*.md")]
+sweep_leaks = [w for b in sweep_bodies for w in CAPTURED if w in b]
+check(not sweep_leaks and not any("shots" in b for b in sweep_bodies), f"no body carries a label, key or screenshot path: {sweep_leaks[:3]}")
+check('id="inventory-sweep"' in (cap_dir / fleet.DIGEST_HTML).read_text(encoding="utf-8")
+      and json.loads((cap_dir / fleet.DIGEST_JSON).read_text(encoding="utf-8"))["inventory_sweep"]["phase"] == "report",
+      "the rebuilt digest carries the sweep section on the page and in the JSON")
+capture.utc_now = _real_now
+
+# the CLI refuses an inventory capture that would file, and a report with no capture
+try:
+    cli.main(["fleet", "--inventory", "--file"])
+    refused = False
+except SystemExit as exc:
+    refused = exc.code == 2
+check(refused, "`fleet --inventory --file` is refused: filing waits for the report leg")
+empty_dir = WORK / "no-sweep"
+empty_dir.mkdir()
+check(cli.main(["fleet-report", str(empty_dir), "--projects-toml", str(projects)]) == 2, "fleet-report without a capture manifest exits 2")
+
 _h.report_and_exit("test_design_inventory", skip_code=SKIP_EXIT)
