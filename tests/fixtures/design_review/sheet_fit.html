@@ -6,6 +6,13 @@
                     with it; it fits the 844px viewport                                            -> fail at 390x664 only
        ?case=fits   the sheet fills from 80px down to the bottom edge, its body scrolls inside it and the footer stays
                     in the flex column                                                              -> pass
+     Three more openers sit on the page, one declared step each in the fits walk:
+       #open-stacked      a second sheet, `strip.upper` (fits, own Done), opens over `strip.sheet` and covers its Done
+                                                       -> pass: the covered layer is not read
+       #open-stackedtall  the upper sheet is the too-tall one (box ends at 840, Done cut at 390x664) over the fitting one
+                                                       -> fail at 390x664, for `strip.upper` only
+       #open-option       a sheet with no footer action, only a scrolling list whose last option, "Add a child", is
+                          below the fold               -> pass: the option is not the primary
      Asserted by tests/design_review_browser/sheet_fit.py. -->
 <html lang="en">
 <head>
@@ -26,6 +33,9 @@
   .sheet.fits { top: 80px; bottom: 0; display: flex; flex-direction: column; }
   .sheet.fits[hidden] { display: none; }
   .sheet.fits .body { flex: 1; overflow: auto; }
+  .sheet.upper { z-index: 2; top: 200px; bottom: 0; display: flex; flex-direction: column; justify-content: space-between; }
+  .sheet.upper[hidden] { display: none; }
+  .sheet.upper.tall { top: 80px; height: 760px; bottom: auto; }
 </style>
 </head>
 <body>
@@ -34,15 +44,35 @@
     <h2>Home</h2>
     <p>Page content.</p>
     <button type="button" id="open">Filters</button>
+    <button type="button" id="open-stacked">People</button>
+    <button type="button" id="open-stackedtall">People, tall</button>
+    <button type="button" id="open-option">Parent</button>
   </main>
   <section id="sheet" class="sheet" role="dialog" aria-label="Filters" data-surface="strip.sheet" hidden>
     <div class="body"><h2>Filters</h2><p>Status, project and due window.</p></div>
     <button type="button" class="done">Done</button>
   </section>
+  <section id="upper" class="sheet upper" role="dialog" aria-label="People" data-surface="strip.upper" hidden>
+    <div class="body"><h2>People</h2><p>Pick a person.</p></div>
+    <button type="button" class="done">Done</button>
+  </section>
+  <section id="options" class="sheet fits" role="dialog" aria-label="Parent" data-surface="strip.options" hidden>
+    <div class="body"><h2>Parent</h2>
+      <ul role="listbox"></ul>
+    </div>
+  </section>
 <script>
-  const sheet = document.getElementById("sheet");
+  const sheet = document.getElementById("sheet"), upper = document.getElementById("upper"), options = document.getElementById("options");
   sheet.classList.add(new URLSearchParams(location.search).get("case") === "tall" ? "tall" : "fits");
-  document.getElementById("open").addEventListener("click", () => { sheet.hidden = false; });
+  const list = options.querySelector("ul");
+  for (let i = 1; i <= 30; i++) {
+    list.insertAdjacentHTML("beforeend", `<li><button type="button" role="option">${i === 30 ? "Add a child" : "Task " + i}</button></li>`);
+  }
+  const opener = (id, show) => document.getElementById(id).addEventListener("click", show);
+  opener("open", () => { sheet.hidden = false; });
+  opener("open-stacked", () => { sheet.hidden = false; upper.hidden = false; });
+  opener("open-stackedtall", () => { sheet.hidden = false; upper.classList.add("tall"); upper.hidden = false; });
+  opener("open-option", () => { options.hidden = false; });
 </script>
 </body>
 </html>

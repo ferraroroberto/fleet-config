@@ -15,6 +15,9 @@ from design_review_support import doc as _doc
 from design_review_support import specs as _specs
 
 _STEP = {"tab": "home", "id": "sheet", "click": "#open", "overlay": True, "primary": ".done"}
+_STACKED = {"tab": "home", "id": "stacked", "click": "#open-stacked", "overlay": True, "primary": ".done"}
+_STACKED_TALL = {"tab": "home", "id": "stackedtall", "click": "#open-stackedtall", "overlay": True, "primary": ".done"}
+_OPTION = {"tab": "home", "id": "option", "click": "#open-option", "overlay": True}
 _GHOST = {"tab": "home", "id": "ghost", "click": "#nope", "overlay": True, "wait_ms": 500}
 
 
@@ -39,12 +42,16 @@ def _l11(screens: list) -> dict:
     return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "LAYOUT-11")
 
 
+def _only(screens: list, step: str) -> list:
+    return [s for s in screens if s.get("view", "").endswith("-" + step)]
+
+
 def _sheets(screens: list) -> dict:
-    return {s["id"]: s for s in screens if s.get("view", "").endswith("-sheet")}
+    return {s["id"]: s for s in _only(screens, "sheet")}
 
 
 tall = _walk_sheet("tall", [_STEP])
-fits = _walk_sheet("fits", [_STEP])
+fits = _walk_sheet("fits", [_STEP, _STACKED, _STACKED_TALL, _OPTION])
 ghost = _walk_sheet("fits-ghost", [_GHOST])
 
 _expected = {f"{d}-{t}-home-sheet" for d in ("iphone", "android") for t in ("light", "dark")}
@@ -66,7 +73,7 @@ check(_tall_rule["status"] == "fail" and len(_why) == 4 and all(w.startswith("39
       and all("box 80..840 past the 664px viewport" in w and "button.done cut off" in w for w in _why),
       f"LAYOUT-11: a too-tall fixture sheet fails, once per phone x theme, at 390x664 only -- {_tall_rule['status']} {_why}")
 
-_fit_rule = _l11(fits)
+_fit_rule = _l11(_only(fits, "sheet"))
 _fit_roots = [r for s in _sheets(fits).values() for v in s["metrics"]["fit"]["viewports"] for r in v["roots"]]
 check(_fit_rule["status"] == "pass" and not _fit_rule["evidence"] and len(_fit_roots) == 8 and all(r["inside"] and r["primary"]["state"] == "visible" for r in _fit_roots),
       f"LAYOUT-11: a sheet that fills to the bottom edge with a flex footer passes at both viewports -- {_fit_rule['status']} {_fit_rule['reason']}")
@@ -77,3 +84,28 @@ check(len(_ghost_sheets) == 4 and all(s["status"] == "absent" and s.get("overlay
       f"a declared overlay step whose target never attaches is recorded absent and marked overlay -- {[(i, s['status']) for i, s in _ghost_sheets.items()]}")
 check(_ghost_rule["status"] == "unmeasured" and "not confirmed" in _ghost_rule["reason"] and "could not be opened" in _ghost_rule["reason"],
       f"LAYOUT-11: an overlay that cannot be opened is not confirmed, never a pass -- {_ghost_rule['status']} {_ghost_rule['reason']}")
+
+# A sheet opened over another sheet: only the top layer is judged for its primary. These steps ride the fits walk
+# (a walk is two browser launches; one walk per scenario would outgrow the spawn budget).
+
+
+def _roots(screens: list, step: str, viewport: str) -> dict:
+    return {r["id"]: r for s in _only(screens, step) for v in s["metrics"]["fit"]["viewports"] if v["viewport"] == viewport for r in v["roots"]}
+
+
+_stacked_rule = _l11(_only(fits, "stacked"))
+_stacked_roots = _roots(fits, "stacked", "390x664")
+check(_stacked_rule["status"] == "pass" and not _stacked_rule["evidence"]
+      and _stacked_roots["strip.sheet"]["primary"]["state"] == "covered" and _stacked_roots["strip.upper"]["primary"]["state"] == "visible",
+      f"LAYOUT-11: a sheet over a sheet reads the lower layer as covered, not cut, and its declared primary is looked up on the top layer only -- {_stacked_rule['status']} {_stacked_roots}")
+
+_stackedtall_rule = _l11(_only(fits, "stackedtall"))
+_stackedtall_why = [(i["sel"], i["why"]) for e in _stackedtall_rule["evidence"] for i in e["items"]]
+check(_stackedtall_rule["status"] == "fail" and len(_stackedtall_why) == 4 and all(sel == "strip.upper" for sel, _ in _stackedtall_why)
+      and all("button.done cut off" in why for _, why in _stackedtall_why),
+      f"LAYOUT-11: a cut primary on the top layer is still flagged, and the covered layer is not -- {_stackedtall_rule['status']} {_stackedtall_why}")
+
+_option_rule = _l11(_only(fits, "option"))
+_option_roots = _roots(fits, "option", "390x664")
+check(_option_rule["status"] == "pass" and not _option_rule["evidence"] and _option_roots["strip.options"]["primary"]["state"] == "none",
+      f"LAYOUT-11: a list option titled \"Add a child\" is not taken as the default primary -- {_option_rule['status']} {_option_roots}")
