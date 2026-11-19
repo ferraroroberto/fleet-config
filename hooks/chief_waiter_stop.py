@@ -20,9 +20,11 @@ Cheapest check first, so every other session pays almost nothing:
    (`stop_hook_active`), is allowed before any file is read -- a headless
    `claude -p` has no waiter to arm and must never be held open;
 2. a session that is not the chief (`sessions-state.json` row named `chief`) is
-   allowed with one small file read -- unless it is a chief-dispatched lane over
-   its context threshold, which `lane_compact.stop_refusal` holds once for a
-   handoff and a compaction (a few small local reads, no network);
+   allowed with one small file read -- unless it is a chief-dispatched lane
+   ending its turn with its own background task still running, which
+   `lane_background.stop_refusal` holds once (one read of its own transcript),
+   or over its context threshold, which `lane_compact.stop_refusal` holds once
+   for a handoff and a compaction (a few small local reads, no network);
 3. only the chief reaches the context gate (hold the turn end once per window
    when its context is at or over the compact threshold), the heartbeat read,
    the lane read and, when it is about to be refused, the launcher reads
@@ -65,6 +67,7 @@ from typing import Any, Dict, Optional, Set
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import chief_handover_sessionstart  # noqa: E402
+import lane_background  # noqa: E402
 import lane_compact  # noqa: E402
 import notify_on_idle  # noqa: E402
 import session_state  # noqa: E402
@@ -258,18 +261,22 @@ def slots_refusal(now: Optional[float] = None) -> Optional[str]:
 
 
 def lane_hold(payload: Dict[str, Any]) -> None:
-    """Hold a chief-dispatched lane's turn end for its handoff-then-compact (`lane_compact`).
+    """Hold a chief-dispatched lane's turn end while its own background work runs
+    (`lane_background`), else for its handoff-then-compact (`lane_compact`).
 
-    Any failure in that path allows the turn end: this hook runs at every
+    Background work goes first: a lane must read its gate before it compacts.
+    Any failure in either path allows the turn end: this hook runs at every
     session's turn end fleet-wide.
     """
-    try:
-        message = lane_compact.stop_refusal(payload)
-    except Exception as exc:  # noqa: BLE001 -- fail open, never break a turn end
-        logger.warning("chief_waiter_stop: lane compact check failed (%s) -- allowing the turn end", exc)
-        return
-    if message:
-        _lib.block(message)
+    for name, check in (("background task", lane_background.stop_refusal),
+                        ("lane compact", lane_compact.stop_refusal)):
+        try:
+            message = check(payload)
+        except Exception as exc:  # noqa: BLE001 -- fail open, never break a turn end
+            logger.warning("chief_waiter_stop: %s check failed (%s) -- allowing the turn end", name, exc)
+            continue
+        if message:
+            _lib.block(message)
 
 
 def main() -> None:

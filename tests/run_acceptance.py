@@ -135,6 +135,7 @@ from acceptance.guard_checks.attribution_scan_checks import (
     _attribution_scan_unit_checks,  # noqa: E402
 )
 from acceptance.guard_checks.chief_waiter_checks import _chief_waiter_stop_unit_checks  # noqa: E402
+from acceptance.guard_checks.lane_background_checks import _lane_background_unit_checks  # noqa: E402
 from acceptance.guard_checks.lane_compact_checks import _lane_compact_unit_checks  # noqa: E402
 from acceptance.guard_checks.restart_cmd_checks import (  # noqa: E402
     _restart_cmd_registry_check,
@@ -253,6 +254,9 @@ def _run_hook_checks(tally: Tally) -> None:
 
     # ---- lane_compact: a dispatched lane hands off and compacts at its context threshold ----
     tally.run_unit(_lane_compact_unit_checks)
+
+    # ---- lane_background: a dispatched lane may not end its turn on its own running task ----
+    tally.run_unit(_lane_background_unit_checks)
 
     # ---- telegram_file_reply_guard: files only to the sender's private chat (fleet-config#1478) ----
     tally.run_unit(_telegram_file_reply_guard_unit_checks)

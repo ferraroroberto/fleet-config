@@ -56,6 +56,8 @@ _CODEX_POLICY_COVERAGE = (
      "not applicable"),
     ("Lane handoff then compact at a per-model threshold", "lane_compact", None, None,
      "unsupported"),
+    ("Lane holds while its own background task runs", "lane_background", None, None,
+     "unsupported"),
     ("Telegram file replies", "telegram_file_reply_guard", None, None,
      "not applicable"),
     ("UX merge needs its proof page", "ui_proof_merge_guard", None, None,
