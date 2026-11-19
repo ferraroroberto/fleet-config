@@ -43,17 +43,32 @@ _SPAWN_SCAN_EXCLUDE = ("skills/synced",)
 _SPAWN_ATTRS = {"run", "Popen", "call", "check_output", "check_call"}
 
 
+def _vendored_dests() -> "tuple[str, ...]":
+    """`[vendored]` destinations as repo-relative posix paths: byte copies from project-scaffolding that
+    this repo never edits, so its own spawn, git and single-home conventions cannot be applied to them
+    (the scaffold's gate covers them at the source)."""
+    sys.path.insert(0, str(REPO / "skills" / "_lib"))
+    from fleet_core import fleet_toml  # noqa: E402
+
+    data, _ = fleet_toml.load_checked(REPO)
+    entries = (data or {}).get("vendored", {})
+    return tuple(str(e["dest"]).strip("/") for e in entries.values() if isinstance(e, dict) and e.get("dest"))
+
+
 def _runtime_py_files() -> "list[Path]":
-    """Every `.py` under `_SPAWN_SCAN_DIRS`, minus `__pycache__` and
-    `_SPAWN_SCAN_EXCLUDE`, plus the repo-root modules (`codex_model_policy.py`
+    """Every `.py` under `_SPAWN_SCAN_DIRS`, minus `__pycache__`, `_SPAWN_SCAN_EXCLUDE` and the
+    `[vendored]` copies, plus the repo-root modules (`codex_model_policy.py`
     and its siblings run from `install.ps1` — runtime code outside the three
     trees, which is how an inline `NO_WINDOW` ternary sat there unseen,
     fleet-config#930)."""
     files: list[Path] = sorted(REPO.glob("*.py"))
+    vendored = _vendored_dests()
     for rel in _SPAWN_SCAN_DIRS:
         for py in sorted((REPO / rel).rglob("*.py")):
             label = py.relative_to(REPO).as_posix()
             if "__pycache__" in py.parts or label.startswith(tuple(f"{d}/" for d in _SPAWN_SCAN_EXCLUDE)):
+                continue
+            if label in vendored or label.startswith(tuple(f"{d}/" for d in vendored)):
                 continue
             files.append(py)
     return files
@@ -355,6 +370,12 @@ def _no_window_unit_check() -> Tuple[int, int]:
     import no_window  # noqa: E402
 
     check = _Checker()
+
+    vendored = _vendored_dests()
+    scanned = [p.relative_to(REPO).as_posix() for p in _runtime_py_files()]
+    check("no_window: no [vendored] copy is in the runtime scan",
+          bool(vendored) and not any(s in vendored or s.startswith(tuple(f"{d}/" for d in vendored)) for s in scanned),
+          f"vendored copies scanned: {[s for s in scanned if s in vendored]}")
 
     expected = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     check("no_window: skills/_lib NO_WINDOW == CREATE_NO_WINDOW on win32, else 0",
