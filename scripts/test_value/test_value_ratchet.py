@@ -16,7 +16,9 @@ Four rules, each its own failure mode:
   flake-ledger    A unit that both passed and failed on one tree hash, under one label, is a flake. It stays
                   on the ledger until it passes `flake_clear_runs` runs in a row afterwards. The number of
                   open flakes may not exceed the baseline's `flake_count`, and none may stay open longer
-                  than the baseline's `flake_max_age_days`. Both figures only shrink.
+                  than the baseline's `flake_max_age_days`. Both figures only shrink. The unit named by
+                  `host_unit` (the one that runs this verdict) is not counted: it could never collect the
+                  passes that close its own flake while the rule failed it.
   hermetic        (weekly, `--rules hermetic`) A unit red in the latest fresh-clone run but green in the
                   latest primary run that has it is not hermetic; the baseline's `hermetic` list only shrinks.
 
@@ -40,6 +42,7 @@ Opt-in, per adopter, in `.fleet.toml` (every key but `enabled` optional, default
     label       = "gate"                               # the ledger label of per-change runs
     capture_runs = 3                                   # --update-baseline takes each unit's max over these
     flake_clear_runs = 10
+    host_unit   = ""                                   # the unit that evaluates this ratchet; its own flake is not counted
     coverage_map_max_age_days = 8
     hermetic_label = "weekly-hermetic-gate"
     hermetic_max_age_days = 8
@@ -104,6 +107,7 @@ class Config:
     label: str = "gate"
     capture_runs: int = 3
     flake_clear_runs: int = 10
+    host_unit: str = ""
     coverage_map_max_age_days: int = 8
     hermetic_label: str = "weekly-hermetic-gate"
     hermetic_max_age_days: int = 8
@@ -459,11 +463,20 @@ def open_flakes(ledger: list[Row], label: str, clear_runs: int) -> dict[str, dat
     return result
 
 
+def countable_flakes(ledger: list[Row], cfg: Config) -> dict[str, datetime]:
+    """Open flakes minus the host unit: it runs this rule, so a flake of its own would fail it on every
+    run and it could never collect the passes that close that flake. The ledger still holds its rows."""
+    flakes = open_flakes(ledger, cfg.label, cfg.flake_clear_runs)
+    if cfg.host_unit:
+        flakes.pop(cfg.host_unit, None)
+    return flakes
+
+
 def rule_flake_ledger(ledger: list[Row] | None, cfg: Config, baseline: Row, now: datetime) -> Verdict:
     if ledger is None:
         return Verdict("flake-ledger", UNKNOWN, ["the unit ledger is missing, so no flake can be counted"])
     v = Verdict("flake-ledger", PASS)
-    flakes = open_flakes(ledger, cfg.label, cfg.flake_clear_runs)
+    flakes = countable_flakes(ledger, cfg)
     cap_days = baseline["flake_max_age_days"]
     for unit, start in sorted(flakes.items(), key=lambda p: p[1]):
         age = (now - start).days
@@ -477,6 +490,8 @@ def rule_flake_ledger(ledger: list[Row] | None, cfg: Config, baseline: Row, now:
         v.lines.append(f"{len(flakes)} open flakes, above the baseline of {baseline['flake_count']}")
     elif not flakes:
         v.lines.append("no open flake")
+    if cfg.host_unit and cfg.host_unit in open_flakes(ledger, cfg.label, cfg.flake_clear_runs):
+        v.lines.append(f"{cfg.host_unit}: host unit, not counted")
     return v
 
 
@@ -532,7 +547,7 @@ def update_baseline(baseline: Row | None, ledger: list[Row], cfg: Config,
         elif allow_additions:
             units[unit] = spawns
             notes.append(f"added {unit}: {spawns} spawns")
-    flakes = len(open_flakes(ledger, cfg.label, cfg.flake_clear_runs))
+    flakes = len(countable_flakes(ledger, cfg))
     flake_count = flakes if allow_additions and baseline is None else min(out["flake_count"], flakes)
     hermetic = [u for u in out["hermetic"] if u in observed]
     out = {**out, "units": dict(sorted(units.items())), "flake_count": flake_count, "hermetic": hermetic}

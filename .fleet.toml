@@ -38,7 +38,7 @@ runtime_write_ratchet = { src = "scripts/runtime_write_ratchet.py", sha = "4a06c
 runtime_write_resolve = { src = "scripts/runtime_write_resolve.py", sha = "5505185c5f4b10eea5ab268e7b6676c6c54340c4", dest = "scripts/runtime_write_resolve.py" }
 instruction_frontmatter = { src = "scripts/instruction_frontmatter.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_frontmatter.py" }
 instruction_repeats = { src = "scripts/instruction_repeats.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_repeats.py" }
-test_value_ratchet = { src = "scripts/test_value_ratchet.py", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "scripts/test_value/test_value_ratchet.py" }
+test_value_ratchet = { src = "scripts/test_value_ratchet.py", sha = "882fff79cdf247ecb5287f4ee03e9e32910dbcff", dest = "scripts/test_value/test_value_ratchet.py" }
 unit_ledger = { src = "scripts/unit_ledger.py", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/unit_ledger.py" }
 spawn_probe = { src = "scripts/spawn_probe", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/spawn_probe" }
 weekly_burst = { src = "scripts/weekly_burst.py", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/weekly_burst.py" }
@@ -209,3 +209,4 @@ unit_runner    = ["tests/run_acceptance.py"]
 base_ref       = "origin/main"
 label          = "gate"
 hermetic_label = "weekly-hermetic-gate"
+host_unit      = "_test_value_ratchet_check"
