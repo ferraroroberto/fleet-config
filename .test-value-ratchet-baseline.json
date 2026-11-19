@@ -231,6 +231,7 @@
     "rate_gate": 10,
     "readme_fence_refs": 1,
     "repo_preflight": 1,
+    "restart_outlives_run": 11,
     "retro_digest": 1,
     "run_hook_matrix": 31,
     "run_window": 1,

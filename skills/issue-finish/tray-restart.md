@@ -18,6 +18,15 @@ Loaded on demand from `/issue-finish` step 6 when the project's `CLAUDE.md` desc
   the `cmd` banner, no `Stopping previous…` echoes, old build untouched. Fire
   the PowerShell invocation non-blocking (the tray holds its console — a
   foreground launch never returns), then move to the bounded poll below.
+- **Inside a scheduled run (`FLEET_SCHEDULED_RUN=1`), run the recipe through
+  `detached_restart.py`.** The runner owns every descendant in a kill-on-close
+  job: a tray restarted plainly is counted (the run ends 118) and dies with the
+  run. The helper starts the recipe outside that job and runs it to completion in
+  the foreground, passing its output and exit code through:
+  `E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/scheduled/detached_restart.py --cwd <repo> -- C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "& './tray.bat' --restart"`.
+  It prints `BREAKAWAY=yes`; `BREAKAWAY=no` means the job refused, the app will not
+  outlive the run, and that is reported as not confirmed. Exit 124 = still running
+  at the timeout, also not confirmed. Interactively, run the recipe directly.
 - **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
   kill, safe only for a tray whose linked-but-independent children (a
   session-host + its PTY-backed shells) are spawned **detached** and

@@ -323,7 +323,8 @@ Decision below is driven by the project's `## CI expectations` block
 If the project's `CLAUDE.md` describes a tray or long-running local process,
 follow that procedure **exactly**. The non-negotiables: read
 [`tray-restart.md`](E:/automation/fleet-config/skills/issue-finish/tray-restart.md)
-before running any restart.
+before running any restart (it also covers a scheduled run, where the recipe goes
+through `detached_restart.py`).
 
 If the project has no tray, skip this step.
 

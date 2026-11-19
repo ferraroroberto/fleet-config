@@ -136,6 +136,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("scheduled_runner_reap", "claude_progress/test_reap_read_only_search.py",
      "a run whose only leftovers are read-only search tools is reaped with a "
      "warning and exits by its other evidence; any other or unconfirmed leftover keeps 118"),
+    ("restart_outlives_run", "claude_progress/test_restart_outlives_run.py",
+     "a restart recipe run through detached_restart.py leaves the scheduled run's owned "
+     "job, so the app it starts keeps serving after the run and the run cannot end 118 "
+     "for it; the same recipe run plainly stays an owned descendant"),
     ("scheduled_run_hooks", "hooks/test_scheduled_run_hooks.py",
      "the capture hooks' detached indexer triggers stay off inside a scheduled "
      "run -- whose owned job would count the child and turn a delivered run "
