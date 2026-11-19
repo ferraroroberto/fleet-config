@@ -26,8 +26,6 @@ SKILLS_DOC = REPO / "docs" / "skills.md"
 SCAFFOLD_DOCS = "https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/"
 # Every ratchet table carries these; any other key is an option the index row names.
 _STANDARD_KEYS = frozenset({"enabled", "baseline"})
-# The scaffold-doc cell of a ratchet whose script is local to this repo until the scaffold ships it.
-LOCAL_CELL = "local, not yet in the scaffold"
 _SKILL_TIERS = ("skills", ".claude/skills")
 _SKILL_LINK = re.compile(r"\[`/([a-z0-9-]+)`\]\(([^)\s#]+)")
 # Registered in the vendored script's RULES but never counted: R-15 only reads a SKILL.md description, which
@@ -88,8 +86,6 @@ def collect_ratchet_facts(repo: Path = REPO) -> Dict[str, Any]:
     return {
         "tables": tables,
         "vendored": vendored,
-        # A ratchet this repo runs before the scaffold ships it: its script is in the tree, not in [vendored].
-        "local": {name for name in tables if name not in vendored and any((repo / "scripts").rglob(f"{name}.py"))},
         "counts": counts,
         "gates": gates,
         "conventions_known": set(_literal(repo / "scripts" / "conventions_ratchet.py", "RULES")),
@@ -105,7 +101,7 @@ def _row_problems(name: str, cells: List[str], facts: Dict[str, Any]) -> List[st
     _, fails_on, gate, options, baseline, entries, scaffold = cells
     table = facts["tables"][name]
     want_options = set(table) - _STANDARD_KEYS
-    want_link = LOCAL_CELL if name in facts["local"] else f"{SCAFFOLD_DOCS}{name.replace('_', '-')}.md"
+    want_link = f"{SCAFFOLD_DOCS}{name.replace('_', '-')}.md"
     checks = [
         (bool(fails_on.strip("— ")), "'Fails on' is empty"),
         (gate.strip("`") == facts["gates"].get(name), f"gate is {gate}, tree has {facts['gates'].get(name)}"),
@@ -147,7 +143,7 @@ def ratchet_index_problems(doc: str, facts: Dict[str, Any]) -> List[str]:
     """Every way `docs/ratchets.md` disagrees with the collected facts."""
     rows = _rows(_section(doc, "Index"))
     sources = {"index rows": set(rows), ".fleet.toml tables": set(facts["tables"]),
-               "gate files": set(facts["gates"]), "[vendored] entries": facts["vendored"] | facts["local"]}
+               "gate files": set(facts["gates"]), "[vendored] entries": facts["vendored"]}
     everything = set().union(*sources.values())
     out = [f"{name}: missing from {where}" for name in sorted(everything)
            for where, names in sources.items() if name not in names]
@@ -184,7 +180,7 @@ def _self_tests(check: _Checker, doc: str, facts: Dict[str, Any], skills_doc: st
         "a baseline burned down": lambda f: f["counts"].__setitem__("runtime_write_ratchet", f["counts"]["runtime_write_ratchet"] - 1),
         "a new instruction rule": lambda f: f["instruction_enforced"].add("R-99"),
         "an advisory instruction rule listed as enforced": lambda f: f["instruction_advisory"].clear(),
-        "a local ratchet's script removed": lambda f: f["local"].clear(),
+        "a vendored ratchet dropped from [vendored]": lambda f: f["vendored"].discard("test_value_ratchet"),
     }
     for label, mutate in mutations.items():
         drifted = copy.deepcopy(facts)

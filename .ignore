@@ -15,5 +15,9 @@
 /scripts/structure_band.py
 /scripts/structure_layout.py
 /scripts/structure_ratchet.py
+/scripts/test_value/test_value_ratchet.py
+/skills/_lib/unit_history/spawn_probe
+/skills/_lib/unit_history/unit_ledger.py
+/skills/_lib/unit_history/weekly_burst.py
 /tests/e2e/_paced_browser.py
 # END vendored-copies
