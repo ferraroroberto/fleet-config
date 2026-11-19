@@ -77,6 +77,15 @@ missing = l11(screen("iphone-light-step-a", declared_missing, kind="step"))
 check(missing["status"] == "fail" and any("declared primary #nope not in the overlay" in i["why"] for e in missing["evidence"] for i in e["items"]),
       "LAYOUT-11: a declared primary the overlay does not hold is reported, never read as fitting")
 
+covered_under = {"viewports": [view(664, root(664, ident="strip.lower", primary={"state": "covered", "sel": None, "top": None, "bottom": None}),
+                                            root(664, ident="strip.upper"))]}
+check(l11(screen("iphone-light-step-a", covered_under, kind="step"))["status"] == "pass",
+      "LAYOUT-11: a layer under another overlay reads covered, which is not a finding")
+covered_wide = {"viewports": [view(664, root(664, ident="strip.lower", overflow=9, primary={"state": "covered", "sel": None, "top": None, "bottom": None}),
+                                         root(664, ident="strip.upper"))]}
+check(l11(screen("iphone-light-step-a", covered_wide, kind="step"))["status"] == "fail",
+      "LAYOUT-11: a covered layer's box and sideways overflow are still read")
+
 # Not confirmed: never folded into a pass.
 empty_dialog = l11(screen("iphone-light-dialog-a", {"viewports": [view(664)]}))
 check(empty_dialog["status"] == "unmeasured" and "rendered no box" in empty_dialog["reason"],
