@@ -13,10 +13,12 @@ import contextlib
 import datetime as dt
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib" / "scheduled"))
@@ -32,9 +34,14 @@ check = _h.check
 START = dt.datetime(2026, 11, 12, 17, 24, 0, tzinfo=dt.timezone.utc)
 
 
-def _run(argv, now):
+def _run(argv, now, scheduled=False):
+    # The attended/unattended split reads FLEET_SCHEDULED_RUN, so the ambient value (set when
+    # the gate itself runs inside a scheduled skill) must never decide a case.
+    env = {k: v for k, v in os.environ.items() if k != rw.UNATTENDED_ENV}
+    if scheduled:
+        env[rw.UNATTENDED_ENV] = "1"
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
+    with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stdout(out):
         rw.main(argv, now=now)
     return dict(line.split("=", 1) for line in out.getvalue().splitlines())
 
@@ -71,6 +78,9 @@ try:
           "one hour in -> open")
     late = _run(["check", "--state-dir", str(tmp)], START + dt.timedelta(hours=6))
     check(late["WINDOW"] == "closed" and float(late["REMAINING_SECONDS"]) < 0, "six hours in -> closed")
+
+    env_armed = _run(["arm", "--state-dir", str(tmp)], START, scheduled=True)
+    check(env_armed["WINDOW_ARMED"] == "yes", "FLEET_SCHEDULED_RUN=1 arms without the flag")
 
     _run(["arm", "--state-dir", str(tmp), "--unattended", "--hours", "1"], START)
     check(_run(["check", "--state-dir", str(tmp)], START + dt.timedelta(hours=2))["WINDOW"] == "closed",
