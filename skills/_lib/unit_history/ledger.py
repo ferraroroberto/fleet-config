@@ -19,6 +19,7 @@ started with `-I`/`-S` or a scrubbed environment is not seen, so the figure is a
 from __future__ import annotations
 
 import json
+import os
 import statistics
 import sys
 import uuid
@@ -31,9 +32,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import hooks_state, runtime_files  # noqa: E402
 
 LEDGER_NAME = "gate-unit-ledger.jsonl"
+# Built weekly by the burst from a full gate run under the probe's coverage half; read by the test-value ratchet.
+COVERAGE_MAP_NAME = "test-value-coverage-map.json"
 UNIT_REPORT_ENV = "FLEET_GATE_UNIT_REPORT"
 SPAWN_REPORT_ENV = "FLEET_GATE_SPAWN_REPORT"
 CURRENT_UNIT_ENV = "FLEET_GATE_UNIT"
+# The tree hash the run started on, so a stage inside the gate can tell this run's tree from older ones.
+TREE_ENV = "FLEET_GATE_WTREE"
+# Comma-separated unit names: a dispatcher runs only these units (a red-first record, a coverage run).
+ONLY_ENV = "FLEET_GATE_ONLY"
+# The spawn probe's coverage half: a report file plus the root whose files are recorded.
+COVERAGE_REPORT_ENV = "FLEET_GATE_COVERAGE_REPORT"
+COVERAGE_ROOT_ENV = "FLEET_GATE_COVERAGE_ROOT"
 UNITS_FILE = "units.jsonl"
 SPAWNS_FILE = "spawns.jsonl"
 PROBE_DIR = Path(__file__).resolve().parent / "spawn_probe"
@@ -44,8 +54,18 @@ PASS, FAIL, SKIP = "pass", "fail", "skip"
 OUTPUT_TAIL_CHARS = 8000
 
 
+def selected(unit: str) -> bool:
+    """Is `unit` in this run's `FLEET_GATE_ONLY` list? With the variable unset every unit runs."""
+    only = os.environ.get(ONLY_ENV, "").strip()
+    return not only or unit in {u.strip() for u in only.split(",")}
+
+
 def ledger_path() -> Path:
     return hooks_state.state_dir() / LEDGER_NAME
+
+
+def coverage_map_path() -> Path:
+    return hooks_state.state_dir() / COVERAGE_MAP_NAME
 
 
 def new_run_id() -> str:
@@ -68,6 +88,14 @@ def _read_lines(path: Path) -> List[dict]:
     return rows
 
 
+def read_report(base: Path) -> List[dict]:
+    """A probe report: the probe writes one `<base>.<pid>` file per process, so read them all."""
+    rows = _read_lines(base)
+    for part in sorted(base.parent.glob(base.name + ".*")):
+        rows += _read_lines(part)
+    return rows
+
+
 def record_run(run_dir: Path, *, label: str, wtree: Optional[str], exit_code: int, seconds: float,
                run_id: Optional[str] = None, now: Optional[str] = None) -> int:
     """Append this run's unit rows and one run row; return the unit rows written (0 = nothing reported)."""
@@ -77,7 +105,7 @@ def record_run(run_dir: Path, *, label: str, wtree: Optional[str], exit_code: in
     run_id = run_id or new_run_id()
     utc = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     spawns: Dict[str, int] = defaultdict(int)
-    for row in _read_lines(run_dir / SPAWNS_FILE):
+    for row in read_report(run_dir / SPAWNS_FILE):
         spawns[str(row.get("unit") or "")] += 1
     base = {"run_id": run_id, "utc": utc, "label": label, "wtree": wtree}
     out = [{**base, "kind": "unit", "unit": u.get("unit"), "status": u.get("status"),

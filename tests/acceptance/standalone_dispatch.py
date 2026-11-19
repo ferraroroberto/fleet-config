@@ -661,13 +661,18 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "(fleet-config#957)"),
     ("unit_history", "unit_history/test_unit_history.py",
      "the acceptance gate's per-unit run history -- ledger rows with tree hash and run id, the spawn probe "
-     "counting a real child and staying inert without its env var, unit outcomes and medians -- against a "
+     "counting a real child and staying inert without its env var, its coverage half recording lines per "
+     "unit, unit selection, unit outcomes and medians -- against a "
      "temp state dir and repo (fleet-config#2120)"),
     ("weekly_burst", "weekly_burst/test_burst.py",
      "the weekly burst's verdicts -- a red unit exits 1 and is named, the hermetic legs run in a detached clone "
      "without the working tree's ignored files, and a skipped leg, an unmakeable clone, missing gate history or "
      "a green exit with no ledger row is not-confirmed (exit 3) -- against throwaway repos and a temp state dir "
      "(fleet-config#2120)"),
+    ("test_value_ratchet", "test_value/test_test_value_ratchet.py",
+     "the test-value ratchet's four rules -- spawn-budget, flake-ledger, new-test-value against the merge "
+     "base's baseline and the weekly coverage map, hermetic -- each failing without its rule, and a missing "
+     "report, ledger or map as exit 3 -- against a throwaway repo and fake ledgers (fleet-config#2120)"),
     ("issue_state_gate", "repo/test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "

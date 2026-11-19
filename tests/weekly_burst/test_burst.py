@@ -2,7 +2,7 @@
 
 Real throwaway git repos hold fake dispatchers that report units the way the acceptance gate does, so each
 case drives the real `gate_evidence run --units` -> ledger -> verdict path: all green exits 0 with a summary
-written under the state dir; a red unit exits 1 and is named; the hermetic legs run in a detached clone that
+written under the state dir, and the hermetic gate's coverage report built into the coverage map; a red unit exits 1 and is named; the hermetic legs run in a detached clone that
 lacks an ignored file the working tree has; a clone that cannot be made, a skipped leg, no `gate` history and
 a green exit with no ledger row are each `not-confirmed` (exit 3), never green; old summaries are pruned;
 the weekly unit table names real files, and the gate no longer lists the moved units.
@@ -46,6 +46,11 @@ if os.environ.get('FAKE_RED') and Path(__file__).name == 'run_acceptance.py':
     rows.append({'unit': 'broken', 'status': 'fail', 'seconds': 0.2})
 if marker.exists():
     rows.append({'unit': 'sees_ignored_file', 'status': 'pass', 'seconds': 0.1})
+if os.environ.get('FLEET_GATE_COVERAGE_REPORT'):
+    root = os.environ['FLEET_GATE_COVERAGE_ROOT']
+    Path(os.environ['FLEET_GATE_COVERAGE_REPORT']).write_text(json.dumps(
+        {'unit': 'steady', 'lines': [['src.py', 1, 'VALUE = 1'], ['elsewhere.py', 1, 'x']]}) + chr(10),
+        encoding='utf-8')
 if not os.environ.get('FAKE_SILENT'):
     Path(os.environ['FLEET_GATE_UNIT_REPORT']).write_text(
         ''.join(json.dumps(r) + chr(10) for r in rows), encoding='utf-8')
@@ -60,6 +65,9 @@ def make_repo() -> Path:
         (repo / "tests" / name).write_text(_FAKE, encoding="utf-8")
     (repo / ".gitignore").write_text("IGNORED_MARKER\n", encoding="utf-8")
     (repo / "IGNORED_MARKER").write_text("only the working tree has this\n", encoding="utf-8")
+    (repo / "src.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / ".fleet.toml").write_text("[test_value_ratchet]\nenabled = true\n", encoding="utf-8")
+    (repo / ".test-value-ratchet-baseline.json").write_text('{"units": {}}\n', encoding="utf-8")
     for cmd in (["add", "-A"], ["commit", "-q", "-m", "fake dispatchers"]):
         subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
     return repo
@@ -103,13 +111,17 @@ try:
     code, text = run_main(repo)
     summary = latest_summary()
     check(code == 0 and summary["verdict"] == "green", f"all legs green exit 0 ({code}) -- {text[-300:]}")
-    check([leg["leg"] for leg in summary["legs"]] == ["units", "hermetic-units", "hermetic-gate"],
-          f"three legs ran ({[leg['leg'] for leg in summary['legs']]})")
+    check([leg["leg"] for leg in summary["legs"]]
+          == ["units", "hermetic-units", "hermetic-gate", "coverage-map", "hermetic-rule"],
+          f"every leg ran ({[leg['leg'] for leg in summary['legs']]})")
+    cov_map =json.loads(ledger.coverage_map_path().read_text(encoding="utf-8"))
+    check(len(cov_map["lines"]) == 1 and cov_map["lines"][0].startswith("src.py:") and cov_map["units"] == {"steady": 1},
+          f"the hermetic gate's coverage became the map, tracked source lines only ({cov_map})")
     check(summary["medians"]["state"] == "green" and summary["medians"]["top"][0]["unit"] == "steady",
           f"medians come from the gate history ({summary['medians']})")
     check(all((STATE / "weekly-burst" / leg["log"]).is_file() for leg in summary["legs"]),
           "each leg's log is kept in the state dir")
-    check(not list(repo.glob("*.json")) and not (repo / "weekly-burst").exists(), "nothing is written next to the code")
+    check(not [p for p in repo.glob("*.json") if p.name != ".test-value-ratchet-baseline.json"] and not (repo / "weekly-burst").exists(), "nothing is written next to the code")
 
     # ---- the hermetic legs ran in a detached clone: the ignored file is not there ----
     in_tree = {r["unit"] for r in ledger.load(label="weekly-units") if r.get("kind") == "unit"}
@@ -152,9 +164,9 @@ try:
     seed_gate_history()
     code, _text = run_main(plain)
     summary = latest_summary()
-    check(code == 3 and summary["legs"][-1] == {"leg": "hermetic", "state": "not-confirmed",
-                                                "reason": "clone or detach failed"},
-          f"an unmakeable clone is not-confirmed ({code}, {summary['legs'][-1]})")
+    clone_leg = next((leg for leg in summary["legs"] if leg["leg"] == "hermetic"), None)
+    check(code == 3 and clone_leg == {"leg": "hermetic", "state": "not-confirmed", "reason": "clone or detach failed"},
+          f"an unmakeable clone is not-confirmed ({code}, {clone_leg})")
 
     # ---- only the newest KEEP_RUNS summaries survive, with their logs ----
     folder = STATE / "weekly-burst"

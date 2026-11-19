@@ -2,11 +2,14 @@
 
 Both dispatchers (`tests/run_acceptance.py`, `tests/run_weekly_units.py`) fold each unit's own
 `(failures, total[, skipped])` into one tally and report every unit to the run history, so a moved unit
-keeps its ledger row under the weekly label.
+keeps its ledger row under the weekly label. With `FLEET_GATE_ONLY` set, a unit not named in it is
+not run and not reported.
 """
 from __future__ import annotations
 
 from typing import Callable, Tuple
+
+from unit_history.ledger import selected
 
 from acceptance import gate_routing
 from acceptance.run_history import unit_report
@@ -31,6 +34,8 @@ class Tally:
         the running tally — the acceptance-matrix total is summed from real
         checks executed, never a hand-maintained constant that drifts
         silently when a check is added or removed (fleet-config#320)."""
+        if not selected(getattr(check_fn, "__name__", repr(check_fn))):
+            return
         with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
             failures, total = check_fn()
             outcome["result"] = (failures, total, 0)
@@ -44,6 +49,8 @@ class Tally:
         whose inputs are sibling checkouts) must land in neither Total nor
         Failed, so a run that verified less never reads identical to one that
         verified everything (fleet-config#461, #501, #562)."""
+        if not selected(getattr(check_fn, "__name__", repr(check_fn))):
+            return
         with unit_report.unit(getattr(check_fn, "__name__", repr(check_fn))) as outcome:
             failures, total, skipped = check_fn()
             outcome["result"] = (failures, total, skipped)
@@ -51,6 +58,8 @@ class Tally:
 
     def run_suite(self, label: str, test_file: str) -> None:
         """One standalone suite file as a unit, reported under its table label."""
+        if not selected(label):
+            return
         with unit_report.unit(label) as outcome:
             outcome["result"] = _subprocess_unit_check(
                 label, test_file, routed_out=gate_routing.routed_out(label))

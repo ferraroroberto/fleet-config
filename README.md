@@ -199,7 +199,8 @@ fleet-config/
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── tests/run_weekly_units.py       # the burn, load and wall-clock units the gate leaves out, run weekly by `/weekly-burst`
-├── scripts/                        # the nine ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
+├── scripts/                        # the ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
+│   ├── test_value/test_value_ratchet.py  # this repo's own until the scaffold ships it: new-test-value, spawn-budget, flake-ledger and the weekly hermetic rule over the unit ledger
 │   ├── tray/tray_lifecycle.ps1     # this repo's own: junctioned via scripts/tray/ → ~/.claude/tray — the ONE machine-local copy; canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 │   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)

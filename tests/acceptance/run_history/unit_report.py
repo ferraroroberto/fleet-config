@@ -4,7 +4,8 @@
 per unit to it and publishes the running unit's name in `FLEET_GATE_UNIT` so the spawn probe can
 attribute process spawns. A failing unit also reports the bounded tail of what it printed (stdout and
 stderr, or the traceback it raised), so a red unit can be diagnosed from the ledger after the temp run
-directory is gone. With the env var unset (a plain `run_acceptance.py`) it does nothing.
+directory is gone. Under the probe's coverage half, each unit's executed lines are flushed under its
+name when it ends. With the env var unset (a plain `run_acceptance.py`) it does nothing.
 """
 from __future__ import annotations
 
@@ -60,6 +61,7 @@ def unit(name: str) -> Iterator[dict]:
     if reporting:
         sys.stdout, sys.stderr = _Tail(out), _Tail(err)
     os.environ[CURRENT_UNIT_ENV] = name
+    _coverage_flush("")  # lines run between units belong to none of them
     started = time.perf_counter()
     raised: Optional[str] = None
     try:
@@ -69,11 +71,19 @@ def unit(name: str) -> Iterator[dict]:
         raise
     finally:
         seconds = round(time.perf_counter() - started, 3)
+        _coverage_flush(name)
         os.environ.pop(CURRENT_UNIT_ENV, None)
         tails = [s for s in (sys.stdout, sys.stderr) if isinstance(s, _Tail)]
         sys.stdout, sys.stderr = out, err
         printed = "".join(t.text() for t in tails) + (raised or "")
         _write(name, outcome, seconds, _bound(printed, any(t.cut for t in tails)))
+
+
+def _coverage_flush(name: str) -> None:
+    """Hand the probe's recorded lines to `name` (or drop them for ""); a no-op without the probe."""
+    flush = getattr(sys.modules.get("sitecustomize"), "fleet_coverage_flush", None)
+    if callable(flush):
+        flush(name)
 
 
 def _bound(text: str, already_cut: bool) -> str:

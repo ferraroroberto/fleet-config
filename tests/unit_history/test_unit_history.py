@@ -117,17 +117,82 @@ try:
     env = dict(os.environ, PYTHONPATH=str(ledger.PROBE_DIR), FLEET_GATE_UNIT="u1", **{ledger.SPAWN_REPORT_ENV: str(report)})
     subprocess.run([PY, "-c", "import subprocess,sys; subprocess.run([sys.executable,'-c','pass'])"],
                    env=env, creationflags=NO_WINDOW, timeout=120)
-    lines = [json.loads(x) for x in report.read_text(encoding="utf-8").splitlines()]
+    lines = ledger.read_report(report)
     check(len(lines) == 1 and lines[0]["unit"] == "u1", f"the probe counts one spawn under its unit ({lines})")
+    # Threads spawning at once: a shared append-only file loses lines on Windows, so the count must still be exact.
+    burst_report = tmp / "burst" / "spawns.jsonl"
+    burst_report.parent.mkdir()
+    burst_code = ("import subprocess, sys, threading\n"
+                  "def go():\n    for _ in range(10):\n        subprocess.run([sys.executable, '-c', 'pass'])\n"
+                  "ts = [threading.Thread(target=go) for _ in range(8)]\n[t.start() for t in ts]\n[t.join() for t in ts]\n")
+    subprocess.run([PY, "-c", burst_code], creationflags=NO_WINDOW, timeout=300,
+                   env=dict(env, **{ledger.SPAWN_REPORT_ENV: str(burst_report)}))
+    burst_rows = ledger.read_report(burst_report)
+    check(len(burst_rows) == 80, f"80 concurrent spawns from 8 threads are counted exactly ({len(burst_rows)})")
     env_off = dict(os.environ, PYTHONPATH=str(ledger.PROBE_DIR))
-    env_off.pop(ledger.SPAWN_REPORT_ENV, None)
+    for key in (ledger.SPAWN_REPORT_ENV, ledger.COVERAGE_REPORT_ENV, ledger.COVERAGE_ROOT_ENV):
+        env_off.pop(key, None)
     proc = subprocess.run([PY, "-c", "import subprocess; print(subprocess.Popen.__init__.__name__)"],
                           env=env_off, creationflags=NO_WINDOW, timeout=120, capture_output=True, text=True)
     check(proc.returncode == 0 and proc.stdout.strip() == "__init__",
           f"without the env var the probe leaves Popen unpatched ({proc.stdout.strip()!r})")
     probe_text = (ledger.PROBE_DIR / "sitecustomize.py").read_text(encoding="utf-8")
-    check(all(name in probe_text for name in (ledger.SPAWN_REPORT_ENV, ledger.CURRENT_UNIT_ENV)),
+    check(all(name in probe_text for name in (ledger.SPAWN_REPORT_ENV, ledger.CURRENT_UNIT_ENV,
+                                              ledger.COVERAGE_REPORT_ENV, ledger.COVERAGE_ROOT_ENV)),
           "the probe's env names match the ledger's constants")
+
+    # --- the probe's coverage half: per unit in one process, at exit in a child --------------------
+    src = tmp / "cov_root" / "mod.py"
+    src.parent.mkdir()
+    src.write_text("def one():\n    return 1\n\ndef two():\n    return 2\n", encoding="utf-8")
+    cov = tmp / "coverage.jsonl"
+    driver = (f"import sys; sys.path[:0] = [{str(src.parent)!r}, {str(REPO / 'tests')!r}, {str(REPO / 'skills' / '_lib')!r}]\n"
+              "import mod\nfrom acceptance.run_history import unit_report\n"
+              "with unit_report.unit('first') as o:\n    mod.one()\n    o['result'] = (0, 1, 0)\n"
+              "with unit_report.unit('second') as o:\n    mod.one(); mod.two()\n    o['result'] = (0, 1, 0)\n")
+    env_cov = dict(os.environ, PYTHONPATH=str(ledger.PROBE_DIR), **{
+        ledger.COVERAGE_REPORT_ENV: str(cov), ledger.COVERAGE_ROOT_ENV: str(src.parent)})
+    for key in (ledger.UNIT_REPORT_ENV, ledger.SPAWN_REPORT_ENV, ledger.CURRENT_UNIT_ENV):
+        env_cov.pop(key, None)
+    subprocess.run([PY, "-c", driver], env=env_cov, creationflags=NO_WINDOW, timeout=120)
+    subprocess.run([PY, "-c", f"import sys; sys.path.insert(0, {str(src.parent)!r}); import mod; mod.two()"],
+                   env=dict(env_cov, **{ledger.CURRENT_UNIT_ENV: "child_unit"}), creationflags=NO_WINDOW, timeout=120)
+    cov_rows = ledger.read_report(cov)
+    by_unit = {r["unit"]: {(p, t) for p, _n, t in r["lines"]} for r in cov_rows}
+    check(("mod.py", "return 1") in by_unit.get("first", set()) and ("mod.py", "return 2") not in by_unit.get("first", set()),
+          f"a unit records the lines it ran and not the next unit's ({by_unit.get('first')})")
+    check({("mod.py", "return 1"), ("mod.py", "return 2")} <= by_unit.get("second", set()),
+          f"a line an earlier unit ran is recorded again for the next unit ({by_unit.get('second')})")
+    check(("mod.py", "return 2") in by_unit.get("child_unit", set()),
+          f"a child process flushes at exit under the unit it inherited ({sorted(by_unit)})")
+    check(all(not p.startswith("<") and not p.startswith("..") for r in cov_rows for p, _n, _t in r["lines"]),
+          "only files under the root are recorded, never `<frozen ...>` pseudo-files")
+    for part in tmp.glob("coverage.jsonl*"):
+        part.unlink()
+    subprocess.run([PY, "-c", driver], env=dict(env_cov, **{ledger.CURRENT_UNIT_ENV: "outer"}),
+                   creationflags=NO_WINDOW, timeout=120)
+    nested = ledger.read_report(cov)
+    check([r["unit"] for r in nested] == ["outer"]
+          and {("mod.py", "return 1"), ("mod.py", "return 2")} <= {(p, t) for p, _n, t in nested[0]["lines"]},
+          f"a process born in a unit keeps its lines under that unit though it reports units itself ({[r['unit'] for r in nested]})")
+    proc = subprocess.run([PY, "-c", "import sys; print(sys.monitoring.get_tool(sys.monitoring.COVERAGE_ID))"],
+                          env=env_off, creationflags=NO_WINDOW, timeout=120, capture_output=True, text=True)
+    check(proc.stdout.strip() == "None", f"without its env vars the coverage half claims no monitoring tool ({proc.stdout!r})")
+
+    # --- FLEET_GATE_ONLY runs only the named units --------------------------------------------------
+    os.environ[ledger.ONLY_ENV] = "kept, other"
+    try:
+        check(ledger.selected("kept") and ledger.selected("other") and not ledger.selected("dropped"),
+              "FLEET_GATE_ONLY selects the named units only")
+    finally:
+        del os.environ[ledger.ONLY_ENV]
+    check(ledger.selected("anything"), "with FLEET_GATE_ONLY unset every unit runs")
+    tree_seen = tmp / "tree.txt"
+    tree_gate = tmp / "tree_gate.py"
+    tree_gate.write_text(FAKE_GATE + f"\nimport os\nopen({str(tree_seen)!r}, 'w').write(os.environ.get({ledger.TREE_ENV!r}, ''))\n",
+                         encoding="utf-8")
+    quiet(ge.run, repo, "tree", [PY, str(tree_gate)], units=True)
+    check(tree_seen.read_text() == ge.tree_hash(repo)[0], "the gate child sees the tree hash its run started on")
 
     # --- a red unit keeps what it printed (both streams); a green one keeps nothing ---------------
     kept = units["failing_unit"].get("output", "")
