@@ -2,7 +2,7 @@
 
     python .claude/skills/weekly-burst/burst.py [--median-runs N] [--skip-hermetic]
 
-Three legs, each recorded in the unit ledger under its own label so the per-unit medians can tell
+The gate-running legs are each recorded in the unit ledger under their own label so the per-unit medians can tell
 them apart from the per-change gate (`gate`):
 
   units     `tests/run_weekly_units.py` in this working tree  (label `weekly-units`)
@@ -10,6 +10,11 @@ them apart from the per-change gate (`gate`):
             full `tests/run_acceptance.py`, so a unit that leans on a gitignored file, the
             checkout folder name or a `.venv` this tree happens to have goes red here
             (labels `weekly-hermetic-units`, `weekly-hermetic-gate`)
+  coverage  the hermetic gate leg runs under the spawn probe's coverage half; its report becomes the
+            weekly coverage map (`<hooks state dir>/test-value-coverage-map.json`) the test-value
+            ratchet's `new-test-value` rule reads
+  hermetic-rule  the test-value ratchet's `hermetic` rule over the ledger: a unit red in the fresh
+            clone but green in the primary checkout fails unless baselined
   medians   per-unit median seconds over the last N `gate` runs in the ledger
 
 Results go to `<hooks state dir>/weekly-burst/<utc>.json` plus one log per leg, never next to the
@@ -42,6 +47,8 @@ from unit_history import ledger  # noqa: E402
 KEEP_RUNS = 8
 GIT_TIMEOUT_S = 600
 GATE_EVIDENCE = REPO / "skills" / "_lib" / "gate_evidence.py"
+TEST_VALUE = REPO / "scripts" / "test_value" / "test_value_ratchet.py"
+RATCHET_TIMEOUT_S = 600
 RED, UNKNOWN, GREEN = "red", "not-confirmed", "green"
 EXIT = {GREEN: 0, RED: 1, UNKNOWN: 3}
 
@@ -63,7 +70,7 @@ def _failed_units(run: dict) -> List[str]:
     return sorted({str(r["unit"]) for r in rows if r.get("kind") == "unit" and r.get("status") == ledger.FAIL})
 
 
-def _run_leg(name: str, label: str, script: str, tree: Path, log: Path) -> dict:
+def _run_leg(name: str, label: str, script: str, tree: Path, log: Path, extra_env: Optional[dict] = None) -> dict:
     """Run one test dispatcher through `gate_evidence run --units`; the verdict is its exit code
     plus the ledger row it wrote: a green exit with no row for this run is `not-confirmed`."""
     argv = [sys.executable, str(GATE_EVIDENCE), "run", "--label", label, "--units", "--repo", str(tree),
@@ -73,7 +80,7 @@ def _run_leg(name: str, label: str, script: str, tree: Path, log: Path) -> dict:
     with runtime_files.open_for_write(log, "wb") as out:
         # subprocess-timeout-exempt: foreground leg whose length is the scheduled Job's ceiling, not this script's
         code = subprocess.run(argv, cwd=str(tree), creationflags=NO_WINDOW, stdout=out, stderr=subprocess.STDOUT,
-                              stdin=subprocess.DEVNULL).returncode
+                              stdin=subprocess.DEVNULL, env={**os.environ, **(extra_env or {})}).returncode
     # A dispatcher that reported no units writes no ledger row; an older week's row must not stand in for it.
     fresh = [r for r in _run_rows(label) if r["run_id"] not in seen]
     run = fresh[-1] if fresh else None
@@ -87,6 +94,43 @@ def _run_leg(name: str, label: str, script: str, tree: Path, log: Path) -> dict:
           + (f" red units: {', '.join(failed)}" if failed else "") + f" · log {log.name}", flush=True)
     return {"leg": name, "label": label, "state": state, "exit": code, "seconds": seconds,
             "red_units": failed, "log": log.name}
+
+
+def _ratchet_leg(name: str, args: List[str], tree: Path, log: Path) -> dict:
+    """One test-value ratchet call as a leg: exit 0 green, 1 red, anything else not established."""
+    print(f"▶ {name}", flush=True)
+    try:
+        with runtime_files.open_for_write(log, "wb") as out:
+            code = subprocess.run([sys.executable, str(TEST_VALUE), "--repo", str(tree), *args], cwd=str(tree),
+                                  creationflags=NO_WINDOW, stdout=out, stderr=subprocess.STDOUT,
+                                  stdin=subprocess.DEVNULL, timeout=RATCHET_TIMEOUT_S).returncode
+    except subprocess.TimeoutExpired:
+        code = 3
+    state = GREEN if code == 0 else RED if code == 1 else UNKNOWN
+    print(f"{'✅' if state == GREEN else '❌'} {name}: {state} exit {code} · log {log.name}", flush=True)
+    return {"leg": name, "state": state, "exit": code, "log": log.name}
+
+
+def _hermetic_legs(work: Path, folder: Path, stamp: str) -> List[dict]:
+    """The fresh-clone legs: weekly units, the full gate under coverage, the map built from it."""
+    clone = _fresh_clone(work)
+    if clone is None:
+        print("❌ hermetic: the fresh clone could not be made", flush=True)
+        return [{"leg": "hermetic", "state": UNKNOWN, "reason": "clone or detach failed"}]
+    legs = [_run_leg("hermetic-units", "weekly-hermetic-units", "run_weekly_units.py", clone,
+                     folder / f"{stamp}-hermetic-units.log")]
+    report = work / "coverage.jsonl"
+    coverage_env = {ledger.COVERAGE_REPORT_ENV: str(report), ledger.COVERAGE_ROOT_ENV: str(clone)}
+    gate = _run_leg("hermetic-gate", "weekly-hermetic-gate", "run_acceptance.py", clone,
+                    folder / f"{stamp}-hermetic-gate.log", extra_env=coverage_env)
+    legs.append(gate)
+    if ledger.read_report(report):
+        legs.append(_ratchet_leg("coverage-map", ["--build-map", str(report), "--out", str(ledger.coverage_map_path())],
+                                 clone, folder / f"{stamp}-coverage-map.log"))
+    else:
+        print("❌ coverage-map: the gate leg recorded no coverage", flush=True)
+        legs.append({"leg": "coverage-map", "state": UNKNOWN, "reason": "no coverage report"})
+    return legs
 
 
 def _fresh_clone(parent: Path) -> Optional[Path]:
@@ -147,17 +191,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         work = Path(tempfile.mkdtemp(prefix="weekly_burst_"))
         try:
-            clone = _fresh_clone(work)
-            if clone is None:
-                print("❌ hermetic: the fresh clone could not be made", flush=True)
-                legs.append({"leg": "hermetic", "state": UNKNOWN, "reason": "clone or detach failed"})
-            else:
-                legs.append(_run_leg("hermetic-units", "weekly-hermetic-units", "run_weekly_units.py", clone,
-                                     folder / f"{stamp}-hermetic-units.log"))
-                legs.append(_run_leg("hermetic-gate", "weekly-hermetic-gate", "run_acceptance.py", clone,
-                                     folder / f"{stamp}-hermetic-gate.log"))
+            legs += _hermetic_legs(work, folder, stamp)
         finally:
             shutil.rmtree(work, onerror=_make_writable_and_retry)
+        legs.append(_ratchet_leg("hermetic-rule", ["--rules", "hermetic", "--ledger", str(ledger.ledger_path())],
+                                 REPO, folder / f"{stamp}-hermetic-rule.log"))
 
     medians = _medians(args.median_runs)
     states = {leg["state"] for leg in legs} | {medians["state"]}

@@ -1,6 +1,6 @@
 ---
 name: weekly-burst
-description: Run the weekly burst — the burn, load and wall-clock acceptance units, a fresh-clone hermetic re-run of the whole gate, and per-unit runtime medians. E.g. "/weekly-burst". No model; runs weekly unattended.
+description: Run the weekly burst — the burn, load and wall-clock acceptance units, a fresh-clone hermetic re-run of the whole gate (which also builds the coverage map), the hermetic rule, and per-unit runtime medians. E.g. "/weekly-burst". No model; runs weekly unattended.
 ---
 
 # weekly-burst

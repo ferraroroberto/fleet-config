@@ -72,7 +72,7 @@ The finish flow runs these in order, each deterministic:
 
 ## The ratchets
 
-Nine ratchets gate this repository. Each section below says what it catches, why, and what a hit and its fix look like. The mechanics (flags, exit codes, baseline format, scope options) are the same for all of them and are described in [The life of a check](#the-life-of-a-check); the linked scaffold page for each ratchet is the full reference.
+Ten ratchets gate this repository. Each section below says what it catches, why, and what a hit and its fix look like. The mechanics (flags, exit codes, baseline format, scope options) are the same for all of them and are described in [The life of a check](#the-life-of-a-check); the linked scaffold page for each ratchet is the full reference.
 
 ### Static analysis
 
@@ -185,6 +185,21 @@ LOG = state_dir() / "run.log"
 ```
 
 Reference: [runtime write ratchet](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/runtime-write-ratchet.md).
+
+### Test value
+
+Holds the test suite's cost and asks each new test unit (a check function or a suite file) to show its value. A new unit passes with a red-before-fix record, a covered source line no other unit covers in the weekly coverage map, or a `test-value-exempt: <reason>` marker; each unit's process spawns may not rise above its baseline; open flakes (a pass and a fail on one tree) may not grow in number or age past the cap; and, weekly, a unit red in a fresh clone but green in the primary checkout fails. Why: tests are a cost to justify, and the spawn count measures cost without flaking under load the way wall time does. A missing coverage map or ledger is exit 3. The fix is to show the evidence (run the new test red on the pre-fix tree), drop the unit, or mark it exempt with a real reason.
+
+```python
+# hit: a new unit that re-checks lines other units already cover, never seen red
+def _another_copy_check(): ...
+
+# fix: a reviewed exception
+# test-value-exempt: scans the docs tree, which no unit's coverage can show
+def _docs_scan_check(): ...
+```
+
+Reference: this repo's own `scripts/test_value/test_value_ratchet.py` until the scaffold ships it; index entry in [ratchets.md](ratchets.md).
 
 ### Other ratchets in the family
 

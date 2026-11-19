@@ -241,9 +241,12 @@ def _wants_units(argv: List[str]) -> bool:
     return any(Path(part).name == "run_acceptance.py" for part in argv)
 
 
-def _unit_env(run_dir: Path) -> Dict[str, str]:
-    """The child's environment with the unit/spawn report files and the spawn probe wired in."""
+def _unit_env(run_dir: Path, wtree: Optional[str]) -> Dict[str, str]:
+    """The child's environment with the unit/spawn report files, the start tree and the spawn probe wired in."""
     env = dict(os.environ)
+    env.pop(unit_ledger.TREE_ENV, None)
+    if wtree:
+        env[unit_ledger.TREE_ENV] = wtree
     env[unit_ledger.UNIT_REPORT_ENV] = str(run_dir / unit_ledger.UNITS_FILE)
     env[unit_ledger.SPAWN_REPORT_ENV] = str(run_dir / unit_ledger.SPAWNS_FILE)
     probe = str(unit_ledger.PROBE_DIR)
@@ -266,7 +269,7 @@ def run(repo: Path, label: str, argv: List[str], units: bool = False) -> Tuple[i
             # subprocess-timeout-exempt: foreground runner for the caller's gate, whose length is the caller's to set
             proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
                                   stdout=_handle(sys.stdout), stderr=_handle(sys.stderr),
-                                  env=_unit_env(run_dir) if run_dir else None)
+                                  env=_unit_env(run_dir, before) if run_dir else None)
         code = proc.returncode
     except OSError as exc:
         print(f"gate_evidence: could not start {argv[0]!r}: {exc}", file=sys.stderr)

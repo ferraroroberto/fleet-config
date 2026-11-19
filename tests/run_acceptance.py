@@ -191,6 +191,7 @@ from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.static_ratchet_gate import _static_ratchet_check  # noqa: E402
 from acceptance.structure_ratchet_gate import _structure_ratchet_check  # noqa: E402
 from acceptance.system_map_coverage import _system_map_coverage_check  # noqa: E402
+from acceptance.test_value.test_value_ratchet_gate import _test_value_ratchet_check  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 from acceptance.wire_checks.tool_id_leak_scanner import _tool_id_leak_unit_check  # noqa: E402
 
@@ -491,6 +492,8 @@ def _run_all() -> int:
     _run_suite_checks(tally)
     _run_repo_guards(tally)
     _run_wiring_checks(tally)
+    # Last but the probe: it reads this run's live unit and spawn reports, so every other unit is in them.
+    tally.run_unit(_test_value_ratchet_check)
     tally.run_unit(_runtime_write_probe_check)
 
     print()
