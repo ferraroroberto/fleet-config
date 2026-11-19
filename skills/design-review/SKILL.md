@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: Score a running fleet web app's rendered design in-browser (phone/desktop × light/dark) with rubric, fresh-context judge, ledger diff, now-vs-proposed HTML mock-up. `file` (upserts managed issue), `fleet` (all apps), `full-app` (whole-app redesign); static pages use their preview (390/800/1440px). Never starts/restarts/kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
+description: Score a running fleet web app's rendered design in-browser (phone/desktop × light/dark) with rubric, fresh-context judge, ledger diff, now-vs-proposed HTML mock-up. `file` (upserts managed issue), `fleet` (all apps), `fleet inventory` (cross-app control sweep), `full-app` (whole-app redesign); static pages use their preview (390/800/1440px). Never starts/restarts/kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
 ---
 
 # design-review
@@ -73,6 +73,10 @@ page text to an issue, PR or comment.
   serially, one digest; `--devices` applies, the
   judgment stage is skipped, `file` opts into filing the app issues and the
   two digest issues. No other target argument is accepted with `fleet`.
+- `fleet inventory` → the **fleet inventory sweep** (below): every web app's
+  e2e surfaces on its synthetic instance, one read-only reader per app for
+  what the DOM cannot decide, a dry-run digest; `file` files only after the
+  owner approves that digest.
 - `full-app` → the **full-app review** (below): steps 1–5 on the target,
   then the whole-app redesign investigation, its build steps and the
   write-back into the design system. Combines with `--synthetic`; not with
@@ -386,6 +390,15 @@ summary block live there.
 data by PR with a `[meta].version` bump: a `[[rules]]` entry when it can be
 measured (`measure.py` grows the metric; the question then leaves the
 checklist), else a `[[judgment]]` question. Nothing automates that step.
+
+## Fleet inventory mode (`/design-review fleet inventory [file]`)
+
+The exhaustive inventory sweep: every app's e2e surfaces captured on its own
+throwaway instance, compared across the fleet, the controls the DOM cannot
+decide settled by one read-only easy-tier reader per app, and every divergence
+filed where its fix belongs, on the owner's approval of the dry-run digest.
+**Read [inventory.md](inventory.md)** before running it: the capture, the
+reader brief, the report leg and the summary block live there.
 
 ## Full-app mode (`/design-review <repo> full-app`)
 

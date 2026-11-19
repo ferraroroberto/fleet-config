@@ -43,6 +43,10 @@ divergence goes in the digest's `inventory` section and on fleet-config's
 issue. With no inventory anywhere the digest has no `inventory` key, and
 every body is what it was before.
 
+Inventory sweep: `fleet_inventory.py` drives this same loop with `review_app(..., e2e=True)` and the
+`classified` / `surface_lines` / `decorate` hooks of `run_fleet`; the digest page then renders its
+`inventory_sweep` section (`inventory_sweep.py`).
+
 Filing is opt-in (`--file`): the app issues through `filing.file_body` and
 the two digest issues (fleet-config's `design-review` issue carries the
 spec list, project-scaffolding's the scaffold list) through the same merge.
@@ -68,7 +72,16 @@ from fleet_core import (
     runtime_files,  # noqa: E402
 )
 
-from . import capture, filing, inventory, ledger, plan, report  # noqa: E402
+from . import (  # noqa: E402
+    capture,
+    filing,
+    inventory,
+    inventory_sweep,
+    ledger,
+    plan,
+    report,
+    surface_ids,
+)
 from . import evaluate as evaluate_mod
 from .report import SEVERITY_ORDER  # noqa: E402
 from .rubric import Rubric  # noqa: E402
@@ -149,17 +162,20 @@ def fleet_dir(now: Optional[_dt.datetime] = None) -> Path:
 def review_app(name: str, table: dict, rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str],
                projects_toml: Optional[Path] = None, scaffold: str = capture.DEFAULT_SCAFFOLD,
                walk_timeout: float = capture.WALK_TIMEOUT_S, python_override: Optional[str] = None,
-               run_dir: Optional[Path] = None) -> dict:
-    """probe -> measure -> evaluate -> ledger + diff -> render, for one app. Returns the digest row + the evaluate doc."""
-    target = plan.resolve_target(name, projects_toml)
-    probe = capture.probe_listening(target.base_url)
+               run_dir: Optional[Path] = None, e2e: bool = False) -> dict:
+    """probe -> measure -> evaluate -> ledger + diff -> render, for one app. Returns the digest row + the evaluate doc.
+
+    `e2e` measures the app's synthetic instance plus its e2e suite in capture mode (`measure --e2e`): the live
+    port is never probed or walked."""
+    target = plan.resolve_target(name, projects_toml, plan.SYNTHETIC_URL if e2e else None)
+    probe = {"status": "synthetic", "detail": None} if e2e else capture.probe_listening(target.base_url)
     run_dir = run_dir or capture.run_dir_for(target.name)
     metrics = capture.measure_target(target, rb, specs["light"], devices, python_override=python_override,
-                                     scaffold=scaffold, run_dir=run_dir, walk_timeout=walk_timeout)
+                                     scaffold=scaffold, run_dir=run_dir, walk_timeout=walk_timeout, synthetic=e2e, e2e=e2e)
     doc = evaluate_mod.evaluate(metrics, rb, specs)
     doc["source"] = str(run_dir / "metrics.json")
     run_id = ledger.run_id_of(run_dir, doc)
-    prev = ledger.previous(target.name, run_id)
+    prev = ledger.previous(target.name, run_id, str(doc.get("mode") or "live"), e2e=doc.get("e2e") is not None)
     doc["diff"] = ledger.diff(doc, prev)
     runtime_files.save_text(run_dir / "evaluate.json", json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
     live = ledger.live_build(target.base_url, table.get("api_version_path")) if probe["status"] == "listening" else None
@@ -307,6 +323,7 @@ def render_digest(dig: dict) -> str:
         report._section("apps", "Apps", apps_table, "one app at a time; an app not listening is unmeasured, never restarted"),
         report._section("spec", f"Spec-owned — {SPEC_HOME}", lst(dig.get("spec") or [], "No spec-owned rule fails in any measured app.")),
         report._section("scaffold", f"Scaffold-owned and promoted — {SCAFFOLD_HOME}", lst(dig.get("scaffold") or [], "No scaffold-owned rule fails and nothing was promoted.")),
+        *([inventory_sweep.render_section(dig["inventory_sweep"])] if dig.get("inventory_sweep") else []),
         *([inventory.render_section(dig["inventory"])] if dig.get("inventory") else []),
         report._section("filing", f"Filing ({_esc(filing_info.get('mode'))})", f"<ul>{fil}</ul>"),
         f'<footer>/design-review fleet &middot; rubric v{_esc(dig.get("rubric_version"))} &middot; {_esc(dig.get("generated_at"))}</footer>',
@@ -324,23 +341,40 @@ InventoryLoader = Callable[[str], Optional[dict]]
 
 
 def compare_inventories(targets: List[str], specs: Dict[str, Dict[str, str]], loader: Optional[InventoryLoader] = None,
-                        catalog: Optional[dict] = None, scaffold: object = None) -> Optional[dict]:
+                        catalog: Optional[dict] = None, scaffold: object = None,
+                        classified: Optional[Dict[str, dict]] = None) -> Optional[dict]:
     """The digest's `inventory` section, or None when no target has an inventory (the digest then stays as it was)."""
     found = [a for a in ((loader or inventory.newest_inventory)(t) for t in targets) if a]
     if not found:
         return None
     cat = catalog if catalog is not None else capture.vendored_components(str(scaffold or capture.DEFAULT_SCAFFOLD))
     names = sorted(cat["components"]) if cat.get("components") else None
-    return inventory.compare(found, inventory.type_reference(specs.get("light") or {}), names, cat.get("error"), targets)
+    return inventory.compare(found, inventory.type_reference(specs.get("light") or {}), names, cat.get("error"), targets, classified)
+
+
+def _app_extra(body: str, inv: Optional[dict], target: str, surface_doc: Optional[dict]) -> Tuple[List[dict], Dict[str, str]]:
+    """An app body's lines beside its rules, with statuses for those already on it: its single-app inventory
+    findings, plus the SURF-01/02 surface-map lines when `surface_doc` (the inventory sweep's evaluate doc) is given."""
+    extra = inventory.summaries(inv, "app", target)
+    statuses = inventory.carry_statuses(body, inv, target)
+    if surface_doc is not None:
+        sid = surface_doc.get("surface_ids")
+        extra = extra + surface_ids.summaries(sid)
+        statuses = {**statuses, **surface_ids.carry_statuses(filing.parse_body(body)["sections"].get(filing.SEC_FINDINGS) or [], sid)}
+    return extra, statuses
 
 
 def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], projects_toml: Optional[Path] = None,
               file_issues: bool = False, out_dir: Optional[Path] = None, reviewer: Optional[Reviewer] = None,
               fetch: Optional[filing.Fetch] = None, upsert: Optional[filing.Upsert] = None,
               today: Optional[str] = None, inventory_loader: Optional[InventoryLoader] = None,
-              catalog: Optional[dict] = None, **review_kw: object) -> dict:
+              catalog: Optional[dict] = None, classified: Optional[Dict[str, dict]] = None, surface_lines: bool = False,
+              decorate: Optional[Callable[[dict], None]] = None, **review_kw: object) -> dict:
     """The whole sweep. `reviewer` (tests) replaces `review_app`; `fetch` / `upsert` replace the `gh` legs;
-    `inventory_loader` / `catalog` replace the state-dir read and the scaffold catalog for the inventory comparison."""
+    `inventory_loader` / `catalog` replace the state-dir read and the scaffold catalog for the inventory comparison.
+
+    The inventory sweep passes `classified` (the readers' answers for the comparison), `surface_lines` (the app
+    bodies also carry SURF-01/02) and `decorate` (adds its section to the digest before it is written)."""
     out_dir = out_dir or fleet_dir()
     stamp = out_dir.name
     targets = fleet_targets(projects_toml)
@@ -360,7 +394,7 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
     skipped = dormant_targets(projects_toml)
     if skipped:
         dig["skipped_dormant"] = skipped
-    inv = compare_inventories([r["row"]["target"] for r in reviews], specs, inventory_loader, catalog, review_kw.get("scaffold"))
+    inv = compare_inventories([r["row"]["target"] for r in reviews], specs, inventory_loader, catalog, review_kw.get("scaffold"), classified)
     if inv:
         dig["inventory"] = inv
 
@@ -387,11 +421,11 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
         repo = filing.repo_slug(r.get("root"))
         existing = fetch(repo, filing.KIND) if repo else {"number": None, "body": ""}
         body = str(existing.get("body") or "")
+        extra, extra_statuses = _app_extra(body, inv, row["target"], r["doc"] if surface_lines else None)
         fb = filing.file_body(r["doc"], row["run_id"], r.get("root"), body, today,
                               accepted=accepted_by_target.get(row["target"], {}),
                               problems=problems_by_target.get(row["target"], []), promoted=promoted,
-                              extra=inventory.summaries(inv, "app", row["target"]),
-                              extra_statuses=inventory.carry_statuses(body, inv, row["target"]))
+                              extra=extra, extra_statuses=extra_statuses)
         row["issue"] = existing.get("number")
         row["changed"] = fb["changed"]
         land(repo, row["target"], fb["body"])
@@ -409,6 +443,8 @@ def run_fleet(rb: Rubric, specs: Dict[str, Dict[str, str]], devices: List[str], 
             home_statuses = {**statuses, **inventory.carry_statuses(body, inv)}
         land(repo, home, digest_body(body, findings, home, dig, home_statuses, today))
 
+    if decorate:
+        decorate(dig)
     runtime_files.save_text(out_dir / DIGEST_JSON, json.dumps(dig, indent=2, ensure_ascii=True), encoding="utf-8")
     runtime_files.save_text(out_dir / DIGEST_HTML, render_digest(dig), encoding="utf-8")
     dig["out_dir"] = str(out_dir)
