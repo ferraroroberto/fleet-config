@@ -133,6 +133,7 @@ import logging
 import re
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
@@ -401,44 +402,47 @@ class _Judge:
         self._supersedes: Dict[Tuple[str, str, int], Tuple[Optional[bool], str]] = {}
         self._proofs: Dict[str, Tuple[bool, Optional[bool], str]] = {}
         self._contained: Dict[str, Tuple[bool, Optional[bool], str]] = {}
-        self._pr_heads: List[Optional[Set[str]]] = []
+        self._pr_heads: Dict[str, Optional[Set[str]]] = {}
+        self._guard = threading.Lock()
+        self._key_locks: Dict[Tuple[int, object], threading.Lock] = {}
+
+    def _once(self, cache: dict, key: object, compute: Callable[[], object]):
+        """`cache[key]`, computed at most once: `prefetch` asks from a thread pool, and two threads that
+        both missed one key would otherwise both run its `gh` or `git` lookup."""
+        with self._guard:
+            lock = self._key_locks.setdefault((id(cache), key), threading.Lock())
+        with lock:
+            if key not in cache:
+                cache[key] = compute()
+        return cache[key]
 
     def state(self, n: int) -> Optional[str]:
-        if n not in self._states:
-            self._states[n] = self._issue_state_fn(n)
-        return self._states[n]
+        return self._once(self._states, n, lambda: self._issue_state_fn(n))
 
     def proof(self, sha: str) -> Tuple[bool, Optional[bool], str]:
         """(tip readable, merged, how) for one tip."""
-        if sha not in self._proofs:
+        def compute() -> Tuple[bool, Optional[bool], str]:
             if not tip_readable(self.repo, sha):
-                self._proofs[sha] = (False, None, "")
-            else:
-                merged, how = wr.head_merged(self.repo, sha, self.default_ref)
-                self._proofs[sha] = (True, merged, how)
-        return self._proofs[sha]
+                return False, None, ""
+            merged, how = wr.head_merged(self.repo, sha, self.default_ref)
+            return True, merged, how
+        return self._once(self._proofs, sha, compute)
 
     def contain(self, sha: str) -> Tuple[bool, Optional[bool], str]:
         """(tip readable, contained in the default branch, how) for a no-issue tip."""
-        if sha not in self._contained:
+        def compute() -> Tuple[bool, Optional[bool], str]:
             if not tip_readable(self.repo, sha):
-                self._contained[sha] = (False, None, "")
-            else:
-                contained, how = contained_in_default(self.repo, sha, self.default_ref)
-                self._contained[sha] = (True, contained, how)
-        return self._contained[sha]
+                return False, None, ""
+            contained, how = contained_in_default(self.repo, sha, self.default_ref)
+            return True, contained, how
+        return self._once(self._contained, sha, compute)
 
     def closing(self, n: int) -> Optional[List[ClosingPr]]:
-        if n not in self._closing:
-            self._closing[n] = self._closing_prs_fn(n)
-        return self._closing[n]
+        return self._once(self._closing, n, lambda: self._closing_prs_fn(n))
 
     def supersede(self, name: str, sha: str, issue: int) -> Tuple[Optional[bool], str]:
         """(superseded, how) for a tip not landed on the default branch; rule in the module docstring."""
-        key = (name, sha, issue)
-        if key not in self._supersedes:
-            self._supersedes[key] = self._supersede(name, sha, issue)
-        return self._supersedes[key]
+        return self._once(self._supersedes, (name, sha, issue), lambda: self._supersede(name, sha, issue))
 
     def _supersede(self, name: str, sha: str, issue: int) -> Tuple[Optional[bool], str]:
         prs = self.closing(issue)
@@ -466,9 +470,7 @@ class _Judge:
 
     def own_landed(self, name: str, sha: str) -> Tuple[Optional[bool], str]:
         """(own PR merged at this tip, how); rule in the module docstring."""
-        if name not in self._own:
-            self._own[name] = self._own_prs_fn(name)
-        prs = self._own[name]
+        prs = self._once(self._own, name, lambda: self._own_prs_fn(name))
         if prs is None:
             return None, f"could not list the merged PRs whose head is {name}"
         for pr in prs:
@@ -478,9 +480,7 @@ class _Judge:
         return False, ""
 
     def has_open_pr(self, name: str) -> Optional[bool]:
-        if not self._pr_heads:
-            self._pr_heads.append(self._open_pr_heads_fn())
-        heads = self._pr_heads[0]
+        heads = self._once(self._pr_heads, "open", self._open_pr_heads_fn)
         return None if heads is None else name in heads
 
     def prefetch(self, refs: Sequence[Ref], checked_out: Set[str]) -> None:

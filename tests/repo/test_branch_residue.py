@@ -31,6 +31,7 @@ import io
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -845,6 +846,44 @@ snap6 = lambda: (git(f6.primary, "for-each-ref", "refs/"), git(f6.primary, "ls-r
 before6 = snap6()
 cli(f6, "branches", str(f6.primary), "--no-fetch")
 check(before6 == snap6(), "report-only: `branches` without --delete leaves refs, origin and worktrees byte-identical")
+
+
+# Concurrent lookups: prefetch asks from a thread pool, and every lookup is a gh or git spawn, so two
+# threads that miss one key must still run its lookup once; otherwise the spawn count follows thread timing.
+_THREADS = 8
+_calls: list = []
+_calls_guard = threading.Lock()
+_second_caller = threading.Barrier(2)
+
+
+def _fake_state(n: int) -> Optional[str]:
+    with _calls_guard:
+        _calls.append(n)
+    try:
+        # Returns at once when a second caller is already inside the lookup (the unguarded cache); with a
+        # per-key lock no second caller can arrive, so the barrier breaks and this caller carries on alone.
+        _second_caller.wait(0.5)
+    except threading.BrokenBarrierError:
+        pass
+    return "closed"
+
+
+_judge = br._Judge(Path(tempfile.gettempdir()), "origin/main", _fake_state, lambda: set(), lambda n: [], lambda name: [])
+_start = threading.Barrier(_THREADS)
+
+
+def _ask() -> None:
+    _start.wait()
+    _judge.state(7)
+
+
+_threads = [threading.Thread(target=_ask) for _ in range(_THREADS)]
+for _t in _threads:
+    _t.start()
+for _t in _threads:
+    _t.join(10)
+check(len(_calls) == 1 and _judge.state(7) == "closed",
+      f"concurrent lookups: {_THREADS} threads asking for one issue state run the lookup once ({len(_calls)} runs)")
 
 
 _h.report_and_exit("test_branch_residue")
