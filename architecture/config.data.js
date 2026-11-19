@@ -296,6 +296,11 @@ window.CONFIG = {
       "nm": "system-map",
       "ds": "Regenerate the fleet architecture map (crawl every repo under E:\\automation, render to architecture/system-map.png) and post the…",
       "sched": true
+    },
+    {
+      "nm": "weekly-burst",
+      "ds": "Run the weekly burst — the burn, load and wall-clock acceptance units, a fresh-clone hermetic re-run of the whole gate (which als…",
+      "sched": true
     }
   ],
   "skills_repo": [
@@ -653,9 +658,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 31,
-    "claude_md": "30/31",
-    "fleet_toml": "31/31"
+    "total": 30,
+    "claude_md": "29/30",
+    "fleet_toml": "30/30"
   },
   "principles": [
     [
