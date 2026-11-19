@@ -139,7 +139,10 @@ class _WindowsJob:
         if not self.handle:
             raise ctypes.WinError(ctypes.get_last_error())
         limits = _ExtendedLimits()
-        limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; no breakaway
+        # KILL_ON_JOB_CLOSE (0x2000) owns every ordinary descendant. BREAKAWAY_OK (0x0800) lets one
+        # that asks (CREATE_BREAKAWAY_FROM_JOB, see detached_restart.py) leave the job on purpose: a
+        # tray a lane restarts must outlive the run. Not SILENT_BREAKAWAY_OK, which would disown all.
+        limits.basic.flags = 0x2000 | 0x0800
         if not self.api.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
             error = ctypes.WinError(ctypes.get_last_error())
             self.close()
