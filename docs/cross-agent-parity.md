@@ -54,6 +54,7 @@ The table records observed delivery semantics rather than treating a registratio
 | Chief-managed question suppression (`block_askuserquestion_chief`) | blocks | not applicable | not applicable | unsupported | unsupported | unsupported |
 | Chief turn end needs an armed waiter (`chief_waiter_stop`) | blocks | not applicable | not applicable | unsupported | unsupported | unsupported |
 | Lane handoff then compact at a per-model threshold (`lane_compact`, via `chief_waiter_stop` + `chief_handover_sessionstart`) | blocks | unsupported | unsupported | unsupported | unsupported | unsupported |
+| Lane turn end with its own background task running (`lane_background`, via `chief_waiter_stop`) | blocks | unsupported | unsupported | unsupported | unsupported | unsupported |
 | Telegram file replies only to the sender's private chat (`telegram_file_reply_guard`) | not verified | not applicable | not applicable | not applicable | not applicable | not applicable |
 | `gh pr merge` on a UX diff needs its proof page (`ui_proof_merge_guard`) | not verified | unsupported | not verified | unsupported | unsupported | unsupported |
 | `git commit` on the default branch (`main_commit_guard`) | blocks | unsupported | not verified | unsupported | unsupported | unsupported |

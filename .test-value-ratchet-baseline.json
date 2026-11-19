@@ -48,6 +48,7 @@
     "_instruction_delta_check": 4,
     "_instruction_ratchet_check": 4,
     "_issue_comments_read_check": 0,
+    "_lane_background_unit_checks": 2,
     "_lane_compact_unit_checks": 11,
     "_learning_log_unit_checks": 0,
     "_lib_detect_project_unit_checks": 0,
