@@ -30,11 +30,14 @@ A new repo under `E:/automation/` **always** gets a minimal entry ahead of the `
 #    not glob-expand arguments to a native exe, so `py_compile hooks/*.py` fails)
 & E:/automation/fleet-config/.venv/Scripts/python.exe -m compileall -q hooks skills/_lib
 
-# 2. Run the acceptance matrix (sample stdin payloads per hook + the helper unit tests)
-& E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
+# 2. Run the gate: the acceptance matrix (sample stdin payloads per hook + the helper
+#    unit tests + every ratchet) through the evidence helper
+& E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/gate_evidence.py run --label gate -- E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-Invoke this repo's `.venv` interpreter by its absolute path (as above) — a bare `py`/`python` is not reliably on `PATH` here, so it silently fails wherever a skill or doc uses it (fleet-config#256). Create the venv once with `py -m venv .venv` (or any Python ≥3.12), then `pip install -r requirements.txt` for `ruff`; the runtime is stdlib-only, ruff is a dev tool, and the acceptance run's ratchet stage also needs Node (`npx`). Don't claim a hook works without driving it through `tests/run_acceptance.py`.
+The helper, not the bare runner, is the gate: it is the only thing that writes the per-unit reports the test-value ratchet reads, so a bare `tests/run_acceptance.py` exits 3 at that stage (no report is not a pass), and it binds the result to the tree hash `/issue-finish` checks.
+
+Invoke this repo's `.venv` interpreter by its absolute path (as above) — a bare `py`/`python` is not reliably on `PATH` here, so it silently fails wherever a skill or doc uses it (fleet-config#256). Create the venv once with `py -m venv .venv` (or any Python ≥3.12), then `pip install -r requirements.txt` for `ruff`; the runtime is stdlib-only, ruff is a dev tool, and the acceptance run's ratchet stage also needs Node (`npx`). Don't claim a hook works without driving it through the gate command above.
 
 ## Git
 

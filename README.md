@@ -257,7 +257,7 @@ py -m venv .venv     # any Python >=3.12; run once from the repo root
 
 Codex safety hooks treat the `Bash` tool label as an unknown execution shell and apply both PowerShell and Bash safety checks. Refusals state that uncertainty; the trusted `~/.codex/hooks/` invocation path identifies the harness without consulting inherited launcher variables. See [the shell contract](docs/adding-a-coding-harness.md#step-3--hooks-and-the-payload-contract).
 
-The live agent wiring picks the venv up automatically, no manual path edit required: Claude Code's hooks route through the junctioned `hooks/run-hook.ps1`, which prefers the venv (falling back to a system Python only if it is absent), and Codex's `~/.codex/hooks.json` is a symlink to this repo's `codex-hooks.json`. Verify anytime with `& .\.venv\Scripts\python.exe tests/run_acceptance.py`.
+The live agent wiring picks the venv up automatically, no manual path edit required: Claude Code's hooks route through the junctioned `hooks/run-hook.ps1`, which prefers the venv (falling back to a system Python only if it is absent), and Codex's `~/.codex/hooks.json` is a symlink to this repo's `codex-hooks.json`. Verify anytime with the gate in `CLAUDE.md` (`& .\.venv\Scripts\python.exe skills/_lib/gate_evidence.py run --label gate -- E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py`).
 
 Telegram hook delivery resolves `TELEGRAM_BOT_TOKEN` from the process environment, the gitignored root `.env` (shape in `.env.example`), or Claude settings, in that order. Put `FLEET_BOARD_URL` in that same ignored `.env` so Codex alerts can include the phone-reachable Board link. Destination chats remain project-aware entries in `hooks/projects.toml`.
 
