@@ -9,7 +9,7 @@ its only writer, and `chief_ops.py plan ...` is the only way the chief calls it.
 
 Every write is a locked read-modify-write: load, apply one mutation, validate
 the *whole* document, then replace the file atomically (temp file +
-`os.replace`, `active_issue.write_rows`). A mutation that would leave an
+`os.replace`, `state_rows.write_rows`). A mutation that would leave an
 invalid document raises before anything is written, so the reader never sees
 a half-applied or malformed plan. A file this writer cannot parse is refused
 too, never silently overwritten -- `plan clear` is the explicit reset.
@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from active_issue import _iso_z, _now, state_lock, write_rows  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
+from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows  # noqa: E402
 
 STATE_FILENAME = "chief-plan.json"
 VERSION = 1
@@ -332,7 +332,7 @@ def update(
     with state_lock(path):
         doc = empty_plan() if reset else load(path)
         mutate(doc)
-        doc["updated_at"] = _iso_z(now or _now())
+        doc["updated_at"] = iso_z(now or utc_now())
         problems = validate(doc)
         if problems:
             raise ValueError("; ".join(problems))
@@ -699,7 +699,7 @@ def add_question(
     # `asked_at` is the date the Board's "Waiting for start" shows beside the question.
     row: Dict[str, Any] = {"id": item_id or _next_id(doc),
                            "text": short_text(question) if text is None else text,
-                           "asked_at": _iso_z(_now())[:10]}
+                           "asked_at": iso_z(utc_now())[:10]}
     if ref:
         row["repo"] = repo or split_ref(ref)[0]
         row["ref"] = ref.strip()

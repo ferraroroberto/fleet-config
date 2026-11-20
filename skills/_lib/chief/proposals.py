@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import git_run
-from active_issue import _iso_z, _now, write_rows
 from fleet_core.hooks_state import state_dir
+from fleet_core.state_rows import iso_z, utc_now, write_rows
 
 from . import launcher, mailbox
 from .heal import load_ledger, update_ledger
@@ -218,7 +218,7 @@ def build_event(week: str, kept: List[Dict[str, Any]], now: datetime) -> Dict[st
     return {
         "v": 2, "id": uuid.uuid4().hex, "kind": "proposals", "event": "WeeklyProposals", "week": week,
         "launcher_sid": None, "repo": None, "number": None, "agent": None, "dispatch_id": None,
-        "ts": _iso_z(now),
+        "ts": iso_z(now),
         "candidates": [{"pid": uuid.uuid4().hex, "repo": c["repo"], "title": c["title"].strip(),
                         "type": c["type"], "reason": c["reason"].strip(), "evidence": list(c["evidence"])}
                        for c in kept],
@@ -301,7 +301,7 @@ def cmd_context(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"PROPOSALS=unknown reason=ledger ({exc})")
         return 1
-    now = _now()
+    now = utc_now()
     week = week_id(now)
     print(f"PROPOSALS=on week={week} max={MAX_CANDIDATES} types={','.join(TYPE_LABELS)}")
     print(f"PROPOSALS_LAST_WEEK={last_week_line(entries, week)}")
@@ -353,7 +353,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
     if titles is None:
         print(f"PROPOSALS=unknown reason=open-issues ({why})")
         return 1
-    now = _now()
+    now = utc_now()
     week = args.week or week_id(now)
     path = ledger_file()
 
@@ -396,7 +396,7 @@ def cmd_answer(args: argparse.Namespace) -> int:
             return None
         entry = matches[0]
         entry["answer"] = ProposalAnswer.ACCEPTED if args.accepted else ProposalAnswer.DECLINED
-        entry["answered_at"] = _iso_z(_now())
+        entry["answered_at"] = iso_z(utc_now())
         if args.note:
             entry["note"] = args.note
         if args.issue:
@@ -411,7 +411,7 @@ def cmd_answer(args: argparse.Namespace) -> int:
     if entry is None:
         print(f"PROPOSALS_REFUSED={args.pid} reason=no-single-match")
         return 2
-    print(_entry_line(entry, _now()).replace("PROPOSAL=", "PROPOSAL_ANSWERED=", 1))
+    print(_entry_line(entry, utc_now()).replace("PROPOSAL=", "PROPOSAL_ANSWERED=", 1))
     return 0
 
 
@@ -422,7 +422,7 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"PROPOSALS=unknown reason=ledger ({exc})")
         return 1
     shown = [e for e in entries if not args.week or e.get("week") == args.week]
-    now = _now()
+    now = utc_now()
     for entry in shown:
         print(_entry_line(entry, now))
     print(f"PROPOSALS_ENTRIES={len(shown)}")

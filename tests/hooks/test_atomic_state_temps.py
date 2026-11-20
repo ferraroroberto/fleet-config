@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT / "hooks"))
 import _lib as hooks_lib  # noqa: E402
 import active_issue  # noqa: E402
 import codex_attention  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import hooks_state, state_rows  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location(
     "session_state_under_test_864", ROOT / "hooks" / "session_state.py")
@@ -80,7 +80,7 @@ class _StateDirCase(unittest.TestCase):
         codex_attention._record_once({"session_id": "sid", "turn_id": str(time.time_ns())})
 
     def write_active(self) -> None:
-        active_issue.write_rows(self.dir / ACTIVE, {"fleet-config#864": {"number": 864}})
+        state_rows.write_rows(self.dir / ACTIVE, {"fleet-config#864": {"number": 864}})
 
     def write_sessions(self) -> None:
         session_state._write_rows(self.dir / SESSIONS, {"sid": {"status": "working"}})

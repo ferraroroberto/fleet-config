@@ -59,9 +59,9 @@ from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from active_issue import pid_state  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
+from fleet_core.state_rows import pid_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 LOCK_DIRNAME = "box-load-lock"

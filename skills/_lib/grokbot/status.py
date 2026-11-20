@@ -43,8 +43,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # A direct run starts without `skills/_lib` on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import active_issue  # noqa: E402
-from fleet_core import hooks_state  # noqa: E402
+from fleet_core import hooks_state, state_rows  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from grokbot import switch as grok_switch  # noqa: E402
@@ -99,7 +98,7 @@ def image_path(pid: int) -> Optional[str]:
     """
     if sys.platform != "win32":
         raise OSError("process image lookup is Windows-only")
-    alive = active_issue.pid_state(pid)
+    alive = state_rows.pid_state(pid)
     if alive is False:
         return None
     if alive is None:

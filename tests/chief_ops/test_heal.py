@@ -22,6 +22,7 @@ from pathlib import Path
 
 from _suite import _h, check, co  # noqa: E402
 from chief import heal  # noqa: E402
+from fleet_core.state_rows import iso_z, utc_now  # noqa: E402
 from git_fixtures import init_repo  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_heal_"))
@@ -167,10 +168,10 @@ check("HEAL_REPEAT=job-a cause=defect count=2" in out, f"the same cause class tw
 rc, out = _run(fake, "record", "job-a", "--run", "r3", "--cause", "config")
 check("HEAL_REPEAT" not in out, "a different cause class is not a repeat")
 check(heal.repeat_count([{"job_id": "j", "cause": "defect", "recorded_at": "2020-01-01T00:00:00Z"}],
-                        "j", "defect", heal._now()) == 0, "a failure older than the window is not counted")
+                        "j", "defect", utc_now()) == 0, "a failure older than the window is not counted")
 check(heal.repeat_count([{"job_id": "j", "cause": "defect",
-                          "recorded_at": heal._iso_z(heal._now() - timedelta(days=29))}],
-                        "j", "defect", heal._now()) == 1, "a failure inside the window counts")
+                          "recorded_at": iso_z(utc_now() - timedelta(days=29))}],
+                        "j", "defect", utc_now()) == 1, "a failure inside the window counts")
 rc, out = _run(fake, "record", "job-a", "--run", "r4", "--pr", "nonsense")
 check(rc == 2 and "reason=bad-ref" in out, "a malformed ref is refused before anything is written")
 

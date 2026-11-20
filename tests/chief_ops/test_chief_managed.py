@@ -23,6 +23,7 @@ from typing import Tuple
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import chief_managed as cm  # noqa: E402
+from fleet_core import state_rows  # noqa: E402
 
 sys.path.insert(0, str(REPO / "hooks"))
 import notify_on_idle  # noqa: E402
@@ -75,14 +76,14 @@ try:
 
     # A marker older than the 24h TTL is pruned away.
     stale_now = NOW + timedelta(hours=25)
-    rows = cm.read_rows(target)
+    rows = state_rows.read_rows(target)
     check({"sid-1", "sid-2"} <= set(rows), "sanity: both markers are on disk before the prune")
-    pruned = cm.prune_rows(rows, now=stale_now)
+    pruned = state_rows.prune_rows(rows, stamp_field=cm.STAMP_FIELD, now=stale_now)
     check("sid-1" not in pruned and "sid-2" not in pruned, "25h-old markers are pruned")
 
     # mark() itself re-prunes on write -- a fresh mark at a later time drops stale peers.
     cm.mark("sid-3", "whatsapp-radar", 7, now=stale_now, path=target)
-    rows_after = cm.read_rows(target)
+    rows_after = state_rows.read_rows(target)
     check(set(rows_after) == {"sid-3"}, "mark() prunes stale rows as a side effect of writing")
     check(reader_state("sid-1", target) == NOT_DISPATCHED, "pruned sid -> reader: not dispatched")
 

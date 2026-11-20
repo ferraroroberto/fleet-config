@@ -22,6 +22,7 @@ from pathlib import Path
 from _mailbox_support import run_cli  # noqa: E402
 from _suite import _h, check, co  # noqa: E402
 from chief import proposals  # noqa: E402
+from fleet_core.state_rows import iso_z, utc_now  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_proposals_"))
 _INBOX = _TMP / "inbox"
@@ -29,7 +30,7 @@ os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_TMP / "state")
 os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
 _LEDGER = _TMP / "state" / proposals.LEDGER_FILENAME
 _PUBLIC = ["app-a", "app-b"]
-_NOW = proposals._now()
+_NOW = utc_now()
 
 
 def cand(title="Retry flaky gh reads in the gather step", repo="app-a", type_="enhancement",
@@ -90,7 +91,7 @@ check(len(kept) == 1, "an open issue in another repo does not block it")
 
 def row(answer, title="Retry flaky gh reads in the gather step", evidence=("app-a#10",), age_days=1, **extra):
     return {"pid": "p" + title[:3], "week": "2026-W01", "repo": "app-a", "title": title, "type": "enhancement",
-            "evidence": list(evidence), "proposed_at": proposals._iso_z(_NOW - timedelta(days=age_days)),
+            "evidence": list(evidence), "proposed_at": iso_z(_NOW - timedelta(days=age_days)),
             "answer": answer, **extra}
 
 
