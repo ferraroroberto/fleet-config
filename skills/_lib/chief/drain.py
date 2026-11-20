@@ -59,10 +59,10 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import chief_plan
 import gh_issue_fetch
-from active_issue import _iso_z, _now, state_lock, write_rows
 from audit_ledger.records import marker_kind
 from fleet_core import fleet_repo_scan
 from fleet_core.hooks_state import state_dir
+from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows
 
 from . import commands, launcher, rails
 
@@ -369,7 +369,7 @@ def read_last(now: float) -> Optional[str]:
 def remember(path: Path, adds: List[Dict[str, str]]) -> None:
     with state_lock(path):
         refs = load_ledger(path)
-        stamp = _iso_z(_now())
+        stamp = iso_z(utc_now())
         for add in adds:
             refs[add["ref"]] = {"kind": add["kind"], "added_at": stamp}
         write_rows(path, {"version": 1, "refs": refs})

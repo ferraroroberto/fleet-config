@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 import git_run  # noqa: E402
 import worktree_residue  # noqa: E402
+from fleet_core import state_rows  # noqa: E402
 from worktree_residue import WT_SEP  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ def classify_worktree(
     session_ids: Optional[set],
     pr_lookup: PrLookup,
     host: Optional[str] = None,
-    pid_probe: Callable[[int], Optional[bool]] = active_issue.pid_state,
+    pid_probe: Callable[[int], Optional[bool]] = state_rows.pid_state,
     managed: Optional[Mapping[str, Any]] = None,
     grace_s: float = GRACE_S,
     now: Callable[[], float] = time.time,

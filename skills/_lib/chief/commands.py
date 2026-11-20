@@ -27,7 +27,7 @@ import dirty_tree_check
 import gate_evidence
 import owner_check
 import worktree_claim
-from fleet_core import hooks_state
+from fleet_core import hooks_state, state_rows
 from grokbot import status as grokbot_status
 from no_window import NO_WINDOW
 from vendored_wave import primaries
@@ -813,8 +813,8 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         # An unreadable board is an unestablished fact, not an empty one: every
         # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
-    markers = active_issue.read_rows()
-    managed = active_issue.read_rows(chief_managed.state_file())
+    markers = state_rows.read_rows(active_issue.state_file())
+    managed = state_rows.read_rows(chief_managed.state_file())
     findings = chief_sweep.scan(
         root,
         dirs=None if cards is None else chief_sweep.live_dirs(cards),

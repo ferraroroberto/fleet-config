@@ -36,9 +36,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import git_run
-from active_issue import _iso_z, _now, state_lock, write_rows
 from fleet_core import fleet_repo_scan
 from fleet_core.hooks_state import state_dir
+from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows
 
 from . import launcher
 
@@ -225,14 +225,14 @@ def _record(args: argparse.Namespace, entries: List[Dict[str, Any]]) -> List[str
                 "reason=rerun-failed"]
     entry = find_entry(entries, args.job_id, args.run)
     if entry is None:
-        entry = {"job_id": args.job_id, "run_id": args.run, "recorded_at": _iso_z(_now())}
+        entry = {"job_id": args.job_id, "run_id": args.run, "recorded_at": iso_z(utc_now())}
         entries.append(entry)
     for field in ("cause", "issue", "pr"):
         value = getattr(args, field)
         if value:
             entry[field] = value
     lines = [_entry_line(entry).replace("HEAL_ENTRY=", "HEAL_RECORDED=", 1)]
-    count = repeat_count(entries, args.job_id, entry.get("cause") or "", _now()) if entry.get("cause") else 0
+    count = repeat_count(entries, args.job_id, entry.get("cause") or "", utc_now()) if entry.get("cause") else 0
     if count >= REPEAT_THRESHOLD:
         lines.append(f"HEAL_REPEAT={args.job_id} cause={entry['cause']} count={count} "
                      f"window_days={REPEAT_WINDOW.days} -> propose a structural fix, not another patch")
@@ -300,7 +300,7 @@ def _claim_rerun(path: Path, job_id: str, run_id: str, sha: str) -> bool:
         if entry is None or entry.get("rerun_run_id"):
             return False
         entry["rerun_run_id"] = RERUN_IN_FLIGHT
-        entry["rerun_at"] = _iso_z(_now())
+        entry["rerun_at"] = iso_z(utc_now())
         entry["merge_sha"] = sha
         return True
     return update_ledger(path, claim)

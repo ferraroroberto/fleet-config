@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from active_issue import state_lock  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text  # noqa: E402
+from fleet_core.state_rows import state_lock  # noqa: E402
 from render import KIND_LABELS  # noqa: E402
 from score import Scored  # noqa: E402
 

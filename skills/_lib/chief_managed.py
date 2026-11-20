@@ -8,9 +8,10 @@ notification to chief instead of the human ping. A different concern from
 notification routing, keyed by session id, not by repo#issue), so a
 separate state file rather than overloading that schema — but the same
 I/O idiom (24h TTL prune, atomic temp-file replace, a lock dir serializing
-the read-modify-write) is reused directly from `active_issue` (`state_file`,
-`_now`, `_iso_z`, `prune_rows`), not re-derived, since concurrent dispatches
-are exactly the race that module's locking already solves.
+the read-modify-write) is reused directly from `fleet_core.state_rows`
+(`state_file`, `utc_now`, `iso_z`, `prune_rows`), not re-derived, since
+concurrent dispatches are exactly the race that module's locking already
+solves.
 
 The file is advisory and self-healing, same as `active-issues.json`: a
 missing/corrupt read is empty, not fatal, and a marker that outlives its
@@ -30,19 +31,18 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from active_issue import _iso_z, _now, read_rows, state_lock, write_rows  # noqa: E402
-from active_issue import prune_rows as _base_prune_rows  # noqa: E402
-from active_issue import state_file as _base_state_file  # noqa: E402
+from fleet_core import state_rows  # noqa: E402
 
 STATE_FILENAME = "chief-managed.json"
+STAMP_FIELD = "dispatched_at"
 
-state_file = partial(_base_state_file, STATE_FILENAME)
-prune_rows = partial(_base_prune_rows, stamp_field="dispatched_at")
+
+def state_file() -> Path:
+    return state_rows.state_file(STATE_FILENAME)
 
 
 def mark(
@@ -63,18 +63,18 @@ def mark(
     if not sid.strip():
         raise ValueError("sid must not be empty")
     target = path or state_file()
-    moment = now or _now()
+    moment = now or state_rows.utc_now()
     row: Dict[str, Any] = {
         "repo": repo,
         "number": number,
-        "dispatched_at": _iso_z(moment),
+        STAMP_FIELD: state_rows.iso_z(moment),
     }
     if dispatch_id:
         row["dispatch_id"] = dispatch_id
-    with state_lock(target):
-        rows = prune_rows(read_rows(target), now=moment)
+    with state_rows.state_lock(target):
+        rows = state_rows.prune_rows(state_rows.read_rows(target), stamp_field=STAMP_FIELD, now=moment)
         rows[sid] = row
-        write_rows(target, rows)
+        state_rows.write_rows(target, rows)
     return row
 
 

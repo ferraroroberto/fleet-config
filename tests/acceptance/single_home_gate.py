@@ -75,8 +75,8 @@ RULES: Tuple[Rule, ...] = (
     Rule("wt_sep", "skills/_lib/worktree_residue.py `WT_SEP`",
          ("skills/", ".claude/skills/"), frozenset({"skills/_lib/worktree_residue.py"}), frozenset(),
          lambda tree: any("-wt-" in s and "<" not in s for s in _strings(tree))),  # `<repo>-wt-<N>` is prose, not the separator
-    Rule("pid_probe", "skills/_lib/active_issue.py `pid_state`",
-         ("skills/", ".claude/skills/"), frozenset({"skills/_lib/active_issue.py"}), frozenset(),
+    Rule("pid_probe", "skills/_lib/fleet_core/state_rows.py `pid_state`",
+         ("skills/", ".claude/skills/"), frozenset({"skills/_lib/fleet_core/state_rows.py"}), frozenset(),
          _names_an_attribute("GetExitCodeProcess")),
     Rule("git_global_options", "hooks/_lib.py `git_globals`",
          ("hooks/",), frozenset({"hooks/_lib.py"}), frozenset(),

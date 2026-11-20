@@ -25,9 +25,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from active_issue import _iso_z, _now, state_lock  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
+from fleet_core.state_rows import iso_z, state_lock, utc_now  # noqa: E402
 
 LOGGER = logging.getLogger("chief_journal")
 
@@ -70,7 +70,7 @@ def make_entry(kind: str, text: str, ref: Optional[str] = None,
         raise ValueError(f"the journal text is longer than {MAX_TEXT} characters")
     if ref is not None and not _QUALIFIED_REF.fullmatch(ref):
         raise ValueError(f"--ref must be <repo>#<number>, got {ref!r}")
-    return {"ts": _iso_z(now or _now()), "kind": kind, "ref": ref or "", "text": text}
+    return {"ts": iso_z(now or utc_now()), "kind": kind, "ref": ref or "", "text": text}
 
 
 def _parse_ts(value: Any) -> Optional[datetime]:
@@ -121,7 +121,7 @@ def append(path: Path, kind: str, text: str, ref: Optional[str] = None,
     Returns `APPENDED` or `SKIPPED`. Raises ValueError for a bad input and
     OSError when the file cannot be written.
     """
-    moment = now or _now()
+    moment = now or utc_now()
     entry = make_entry(kind, text, ref, moment)
     with state_lock(path):
         entries = read_entries(path)
