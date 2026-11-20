@@ -247,6 +247,15 @@ def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> O
         return f"after-unmet ({unmet})"
     if row["repo"].lower() in busy:
         return "repo-busy"
+    return live_state_skip(row)
+
+
+def live_state_skip(row: Dict[str, Any]) -> Optional[str]:
+    """Why the issue's live GitHub state rules the row out (the `reason=` text); None means open and eligible.
+
+    One `gh` read, so callers run it after the cheap checks. A read that cannot say is
+    `state-unknown`, never a pass.
+    """
     state = launcher.fetch_issue_state(row["repo"], int(row["ref"][1:]))
     if state.get("error"):
         return "state-unknown"
@@ -261,14 +270,17 @@ def hand_row_skip(row: Dict[str, Any], doc: Dict[str, Any], busy: Set[str]) -> O
 def row_skip(row: Dict[str, Any], doc: Dict[str, Any], known: Set[str], busy: Set[str]) -> Optional[str]:
     """Why a queued row is not dispatched this turn; None means eligible.
 
-    `known` is drain's own refs (lowercased): those only need a free repo, hand rows all of `hand_row_skip`.
-    A brief the chief set on a drain-owned row must be readable too: dispatch uses it in place of the
-    generic one, and falling back to the generic brief would reverse the chief's scope.
+    `known` is drain's own refs (lowercased): those need a free repo, a readable brief and an open issue,
+    hand rows all of `hand_row_skip`. A drain row's issue can close after intake (the overnight cleanup
+    run closes audit issues), so its live state is re-read before dispatch. A brief the chief set on a
+    drain-owned row must be readable too: dispatch uses it in place of the generic one, and falling back
+    to the generic brief would reverse the chief's scope.
     """
     if f"{row['repo']}{row['ref']}".lower() in known:
         if row["repo"].lower() in busy:
             return "repo-busy"
-        return _brief_unreadable(row["brief"]) if row.get("brief") else None
+        unreadable = _brief_unreadable(row["brief"]) if row.get("brief") else None
+        return unreadable or live_state_skip(row)
     return hand_row_skip(row, doc, busy)
 
 

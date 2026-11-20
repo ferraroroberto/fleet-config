@@ -254,6 +254,18 @@ check(len(fake.posted) == 1 and "DRAIN_STOPPED=app-a#1 reason=unconfirmed" in ou
 check(all(r["status"] == "queued" for r in chief_plan.load(plan_path)["queue"]),
       "an unconfirmed dispatch records no lane")
 
+# A drain-owned row's issue is re-read live before dispatch: closed or unreadable is skipped, open goes out.
+_reset()
+fake = FakeLauncher({"auto_drain": True}, cap=5)
+rc, out, plan_path, _ = _run(fake, [_issue("app-a", 1), _issue("app-b", 2), _issue("app-c", 3)],
+                             states={("app-a", 1): {"state": "CLOSED", "labels": []},
+                                     ("app-b", 2): {"error": "gh error"}})
+check("DRAIN_SKIPPED=app-a#1 reason=issue-closed" in out,
+      f"a drain-owned row whose issue closed after intake is skipped (got {out!r})")
+check("DRAIN_SKIPPED=app-b#2 reason=state-unknown" in out,
+      f"a drain-owned row with an unreadable issue state is skipped, never passed (got {out!r})")
+check([b["number"] for b in fake.posted] == [3], f"only the open drain-owned row is dispatched (got {fake.posted})")
+
 # ---- hand-queued rows (fleet-config#1925) ----------------------------------------------
 
 _BRIEF = _TMP / "hand-brief.md"
