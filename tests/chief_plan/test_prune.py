@@ -88,7 +88,7 @@ try:
         return subprocess.run(
             [sys.executable, str(REPO / "skills" / "_lib" / "chief_ops.py"), "plan",
              "--plan-file", str(plan_file), *argv],
-            capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60,
+            capture_output=True, text=True, encoding="utf-8", env=env, stdin=subprocess.DEVNULL, timeout=60,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
 
     cp.update(plan_file, lambda d: d.update(_doc()))

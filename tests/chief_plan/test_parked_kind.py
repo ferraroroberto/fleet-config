@@ -141,7 +141,7 @@ try:
     def plan(*argv: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(REPO / "skills" / "_lib" / "chief_ops.py"), "plan", *argv],
-            capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60)
+            capture_output=True, text=True, encoding="utf-8", env=env, stdin=subprocess.DEVNULL, timeout=60)
 
     r = plan("add", "life-os#1", "x", "--status", "parked")
     check(r.returncode == 2 and "umbrella" in r.stderr, f"CLI add --status parked without --kind exits 2 ({r.stderr.strip()[:80]})")
