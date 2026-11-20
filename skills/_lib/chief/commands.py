@@ -351,7 +351,8 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     self_sid = rails.caller_session_id()
     columns = board.get("columns") or {}
     chief_sid = rails.find_chief_session(columns)
-    occupancy = rails.repo_occupancy(columns, exclude_sid=self_sid, hide_chief=True)
+    managed, managed_error = _chief_managed_rows()
+    occupancy = rails.repo_occupancy(columns, exclude_sid=self_sid, hide_chief=True, managed=managed)
     if args.json:
         print(json.dumps(occupancy, indent=2))
     else:
@@ -359,6 +360,8 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         # Never silently: this is the pre-dispatch "is the repo busy" read, so
         # it has to answer the same question `dispatch` will, and say which
         # card it left out of the answer.
+        if managed_error:
+            print(f"(chief-managed state not confirmed, occupancy counted by folder only: {managed_error})")
         if self_sid:
             print(f"(excluding this session: {self_sid})")
         if chief_sid and chief_sid != self_sid:
@@ -417,14 +420,14 @@ def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
     return refusal
 
 
-def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
-    """`(sids, error)` from the chief-managed marks: a missing file is an empty set (nothing
-    dispatched yet), an unreadable one is `None` with the reason, never an empty set."""
+def _chief_managed_rows() -> Tuple[Optional[Dict[str, Any]], str]:
+    """`(rows, error)` from the chief-managed marks (`session_id -> {"repo", ...}`): a missing file
+    is no rows (nothing dispatched yet), an unreadable one is `None` with the reason, never empty."""
     path = chief_managed.state_file()
     try:
         text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
-        return set(), ""
+        return {}, ""
     except OSError as exc:
         return None, f"{path.name} unreadable: {exc}"
     try:
@@ -433,7 +436,13 @@ def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
         return None, f"{path.name} is not JSON: {exc}"
     if not isinstance(rows, dict):
         return None, f"{path.name} is not a mapping"
-    return set(rows), ""
+    return rows, ""
+
+
+def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
+    """`(sids, error)` from the chief-managed marks, with `_chief_managed_rows`' error semantics."""
+    rows, error = _chief_managed_rows()
+    return (None if rows is None else set(rows)), error
 
 
 def _worker_cap_inputs(chief_settings: Dict[str, Any]) -> Tuple[int, Optional[Set[str]], str]:
@@ -497,11 +506,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         print(f"REFUSED=worker cap scope not confirmed: {scope_error}")
         return 1
 
+    # A lane can leave its repo's folder, so occupancy needs the repo recorded at dispatch; an
+    # unreadable record cannot be read as "the repo is free".
+    managed_rows, managed_error = _chief_managed_rows()
+    if managed_rows is None:
+        print(f"REFUSED=chief-managed state not confirmed: {managed_error}")
+        return 1
+
     self_sid = rails.caller_session_id()
     reason = rails.refuse_dispatch(
         args.repo,
         args.mode,
-        rails.repo_occupancy(columns, exclude_sid=self_sid),
+        rails.repo_occupancy(columns, exclude_sid=self_sid, managed=managed_rows),
         rails.alive_worker_count(columns, exclude_sid=self_sid, managed_sids=managed_sids),
         worker_cap,
         args.yolo_confirmed,

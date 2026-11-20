@@ -52,6 +52,25 @@ occ_case = co.repo_occupancy({
 check("app-launcher" in occ_case, "repo_occupancy lowercases the repo key")
 
 
+# ---- a managed lane occupies the repo it was dispatched for, not its cwd ---------
+
+_moved = _session_card(project="out", session_id="moved-lane")
+_moved_board = {"claude_turn": [_moved], "your_turn": []}
+_managed = {"moved-lane": {"repo": "Lite-App", "number": 7}}
+occ_moved = co.repo_occupancy(_moved_board, managed=_managed)
+check(set(occ_moved) == {"out", "lite-app"} and occ_moved["lite-app"]["session_id"] == "moved-lane",
+      "repo_occupancy: a managed lane counts against its dispatched repo and its current folder")
+check(set(co.repo_occupancy(_moved_board)) == {"out"},
+      "repo_occupancy: with no managed rows a card is keyed by its project, as before")
+check(set(co.repo_occupancy(_moved_board, managed={"other": {"repo": "lite-app"}})) == {"out"},
+      "repo_occupancy: a managed row for another session does not touch this card")
+check(set(co.repo_occupancy(_moved_board, managed={"moved-lane": {"number": 7}})) == {"out"},
+      "repo_occupancy: a managed row with no repo falls back to the project")
+check(co.repo_occupancy({"claude_turn": [_session_card(alive=False, session_id="moved-lane")], "your_turn": []},
+                        managed=_managed) == {},
+      "repo_occupancy: a dead managed card still holds nothing")
+
+
 # ---- the caller's own card never occupies a repo (fleet-config#838) ---------
 #
 # The standing chief is an ordinary launcher PTY sitting in `fleet-config`, so
