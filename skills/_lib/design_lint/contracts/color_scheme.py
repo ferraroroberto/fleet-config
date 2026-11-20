@@ -30,10 +30,11 @@ _STYLE_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
 _FILE_MARK_RE = re.compile(r"/\*FILE [^*]*\*/")
 
 
-def _os_media_spans(css: str) -> List[Tuple[int, int]]:
-    """Character spans of every `@media (prefers-color-scheme: ...) { ... }` body."""
+def _os_media_spans(css: str, media_re: "re.Pattern[str]" = _OS_MEDIA_RE) -> List[Tuple[int, int]]:
+    """Character spans of every `@media` body whose opening matches `media_re`
+    (any `prefers-color-scheme` query by default)."""
     spans: List[Tuple[int, int]] = []
-    for m in _OS_MEDIA_RE.finditer(css):
+    for m in media_re.finditer(css):
         depth, j = 1, m.end()
         while j < len(css) and depth:
             depth += {"{": 1, "}": -1}.get(css[j], 0)

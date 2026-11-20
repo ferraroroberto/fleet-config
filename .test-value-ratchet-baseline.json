@@ -161,6 +161,7 @@
     "design_ledger": 10,
     "design_lint_color_scheme": 1,
     "design_lint_contracts_core": 1,
+    "design_lint_dark_fills": 1,
     "design_lint_icons": 13,
     "design_lint_layout": 1,
     "design_lint_modal": 1,
