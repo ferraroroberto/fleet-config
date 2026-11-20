@@ -318,6 +318,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "design_lint's color-scheme-theme contract -- the vendored base.css "
      "shape, per-element and inline rules, an OS-only declaration, a "
      "missing or wrong override -- is testable on its own"),
+    ("design_lint_dark_fills", "design_lint/test_dark_fills_contract.py",
+     "design_lint's dark control-fill contract -- a dark --input-bg on the "
+     "canvas, chips and badges filled below the card, tracks as a WARN, "
+     "light-only and pseudo-class rules skipped, unresolvable fills never "
+     "a pass -- is testable on its own"),
     ("design_lint_web_page","design_lint/test_web_page.py",
      "design_lint's web-page surface -- design.web.md token names, the "
      "web-page contract set, no PWA rows, and a missing spec reported as "

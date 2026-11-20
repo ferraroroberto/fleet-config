@@ -230,6 +230,27 @@ read.
     counts. The detail names the missing rules; the vendored
     `color-scheme/color-scheme.css` (or `base/base.css`) ships all three and passes. NA when no `color-scheme` is declared. Reads
     app-authored CSS plus inline `<style>` blocks.
+  - **dark-fill-token / dark-fill-selector / dark-track-fill** — in the dark
+    palette a control, chip or badge fill is lighter than the card it sits on
+    (design.md Colors, dark); a fill below the card reads as a hole in it. Dark
+    custom properties resolve through `var()` chains (a dark override, else the
+    light `:root` value) and `color-mix()` tints, then each fill is composited
+    over the dark `--card` and compared by relative luminance. Only theme-root
+    declarations count, so a component redeclaring `--card` for its own subtree
+    does not move the card. **dark-fill-token** FAILs when `--input-bg` or
+    `--card-2` resolves darker than `--card`. **dark-fill-selector** FAILs for
+    a rule whose rightmost compound is `button`, `input`, `select`, `textarea`,
+    `.chip`, `.pill`, `.badge`, `.button` or `.button-*` and whose `background`
+    resolves darker than `--card`; the last such background per selector wins,
+    a dark-scoped rule folds onto the bare selector it overrides, and a
+    light-only rule or one with a pseudo-class or pseudo-element is skipped.
+    **dark-track-fill** applies the same test to `meter`, `track` and `progress`
+    selectors as a WARN, because a recessed track can be intentional. A
+    background that cannot be resolved statically is a WARN of its own, never a
+    PASS. `currentColor` resolves to the dark `--ink`/`--fg`/`--text` token. NA
+    without a dark palette or a resolvable dark `--card`. Reads app-authored
+    CSS only. A deliberate recess goes in `[[design.accepted]]`; the row lists
+    every hit, so an entry pins that whole detail.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original
