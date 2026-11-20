@@ -113,9 +113,18 @@ def repo_occupancy(
     columns: Dict[str, Any],
     exclude_sid: Optional[str] = None,
     hide_chief: bool = False,
+    managed: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Lowercased repo -> occupancy info, for every alive, non-external
     session card in `claude_turn` + `your_turn`.
+
+    A card's `project` is its session's *current* folder, which a lane can
+    leave (a benchmark working dir, an `out` folder). `managed` is the
+    chief-managed rows (`session_id -> {"repo": ...}`): a card with a row also
+    holds the repo it was dispatched for, so dispatch cannot read that repo as
+    free while its lane is still running. A card with no row, or a row with no
+    repo, is keyed by `project` alone. The caller reads the rows (and decides
+    what an unreadable file means) so this stays a pure function of its inputs.
 
     A dead (`alive: False`) or `external` (state-file-only, unverifiable)
     card never blocks a dispatch — only a live PTY actually holds the repo.
@@ -148,17 +157,25 @@ def repo_occupancy(
             continue
         if hide_chief and card.get("label") == "chief":
             continue
-        repo = str(card.get("project") or "").strip().lower()
-        if not repo:
-            continue
-        occ[repo] = {
+        info = {
             "session_id": card.get("session_id"),
             "status": card.get("status"),
             "age_seconds": card.get("age_seconds"),
             "agent": card.get("agent"),
             "label": card.get("label"),
         }
+        for repo in _card_repos(card, managed):
+            occ[repo] = info
     return occ
+
+
+def _card_repos(card: Dict[str, Any], managed: Optional[Mapping[str, Any]]) -> List[str]:
+    """The lowercased repos a live card holds: its current folder's project plus,
+    when the chief dispatched it, the repo recorded at dispatch."""
+    row = (managed or {}).get(str(card.get("session_id") or ""))
+    dispatched = str(row.get("repo") or "") if isinstance(row, dict) else ""
+    repos = [str(card.get("project") or ""), dispatched]
+    return list(dict.fromkeys(r.strip().lower() for r in repos if r.strip()))
 
 
 def alive_worker_count(

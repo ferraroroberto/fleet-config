@@ -206,6 +206,20 @@ rc, posted = _run_dispatch([_chief_card, _worker_card], _CHIEF_SID)
 check(rc == 1 and posted == [],
       "cmd_dispatch: a genuine second worker in the repo is still refused, no POST (#838)")
 
+# A managed lane that moved its working folder still holds the repo it was dispatched for.
+_moved_lane = _session_card(project="out", session_id="moved-lane")
+_moved_marks = json.dumps({"moved-lane": {"repo": "fleet-config", "number": 1}})
+rc, posted = _run_dispatch([_chief_card, _moved_lane], _CHIEF_SID, managed=_moved_marks)
+check(rc == 1 and posted == [] and "REFUSED=repo already has a live session: moved-lane" in _run_dispatch.last_output,
+      "cmd_dispatch: a managed lane in another folder still occupies its dispatched repo")
+rc, posted = _run_dispatch([_chief_card, _moved_lane], _CHIEF_SID)
+check(rc == 0 and len(posted) == 1,
+      "cmd_dispatch: an unmanaged session in another folder does not occupy the repo")
+for _label, _bad in (("a corrupt marks file", "{not json"), ("a marks file that is not a mapping", "[1]")):
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, scope="all", managed=_bad)
+    check(rc == 1 and posted == [] and "REFUSED=chief-managed state not confirmed" in _run_dispatch.last_output,
+          f"cmd_dispatch: {_label} refuses even in scope all, never reading the repo as free")
+
 rc, posted = _run_dispatch([_chief_card], None)
 check(rc == 1 and posted == [],
       "cmd_dispatch: outside a launcher session nothing is excluded -- the "

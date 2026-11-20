@@ -412,6 +412,13 @@ def _dispatch_one(args: argparse.Namespace, row: Dict[str, Any], brief_file: str
     return sid, buf.getvalue()
 
 
+def _busy_repos(columns: Dict[str, Any]) -> Set[str]:
+    """Repos a live lane holds, counting a managed lane against its dispatched repo. An unreadable
+    managed-state file degrades to folder-only here; `dispatch` refuses on it with its own reason."""
+    managed, _ = commands._chief_managed_rows()
+    return set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id(), managed=managed))
+
+
 def _free_slots(args: argparse.Namespace, columns: Dict[str, Any], reply: Dict[str, Any]) -> Optional[int]:
     cap, managed, scope_error = commands._worker_cap_inputs(reply.get("settings") or {})
     if scope_error:
@@ -466,7 +473,7 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
         return 1
 
     columns = (launcher._request(args.base_url, "/api/board").get("columns") or {})
-    busy = set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id()))
+    busy = _busy_repos(columns)
     known = {ref.lower() for ref in ledger}
     free = _free_slots(args, columns, reply)
     dispatched = 0
@@ -556,7 +563,7 @@ def live_idle_line(args: argparse.Namespace, plan_path: Path) -> str:
     free = _free_slots(args, columns, reply)
     if free is None or free <= 0:
         return idle_line(free, [], set()) or "SLOTS_IDLE=0"
-    busy = set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id()))
+    busy = _busy_repos(columns)
     reasons: List[str] = []
     blockers: Set[str] = set()
     dispatchable = False

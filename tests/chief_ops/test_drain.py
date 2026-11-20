@@ -286,8 +286,11 @@ def _hand_plan(*rows, extra=None):
     return plan
 
 
-def _hand(plan, states=None, cards=(), dry_run=False, settings=None):
+def _hand(plan, states=None, cards=(), dry_run=False, settings=None, managed=None):
     _reset()
+    if managed is not None:
+        (_TMP / "state").mkdir(parents=True, exist_ok=True)
+        (_TMP / "state" / "chief-managed.json").write_text(json.dumps(managed), encoding="utf-8")
     fake = FakeLauncher({"auto_drain": True, **(settings or {})}, cards=list(cards))
     rc, out, plan_path, _ = _run(fake, [], dry_run=dry_run, plan=plan, states=states)
     return fake, out, chief_plan.load(plan_path)
@@ -589,6 +592,19 @@ check(f"DRAIN_BRIEF={_briefs / 'app-a-1.md'} source=generic" in out,
 fake, out = _owned({"brief": str(_TMP / "gone.md")})
 check(not fake.posted and "DRAIN_SKIPPED=app-a#1 reason=brief-unreadable" in out,
       f"an owned row whose own brief cannot be read is skipped, never briefed generically (got {out!r})")
+
+# A managed lane whose folder has moved off its repo still holds the repo it was dispatched for: the
+# card's `project` is the new folder, the managed row names the dispatched repo.
+_moved = _session_card(project="out", session_id="moved000")
+_moved_row = {"moved000": {"repo": "busy", "number": 1, "dispatched_at": "2026-11-20T00:00:00Z"}}
+plan = _hand_plan(("busy#6", {"brief": _brief}), ("app-a#5", {"brief": _brief, "after": "no-lane:busy"}))
+fake, out, doc = _hand(plan, cards=[_moved], managed=_moved_row)
+check(not fake.posted and "DRAIN_SKIPPED=busy#6 reason=repo-busy" in out
+      and "DRAIN_SKIPPED=app-a#5 reason=after-unmet (no-lane:busy (lane live))" in out,
+      f"drain: a managed lane that left its repo's folder still holds the repo (got {out!r})")
+fake, out, doc = _hand(plan, cards=[_moved])
+check([p["repo"] for p in fake.posted] == ["busy"] and "reason=repo-busy" not in out,
+      f"drain: an unmanaged session in another folder holds only that folder (got {out!r})")
 
 # The subcommands are wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,
