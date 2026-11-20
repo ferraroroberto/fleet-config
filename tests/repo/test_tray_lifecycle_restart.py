@@ -144,13 +144,16 @@ def kill_under(base: Path) -> None:
             "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"])
 
 
-def launch(base: Path, port: int, with_pid: bool) -> subprocess.CompletedProcess:
+def launch(base: Path, port: int, with_pid: bool, verify_seconds: int) -> subprocess.CompletedProcess:
+    # The helper polls until the stub answers, so a long window costs nothing when the stub starts
+    # promptly and only absorbs a cold Python start under box load. A restart expected to fail waits
+    # the whole window, so those cases pass a short one.
     kind = "pid" if with_pid else "nopid"
     return run_ps([
         "-File", str(SCRIPT), "launch", "-AppName", "stub", "-ScriptDir", str(base / "repo"),
         "-VenvDir", str(base / ".venv"), "-TrayMatch", r"stub_server\.py", "-Ports", str(port),
         "-TrayLaunch", f"{base / '.venv' / 'stub_server.py'} {port} {HEAD} {kind}",
-        "-VersionUrl", f"http://127.0.0.1:{port}/api/version", "-VerifyTimeoutSeconds", "6", "-Restart",
+        "-VersionUrl", f"http://127.0.0.1:{port}/api/version", "-VerifyTimeoutSeconds", str(verify_seconds), "-Restart",
     ])
 
 
@@ -203,7 +206,7 @@ try:
         port = free_port()
         old = start_old(inside, base, port, with_pid, venv_python)
         check(wait_answering(port, True), f"stub ({label}): the old process answers before the restart")
-        res = launch(base, port, with_pid)
+        res = launch(base, port, with_pid, 30)
         check(res.returncode == 0 and "from a new process" in res.stdout,
               f"a real restart passes, app {label} (rc={res.returncode} out={res.stdout[-300:]!r} err={res.stderr[-300:]!r})")
         kill_under(base)
@@ -217,7 +220,7 @@ try:
         port = free_port()
         old = start_old(outside, outside_dir, port, with_pid, None)
         check(wait_answering(port, True), f"stub ({label}): the surviving process answers")
-        res = launch(base, port, with_pid)
+        res = launch(base, port, with_pid, 6)
         check(res.returncode != 0 and "still serving" in (res.stderr + res.stdout),
               f"a restart that left the old process serving HEAD fails, app {label} "
               f"(rc={res.returncode} out={res.stdout[-200:]!r} err={res.stderr[-300:]!r})")
@@ -227,7 +230,7 @@ try:
 
     # nothing was serving before: any answer that serves HEAD is a new process.
     port = free_port()
-    res = launch(base, port, True)
+    res = launch(base, port, True, 30)
     check(res.returncode == 0 and "no process was serving" in res.stdout,
           f"nothing served before the restart: a fresh start passes (rc={res.returncode} out={res.stdout[-200:]!r} "
           f"err={res.stderr[-300:]!r})")

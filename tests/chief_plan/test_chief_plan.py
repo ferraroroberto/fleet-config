@@ -390,7 +390,7 @@ try:
     def plan(*argv: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(REPO / "skills" / "_lib" / "chief_ops.py"), "plan", *argv],
-            capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60)
+            capture_output=True, text=True, encoding="utf-8", env=env, stdin=subprocess.DEVNULL, timeout=60)
 
     r = plan("add", "app-launcher#1273", "Code tab: Chat by default")
     check(r.returncode == 0 and "PLAN=written" in r.stdout and "queue=1" in r.stdout,

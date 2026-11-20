@@ -36,7 +36,7 @@ try:
     journal_path = tmp / journal.JOURNAL_FILENAME
 
     def ops(*argv: str) -> subprocess.CompletedProcess:
-        return subprocess.run([PYTHON, str(CHIEF_OPS), *argv], capture_output=True, text=True,
+        return subprocess.run([PYTHON, str(CHIEF_OPS), *argv], capture_output=True, text=True, encoding="utf-8",
                               env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
     def rows() -> list:
@@ -129,14 +129,14 @@ try:
     (broken / journal.JOURNAL_FILENAME).mkdir()  # a directory where the journal file belongs
     out = subprocess.run([PYTHON, str(CHIEF_OPS), "plan", "--plan-file", str(broken / "chief-plan.json"),
                           "add", "demo#1", "Still works"],
-                         capture_output=True, text=True, env=env,
+                         capture_output=True, text=True, encoding="utf-8", env=env,
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     check(out.returncode == 0 and out.stdout.startswith("PLAN=written") and "journal write skipped" in out.stderr,
           f"an unwritable journal logs and leaves the plan command's exit 0 ({out.returncode} {out.stderr!r})")
     check((broken / "chief-plan.json").exists(), "and the plan itself was still written")
     note_fail = subprocess.run([PYTHON, str(CHIEF_OPS), "note", "x", "--journal-file",
                                 str(broken / journal.JOURNAL_FILENAME)],
-                               capture_output=True, text=True, env=env,
+                               capture_output=True, text=True, encoding="utf-8", env=env,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     check(note_fail.returncode == 1 and note_fail.stdout.startswith("NOTE=failed"),
           "an explicit `note` into an unwritable journal reports NOTE=failed with exit 1, never a success")
