@@ -1,6 +1,6 @@
 # Scheduled runners
 
-`skills/_lib/scheduled_runner.py` owns one scheduled-child lifecycle: elapsed progress, UTF-8 output, stall detection, cancellation, terminal evidence, delivery checks and eligible Claude retries. `runner_adapters.py` translates native commands/events into `ProgressEvent`; it never schedules work or duplicates the lifecycle. `claude_progress.py` remains the compatible command/import facade. App-launcher Jobs still executes the existing scripts; every checked-in production launcher but `weekly-burst` (which needs no model and calls its own script) still uses Claude.
+`skills/_lib/scheduled_runner.py` owns one scheduled-child lifecycle: elapsed progress, UTF-8 output, stall detection, cancellation, terminal evidence, delivery checks and eligible Claude retries. `runner_adapters.py` translates native commands/events into `ProgressEvent`; it never schedules work or duplicates the lifecycle. `claude_progress.py` remains the compatible command/import facade. App-launcher Jobs still executes the existing scripts; every checked-in production launcher still uses Claude except the two model-free ones, which run their own Python directly with no `claude -p` wrapper: `weekly-burst` (`burst.py`) and `prompt-audit/evals` (`eval_rotation.py`, whose `plugin eval` is the runner).
 
 ## Select a provider explicitly
 
