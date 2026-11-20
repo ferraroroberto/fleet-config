@@ -14,7 +14,9 @@ e2e_cfg = _cfg(tmp, dest=tmp / "e2e-dest", transcripts_src=tmp / "e2e-transcript
 _write(e2e_cfg.transcripts_src / "proj" / "session.jsonl", '{"a":1}')
 
 original_preflight = bp.cli._preflight
+original_volume_problem = bp.cli._volume_problem
 bp.cli._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+bp.cli._volume_problem = lambda source, dest: None
 try:
     code, manifests = bp.run(e2e_cfg, only=None, toml_path=toml_path, notify=False,
                              today="2026-08-11")
@@ -124,7 +126,19 @@ try:
     check(bad_code != bp.EXIT_OK, f"rd-e2e: the run exits non-zero, got {bad_code}")
 finally:
     bp.cli._preflight = original_preflight
+    bp.cli._volume_problem = original_volume_problem
     writer.close()
+
+# The dry-run applies the same-volume refusal, so a dry-run proves a destination
+# change (fleet-config#2166) and still writes nothing.
+# An empty fleet root: the refusal needs no repo, and selecting one would spawn git.
+samevol_cfg = _cfg(tmp, source_root=tmp / "samevol-fleet", dest=tmp / "samevol-dest",
+                   transcripts_src=tmp / "samevol-transcripts", transcripts_dest=tmp / "samevol-tdest")
+samevol_code, _ = bp.run(samevol_cfg, dry_run=True, toml_path=toml_path, notify=False,
+                         today="2026-08-14")
+check(samevol_code == bp.EXIT_DEST_UNUSABLE,
+      f"dry-run: a destination on the source volume exits {bp.EXIT_DEST_UNUSABLE}, got {samevol_code}")
+check(not (tmp / "samevol-dest").exists(), "dry-run: the volume refusal creates no destination")
 
 # ---- latest/ incremental reconcile (fleet-config#721) ------------------
 # A full rebuild used to re-hardlink every file in the tree on every run,

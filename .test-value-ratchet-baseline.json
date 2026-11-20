@@ -194,6 +194,7 @@
     "fleet10x": 18,
     "fleet_audit_scan": 32,
     "fleet_gate": 201,
+    "fleet_move": 1,
     "fleet_password": 12,
     "fleet_private_backup": 27,
     "fleet_scope": 51,

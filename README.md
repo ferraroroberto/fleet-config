@@ -54,6 +54,9 @@ work in this repo doesn't cost the whole catalogue:
   daily backup of everything git ignores, native Claude/Codex sessions, and
   the relocated runtime-data root (`C:/sqlite`), including explicit-deletion-
   only session archives and restore procedures.
+- **[`docs/fleet-root-move.md`](docs/fleet-root-move.md)** — moving the fleet
+  root to another volume behind a junction: the junction-sensitivity
+  inventory, the cut-over, post-check and rollback scripts, and the runbook.
 - **[`docs/architecture.mmd`](docs/architecture.mmd)** — this repo's own
   internal structure diagram, hand-authored and under a same-PR anti-staleness
   contract.
@@ -202,6 +205,7 @@ fleet-config/
 ├── scripts/                        # the ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
 │   ├── test_value/test_value_ratchet.py  # vendored from project-scaffolding: new-test-value, spawn-budget, flake-ledger and the weekly hermetic rule over the unit ledger
 │   ├── tray/tray_lifecycle.ps1     # this repo's own: junctioned via scripts/tray/ → ~/.claude/tray — the ONE machine-local copy; canonical source: project-scaffolding; every sister tray.bat calls this one file by path
+│   ├── fleet_move/                 # this repo's own: the fleet-root move to another volume behind a junction — cutover.ps1 / postcheck.ps1 / rollback.ps1 + stdlib helpers (docs/fleet-root-move.md)
 │   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs; holds the box load lock exclusively so it never overlaps a gate (`skills/_lib/box_lock.py`, shared by the acceptance run)
 ├── requirements.txt                # dev tools only (`ruff`, pinned) — the runtime stays stdlib-only; the ratchet stage needs ruff in the venv

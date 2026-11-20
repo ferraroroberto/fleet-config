@@ -656,6 +656,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "junction traversal, hardlink dedup proven by st_nlink, retention, the "
      "sample verification, the zero-file regression guard, and three-state "
      "freshness -- needs real temp trees rather than mocks (fleet-config#590)"),
+    ("fleet_move", "fleet_move/test_fleet_move.py",
+     "the fleet-root move helpers -- a tree walk that records junctions without "
+     "entering them, a hardlink-keeping store copy, and the [backup] table edit -- "
+     "need real temp trees, junctions and hardlinks (fleet-config#2166)"),
     ("wait_for_sentinel", "claude_progress/test_wait_for_sentinel.py",
      "/audit-fleet step 2's foreground blocking wait -- injected-clock pure "
      "logic, the real CLI's exit-0-only-if-found / exit-2-if-not contract, "
