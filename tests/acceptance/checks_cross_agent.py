@@ -529,8 +529,16 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "\n".join(smoke_failures),
     )
 
-    # A loaded box's slow start, injected before readiness and longer than the
-    # whole work budget, is not charged to a hook that then returns at once.
+    _codex_slow_start_case(check, commands, env)
+    _codex_hung_hook_cases(check, commands, env)
+
+    return check.failures, check.total
+
+
+def _codex_slow_start_case(check: _Checker, commands: List[str], env: Dict[str, str]) -> None:
+    """A loaded box's slow start is not charged to a hook that then returns at once."""
+    # Injected before readiness and longer than the whole work budget, so a
+    # check that still counted the interpreter's start would time out on it.
     interpreter = commands[0].split()[0] if commands else str(PYTHON)
     slow_start = _codex_hook_smoke_failure(f"{interpreter} -c pass", env,
                                            start_delay=_SLOW_START_SECONDS)
@@ -539,10 +547,6 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         slow_start is None,
         slow_start or "",
     )
-
-    _codex_hung_hook_cases(check, commands, env)
-
-    return check.failures, check.total
 
 
 def _codex_hung_hook_cases(check: _Checker, commands: List[str], env: Dict[str, str]) -> None:
