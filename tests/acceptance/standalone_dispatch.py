@@ -656,6 +656,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "junction traversal, hardlink dedup proven by st_nlink, retention, the "
      "sample verification, the zero-file regression guard, and three-state "
      "freshness -- needs real temp trees rather than mocks (fleet-config#590)"),
+    # test-value-exempt: the only unit that drives scripts/fleet_move/, which nothing else imports
     ("fleet_move", "fleet_move/test_fleet_move.py",
      "the fleet-root move helpers -- a tree walk that records junctions without "
      "entering them, a hardlink-keeping store copy, and the [backup] table edit -- "

@@ -6,7 +6,6 @@ to get exactly those three things right, so mocks would prove nothing.
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/fleet_move/test_fleet_move.py`
 (also invoked by tests/run_acceptance.py)
 """
-# test-value-exempt: the only unit that drives scripts/fleet_move/, which nothing else imports
 from __future__ import annotations
 
 import os
