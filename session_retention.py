@@ -17,11 +17,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_edit import (  # noqa: E402
-    ASSIGNMENT_RE,
-    TABLE_RE,
     atomic_write,
     default_codex_config_path,
-    inline_comment,
+    merge_table,
 )
 
 RETENTION_DAYS = 730
@@ -64,57 +62,12 @@ def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
     if history is not None and not isinstance(history, dict):
         raise RetentionConfigError("Codex history config must be a table")
 
-    newline = "\r\n" if "\r\n" in text else "\n"
-    lines = text.splitlines(keepends=True)
-    table: str | None = None
-    history_header: int | None = None
-    persistence_found = False
     changed: list[str] = []
-    output: list[str] = []
-
-    for line in lines:
-        table_match = TABLE_RE.match(line)
-        if table_match:
-            table = table_match.group(1).strip()
-            if table == "history":
-                history_header = len(output)
-            output.append(line)
-            continue
-        assignment = ASSIGNMENT_RE.match(line)
-        key = assignment.group(2) if assignment else None
-        is_persistence = key == "history.persistence" and table is None
-        is_persistence = is_persistence or (table == "history" and key == "persistence")
-        is_max = key == "history.max_bytes" and table is None
-        is_max = is_max or (table == "history" and key == "max_bytes")
-        if is_max:
-            changed.append("history.max_bytes")
-            continue
-        if is_persistence:
-            persistence_found = True
-            indent = assignment.group(1) if assignment else ""
-            rendered_key = key or "persistence"
-            comment = inline_comment(line)
-            suffix = f" {comment}" if comment else ""
-            replacement = f'{indent}{rendered_key} = "save-all"{suffix}{newline}'
-            if line != replacement:
-                changed.append("history.persistence")
-            output.append(replacement)
-            continue
-        output.append(line)
-
-    if not persistence_found:
-        assignment = f'persistence = "save-all"{newline}'
-        if history_header is not None:
-            output.insert(history_header + 1, assignment)
-        else:
-            if output and not output[-1].endswith(("\n", "\r")):
-                output[-1] += newline
-            if output and output[-1].strip():
-                output.append(newline)
-            output.extend((f"[history]{newline}", assignment))
+    if history.get("persistence") != "save-all":
         changed.append("history.persistence")
-
-    updated = "".join(output)
+    if "max_bytes" in history:
+        changed.append("history.max_bytes")
+    updated = merge_table(text, "history", {"persistence": '"save-all"'}, drop=("max_bytes",))
     try:
         effective = tomllib.loads(updated)
     except tomllib.TOMLDecodeError as exc:
@@ -123,7 +76,7 @@ def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
         raise RetentionConfigError("Codex history.persistence did not resolve to save-all")
     if "max_bytes" in effective.get("history", {}):
         raise RetentionConfigError("Codex history.max_bytes is still set")
-    return updated, tuple(dict.fromkeys(changed))
+    return updated, tuple(changed)
 
 
 def configure(claude_path: Path, codex_path: Path, *, apply: bool) -> tuple[str, str]:

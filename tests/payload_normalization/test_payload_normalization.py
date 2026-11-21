@@ -522,7 +522,7 @@ for _label, _command, _entry, _tool, _expected in (
     ("Codex safe command", "git status", _CODEX_ENTRY, "Bash", 0),
     ("Claude genuine Bash quoted PowerShell", "echo 'Stop-Process -Name python -Force'", str(_HOOKS / "safe_kill_guard.py"), "Bash", 0),
     ("Claude PowerShell quoted Bash", "Write-Output 'pkill -f python'", str(_HOOKS / "safe_kill_guard.py"), "PowerShell", 0),
-    ("Codex unknown quoted literal is conservative", "echo 'Stop-Process -Name python -Force'", _CODEX_ENTRY, "Bash", 2),
+    ("Codex unknown quoted literal is a mention, not a kill", "echo 'Stop-Process -Name python -Force'", _CODEX_ENTRY, "Bash", 0),
 ):
     _result = _drive_safety(_command, _entry, _tool)
     if _entry == _CODEX_ENTRY and _expected == 2:

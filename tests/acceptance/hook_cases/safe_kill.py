@@ -116,6 +116,10 @@ _NAMED_KILL_BLOCKED = [
     ("Bash", "kill $(pgrep -f serve_pair)"),
     ("Bash", "ps aux | grep serve | awk '{print $2}' | xargs kill"),
     ("Bash", "powershell -Command \"Stop-Process -Name node\""),
+    # The blanket python kills that would take out the sister hubs (fleet-config#2137).
+    ("PowerShell", "Get-Process python* | Stop-Process -Force"),
+    ("PowerShell", "taskkill /IM pythonw.exe /F"),
+    ("Bash", "pkill python3"),
 ]
 _NAMED_KILL_ALLOWED = [
     ("PowerShell", "Stop-Process -Id 1234 -Force"),
@@ -127,6 +131,10 @@ _NAMED_KILL_ALLOWED = [
     ("PowerShell", "echo 'Stop-Process -Name node; taskkill /IM node.exe'"),
     ("Bash", "echo pkill -f serve_pair"),
     ("Bash", "rg 'killall' docs/"),
+    # A python kill that is only named, in a commit message or a python string, is not a kill.
+    ("Bash", "git commit -m \"fix: refuse pkill python and taskkill /IM python.exe\""),
+    ("Bash", "python -c \"print('Stop-Process -Name python')\""),
+    ("PowerShell", "Write-Output 'Get-Process python | Stop-Process'"),
 ]
 SAFE_KILL_CASES += [
     (f"safe_kill: kill by name or command line -> block ({command[:48]}) (fleet-config#2118)",
