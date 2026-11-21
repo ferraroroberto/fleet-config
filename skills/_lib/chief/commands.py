@@ -51,7 +51,7 @@ from chief.steer_delivery import (
     recent_output_window,
 )
 
-from . import compact, digest, lane_rows, launcher, mailbox, rails
+from . import compact, digest, lane_rows, launcher, mailbox, rails, say_recovery
 
 DEFAULT_TAIL = 2000
 
@@ -593,18 +593,35 @@ def cmd_say(args: argparse.Namespace) -> int:
     text = read_brief(args.file)
 
     send_time = datetime.now(timezone.utc)
-    # The one and only POST, on both the plain and the --verify path. Nothing
-    # below this line ever sends again.
-    posted = launcher.post_session_input(args.base_url, args.sid, text)
-
     if not args.verify:
-        # Plain `say` is the most-used call, and a traceback here turns a
-        # steer the operator could deliberately retry into a crash they have
-        # to diagnose. Report the failure instead.
+        # Plain `say` is one POST: the operator who sees `FAILED` decides on a
+        # resend. A traceback here would turn a steer they could deliberately
+        # retry into a crash they have to diagnose, so the failure is reported.
+        posted = launcher.post_session_input(args.base_url, args.sid, text)
         if not posted["ok"]:
+            if posted.get("transport") == launcher.MAYBE_SENT:
+                # A timeout or reset after the request went out: the steer may have
+                # landed, so a bare FAILED would invite a double send.
+                print(f"UNCONFIRMED={posted['error']}")
+                return 1
             print(f"FAILED sid={args.sid} chars={len(text)} reason={posted['error']}")
             return 1
         print(f"SENT sid={args.sid} chars={len(text)}")
+        return 0
+    return _say_verify(args, text, send_time)
+
+
+def _say_verify(args: argparse.Namespace, text: str, send_time: datetime) -> int:
+    """`say --verify`: send with bounded transport recovery, then classify delivery."""
+    # Copies of the steer already in the transcript, so a repeated steer is never mistaken
+    # for this one. Unreadable counts as none: any copy then reads as new.
+    baseline = say_recovery.transcript_copies(args.base_url, args.sid, text) or 0
+    # `--verify` sends at most `RECOVERY_ATTEMPTS` times, and only a transient transport
+    # failure with no copy of the steer in the transcript earns a resend.
+    outcome = say_recovery.post_with_recovery(args, text, baseline)
+    posted = outcome.posted
+    if outcome.evidence == say_recovery.PRESENT:
+        print(f"DELIVERED sid={args.sid} chars={len(text)}")
         return 0
 
     post_reason = posted.get("reason")
@@ -612,18 +629,27 @@ def cmd_say(args: argparse.Namespace) -> int:
     # input was never submitted. Polling an exchange for movement that cannot
     # come would only spend the timeout budget before reporting the same thing.
     if not posted["ok"] and post_reason not in INPUT_NEGATIVE_REASONS:
-        # The endpoint could not be reached at all — that is not evidence
-        # either way, so it is `unknown`, never `stranded`.
-        print(format_verdict_line(
-            "unknown", args.sid, len(text), None, "unknown",
-            f"send failed: {posted['error']}",
-        ))
+        # The endpoint could not be reached, or answered nothing usable — not
+        # evidence either way, so never `stranded`.
+        print(say_recovery.unsent_verdict(args.sid, len(text), outcome))
         return 1
 
     state, marker = DeliveryState.PENDING, {"available": False, "timestamp": None}
     if posted["ok"]:
-        state, marker = _poll_delivery(args, post_reason, send_time)
+        state, marker, exact = _poll_delivery(args, post_reason, send_time, text, baseline)
+        if exact:
+            print(f"DELIVERED sid={args.sid} chars={len(text)}")
+            return 0
+    return _report_verdict(args, text, state, marker, posted)
 
+
+def _report_verdict(
+    args: argparse.Namespace, text: str, state: DeliveryState,
+    marker: Dict[str, Any], posted: Dict[str, Any],
+) -> int:
+    """Classify the poll's last state against the board and the session card, print the
+    verdict line and return the exit code: 0 only for `DELIVERED`."""
+    post_reason = posted.get("reason")
     board: Dict[str, Any] = {}
     try:
         board = launcher._request(args.base_url, "/api/board")
@@ -668,11 +694,16 @@ def cmd_say(args: argparse.Namespace) -> int:
 
 def _poll_delivery(
     args: argparse.Namespace, post_reason: Optional[str], send_time: datetime,
-) -> Tuple[DeliveryState, Dict[str, Any]]:
-    """Poll the exchange after an accepted POST until it is delivered, the
-    deferred watcher reports, or `--timeout` passes: `(state, last marker)`."""
+    text: str, baseline: int,
+) -> Tuple[DeliveryState, Dict[str, Any], bool]:
+    """Poll after an accepted POST until the transcript holds the steer, the exchange
+    shows delivery, the deferred watcher reports, or `--timeout` passes:
+    `(state, last marker, exact)`, where `exact` is the transcript proof, the only
+    evidence that outranks every other signal."""
     deadline = time.monotonic() + args.timeout
     while True:
+        if say_recovery.steer_evidence(args.base_url, args.sid, text, baseline) == say_recovery.PRESENT:
+            return DeliveryState.DELIVERED, {"available": False, "timestamp": None}, True
         marker = launcher.fetch_exchange_marker(args.base_url, args.sid)
         state = classify_exchange_marker(marker["available"], marker["timestamp"], send_time)
         if post_reason == INPUT_DEFERRED:
@@ -681,11 +712,11 @@ def _poll_delivery(
             # record instead.
             card = launcher.fetch_session_card(args.base_url, args.sid)
             if deferred_submit_outcome(post_reason, launcher._last_input(card)) != "in_flight":
-                return state, marker
+                return state, marker, False
         elif state == DeliveryState.DELIVERED:
-            return state, marker
+            return state, marker, False
         if time.monotonic() >= deadline:
-            return state, marker
+            return state, marker, False
         time.sleep(args.poll_interval)
 
 

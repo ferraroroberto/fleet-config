@@ -59,8 +59,9 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "chief verify against throwaway git repos, chief-managed marking, the "
      "fail-closed worker cap and say --verify's four distinct verdicts"),
     ("chief_ops_sessions", "chief_ops/test_session_commands.py",
-     "say/stop prefix resolution, the wake doorbell "
-     "and context + self-compact work with the launcher stubbed"),
+     "say/stop prefix resolution, say --verify's bounded resend after a "
+     "transport failure (exact-text transcript check before every resend), "
+     "the wake doorbell and context + self-compact work with the launcher stubbed"),
     ("chief_drain", "chief_ops/test_drain.py",
      "chief_ops drain -- the auto_drain switch (off, missing and unreadable "
      "do nothing), every intake exclusion, dry-run writing nothing, and "

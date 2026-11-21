@@ -513,6 +513,9 @@ def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, 
             idx = min(calls["exchange"], len(exchange_responses) - 1)
             calls["exchange"] += 1
             return exchange_responses[idx]
+        if path.endswith("/transcript"):
+            # An unreadable transcript: these cases turn on the exchange alone.
+            return {"available": False}
         if path == "/api/board":
             return {"columns": {
                 "claude_turn": [_session_card(session_id="target-1", status=board_status)],

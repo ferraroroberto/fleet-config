@@ -1,4 +1,4 @@
-"""chief_ops session commands: say/stop prefix resolution, the wake doorbell, and context + self-compact with the launcher stubbed.
+"""chief_ops session commands: say/stop prefix resolution, say --verify transport recovery, the wake doorbell, and context + self-compact with the launcher stubbed.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_session_commands.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from _suite import _exchange_columns, _h, check, co  # noqa: E402
+from chief import say_recovery  # noqa: E402
 
 # ---- say/stop resolve the prefix too (fleet-config#681) ----------------------
 # `board`/`sessions` only ever print the 8-char prefix, so that is the only
@@ -353,5 +354,217 @@ check(_esc_seen.get("timeout"), "escalate bounds the notify_send spawn")
 check(_esc_code == 1 and "ESCALATED=no" in _esc_out,
       f"escalate: a hung send exits 1 with ESCALATED=no, got {_esc_code}: {_esc_out!r}")
 check("did not finish within" in _esc_err, f"escalate: the expiry names the timeout, got {_esc_err!r}")
+
+
+# ---- say --verify recovers from a transport failure without double-sending (fleet-config#2192) ----
+# A resend is gated by the exact-text transcript check; every transport edge is a fake and nothing waits.
+
+_SR_SID = "ad3e8bbbcccccccccccccccccccccccc"
+_SR_STEER = "the gate failure on line 12 is pre-existing, see #622"
+_SR_NOT_SENT, _SR_MAYBE_SENT = co.launcher.NOT_SENT, co.launcher.MAYBE_SENT
+
+
+def _sr_fail(kind, error="connection refused"):
+    return {"ok": False, "reason": None, "http_status": None, "transport": kind, "error": error}
+
+
+def _sr_http(code, reason=None, transport=None):
+    return {"ok": False, "reason": reason, "http_status": code, "transport": transport,
+            "error": f"HTTP {code}: x"}
+
+
+_SR_OK = {"ok": True, "reason": "ok", "http_status": None, "transport": None, "error": None}
+
+
+class _SayFake:
+    """A launcher whose POSTs follow `posts` (one entry each, the last repeating). An entry is a
+    POST result, or `(result, landed)` for a POST whose text reaches the transcript even though the
+    caller saw a failure (the timeout/reset case)."""
+
+    def __init__(self, posts, *, readable=True, copies=0, board_failures=0):
+        self.posts = posts
+        self.readable = readable
+        self.copies = copies
+        self.board_failures = board_failures
+        self.post_count = 0
+        self.transcript_reads = 0
+        self.board_reads = 0
+
+    def post(self, base_url, sid, text):
+        entry = self.posts[min(self.post_count, len(self.posts) - 1)]
+        self.post_count += 1
+        result, landed = entry if isinstance(entry, tuple) else (entry, entry.get("ok", False))
+        if landed:
+            self.copies += 1
+        return result
+
+    def request(self, base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            self.board_reads += 1
+            if self.board_reads <= self.board_failures:
+                raise _urlerr.URLError(ConnectionRefusedError("refused"))
+            return {"columns": _exchange_columns}
+        if path.endswith("/transcript"):
+            self.transcript_reads += 1
+            if not self.readable:
+                return {"available": False, "reason": "no_transcript"}
+            return {"available": True,
+                    "entries": [{"kind": "user", "text": _SR_STEER}] * self.copies
+                    + [{"kind": "assistant", "text": _SR_STEER}]}
+        return {}
+
+
+_sr_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_say_recovery_"))
+_sr_brief = _sr_tmp / "brief.md"
+_sr_brief.write_text(_SR_STEER, encoding="utf-8")
+
+
+def _sr_run(fake, *, sid=_SR_SID, verify=True):
+    """Drive `cmd_say` against `fake`: `(exit code, stdout, the fake)`."""
+    saved = (co.launcher._request, co.launcher.post_session_input, co.launcher.RECOVERY_BACKOFF,
+             co.launcher.fetch_exchange_marker, co.launcher.fetch_session_card)
+    co.launcher._request = fake.request
+    co.launcher.post_session_input = fake.post
+    co.launcher.RECOVERY_BACKOFF = (0.0, 0.0, 0.0)
+    # Exchange movement is no proof of delivery: it is deliberately "advanced" so a verdict that
+    # leaned on it would show up as a wrong DELIVERED.
+    co.launcher.fetch_exchange_marker = lambda *a, **k: {"available": True,
+                                                         "timestamp": "2999-01-01T00:00:00Z"}
+    co.launcher.fetch_session_card = lambda *a, **k: {}
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = co.cmd_say(argparse.Namespace(
+                sid=sid, file=str(_sr_brief), verify=verify, timeout=0.0, poll_interval=0.0,
+                base_url=co.DEFAULT_BASE_URL))
+        return rc, buf.getvalue(), fake
+    finally:
+        (co.launcher._request, co.launcher.post_session_input, co.launcher.RECOVERY_BACKOFF,
+         co.launcher.fetch_exchange_marker, co.launcher.fetch_session_card) = saved
+
+
+try:
+    # Webapp down for attempt 1, back for attempt 2: text absent after 1, present after 2.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_NOT_SENT), _SR_OK]))
+    check(rc == 0 and out.startswith("DELIVERED sid=" + _SR_SID), f"down then back -> DELIVERED: {out!r}")
+    check(f.post_count == 2 and f.copies == 1, f"down then back -> exactly 2 POSTs, one copy ({f.post_count}, {f.copies})")
+
+    # Down for attempt 1, back with the exact text already in the transcript: no second POST.
+    rc, out, f = _sr_run(_SayFake([(_sr_fail(_SR_MAYBE_SENT, "timed out"), True)]))
+    check(rc == 0 and out.startswith("DELIVERED") and f.post_count == 1,
+          f"text already in the transcript after a failed POST -> 1 POST, DELIVERED: {out!r} {f.post_count}")
+
+    # A timeout after a POST whose text never landed: at most 3 attempts, never past the third.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_MAYBE_SENT, "timed out")]))
+    check(f.post_count == 3 and f.copies == 0, f"all timeouts, text absent -> 3 POSTs and no more ({f.post_count})")
+    check(rc == 1 and out.startswith("PENDING") and "attempts=3" in out,
+          f"all timeouts, text absent, transcript readable -> PENDING with the attempt count: {out!r}")
+
+    # A timeout whose POST landed on the second try: one copy only, DELIVERED.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_MAYBE_SENT, "timed out"), (_sr_fail(_SR_MAYBE_SENT, "timed out"), True)]))
+    check(f.post_count == 2 and f.copies == 1 and rc == 0,
+          f"a timed-out POST that landed is never followed by a third ({f.post_count}, {f.copies}, rc={rc})")
+
+    # 503 is the session-host saying nothing was sent: retried.
+    rc, out, f = _sr_run(_SayFake([_sr_http(503, transport=_SR_NOT_SENT), _SR_OK]))
+    check(f.post_count == 2 and rc == 0, f"a session-host 503 is retried once, then DELIVERED ({f.post_count})")
+
+    # Authoritative negatives: one POST, verdict per the existing contract.
+    for code, reason in ((502, "not_ingested"), (409, "dropped"), (400, "dropped"), (403, "dropped")):
+        rc, out, f = _sr_run(_SayFake([_sr_http(code, reason)]))
+        check(f.post_count == 1 and rc == 1 and out.startswith("STRANDED"),
+              f"HTTP {code} -> never retried, STRANDED ({f.post_count}): {out!r}")
+        check(f.transcript_reads == 1, f"HTTP {code} -> only the baseline transcript read, no resend check")
+    rc, out, f = _sr_run(_SayFake([_sr_http(404)]))
+    check(f.post_count == 1 and rc == 1 and out.startswith("UNKNOWN"),
+          f"an unclassified HTTP answer is not retried and is UNKNOWN: {out!r}")
+
+    # Transcript unreadable: UNKNOWN, never DELIVERED or STRANDED.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_MAYBE_SENT, "timed out")], readable=False))
+    check(f.post_count == 1 and rc == 1 and out.startswith("UNKNOWN"),
+          f"timeout with an unreadable transcript -> no resend, UNKNOWN ({f.post_count}): {out!r}")
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_NOT_SENT)], readable=False))
+    check(f.post_count == 3 and rc == 1 and out.startswith("UNKNOWN"),
+          f"refused connection, transcript unreadable throughout -> 3 POSTs, UNKNOWN ({f.post_count}): {out!r}")
+    check("STRANDED" not in out and "DELIVERED" not in out, "an unreadable transcript is never STRANDED or DELIVERED")
+
+    # An identical earlier steer in the transcript is not mistaken for this one.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_NOT_SENT), _SR_OK], copies=1))
+    check(f.post_count == 2 and f.copies == 2 and rc == 0,
+          f"an earlier identical steer is the baseline, not proof: resent once ({f.post_count}, {f.copies})")
+
+    # An assistant turn quoting the steer is not a user turn.
+    check(say_recovery.user_turn_count({"entries": [{"kind": "assistant", "text": _SR_STEER}]}, _SR_STEER) == 0,
+          "only user turns count as the steer")
+
+    # Launcher down during the sid resolve, back within the window: the steer goes out once.
+    rc, out, f = _sr_run(_SayFake([_SR_OK], board_failures=2), sid="ad3e8bbb")
+    check(f.post_count == 1 and rc == 0 and ("sid=" + _SR_SID) in out,
+          f"launcher down for the sid lookup, then back -> one POST to the resolved id ({f.post_count}): {out!r}")
+    rc, out, f = _sr_run(_SayFake([_SR_OK], board_failures=99), sid="ad3e8bbb")
+    check(f.board_reads == 3, f"the sid lookup stops after 3 reads ({f.board_reads})")
+
+    # Plain say stays a single POST, and reports the failure instead of retrying.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_NOT_SENT)]), verify=False)
+    check(f.post_count == 1 and rc == 1 and out.startswith("FAILED"),
+          f"plain say never resends ({f.post_count}): {out!r}")
+
+    # Plain say whose POST timed out may have landed: UNCONFIRMED, never a FAILED that invites a resend.
+    rc, out, f = _sr_run(_SayFake([_sr_fail(_SR_MAYBE_SENT, "timed out")]), verify=False)
+    check(f.post_count == 1 and rc == 1 and out.startswith("UNCONFIRMED="),
+          f"plain say after a timeout is UNCONFIRMED and sent once ({f.post_count}): {out!r}")
+
+    # The real post_session_input classifies what a failed call proves.
+    def _post_raising(exc):
+        saved = co.launcher._request
+
+        def _raise(*a, **k):
+            raise exc
+
+        co.launcher._request = _raise
+        try:
+            return co.launcher.post_session_input(co.DEFAULT_BASE_URL, _SR_SID, _SR_STEER)
+        finally:
+            co.launcher._request = saved
+
+    _cases = (
+        (_urlerr.URLError(ConnectionRefusedError("refused")), _SR_NOT_SENT),
+        (_urlerr.URLError(OSError("unreachable")), _SR_NOT_SENT),
+        (ConnectionResetError("reset"), _SR_MAYBE_SENT),
+        (TimeoutError("timed out"), _SR_MAYBE_SENT),
+        (_urlerr.URLError(TimeoutError("timed out")), _SR_MAYBE_SENT),
+        (_urlerr.HTTPError("u", 503, "unavailable", None, io.BytesIO(b"")), _SR_NOT_SENT),
+        (_urlerr.HTTPError("u", 502, "bad gateway", None, io.BytesIO(b"")), None),
+        (_urlerr.HTTPError("u", 404, "nf", None, io.BytesIO(b"")), None),
+    )
+    for exc, want in _cases:
+        got = _post_raising(exc)
+        check(got["ok"] is False and got["transport"] == want,
+              f"post_session_input: {type(exc).__name__} {exc} -> transport={want!r}, got {got['transport']!r}")
+    for code, want in ((502, "not_ingested"), (409, "dropped"), (400, "dropped"), (403, "dropped"), (500, None)):
+        got = _post_raising(_urlerr.HTTPError("u", code, "x", None, io.BytesIO(b"")))
+        check(got["reason"] == want, f"post_session_input: HTTP {code} -> reason {want!r}, got {got['reason']!r}")
+
+    # A GET that fails for a non-transient reason is raised at once, not waited on.
+    _reads = []
+    _saved = (co.launcher._request, co.launcher.RECOVERY_BACKOFF)
+
+    def _always_404(base, path, **k):
+        _reads.append(path)
+        raise _urlerr.HTTPError("u", 404, "nf", None, io.BytesIO(b""))
+
+    co.launcher._request, co.launcher.RECOVERY_BACKOFF = _always_404, (0.0, 0.0, 0.0)
+    try:
+        try:
+            co.launcher.request_with_recovery(co.DEFAULT_BASE_URL, "/api/board")
+            _raised = False
+        except _urlerr.HTTPError:
+            _raised = True
+    finally:
+        co.launcher._request, co.launcher.RECOVERY_BACKOFF = _saved
+    check(_raised and len(_reads) == 1, f"request_with_recovery: a 404 is not retried ({len(_reads)} reads)")
+finally:
+    shutil.rmtree(_sr_tmp, ignore_errors=True)
+
 
 _h.report_and_exit("test_session_commands")

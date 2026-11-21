@@ -287,9 +287,9 @@ just the launcher call):
   - `UNKNOWN` — the exchange could not be *read* (a readable-but-un-advanced exchange is `STRANDED`, never this).
 
   Every non-`DELIVERED` line carries the target's `status=` and
-  `last_output=` age, so you can judge without a second round of calls. It
-  never auto-retries on any verdict — a resend can double-execute a shipping
-  command, so it is your call, never the tool's. **Compose a steer the way
+  `last_output=` age, so you can judge without a second round of calls.
+  `--verify` resends itself only after a transport failure (refused, reset, timeout, 503), at most 3 sends, and only while the session transcript holds no copy of the exact steer text; it never resends after an HTTP answer or any verdict, and plain `say` never does (`docs/chief-say-recovery.md`). Any further resend is your call, never the tool's: it can double-execute a shipping
+  command. **Compose a steer the way
   you would brief a sub-agent — no marker, no assertion of authority**
   (fleet-config#622, retiring the in-band authority prefix of #509): an
   unauthenticated string asserting its own rank *is* the prompt-injection

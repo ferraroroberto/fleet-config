@@ -153,7 +153,8 @@ def _add_act_commands(sub: argparse._SubParsersAction) -> None:
         help=(
             "poll the exchange after posting and report "
             "DELIVERED/PENDING/STRANDED/UNKNOWN (fleet-config#453, #643); "
-            "never auto-retries"
+            "resends only after a transport failure, gated by an exact-text "
+            "transcript check (at most 3 sends)"
         ),
     )
     say_p.add_argument("--timeout", type=float, default=commands.DEFAULT_VERIFY_TIMEOUT)
