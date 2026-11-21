@@ -37,6 +37,7 @@ What each fleet repo declares it exposes, owns and depends on. A repo with no de
 | voice-transcriber | local-llm-hub |
 | photo-ocr | local-llm-hub, project-scaffolding |
 | app-launcher-lite | app-launcher |
+| overmark | project-scaffolding |
 | stream-deck | fleet-config, home-automation |
 | grocery-shopping-automation | local-llm-hub, voice-transcriber |
 | whatsapp-radar | home-automation, local-llm-hub, project-scaffolding, task-os |

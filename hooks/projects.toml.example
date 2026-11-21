@@ -222,6 +222,10 @@ cwd_prefix = "E:/automation/mcp-personal-onedrive"
 cwd_prefix          = "E:/automation/minecraft-bedrock-bot"
 gate_cmd            = "npm run verify"
 
+[overmark]
+cwd_prefix          = "E:/automation/overmark"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+
 [oracle-to-gcp]
 cwd_prefix = "E:/automation/oracle-to-gcp"
 

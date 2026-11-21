@@ -59,7 +59,7 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | ⚙️ | `fleet-config` | Fleet-wide Claude Code hooks, skills & the issue workflow. | — |
 | ⚙️ | `fleet-config-lite` | Copilot-CLI + GitLab lite fork — session-state hook, issue skills & installer. | — |
 
-### Enabling (`layer = "enabling"`, 8 repos)
+### Enabling (`layer = "enabling"`, 9 repos)
 
 | | Repo | What it is | Port |
 |---|---|---|---|
@@ -70,6 +70,7 @@ Each repo describes itself in a `.fleet.toml` file at its root: its layer, an ic
 | 🚀 | `app-launcher-lite` | Copilot + GitLab lite fork of app-launcher: the phone-first launcher hub. | :8465 |
 | 🧰 | `fleet-config-lite` | Lite fleet-config: Copilot CLI hooks, issue-workflow skills and installer. | — |
 | 🧠 | `local-llm-hub-lite` | Single-machine lite fork of local-llm-hub: local models and whisper on :8000. | :8000 |
+| 🖍️ | `overmark` | Screen annotation for live facilitation, with the controls hidden from capture. | — |
 | 🎛️ | `stream-deck` | Elgato Stream Deck plugin: one-key tray launchers and app actions for the fleet. | — |
 
 ### Working apps: web (`layer = "working-web"`, 13 repos)

@@ -16,6 +16,7 @@ flowchart LR
     app_launcher_lite["🚀 App Launcher Lite"]
     fleet_config_lite["🧰 Fleet Config Lite"]
     local_llm_hub_lite["🧠 Local LLM Hub Lite"]
+    overmark["🖍️ overmark"]
     stream_deck["🎛️ stream-deck"]
   end
   subgraph web["Web"]
@@ -80,6 +81,7 @@ flowchart LR
   photo_ocr -.-> local_llm_hub
   photo_ocr -.-> project_scaffolding
   app_launcher_lite -.-> app_launcher
+  overmark -.-> project_scaffolding
   stream_deck -.-> fleet_config
   stream_deck -.-> home_automation
   grocery_shopping_automation -.-> local_llm_hub

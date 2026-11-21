@@ -35,6 +35,7 @@ window.FLEET = {
     {"ic": "🚀", "nm": "App Launcher Lite", "repo": "app-launcher-lite", "port": ":8465", "ds": "Copilot + GitLab lite fork of app-launcher: the phone-first launcher hub.", "deps": [{"repo": "app-launcher"}]},
     {"ic": "🧰", "nm": "Fleet Config Lite", "repo": "fleet-config-lite", "ds": "Lite fleet-config: Copilot CLI hooks, issue-workflow skills and installer."},
     {"ic": "🧠", "nm": "Local LLM Hub Lite", "repo": "local-llm-hub-lite", "port": ":8000", "ds": "Single-machine lite fork of local-llm-hub: local models and whisper on :8000."},
+    {"ic": "🖍️", "nm": "overmark", "ds": "Screen annotation for live facilitation, with the controls hidden from capture.", "deps": [{"repo": "project-scaffolding"}]},
     {"ic": "🎛️", "nm": "stream-deck", "ds": "Elgato Stream Deck plugin: one-key tray launchers and app actions for the fleet.", "tag": ["→", "Stream Deck"], "deps": [{"repo": "fleet-config"}, {"repo": "home-automation"}]}
   ],
   "web": [
