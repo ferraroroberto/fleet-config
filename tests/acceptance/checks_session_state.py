@@ -76,7 +76,67 @@ def _lib_detect_project_unit_checks() -> Tuple[int, int]:
     check("detect_project: no match for a path outside every prefix",
           name_of("E:/automation/unrelated-repo") is None)
 
+    _junction_detect_checks(check)
+
     return check.failures, check.total
+
+
+def _make_dir_link(link: Path, target: Path) -> None:
+    """A directory junction on Windows (the fleet-root shape, no privilege needed),
+    a symlink elsewhere."""
+    if sys.platform == "win32":
+        import _winapi  # no spawn: a `mklink` subprocess would count against the unit's spawn budget
+
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+def _junction_detect_checks(check: _Checker) -> None:
+    """`detect_project` routes a cwd and a `cwd_prefix` that name the same folder
+    through a junction to the same project, in both directions (fleet-config#2167)."""
+    import _lib
+
+    tmp = Path(tempfile.mkdtemp(prefix="detect-junction-"))
+    link = tmp / "alias"
+    try:
+        real_root = tmp / "real"
+        (real_root / "fleet-config").mkdir(parents=True)
+        (real_root / "app-launcher").mkdir()
+        _make_dir_link(link, real_root)
+
+        def registry_for(root: Path) -> Any:
+            return _lib.Registry(
+                projects=[
+                    _lib.ProjectConfig(
+                        name=name, cwd_prefix=root / name, webapp_port=None,
+                        tray_cmd=None, restart_cmd=None, api_version_path=None, extra={},
+                    )
+                    for name in ("fleet-config", "app-launcher")
+                ],
+                globals=_lib.GlobalConfig(never_kill_ports=()),
+            )
+
+        def name_of(cwd: Path, registry: Any) -> Any:
+            project = _lib.detect_project(cwd, registry)
+            return project.name if project else None
+
+        via_alias = registry_for(link)  # prefixes spelled E:-style, cwd arrives C:-style
+        via_real = registry_for(real_root)  # prefixes spelled C:-style, cwd arrives E:-style
+        check("detect_project: real-path cwd routes to a project registered by its junction alias",
+              name_of(real_root / "fleet-config", via_alias) == "fleet-config")
+        check("detect_project: nested real-path cwd routes through the junction alias",
+              name_of(real_root / "app-launcher" / "sub", via_alias) == "app-launcher")
+        check("detect_project: junction-alias cwd routes to a project registered by its real path",
+              name_of(link / "fleet-config", via_real) == "fleet-config")
+        check("detect_project: real-path sibling worktree routes through the junction alias",
+              name_of(real_root / "fleet-config-wt-7", via_alias) == "fleet-config")
+        check("detect_project: a real-path cwd matching no project stays unmatched",
+              name_of(real_root / "unrelated", via_alias) is None)
+    finally:
+        if link.exists() or link.is_symlink():
+            os.rmdir(link)  # removes the link only, never the target's contents
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _repo_chief_registry(dest: Path) -> Dict[str, str]:

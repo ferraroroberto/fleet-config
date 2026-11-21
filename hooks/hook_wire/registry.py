@@ -19,7 +19,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 try:
     import tomllib  # Python 3.11+
@@ -175,11 +175,19 @@ def _strip_worktree_suffix(normalized_path: str) -> str:
     return "/".join(_WORKTREE_SUFFIX_RE.sub("", segment) for segment in normalized_path.split("/"))
 
 
-def _match_project(cwd_norm: str, projects: List[ProjectConfig]) -> Optional[ProjectConfig]:
+def _real_normalize(p: str) -> str:
+    """`_normalize` of the path's real location, so a junction or symlink and its
+    target compare equal. A path that does not exist resolves as far as it can."""
+    return _normalize(os.path.realpath(p))
+
+
+def _match_project(
+    cwd_norm: str, projects: List[ProjectConfig], norm: Callable[[str], str] = _normalize
+) -> Optional[ProjectConfig]:
     best: Optional[ProjectConfig] = None
     best_len = -1
     for project in projects:
-        pref_norm = _normalize(str(project.cwd_prefix))
+        pref_norm = norm(str(project.cwd_prefix))
         if cwd_norm == pref_norm or cwd_norm.startswith(pref_norm + "/"):
             if len(pref_norm) > best_len:
                 best = project
@@ -194,14 +202,23 @@ def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optio
     `-wt-<N>`-shaped segment still matches directly; only falls back to a
     worktree-suffix-stripped retry when the raw path matches nothing, so a
     `<repo>-wt-<N>` sibling worktree resolves to the same project as its
-    primary checkout.
+    primary checkout. The last resort compares both sides on real paths, so a
+    session started behind a junction (`C:/automation/<repo>`) routes to the
+    project registered under its alias (`E:/automation/<repo>`) and vice versa.
     """
     reg = registry or load_registry()
     cwd_norm = _normalize(str(cwd_path))
     match = _match_project(cwd_norm, reg.projects)
     if match is not None:
         return match
-    return _match_project(_strip_worktree_suffix(cwd_norm), reg.projects)
+    match = _match_project(_strip_worktree_suffix(cwd_norm), reg.projects)
+    if match is not None:
+        return match
+    real_norm = _real_normalize(str(cwd_path))
+    match = _match_project(real_norm, reg.projects, _real_normalize)
+    if match is not None:
+        return match
+    return _match_project(_strip_worktree_suffix(real_norm), reg.projects, _real_normalize)
 
 
 # A ping's intent category → the projects.toml chat key that routes it.
