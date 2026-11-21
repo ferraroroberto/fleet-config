@@ -107,6 +107,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a tray restart passes only when a new process serves HEAD -- the verdict table and `launch -Restart` "
      "against stub version servers, so a surviving old process and an unreadable identity never read as a "
      "pass (fleet-config#1975)"),
+    ("tray_lifecycle_spelling", "repo/test_tray_lifecycle_spelling.py",
+     "detect and reclaim own a process under either drive spelling and slash style but never a sibling "
+     "checkout or another repo, a surviving holder fails the reclaim, and a restart that leaves the "
+     "session-host's port out never touches it (fleet-config#2187)"),
     ("shell_parse", "hooks/test_shell_parse.py",
      "the shell guards' three tokeniser splits, pinned in tables to what "
      "each guard read before they moved into one `_lib` home, so the move "
