@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -274,16 +275,43 @@ def _pi_adapter_cases(check: _Checker, rows: Callable[[], Dict[str, Any]], env: 
           and codex2_after.get("cwd") == pi2_row.get("cwd") == str(tmp))
 
 
-# What "returns promptly" grants a Codex hook's own work. The interpreter's
-# start is timed separately and added on top: on a loaded box a bare start of
-# the venv interpreter alone took 3-5 s, so a flat 5 s bound judged the box and
-# not the hook, while a hook that really hangs still blows this budget
-# (fleet-config#1069).
+# What "returns promptly" grants a Codex hook's own work. The clock starts when
+# the hook's interpreter is ready, in the same run: a separately timed no-op
+# start missed a load spike that landed only on the hook's own start, so the
+# check judged the box and not the hook, while a hook that really hangs still
+# blows this budget.
 _CODEX_HOOK_WORK_BUDGET_SECONDS = 5.0
 # The synthetic hang outlasts any bound, so a check that waited it out is plainly red;
 # the report margin covers the job teardown and pipe drain (#1073).
 _SYNTHETIC_HANG_SECONDS = 60
 _HANG_REPORT_MARGIN_SECONDS = 5.0
+# An injected start delay longer than the whole work budget: a check that still
+# charged the interpreter's start to the hook would time out on it.
+_SLOW_START_SECONDS = _CODEX_HOOK_WORK_BUDGET_SECONDS + 1.0
+# Imported by the hook's interpreter once its own start is done, from a temp dir
+# put first on PYTHONPATH for the smoke run only: the marker it drops is the
+# readiness signal the work budget counts from. The optional delay stands in,
+# deterministically, for a loaded box's slow start. It first runs the next
+# `sitecustomize.py` on the path, so the gate's spawn probe still counts the
+# hook's own spawns instead of being shadowed.
+_READY_SITECUSTOMIZE = """
+import importlib.util, os, sys, time
+_here = os.path.dirname(os.path.abspath(__file__))
+for _entry in sys.path:
+    _next = os.path.join(_entry or ".", "sitecustomize.py")
+    if os.path.abspath(_entry or ".") != _here and os.path.isfile(_next):
+        _spec = importlib.util.spec_from_file_location("_chained_sitecustomize", _next)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        globals().update({k: v for k, v in vars(_mod).items() if not k.startswith("__")})
+        break
+_delay = float(os.environ.get("FLEET_TEST_HOOK_START_DELAY") or 0)
+if _delay:
+    time.sleep(_delay)
+_ready = os.environ.get("FLEET_TEST_HOOK_READY_FILE")
+if _ready and not os.path.exists(_ready):
+    open(_ready, "w").close()
+"""
 
 
 def _pid_alive(pid: int) -> bool:
@@ -307,87 +335,108 @@ def _pid_alive(pid: int) -> bool:
 _INTERPRETER_START_CAP_SECONDS = 60
 
 
-def _interpreter_start_seconds(command: str, env: Dict[str, str]) -> Optional[float]:
-    """Seconds the command's interpreter takes to start and exit doing nothing.
-
-    Run through the same shell with the same environment just before the hook,
-    so the baseline pays every cost the hook's run pays except the hook itself.
-    None when the no-op start could not be measured.
-    """
-    interpreter = command.split()[0]
-    started = time.monotonic()
-    try:
-        res = subprocess.run(
-            f"{interpreter} -c pass",
-            capture_output=True,
-            text=True,
-            timeout=_INTERPRETER_START_CAP_SECONDS,
-            env=env,
-            shell=True,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    if res.returncode != 0:
-        return None
-    return time.monotonic() - started
-
-
-def _run_in_job(command: str, env: Dict[str, str], stdin_text: str,
-                timeout: float) -> Optional[subprocess.CompletedProcess]:
-    """Run a shell command whose whole process tree ends at `timeout`; None when it timed out.
+def _start_in_job(command: str, env: Dict[str, str]) -> Tuple[subprocess.Popen, Any]:
+    """Start a shell command whose whole process tree a timeout can end; returns (proc, job).
 
     `subprocess.run(shell=True, timeout=...)` kills only `cmd.exe` on Windows: the
     venv launcher and its base interpreter keep the output pipes open, so the call
     returns only when the hang ends by itself (fleet-config#1073). Here the shell
     starts suspended inside a kill-on-close job object (`process_scope`'s, the one
     the runner suites own their launches with), so every descendant is a member
-    from birth, and a timeout terminates the whole job before draining the pipes.
+    from birth. Off Windows the job is None and the process group stands in.
     """
     if sys.platform != "win32":
         proc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
-        try:
-            out, err = proc.communicate(stdin_text, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, 9)
-            proc.communicate()
-            return None
-        return subprocess.CompletedProcess(command, proc.returncode, out, err)
+        return proc, None
     sys.path.insert(0, str(REPO / "skills" / "_lib"))
     from scheduled.process_scope import _WindowsJob  # noqa: E402
     job = _WindowsJob()
+    proc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, env=env,
+                            creationflags=0x00000004)  # CREATE_SUSPENDED: joined before it runs
     try:
-        proc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, env=env,
-                                creationflags=0x00000004)  # CREATE_SUSPENDED: joined before it runs
-        try:
-            job.assign(proc)
-            job.resume(proc)
-        except OSError:
-            proc.kill()
-            proc.communicate()
-            raise
-        try:
-            out, err = proc.communicate(stdin_text, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            job.terminate()
-            proc.communicate()
-            return None
-        return subprocess.CompletedProcess(command, proc.returncode, out, err)
+        job.assign(proc)
+        job.resume(proc)
+    except OSError:
+        proc.kill()
+        proc.communicate()
+        job.close()
+        raise
+    return proc, job
+
+
+def _run_in_job(command: str, env: Dict[str, str], stdin_text: str, ready_file: Path,
+                budget: float) -> Tuple[str, Optional[subprocess.CompletedProcess], float]:
+    """Run a command, bounding its work from readiness; returns (outcome, result, start_s).
+
+    `outcome` is ``done``, ``timeout`` (still running `budget` seconds after
+    `ready_file` appeared, so the whole tree is terminated before the pipes are
+    drained) or ``not_ready`` (no marker within the start cap, or the command
+    ended without one). `start_s` is how long readiness took.
+    """
+    proc, job = _start_in_job(command, env)
+    try:
+        streams: Dict[str, str] = {}
+        reader = threading.Thread(
+            target=lambda: streams.update(zip(("out", "err"), proc.communicate(stdin_text))),
+            daemon=True,
+        )
+        started = time.monotonic()
+        reader.start()
+        ready_at: Optional[float] = None
+        outcome = "done"
+        while reader.is_alive():
+            now = time.monotonic()
+            if ready_at is None and ready_file.exists():
+                ready_at = now
+            if ready_at is None and now - started > _INTERPRETER_START_CAP_SECONDS:
+                outcome = "not_ready"
+                break
+            if ready_at is not None and now - ready_at > budget:
+                outcome = "timeout"
+                break
+            reader.join(0.05)
+        if reader.is_alive():
+            if job is not None:
+                job.terminate()
+            else:
+                os.killpg(proc.pid, 9)
+            reader.join()
+        elif ready_at is None and ready_file.exists():
+            ready_at = time.monotonic()  # it got ready and finished between two polls
+        start_s = (ready_at if ready_at is not None else time.monotonic()) - started
+        if outcome == "done" and ready_at is None:
+            outcome = "not_ready"
+        result = subprocess.CompletedProcess(command, proc.returncode,
+                                             streams.get("out", ""), streams.get("err", ""))
+        return outcome, (result if outcome == "done" else None), start_s
     finally:
-        job.close()  # kill-on-close: nothing the command started outlives the check
+        if job is not None:
+            job.close()  # kill-on-close: nothing the command started outlives the check
 
 
-def _codex_hook_smoke_failure(command: str, env: Dict[str, str]) -> Optional[str]:
+def _codex_hook_smoke_failure(command: str, env: Dict[str, str],
+                              start_delay: float = 0.0) -> Optional[str]:
     """Drive one configured hook with a minimal payload; None when it returned promptly."""
-    baseline = _interpreter_start_seconds(command, env)
-    if baseline is None:
-        return f"{command} -> not confirmed: a no-op start of its interpreter did not complete"
-    bound = baseline + _CODEX_HOOK_WORK_BUDGET_SECONDS
-    res = _run_in_job(command, env, "{}", bound)
-    if res is None:
+    with tempfile.TemporaryDirectory(prefix="codex_ready_") as tmp:
+        site_dir = Path(tmp)
+        (site_dir / "sitecustomize.py").write_text(_READY_SITECUSTOMIZE, encoding="utf-8")
+        ready_file = site_dir / "ready"
+        run_env = dict(env)
+        run_env["PYTHONPATH"] = os.pathsep.join(
+            p for p in (str(site_dir), env.get("PYTHONPATH", "")) if p)
+        run_env["FLEET_TEST_HOOK_READY_FILE"] = str(ready_file)
+        if start_delay:
+            run_env["FLEET_TEST_HOOK_START_DELAY"] = str(start_delay)
+        outcome, res, start_s = _run_in_job(command, run_env, "{}", ready_file,
+                                            _CODEX_HOOK_WORK_BUDGET_SECONDS)
+    if outcome == "not_ready":
+        return f"{command} -> not confirmed: its interpreter never signalled readiness"
+    if outcome == "timeout" or res is None:
+        bound = start_s + _CODEX_HOOK_WORK_BUDGET_SECONDS
         return (f"{command} -> timed out after {bound:.1f}s (interpreter start "
-                f"{baseline:.1f}s + {_CODEX_HOOK_WORK_BUDGET_SECONDS:.0f}s budget)")
+                f"{start_s:.1f}s + {_CODEX_HOOK_WORK_BUDGET_SECONDS:.0f}s budget)")
     if res.returncode != 0:
         return f"{command} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()}"
     return None
@@ -480,6 +529,17 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "\n".join(smoke_failures),
     )
 
+    # A loaded box's slow start, injected before readiness and longer than the
+    # whole work budget, is not charged to a hook that then returns at once.
+    interpreter = commands[0].split()[0] if commands else str(PYTHON)
+    slow_start = _codex_hook_smoke_failure(f"{interpreter} -c pass", env,
+                                           start_delay=_SLOW_START_SECONDS)
+    check(
+        "codex_hooks: a slow interpreter start is not charged to the hook's work budget",
+        slow_start is None,
+        slow_start or "",
+    )
+
     _codex_hung_hook_cases(check, commands, env)
 
     return check.failures, check.total
@@ -498,11 +558,11 @@ def _codex_hung_hook_cases(check: _Checker, commands: List[str], env: Dict[str, 
         started = time.monotonic()
         failure = _codex_hook_smoke_failure(hang, env) or ""
         elapsed = time.monotonic() - started
-        # The call also pays the no-op baseline run before the hook's own bound.
+        # The reported bound already counts the interpreter's start.
         m = re.search(r"timed out after ([0-9.]+)s \(interpreter start ([0-9.]+)s", failure)
         check(
             "codex_hooks: a hung hook is reported at its bound, not when the hang ends",
-            m is not None and elapsed <= float(m.group(1)) + float(m.group(2)) + _HANG_REPORT_MARGIN_SECONDS,
+            m is not None and elapsed <= float(m.group(1)) + _HANG_REPORT_MARGIN_SECONDS,
             f"elapsed {elapsed:.1f}s for {failure!r}",
         )
         pid = int(pid_file.read_text(encoding="utf-8")) if pid_file.is_file() else None
