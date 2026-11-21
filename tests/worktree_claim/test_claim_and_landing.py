@@ -470,6 +470,39 @@ try:
     # junctions (#647).
     check(sp.service_state(Path("E:/automation/fleet-config"), declaring)[0] is True,
           "service_state: registered with no tray_cmd still lands (#647 regression guard)")
+
+    # The fleet root is a junction, so the table spells a repo under the alias
+    # while the checkout resolves under the real folder (and the reverse); a
+    # string-only compare read that as "not declared" and refused every landing.
+    _real_root = _toml_base / "real"
+    (_real_root / "app-launcher").mkdir(parents=True)
+    (_real_root / "fleet-config").mkdir()
+    _alias_root = _toml_base / "alias"
+    if sys.platform == "win32":
+        import _winapi  # no spawn: `mklink` would count against the unit's spawn budget
+
+        _winapi.CreateJunction(str(_real_root), str(_alias_root))
+    else:
+        os.symlink(_real_root, _alias_root, target_is_directory=True)
+    for _label, _table_root, _repo_root in (("real-path repo, alias entry", _alias_root, _real_root),
+                                            ("alias repo, real-path entry", _real_root, _alias_root)):
+        _junction_toml = _toml_base / "junction.toml"
+        _junction_toml.write_text(
+            "[app-launcher]\n"
+            f'cwd_prefix = "{(_table_root / "app-launcher").as_posix()}"\n'
+            'webapp_port = 8445\ntray_cmd = "tray.bat"\napi_version_path = "/api/version"\n'
+            "[fleet-config]\n"
+            f'cwd_prefix = "{(_table_root / "fleet-config").as_posix()}"\n',
+            encoding="utf-8")
+        check(sp.declared_service(_repo_root / "app-launcher", _junction_toml)
+              == (True, 8445, "/api/version", ""),
+              f"declared_service: {_label} finds the entry through the junction")
+        check(sp.declared_service(_repo_root / "fleet-config", _junction_toml)[0] is False,
+              f"declared_service: {_label} keeps a no-tray_cmd entry a known absence")
+        ok, reason = sp.service_state(_repo_root / "task-os", _junction_toml)
+        check(ok is False and "not declared in hooks/projects.toml" in reason,
+              f"service_state: {_label} still reports a truly absent repo as undeclared (got {reason!r})")
+    os.rmdir(_alias_root)  # drops the junction itself, never its target's contents
 finally:
     shutil.rmtree(_toml_base, ignore_errors=True)
 
