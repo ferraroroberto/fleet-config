@@ -19,14 +19,23 @@ establish a target or list the tree. Here 3 fails as NOT CONFIRMED, as does ever
 other non-zero exit. A probe without its snapshot is exit 3 too, so a snapshot
 that failed can never let the probe pass.
 
+Live hook state (`hooks/state/`, which `~/.claude/hooks` resolves to) is excluded
+from the probe in `.fleet.toml`: running agent sessions write it during a primary-checkout
+run. The exclusion alone would hide a test that leaks into the state dir, so
+`state_dir_redirected` points the run's own `CLAUDE_HOOKS_STATE_DIR` at
+`hooks/state/gate-run/`, a folder no live session writes, and `_runtime_write_probe_check`
+fails on any file left there. A leak through an in-process `state_dir()` is caught by name.
+
 Never path-routed: the bracket has to span the whole run to see what it wrote.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Tuple
+from typing import Iterator, Tuple
 
 from acceptance.shared import REPO, run_ratchet_script
 
@@ -36,10 +45,30 @@ SCRIPT = REPO / "scripts" / "runtime_write_ratchet.py"
 # code folder; the pid keeps two concurrent runs from sharing one.
 SNAPSHOT = Path(tempfile.gettempdir()) / f"fleet-config-runtime-write-snapshot-{os.getpid()}.json"
 
+# Under the live state dir, where the guarded writers allow a write, but a folder only this run writes.
+GATE_STATE_DIR = REPO / "hooks" / "state" / "gate-run"
+_STATE_ENV = "CLAUDE_HOOKS_STATE_DIR"
+
 # A few seconds over this tree. The bound only turns a hung child into NOT CONFIRMED.
 RUN_TIMEOUT_S = 120
 
 _NOT_CONFIRMED = "NOT CONFIRMED -- the facts could not be established, so nothing was checked"
+
+
+@contextmanager
+def state_dir_redirected() -> Iterator[Path]:
+    """Point this process's hooks-state dir at `GATE_STATE_DIR` for the run's checks, then
+    restore it: the box-load lock around the run releases through the live dir it was taken in."""
+    before = os.environ.get(_STATE_ENV)
+    shutil.rmtree(GATE_STATE_DIR, ignore_errors=True)  # a leak is reported by the run that made it
+    os.environ[_STATE_ENV] = str(GATE_STATE_DIR)
+    try:
+        yield GATE_STATE_DIR
+    finally:
+        if before is None:
+            os.environ.pop(_STATE_ENV, None)
+        else:
+            os.environ[_STATE_ENV] = before
 
 
 def classify_exit(code: int) -> Tuple[bool, str]:
@@ -83,5 +112,19 @@ def _runtime_write_snapshot_check() -> Tuple[int, int]:
     return run_ratchet_script(SCRIPT, RUN_TIMEOUT_S, classify_snapshot_exit, ("--snapshot", str(SNAPSHOT)))
 
 
+def gate_state_leaks() -> list[str]:
+    """Files the run's own checks left in `GATE_STATE_DIR`, relative to it."""
+    if not GATE_STATE_DIR.is_dir():
+        return []
+    return sorted(p.relative_to(GATE_STATE_DIR).as_posix() for p in GATE_STATE_DIR.rglob("*") if p.is_file())
+
+
 def _runtime_write_probe_check() -> Tuple[int, int]:
-    return run_ratchet_script(SCRIPT, RUN_TIMEOUT_S, classify_probe_exit, ("--probe", str(SNAPSHOT)))
+    failures, total = run_ratchet_script(SCRIPT, RUN_TIMEOUT_S, classify_probe_exit, ("--probe", str(SNAPSHOT)))
+    leaks = gate_state_leaks()
+    if leaks:
+        # Part of the same unit, so the probe stays one check: a leak fails it whatever the script said.
+        print("FAIL  runtime_write_ratchet: the run left a file in its own hooks-state dir")
+        print("\n".join(f"        | hooks/state/gate-run/{leak}" for leak in leaks))
+        failures = max(failures, 1)
+    return failures, total
