@@ -35,7 +35,7 @@ from chief_plan import (
     update,
 )
 
-from chief import journal
+from chief import journal, lane_rows
 
 
 def _summary(doc: Dict[str, Any]) -> str:
@@ -89,13 +89,18 @@ def _lane_mutation(args: argparse.Namespace, events: List[JournalEvent]) -> Call
     return mutate
 
 
-def _set_mutation(args: argparse.Namespace, events: List[JournalEvent]) -> Callable[[Dict[str, Any]], None]:
+def _set_mutation(args: argparse.Namespace, events: List[JournalEvent],
+                  notes: List[str]) -> Callable[[Dict[str, Any]], None]:
     def mutate(doc: Dict[str, Any]) -> None:
         repo, local = split_ref(args.ref)
         row = next((r for r in doc["queue"] if r["repo"] == repo and r["ref"] == local), None)
         prior = row["status"] if row else None
         set_item(doc, args.ref, args.status, args.note, args.title, args.model, args.kind,
                  args.brief, args.after)  # raises for a ref that is not in the queue
+        if args.status in (QueueStatus.MERGED, QueueStatus.PARKED):
+            # A lane row says a worker is on the repo; the item it was on is done or shelved.
+            dropped = lane_rows.drop_for_item(doc, repo, local)
+            notes.append(f"PLAN_LANE=dropped repo={repo}" if dropped else "PLAN_LANE=none")
         if row is None or row["status"] == prior:
             return
         if row["status"] == QueueStatus.MERGED:
@@ -127,9 +132,9 @@ def _unwait_mutation(args: argparse.Namespace, events: List[JournalEvent]) -> Ca
 
 
 def _mutation(action: str, args: argparse.Namespace, added: List[str],
-              events: List[JournalEvent]) -> Callable[[Dict[str, Any]], None]:
+              events: List[JournalEvent], notes: List[str]) -> Callable[[Dict[str, Any]], None]:
     """The one document mutation for a writing `plan` action; the transitions it makes are
-    appended to `events` for the journal."""
+    appended to `events` for the journal, and extra result lines to `notes`."""
     def add(doc: Dict[str, Any]) -> None:
         add_item(doc, args.ref, args.title, args.status, args.note, args.at, args.model, args.kind,
                  args.brief, args.after, args.children)
@@ -147,7 +152,7 @@ def _mutation(action: str, args: argparse.Namespace, added: List[str],
     return {
         "lane": lambda: _lane_mutation(args, events),
         "add": lambda: add,
-        "set": lambda: _set_mutation(args, events),
+        "set": lambda: _set_mutation(args, events, notes),
         "wait": lambda: _ask_mutation(lambda d: add_waiting(d, args.text, args.ref), added, events),
         "ask": lambda: _ask_mutation(lambda d: _ask(d, args), added, events),
         "unwait": lambda: _unwait_mutation(args, events),
@@ -166,11 +171,14 @@ def _run(args: argparse.Namespace) -> int:
         return 0
     added: List[str] = []
     events: List[JournalEvent] = []
-    doc = update(path, _mutation(action, args, added, events), reset=action == "clear")
+    notes: List[str] = []
+    doc = update(path, _mutation(action, args, added, events, notes), reset=action == "clear")
     # The plan is already written; a journal failure must not turn it into a failed command.
     for kind, text, ref in events:
         journal.log_transition(journal.journal_for_plan(path), kind, text, ref)
     print(_summary(doc) + "".join(f" id={item}" for item in added))
+    for note in notes:
+        print(note)
     return 0
 
 

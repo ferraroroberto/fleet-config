@@ -164,6 +164,8 @@ def _add_act_commands(sub: argparse._SubParsersAction) -> None:
     st = sub.add_parser("stop", help="stop a live session (quit by default)")
     st.add_argument("sid")
     st.add_argument("--kill", action="store_true")
+    st.add_argument("--plan-file", default=None,
+                    help="override the plan path (tests); default hooks/state/chief-plan.json")
     st.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     st.set_defaults(func=commands.cmd_stop)
 

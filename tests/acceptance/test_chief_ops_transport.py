@@ -19,8 +19,10 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -33,6 +35,9 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 import chief_ops as co  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
+
+# `stop` reads the chief plan; point it at an empty state dir so the live plan is never touched.
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="chief_transport_state_")
 
 _h = CheckHarness()
 check = _h.check
@@ -173,8 +178,8 @@ check(code == 2 and out.startswith("UNREACHABLE=") and "UNCONFIRMED" not in out 
 srv = Launcher(boards=(ALIVE,))
 try:
     code, out, err = run("stop", SID, "--base-url", srv.url)
-    check(code == 0 and out == f"STOPPED sid={SID} mode=quit\n" and err == "",
-          f"stop: the success line is unchanged (got {code}, {out!r}, {err!r})")
+    check(code == 0 and out == f"STOPPED sid={SID} mode=quit\nPLAN_LANE=none\n" and err == "",
+          f"stop: the success line is unchanged, then the plan-lane line (got {code}, {out!r}, {err!r})")
     code, out, _ = run("board", "--base-url", srv.url)
     check(code == 0 and "fleet-config: working" in out and err == "" and "UNCONFIRMED" not in out,
           f"board: the success output is unchanged (got {out!r})")
