@@ -24,6 +24,7 @@ def _load_root_module(name: str):
     return module
 
 
+config_edit = _load_root_module("config_edit")
 policy = _load_root_module("codex_model_policy")
 codex_statusline = _load_root_module("codex_statusline")
 session_retention = _load_root_module("session_retention")
@@ -298,6 +299,34 @@ class MergeStatusLineTests(unittest.TestCase):
         self.assertIn("$ConfigureCodexStatusline", scoped_guard)
         self.assertIn("$psArgs += '-ConfigureCodexStatusline'", installer)
         self.assertIn("(Join-Path $RepoRoot 'codex_statusline.py') --apply", installer)
+
+
+class MergeTableTests(unittest.TestCase):
+    """The one set-or-drop editor both `codex_model_policy` and `session_retention` call."""
+
+    def test_missing_key_lands_after_the_last_body_line_not_after_the_blank(self) -> None:
+        updated = config_edit.merge_table("[agents]\nx = 1\n\n[tui]\na = 1\n", "agents", {"y": "2"})
+        self.assertEqual(updated, "[agents]\nx = 1\ny = 2\n\n[tui]\na = 1\n")
+
+    def test_dotted_top_level_key_is_rewritten_in_place_with_its_comment(self) -> None:
+        updated = config_edit.merge_table("agents.x = 5 # keep\nz = 1\n", "agents", {"x": "2"})
+        self.assertEqual(updated, "agents.x = 2 # keep\nz = 1\n")
+
+    def test_drop_removes_plain_and_dotted_keys_and_new_table_follows_a_blank_line(self) -> None:
+        updated = config_edit.merge_table("history.max_bytes = 1\r\nother = 2\r\n", "history", {"p": '"s"'}, drop=("max_bytes",))
+        self.assertEqual(updated, "other = 2\r\n\r\n[history]\r\np = \"s\"\r\n")
+
+    def test_no_writer_re_reads_toml_lines_itself(self) -> None:
+        # A second line-based editor drifts from this one (CRLF, dotted keys), so
+        # only `config_edit` may hold the table and assignment regexes.
+        for name in ("codex_model_policy", "session_retention"):
+            source = (ROOT / f"{name}.py").read_text(encoding="utf-8")
+            self.assertNotIn("ASSIGNMENT_RE", source, name)
+            self.assertNotIn("TABLE_RE", source, name)
+
+    def test_repeated_managed_key_is_collapsed_and_unterminated_last_line_is_closed(self) -> None:
+        updated = config_edit.merge_table("[t]\nk = 1\nk = 2", "t", {"k": "3", "n": "4"})
+        self.assertEqual(updated, "[t]\nk = 3\nn = 4\n")
 
 
 class SessionRetentionTests(unittest.TestCase):

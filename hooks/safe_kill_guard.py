@@ -2,16 +2,13 @@
 
 Triggers on `PreToolUse` for `Bash` and `PowerShell`. Blocks:
 
-  * Blanket `python(w?)` kills that would nuke unrelated sister hubs:
-      - `Stop-Process -Name python` / `pythonw`
-      - `taskkill /IM python.exe` / `pythonw.exe`
-      - `Get-Process python* | Stop-Process`
-      - `pkill -f python` / `killall python`
-
   * Any kill selected by process name or command line, which also stops other
     lanes' processes: `Stop-Process -Name <any>`, `Get-Process <name> | Stop-Process`,
     a `Get-CimInstance Win32_Process` filter on name/command line feeding
     `Stop-Process` / `Terminate`, `taskkill /IM`, `pkill`, `killall`, `kill $(pgrep …)`.
+    That includes the blanket `python(w?)` kill that would nuke the sister hubs
+    (`pkill -f python`, `taskkill /IM python.exe`); one reader, in command
+    position, owns them all.
 
   * Port-scoped kills targeting a port in `[global].never_kill_ports`
     (sister hubs like :8000 LLM hub, :8090 whisper, :8446 session-host).
@@ -51,23 +48,6 @@ from typing import Callable, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-
-# Blanket-python-kill patterns, split by which shell can actually execute them.
-# A `Stop-Process` literal inside a Bash `echo '...'` is a string, not a kill -
-# only flag PowerShell patterns when the tool is PowerShell, and vice-versa for
-# Bash patterns. `taskkill` is valid in either shell.
-POWERSHELL_BLANKET_KILL = (
-    r"\bStop-Process\b[^\n|;]*-Name\s+['\"]?pythonw?['\"]?(?!\.exe)",
-    r"\bStop-Process\b[^\n|;]*-Name\s+['\"]?python['\"]?\b",
-    r"\bGet-Process\b[^\n|;]*\bpython[w\*]*\b[^\n]*\|\s*Stop-Process",
-)
-BASH_BLANKET_KILL = (
-    r"\bpkill\b[^\n]*\bpython(?:3|w)?\b",
-    r"\bkillall\b[^\n]*\bpython(?:3|w)?\b",
-)
-COMMON_BLANKET_KILL = (
-    r"\btaskkill\b[^\n]*\s/IM\s+pythonw?\.exe",
-)
 
 # ----- git safety bypasses -----
 # Flagged only as arguments of a real `git` invocation at command position, so a
@@ -621,38 +601,24 @@ def main() -> None:
     if not cmd:
         _lib.allow()
 
-    # 1) Blanket python kills - dispatch by shell so an `echo` of a kill string
-    #    in the other shell doesn't false-positive. A harness with a single,
-    #    shell-agnostic terminal tool (e.g. Grok or Codex) gets *both* sets: we cannot observe
-    #    which shell it will use, and a missed blanket kill costs far more than
-    #    an over-eager block on an echoed kill string.
+    # A harness with a single, shell-agnostic terminal tool (e.g. Grok or Codex) is
+    # marked ambiguous: the command is read in command position either way, and
+    # the port-scoped patterns below apply for both shells. A missed kill costs far
+    # more than an over-eager block.
     tn = _lib.tool_name(payload)
     ambiguous = _lib.shell_is_ambiguous(payload)
     shell_note = " Shell unknown; checked PowerShell and Bash safety rules." if ambiguous else ""
     if ambiguous:
         _lib.logger.info("safe_kill_guard: shell unknown; applying both shell rule sets")
-    patterns: list[str] = list(COMMON_BLANKET_KILL)
-    if tn == "PowerShell" or ambiguous:
-        patterns.extend(POWERSHELL_BLANKET_KILL)
-    if tn == "Bash" or ambiguous:
-        patterns.extend(BASH_BLANKET_KILL)
 
-    for pattern in patterns:
-        if re.search(pattern, cmd, re.IGNORECASE):
-            _lib.block(
-                "Blocked: blanket python(w?) kill detected (matched: " + pattern + "). "
-                "This would also kill sister hubs (local-llm-hub :8000, whisper :8090, "
-                "session-host :8446). Use port-scoped kill instead: "
-                "`Get-NetTCPConnection -LocalPort <PORT> | Select -ExpandProperty OwningProcess | "
-                "ForEach-Object { Stop-Process -Id $_ -Force }`." + shell_note
-            )
-
-    # 1b) Any other kill selected by process name or command line
+    # 1) Any kill selected by process name or command line, `python`/`pythonw` included
     by_name = named_kill(cmd)
     if by_name:
         _lib.block(
             "Blocked: kill selected by process name or command line (" + by_name + "). "
-            "It also stops every other process that matches, other lanes' servers included. "
+            "It also stops every other process that matches, other lanes' servers included "
+            "(a blanket python kill takes out the sister hubs: local-llm-hub :8000, whisper :8090, "
+            "session-host :8446). "
             "Record the PID of each throwaway process you start and stop only those: "
             "`Stop-Process -Id <pid>` / `taskkill /PID <pid>` / `kill <pid>`; "
             "for your own port, `Get-NetTCPConnection -LocalPort <PORT> | "

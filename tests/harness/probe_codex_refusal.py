@@ -38,11 +38,9 @@ with redirect_stdout(out), redirect_stderr(err):
     try:
         if POLICY == "shell-safety":
             import safe_kill_guard
-            # The harmless marker exists ONLY in the PowerShell rule set.
-            # main() must choose that set from real normalized shell metadata.
-            safe_kill_guard.POWERSHELL_BLANKET_KILL = (r"\\bfleet_conformance_sentinel\\b",)
-            safe_kill_guard.BASH_BLANKET_KILL = ()
-            safe_kill_guard.COMMON_BLANKET_KILL = ()
+            # The harmless marker is the only thing named_kill reports, so the
+            # refusal that comes back is main()'s own, carrying its shell note.
+            safe_kill_guard.named_kill = lambda cmd: "fleet_conformance_sentinel" if "fleet_conformance_sentinel" in cmd else None
             _lib.read_stdin_json = lambda: payload
             safe_kill_guard.main()
         elif matched:

@@ -20,11 +20,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_edit import (  # noqa: E402
-    ASSIGNMENT_RE,
-    TABLE_RE,
     atomic_write,
     default_codex_config_path,
-    inline_comment,
+    merge_table,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
@@ -55,61 +53,6 @@ def default_policy_root() -> Path:
     return Path(__file__).resolve().parent / "hooks" / "agents" / "codex"
 
 
-def _line_ending(text: str) -> str:
-    return "\r\n" if "\r\n" in text else "\n"
-
-
-def _table_ranges(lines: list[str]) -> list[tuple[str | None, int, int]]:
-    """Return TOML table ranges, including the top-level range."""
-
-    headers = [(index, match.group(1).strip()) for index, line in enumerate(lines) if (match := TABLE_RE.match(line))]
-    ranges: list[tuple[str | None, int, int]] = [(None, 0, headers[0][0] if headers else len(lines))]
-    for index, (start, name) in enumerate(headers):
-        end = headers[index + 1][0] if index + 1 < len(headers) else len(lines)
-        ranges.append((name, start, end))
-    return ranges
-
-
-def _merge_table(text: str, table: str | None, values: dict[str, str]) -> str:
-    """Update one owned table, preserving every unrelated line byte-for-byte."""
-
-    lines = text.splitlines(keepends=True)
-    ranges = _table_ranges(lines)
-    target = next((item for item in ranges if item[0] == table), None)
-    newline = _line_ending(text)
-    if target is None:
-        if table is None:
-            raise PolicyError("top-level TOML range is unavailable")
-        suffix = "" if not text or text.endswith(("\n", "\r")) else newline
-        addition = f"{suffix}[{table}]{newline}" + "".join(f"{key} = {value}{newline}" for key, value in values.items())
-        return text + addition
-
-    _, start, end = target
-    body_start = start if table is None else start + 1
-    output: list[str] = []
-    seen: set[str] = set()
-    for index, line in enumerate(lines):
-        if body_start <= index < end and (match := ASSIGNMENT_RE.match(line)) and match.group(2) in values:
-            key = match.group(2)
-            if key not in seen:
-                comment = inline_comment(line)
-                suffix = f" {comment}" if comment else ""
-                line_end = "\r\n" if line.endswith("\r\n") else "\n"
-                output.append(f"{match.group(1)}{key} = {values[key]}{suffix}{line_end}")
-                seen.add(key)
-        else:
-            output.append(line)
-        # Also when the table's last line was itself a replaced managed key: the
-        # unseen keys still belong after it.
-        if index == end - 1:
-            output.extend(f"{key} = {value}{newline}" for key, value in values.items() if key not in seen)
-    if body_start == end:
-        insert_at = start + (0 if table is None else 1)
-        additions = [f"{key} = {value}{newline}" for key, value in values.items() if key not in seen]
-        output[insert_at:insert_at] = additions
-    return "".join(output)
-
-
 def merge_policy(text: str, catalog_path: Path, policy_root: Path) -> tuple[str, tuple[str, ...]]:
     """Return config text reconciled with fleet-owned model-policy keys."""
 
@@ -118,18 +61,18 @@ def merge_policy(text: str, catalog_path: Path, policy_root: Path) -> tuple[str,
     except tomllib.TOMLDecodeError as exc:
         raise PolicyError(f"config.toml is not valid TOML: {exc}") from exc
     catalog = catalog_path.resolve().as_posix()
-    merged = _merge_table(text, None, {
+    merged = merge_table(text, None, {
         "model": json.dumps(MAIN_MODEL),
         "model_reasoning_effort": json.dumps(MAIN_EFFORT),
         "model_catalog_json": json.dumps(catalog),
     })
-    merged = _merge_table(merged, "agents", {
+    merged = merge_table(merged, "agents", {
         "default_subagent_model": json.dumps("gpt-5.6-terra"),
         "default_subagent_reasoning_effort": json.dumps("high"),
     })
     for role in ROLE_SPECS:
         role_path = (policy_root / "agents" / f"{role}.toml").resolve().as_posix()
-        merged = _merge_table(merged, f"agents.{role}", {
+        merged = merge_table(merged, f"agents.{role}", {
             "description": json.dumps(f"Fleet {role} tier; model and effort are versioned."),
             "config_file": json.dumps(role_path),
         })

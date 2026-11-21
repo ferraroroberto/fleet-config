@@ -5,7 +5,9 @@ edit a user-level config file in place. They share the atomic-write sequence
 and the line-oriented TOML table/assignment regexes, so both live here once —
 the third-caller rule from the global CLAUDE.md. The one quote- and
 comment-aware TOML scanner lives here too, and so does
-the `CODEX_HOME`-aware Codex config path all three resolve.
+the `CODEX_HOME`-aware Codex config path all three resolve. The two writers of
+plain `key = value` settings (`codex_model_policy.py`, `session_retention.py`)
+share `merge_table`, the one byte-preserving set-or-drop editor for them.
 """
 
 from __future__ import annotations
@@ -92,6 +94,82 @@ def inline_comment(line: str) -> str:
     kinds = classify(line)
     start = kinds.index(COMMENT) if COMMENT in kinds else -1
     return line[start:].rstrip("\r\n") if start >= 0 else ""
+
+
+def table_ranges(lines: list[str]) -> list[tuple[str | None, int, int]]:
+    """Return `(table, header_index, end)` for the top-level range (`table`
+    `None`, header index 0) and every `[table]` header, line by line."""
+    headers = [(index, match.group(1).strip()) for index, line in enumerate(lines) if (match := TABLE_RE.match(line))]
+    ranges: list[tuple[str | None, int, int]] = [(None, 0, headers[0][0] if headers else len(lines))]
+    for position, (start, name) in enumerate(headers):
+        end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
+        ranges.append((name, start, end))
+    return ranges
+
+
+def merge_table(text: str, table: str | None, values: dict[str, str], drop: tuple[str, ...] = ()) -> str:
+    """Set `key = value` for every `values` entry in `[table]` (`None` for the
+    top level) and delete every `drop` key, leaving every other byte as it was.
+
+    `values` holds already-rendered TOML values. A key is matched where it is
+    written plainly in the table or, for a named table, dotted at the top level
+    (`history.persistence = …`), and is rewritten under the name it was written
+    with, keeping its indent and inline comment. A repeated assignment of a
+    managed key is dropped. A missing key goes after the table's last
+    non-blank line, or into a new `[table]` at the end of the file. Line
+    endings follow the line replaced, else the file. A `drop` key's value must
+    fit on one line.
+    """
+    lines = text.splitlines(keepends=True)
+    newline = "\r\n" if "\r\n" in text else "\n"
+    ranges = table_ranges(lines)
+    target = next((item for item in ranges if item[0] == table), None)
+    # (first line, end, key prefix) of every place a key of this table can sit.
+    spans: list[tuple[int, int, str]] = []
+    if table is not None:
+        spans.append((0, ranges[0][2], f"{table}."))
+    header = body = end = -1
+    if target is not None:
+        _, header, end = target
+        body = header if table is None else header + 1
+        spans.append((body, end, ""))
+
+    output: list[str] = []
+    seen: set[str] = set()
+    anchor = 0
+    for index, line in enumerate(lines):
+        match = ASSIGNMENT_RE.match(line)
+        name = ""
+        if match:
+            name = next((match.group(2)[len(prefix):] for first, last, prefix in spans
+                         if first <= index < last and match.group(2).startswith(prefix)), "")
+        if name in drop or (name in values and name in seen):
+            continue
+        if name in values:
+            comment = inline_comment(line)
+            suffix = f" {comment}" if comment else ""
+            line_end = line[len(line.rstrip("\r\n")):] or newline
+            output.append(f"{match.group(1)}{match.group(2)} = {values[name]}{suffix}{line_end}")
+            seen.add(name)
+        else:
+            output.append(line)
+        if index == header and table is not None or body <= index < end and line.strip():
+            anchor = len(output)
+
+    missing = [f"{key} = {value}{newline}" for key, value in values.items() if key not in seen]
+    if not missing:
+        return "".join(output)
+    if target is None:
+        if output and not output[-1].endswith(("\n", "\r")):
+            output[-1] += newline
+        if output and output[-1].strip():
+            output.append(newline)
+        output.append(f"[{table}]{newline}")
+        anchor = len(output)
+    elif anchor and not output[anchor - 1].endswith(("\n", "\r")):
+        output[anchor - 1] += newline
+    output[anchor:anchor] = missing
+    return "".join(output)
 
 
 def atomic_write(path: Path, text: str) -> None:
