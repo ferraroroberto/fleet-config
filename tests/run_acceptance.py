@@ -180,6 +180,7 @@ from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
     _runtime_write_probe_check,
     _runtime_write_ratchet_check,
     _runtime_write_snapshot_check,
+    state_dir_redirected,
 )
 from acceptance.shared import seed_fleet_list_env  # noqa: E402
 from acceptance.single_home_gate import _single_home_unit_check  # noqa: E402
@@ -491,18 +492,26 @@ def _run_all() -> int:
     # The runtime write bracket spans every check, so a log or state file any of
     # them leaves under a code folder fails the probe by name.
     tally.run_unit(_runtime_write_snapshot_check)
-    _run_hook_checks(tally)
-    _run_guard_checks(tally)
-    _run_suite_checks(tally)
-    _run_repo_guards(tally)
-    _run_wiring_checks(tally)
-    # Last but the probe: it reads this run's live unit and spawn reports, so every other unit is in them.
+    # Every check but the last two runs with its in-process state dir redirected, so the run's own state
+    # writes are attributable and a live session's are not mistaken for them.
+    with state_dir_redirected():
+        _run_checks(tally)
+    # Last but the probe: it reads this run's live unit and spawn reports, so every other unit is in them,
+    # and the machine's unit ledger and coverage map, which live in the real state dir.
     tally.run_unit(_test_value_ratchet_check)
     tally.run_unit(_runtime_write_probe_check)
 
     print()
     print(f"Total: {tally.total} | Failed: {tally.failures} | Skipped: {tally.skipped}")
     return 0 if tally.failures == 0 else 1
+
+
+def _run_checks(tally: Tally) -> None:
+    _run_hook_checks(tally)
+    _run_guard_checks(tally)
+    _run_suite_checks(tally)
+    _run_repo_guards(tally)
+    _run_wiring_checks(tally)
 
 
 if __name__ == "__main__":

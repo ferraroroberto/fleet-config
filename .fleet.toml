@@ -194,6 +194,10 @@ enabled      = true
 baseline     = ".runtime-write-ratchet-baseline.json"
 # The repo-scope skills' Python lives under .claude/skills/, beside hooks/ and skills/.
 code_folders = ["hooks", "skills", "scripts", ".claude"]
+# hooks/state is the live hooks-state folder ~/.claude/hooks resolves to: running sessions write it, not the
+# suite. The gate points its own in-process state dir at hooks/state/gate-run and fails on any file left there,
+# so a leak is still caught (tests/acceptance/runtime_write/runtime_write_ratchet_gate.py).
+exclude      = ["hooks/state/**"]
 # Helpers whose every definition returns a home-, state- or temp-rooted path (checked against each return
 # expression), so a write through them lands outside the checkout and needs no marker.
 safe_calls   = ["_dedup_file", "_marker_path", "audit_record_path", "data_dir", "inbox_dir", "log_path", "run_dir", "run_dir_for", "sources_path", "state_dir", "state_file", "state_root", "waiters_dir"]

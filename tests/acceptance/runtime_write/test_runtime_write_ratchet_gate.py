@@ -24,9 +24,13 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/runti
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import shutil
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -59,12 +63,45 @@ assert_check_function(gate, "_runtime_write_probe_check", check, finding="lib/ru
 check(not gate.SNAPSHOT.resolve().is_relative_to(REPO.resolve()),
       f"the snapshot file sits outside the tree, got {gate.SNAPSHOT}")
 
+# Live hook state is excluded from the probe, and the run's redirected state dir is not.
+_cfg = tomllib.loads((REPO / ".fleet.toml").read_text(encoding="utf-8"))["runtime_write_ratchet"]
+check("hooks/state/**" in _cfg.get("exclude", []), "the live hook state dir is excluded from the probe")
+check(gate.GATE_STATE_DIR.is_relative_to(REPO / "hooks" / "state"),
+      "the gate state dir sits under the live state dir, where the guarded writers allow a write")
+
+_prior = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+with gate.state_dir_redirected() as _redirected:
+    check(os.environ.get("CLAUDE_HOOKS_STATE_DIR") == str(_redirected) == str(gate.GATE_STATE_DIR),
+          "the run's state dir is the gate state dir while redirected")
+check(os.environ.get("CLAUDE_HOOKS_STATE_DIR") == _prior, "the state dir env is restored after the run")
+
+# A file the run's own checks leave in the gate state dir fails the probe check naming it.
+_real_dir, _real_run = gate.GATE_STATE_DIR, gate.run_ratchet_script
+_tmp_state = Path(tempfile.mkdtemp(prefix="gate-state-"))
+try:
+    gate.GATE_STATE_DIR = _tmp_state
+    gate.run_ratchet_script = lambda *_a, **_k: (0, 1)
+    check(gate.gate_state_leaks() == [] and gate._runtime_write_probe_check() == (0, 1),
+          "an empty gate state dir leaves the probe passing")
+    (_tmp_state / "sub").mkdir()
+    (_tmp_state / "sub" / "leak.json").write_text("{}", encoding="utf-8")
+    check(gate.gate_state_leaks() == ["sub/leak.json"], f"a leaked file is named, got {gate.gate_state_leaks()}")
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        _counts = gate._runtime_write_probe_check()
+    check(_counts == (1, 1) and "sub/leak.json" in _buf.getvalue(),
+          f"a leaked gate state file fails the probe check naming it, got {_counts} {_buf.getvalue()!r}")
+finally:
+    gate.run_ratchet_script, gate.GATE_STATE_DIR = _real_run, _real_dir
+    shutil.rmtree(_tmp_state, ignore_errors=True)
+
 
 # ---- 3. end to end, the real script on a throwaway git tree ----
 
 _CONFIG = """[runtime_write_ratchet]
 enabled = true
 code_folders = ["lib"]
+exclude = ["lib/state/**"]
 """
 _BASE = """from pathlib import Path
 
@@ -104,12 +141,15 @@ try:
     code, out = run_ratchet(gate, tmp, "--snapshot", str(snap))
     check(code == 0, f"--snapshot records the code folders, got {code}: {out}")
     (tmp / "lib" / "run.log").write_text("left behind", encoding="utf-8")
+    # A live session writing the excluded state dir during the run is not the run's write.
+    (tmp / "lib" / "state" / "chief-waiters").mkdir(parents=True)
+    (tmp / "lib" / "state" / "chief-waiters" / "live.json").write_text("{}", encoding="utf-8")
     code, out = run_ratchet(gate, tmp, "--probe", str(snap))
-    check(code == 1 and "run.log" in out,
-          f"a file the run left under a code folder fails the probe naming it, got {code}: {out}")
+    check(code == 1 and "run.log" in out and "live.json" not in out,
+          f"a file the run left under a code folder fails the probe naming it, not live state, got {code}: {out}")
     (tmp / "lib" / "run.log").unlink()
     code, out = run_ratchet(gate, tmp, "--probe", str(snap))
-    check(code == 0, f"a run that left nothing passes the probe, got {code}: {out}")
+    check(code == 0, f"a run that left nothing but live state passes the probe, got {code}: {out}")
 
     # The passing probe deleted its snapshot: probing again cannot be confirmed.
     code, out = run_ratchet(gate, tmp, "--probe", str(snap))
