@@ -36,7 +36,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import fleet_repo_scan  # noqa: E402
@@ -108,6 +108,26 @@ SERVICE_PROBE_TIMEOUT = 5.0
 SERVICE_HTTP_TIMEOUT = 1.5
 
 
+def _plain_path(p: object) -> str:
+    return os.path.normcase(os.path.normpath(str(p)))
+
+
+def _real_path(p: object) -> str:
+    """The path's real location, so a junction and its target compare equal; a
+    path that does not exist resolves as far as it can."""
+    return os.path.normcase(os.path.realpath(str(p)))
+
+
+def _find_entry(tables: dict, repo: Path, norm: Callable[[object], str]):
+    """The `(name, table)` whose `cwd_prefix` equals `repo` under `norm`, else None."""
+    target = norm(repo)
+    for name, tbl in tables.items():
+        prefix = str(tbl.get("cwd_prefix", ""))
+        if prefix and norm(prefix) == target:
+            return name, tbl
+    return None
+
+
 def declared_service(
     repo: Path, projects_toml: Optional[Path] = None
 ) -> Tuple[bool, Optional[int], Optional[str], str]:
@@ -138,11 +158,14 @@ def declared_service(
         tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
     except (OSError, ValueError) as exc:
         return True, None, None, f"could not read hooks/projects.toml: {exc}"
-    target = os.path.normcase(os.path.normpath(str(repo)))
-    for name, tbl in tables.items():
-        prefix = os.path.normcase(os.path.normpath(str(tbl.get("cwd_prefix", ""))))
-        if prefix != target:
-            continue
+    # String match first; on no match, compare real paths so a checkout behind
+    # the fleet-root junction (`C:/automation/x`) finds its entry spelled via
+    # the alias (`E:/automation/x`), and the reverse.
+    entry = _find_entry(tables, repo, _plain_path)
+    if entry is None:
+        entry = _find_entry(tables, repo, _real_path)
+    if entry is not None:
+        name, tbl = entry
         if not tbl.get("tray_cmd"):
             return False, None, None, f"{name} declares no tray_cmd"
         port = tbl.get("webapp_port")
