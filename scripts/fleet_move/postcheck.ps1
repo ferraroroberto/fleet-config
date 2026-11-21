@@ -51,6 +51,9 @@ if (-not $py) { $py = Join-Path $Root 'fleet-config\.venv\Scripts\python.exe' }
 $backup = $BackupScript
 if (-not $backup) { $backup = Join-Path $Root 'fleet-config\hooks\backup_private.py' }
 $backupArgs = @($backup, '--dry-run', '--no-notify', '--json')
+# A script from another checkout (a worktree) would read that checkout's projects.toml,
+# which lacks the cut-over's [backup] change; the live one is the fleet's own.
+if ($BackupScript -and -not $BackupConfig) { $BackupConfig = Join-Path $Root 'fleet-config\hooks\projects.toml' }
 if ($BackupConfig) { $backupArgs += @('--config', $BackupConfig) }
 & $py @backupArgs | Out-Null
 $code = $LASTEXITCODE
@@ -58,9 +61,10 @@ $code = $LASTEXITCODE
 Write-Result ($code -eq 0) "backup dry-run exit $code (3 = destination shares the source volume)"
 
 if (-not $SkipApps) {
-    Add-Type -TypeDefinition 'public static class FleetMoveTrustLocal { public static bool Accept(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain ch, System.Net.Security.SslPolicyErrors e) { return true; } }' -ErrorAction SilentlyContinue
+    # The delegate is bound in C#: Windows PowerShell 5.1 cannot cast a PSMethod to RemoteCertificateValidationCallback.
+    Add-Type -TypeDefinition 'public static class FleetMoveTrustLocal { public static bool Accept(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain ch, System.Net.Security.SslPolicyErrors e) { return true; } public static void Install() { System.Net.ServicePointManager.ServerCertificateValidationCallback = Accept; } }' -ErrorAction SilentlyContinue
     # The launcher serves a self-signed certificate on loopback only.
-    [Net.ServicePointManager]::ServerCertificateValidationCallback = [Net.Security.RemoteCertificateValidationCallback] [FleetMoveTrustLocal]::Accept
+    [FleetMoveTrustLocal]::Install()
     $deadline = (Get-Date).AddSeconds($HealthWaitSeconds)
     $status = 'no answer'
     while ((Get-Date) -lt $deadline) {

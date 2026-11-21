@@ -41,6 +41,13 @@ param(
     # Dry-run only: a saved `measure_tree.py measure` result, so a rehearsal on a
     # busy disk skips the second walk. -Execute always measures afresh.
     [string]$MeasureJson = '',
+    # An agent session's own fleet context-filter wrapper names the tree in its command
+    # line but runs the base interpreter from C:/ and holds nothing in the tree open.
+    [string]$IgnoreWrapperSession = '',
+    # Continue onto a completed earlier copy: a /MIR delta pass over <Target> then
+    # the compare, repeated while live writers in the tree make the two differ.
+    [switch]$Resume,
+    [int]$ResumePasses = 5,
     [switch]$Execute
 )
 
@@ -84,7 +91,9 @@ if (-not $srcItem) { Stop-Run "source $Source does not exist" }
 if ($srcItem.LinkType) { Stop-Run "source $Source is already a $($srcItem.LinkType) to $($srcItem.Target): the move has run" }
 $preMove = "$Source.pre-move"
 if (Test-Path -LiteralPath $preMove) { Add-Blocker "$preMove already exists" }
-if (Test-Path -LiteralPath $Target) {
+if ($Resume) {
+    if (-not (Test-Path -LiteralPath $Target)) { Add-Blocker "-Resume needs the earlier copy at $Target" }
+} elseif (Test-Path -LiteralPath $Target) {
     if (Get-ChildItem -LiteralPath $Target -Force | Select-Object -First 1) { Add-Blocker "target $Target exists and is not empty" }
 }
 if ([IO.Path]::GetPathRoot($Source) -eq [IO.Path]::GetPathRoot($Target)) { Add-Blocker 'source and target are on the same volume' }
@@ -99,7 +108,8 @@ if (Test-Under $Python $Source) { Add-Blocker "Python $Python is inside the tree
 Write-Info "python: $Python"
 
 $procs = @(Get-CimInstance Win32_Process | Where-Object {
-    $_.ProcessId -ne $PID -and (
+    $_.ProcessId -ne $PID -and
+    -not ($IgnoreWrapperSession -and $_.CommandLine -and $_.CommandLine.Contains('context_filter_cli.py') -and $_.CommandLine.Contains("--session-id $IgnoreWrapperSession")) -and (
         ($_.ExecutablePath -and (Test-Under $_.ExecutablePath $Source)) -or
         ($_.CommandLine -and ($_.CommandLine.Replace('/', '\').IndexOf($Source, [StringComparison]::OrdinalIgnoreCase) -ge 0)))
 })
@@ -120,7 +130,9 @@ $measure = $m.Json | ConvertFrom-Json
 $needGB = [math]::Ceiling($measure.bytes / 1GB)
 $freeGB = [math]::Floor((Get-PSDrive ($Target.Substring(0, 1))).Free / 1GB)
 Write-Info ("tree: {0} GiB, {1} files, {2} links; target free {3} GiB" -f $measure.gib, $measure.files, @($measure.reparse_points.PSObject.Properties).Count, $freeGB)
-if ($freeGB - $needGB -lt $MinHeadroomGB) { Add-Blocker "target would keep $($freeGB - $needGB) GiB free, under $MinHeadroomGB" }
+# On a resume the tree is already on the target; only the small delta is still to come.
+if ($Resume) { if ($freeGB -lt $MinHeadroomGB) { Add-Blocker "target keeps $freeGB GiB free, under $MinHeadroomGB" } }
+elseif ($freeGB - $needGB -lt $MinHeadroomGB) { Add-Blocker "target would keep $($freeGB - $needGB) GiB free, under $MinHeadroomGB" }
 if (@($measure.index_locks).Count) { Add-Blocker ("index.lock present: " + (@($measure.index_locks) -join ', ')) }
 if (@($measure.errors).Count) { Add-Blocker "$(@($measure.errors).Count) unreadable path(s) in the tree" }
 $outside = @($measure.reparse_points.PSObject.Properties | Where-Object { -not (Test-Under ($_.Value -replace '^\\\\\?\\', '') $Source) })
@@ -137,7 +149,10 @@ if (Test-Path $toml) {
     if ($b.Code -ne 0) { Add-Blocker "projects.toml [backup] edit would fail (exit $($b.Code))" } else { Write-Info ("[backup] change: " + (($b.Json | ConvertFrom-Json).new | ConvertTo-Json -Compress)) }
 }
 
-$robocopyArgs = @($Source, $Target, '/E', '/COPY:DAT', '/DCOPY:DAT', '/SJ', '/SL', '/R:1', '/W:1', '/MT:16', '/NP', '/NFL', '/NDL')
+# /MIR on a resume also removes target files that have since left the source, so the compare can match.
+$scope = '/E'
+if ($Resume) { $scope = '/MIR' }
+$robocopyArgs = @($Source, $Target, $scope, '/COPY:DAT', '/DCOPY:DAT', '/SJ', '/SL', '/R:1', '/W:1', '/MT:16', '/NP', '/NFL', '/NDL')
 Write-Step 'plan'
 Write-Info ("1. robocopy " + ($robocopyArgs -join ' ') + ' /LOG:<temp log>')
 Write-Info "2. compare file count, bytes and every link target: $Source vs $Target"
@@ -152,22 +167,37 @@ if (-not $Execute) { Write-Host 'DRY-RUN: nothing was changed.'; exit 0 }
 if ($blockers.Count) { Stop-Run 'preflight blockers; nothing was changed' }
 
 # ---- execute ---------------------------------------------------------------
-$log = Join-Path $env:TEMP ("fleet-move-robocopy-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
-Write-Step "1. copy (log: $log)"
-& robocopy.exe @robocopyArgs "/LOG:$log" | Out-Null
-$rc = $LASTEXITCODE
-# robocopy: 0-7 is success (bit flags for copied/extra/mismatched), 8+ means a copy failed.
-if ($rc -ge 8) { Stop-Run "robocopy exit $rc; see $log. Original untouched; delete $Target before retrying" }
-Write-Info "robocopy exit $rc"
+$passes = 1
+if ($Resume) { $passes = $ResumePasses }
+for ($pass = 1; $pass -le $passes; $pass++) {
+    $log = Join-Path $env:TEMP ("fleet-move-robocopy-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+    Write-Step "1. copy, pass $pass of $passes (log: $log)"
+    & robocopy.exe @robocopyArgs "/LOG:$log" | Out-Null
+    $rc = $LASTEXITCODE
+    # robocopy: 0-7 is success (bit flags for copied/extra/mismatched), 8+ means a copy failed.
+    # A file a live writer deleted mid-pass also fails; on a resume the compare decides.
+    Write-Info "robocopy exit $rc"
+    if ($rc -ge 8 -and -not $Resume) { Stop-Run "robocopy exit $rc; see $log. Original untouched; delete $Target before retrying" }
 
-Write-Step '2. compare'
-$c = Invoke-Helper 'measure_tree.py' @('compare', $Source, $Target)
-Write-Host $c.Json
-if ($c.Code -ne 0) { Stop-Run "copy does not match the source. Original untouched; delete $Target before retrying" }
+    Write-Step "2. compare, pass $pass of $passes"
+    $c = Invoke-Helper 'measure_tree.py' @('compare', $Source, $Target)
+    Write-Host $c.Json
+    if ($c.Code -eq 0) { break }
+    if ($pass -eq $passes) { Stop-Run "copy does not match the source after $passes pass(es). Original untouched; rerun with -Resume" }
+}
 
 Write-Step '3. rename'
-try { Rename-Item -LiteralPath $Source -NewName (Split-Path $preMove -Leaf) }
-catch { Stop-Run "rename failed (a process still holds the tree?): $($_.Exception.Message). Original untouched" }
+# An attended agent session's hooks and statusline briefly run the tree's venv
+# python (a second or two each); a rename that collides with one is retried.
+$renameTries = 20
+for ($try = 1; $try -le $renameTries; $try++) {
+    try { Rename-Item -LiteralPath $Source -NewName (Split-Path $preMove -Leaf); break }
+    catch {
+        if ($try -eq $renameTries) { Stop-Run "rename failed after $renameTries tries (a process still holds the tree?): $($_.Exception.Message). Original untouched" }
+        Write-Info "rename attempt $try failed ($($_.Exception.Message)); retrying in 3 s"
+        Start-Sleep -Seconds 3
+    }
+}
 
 Write-Step '4. junction'
 New-Item -ItemType Junction -Path $Source -Target $Target | Out-Null

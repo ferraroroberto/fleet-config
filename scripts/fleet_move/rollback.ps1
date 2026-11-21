@@ -18,6 +18,8 @@
 param(
     [string]$Source = 'E:\automation',
     [string]$Target = 'C:\automation',
+    # See cutover.ps1: an agent session's own context-filter wrapper holds nothing open.
+    [string]$IgnoreWrapperSession = '',
     [switch]$Execute
 )
 
@@ -34,7 +36,8 @@ if (-not (Get-ChildItem -LiteralPath $preMove -Force | Select-Object -First 1)) 
 
 $needle = [IO.Path]::GetFullPath($Target).TrimEnd('\')
 $procs = @(Get-CimInstance Win32_Process | Where-Object {
-    $_.ProcessId -ne $PID -and (
+    $_.ProcessId -ne $PID -and
+    -not ($IgnoreWrapperSession -and $_.CommandLine -and $_.CommandLine.Contains('context_filter_cli.py') -and $_.CommandLine.Contains("--session-id $IgnoreWrapperSession")) -and (
         ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($needle + '\', [StringComparison]::OrdinalIgnoreCase) -or
                                  $_.ExecutablePath.StartsWith($Source + '\', [StringComparison]::OrdinalIgnoreCase))) -or
         ($_.CommandLine -and ($_.CommandLine.Replace('/', '\').IndexOf($Source, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or

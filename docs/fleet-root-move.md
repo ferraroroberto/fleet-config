@@ -6,9 +6,9 @@ The scripts are in `scripts/fleet_move/`:
 
 | File | What it does |
 |---|---|
-| `cutover.ps1` | Preflight, copy, compare, rename, junction, backup carry-over, `[backup]` edit, post-check. Dry-run unless `-Execute`. |
-| `postcheck.ps1` | Junction present, git reads every repo through it, backup dry-run passes, launcher health (unless `-SkipApps`). Changes nothing. |
-| `rollback.ps1` | Removes the junction and renames `E:/automation.pre-move` back. Dry-run unless `-Execute`. |
+| `cutover.ps1` | Preflight, copy, compare, rename, junction, backup carry-over, `[backup]` edit, post-check. Dry-run unless `-Execute`. `-Resume` (with `-ResumePasses`, default 5) reuses a finished copy: each pass is a robocopy `/MIR` delta and a compare, repeated while live writers make them differ. `-IgnoreWrapperSession <id>` leaves the calling agent session's own context-filter wrapper out of the process scan. The rename is retried 20 times, 3 s apart. |
+| `postcheck.ps1` | Junction present, git reads every repo through it, backup dry-run passes, launcher health (unless `-SkipApps`). Changes nothing. A `-BackupScript` from another checkout reads `<Root>\fleet-config\hooks\projects.toml` unless `-BackupConfig` names another file. |
+| `rollback.ps1` | Removes the junction and renames `E:/automation.pre-move` back. Dry-run unless `-Execute`. Takes `-IgnoreWrapperSession` like `cutover.ps1`. |
 | `measure_tree.py` | One walk of a tree that never enters a junction: bytes, files, heaviest folders, every link and its target, every `index.lock`. `compare` checks a copy against its source. |
 | `copy_linked.py` | Copies the backup snapshot store keeping its hardlinks, so the store's size does not multiply by the number of snapshots. |
 | `backup_paths.py` | Sets `[backup] source_root` and `dest` in `projects.toml`, keeping the original as `projects.toml.pre-move`. |
@@ -39,29 +39,33 @@ The repo leg's preflight refuses a destination on the source's volume, and it co
 | Agent transcript folders (`~/.claude/projects/<cwd key>`) | Keyed by the session's cwd. An `E:` cwd keeps the existing key; a resolved `C:` cwd would start a new folder and lose the project's memory. | unknown: same probe |
 | git ownership check (`safe.directory`) | robocopy does not copy owners; files are owned by whoever runs the copy. Run the cut-over as the normal (non-elevated) user. The post-check runs git in every repo. | unknown until the post-check |
 | Code in other fleet repos that compares a resolved path with an `E:` literal | Only fleet-config's code was swept. | unknown: nightly jobs and the post-check surface it |
+| Rename blockers a process scan cannot see | The preflight matches processes by executable path and command line. Three holders pass that scan and still block the rename: an Explorer window or handle on the root, a process whose working folder is inside the tree (a Stream Deck plugin's `node.exe`), and Hyper-V's `vmms`/`vmwp` holding a VM's files under the tree, which only an elevated session can see. | needs a change: add an elevated handle check (Sysinternals `handle64.exe` on the root) to the preflight |
+| The launcher's Jobs-tab pause | It pauses a job by deleting its scheduled task and keeping `paused_schedule` in `jobs.json`. A task with no `paused_schedule` stays enabled and fires during the window. | needs a change: list the `\AppLauncher\` and `\AppLauncherLite\` tasks still enabled after the pause, and disable them for the window |
+| Live writers during the copy | Files written or deleted mid-copy (hook state, the statusline, a job pruning its run folders) make robocopy exit 9 and the compare differ. | safe with `-Resume`: the delta passes converge instead of a full recopy |
+| `E:` shared over SMB | The volume is shared as `E`; a client session holding a file in the tree blocks the rename like a local process. | check: no open SMB sessions (`Get-SmbSession`) before the rename |
 
 ## Runbook
 
 The owner runs this; an agent prepares and proves it but never performs the move. Steps 1–4 can run any time; step 5 onward needs the fleet stopped.
 
-1. **Rehearse.** Copy the scripts out of the tree and run the dry-run. It measures the tree once (heavy on a busy disk; run it when the box is quiet) and lists every blocker:
+1. **Rehearse.** Copy the scripts from fleet-config's `main` checkout to a folder outside the tree (`C:\fleet-move` below) and run the dry-run. It measures the tree once (heavy on a busy disk; run it when the box is quiet) and lists every blocker:
    ```powershell
-   Copy-Item -Recurse E:\automation\fleet-config\scripts\fleet_move $env:TEMP\fleet_move -Force
-   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\fleet_move\cutover.ps1
+   Copy-Item -Recurse E:\automation\fleet-config\scripts\fleet_move C:\fleet-move -Force
+   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\fleet-move\cutover.ps1
    ```
-   `READY=no` with only "process(es) running from the tree" is the expected result while the fleet runs.
+   `READY=no` with only "process(es) running from the tree" is the expected result while the fleet runs. From an attended agent session, pass `-IgnoreWrapperSession <its session id>`. Also run an elevated `handle64.exe -nobanner E:\automation` and check `Get-SmbSession`: the process scan cannot see Explorer handles, working folders inside the tree, Hyper-V VM files or SMB clients.
 2. **Record a backup baseline:** `E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\hooks\backup_private.py --dry-run --no-notify` and note its exit code, so a post-move failure can be told apart from one that was already there.
-3. **Pick a quiet window.** The copy of a tree this size takes tens of minutes from the SMR disk; nightly jobs must not fire during it. Pause the `\AppLauncher\` scheduled jobs for the window, or run it after the nightly jobs finish.
+3. **Pick a quiet window.** The copy of a tree this size takes tens of minutes from the SMR disk; nightly jobs must not fire during it. Pause the `\AppLauncher\` scheduled jobs for the window, or run it after the nightly jobs finish, then confirm in Task Scheduler that no `\AppLauncher\` or `\AppLauncherLite\` task is still enabled: a job with no `paused_schedule` keeps its task through the Jobs-tab pause.
 4. **Commit or stash** any work in progress in every checkout; the tree is copied as-is either way, but a clean state makes the compare easy to read.
 5. **Stop everything that runs from the tree** (owner only): every agent session, including the session-host on :8446, every tray app and the launcher on :8445, the local LLM hub on :8000 and its voice backends, and any terminal or Explorer window whose current folder is under `E:\automation`. Re-run step 1's dry-run until it prints `READY=yes`.
 6. **Cut over:**
    ```powershell
-   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\fleet_move\cutover.ps1 -Execute
+   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\fleet-move\cutover.ps1 -Execute
    ```
-   It stops at the first failed step. Before the rename the original is untouched (delete the partial `C:\automation` and retry); after it, `rollback.ps1 -Execute` undoes the move.
+   It stops at the first failed step. Before the rename the original is untouched: rerun with `-Resume` to continue onto the finished copy (a live writer that made robocopy exit 9 is the usual cause), or delete the partial `C:\automation` and start again. After the rename, `rollback.ps1 -Execute` undoes the move.
 7. **Start the fleet again** (reboot, or each tray's restart recipe), then run the full post-check, which waits for the launcher's health endpoint:
    ```powershell
-   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\fleet_move\postcheck.ps1
+   C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\fleet-move\postcheck.ps1
    ```
 8. **Time the gate on the moved tree:** run fleet-config's gate once, the same command as before the move, and record its wall-clock time and the disk's idle percentage while it runs. Compare both with the pre-move baseline in the move's issue. One way to sample idle time is a background `Get-Counter '\PhysicalDisk(*)\% Idle Time' -SampleInterval 15` for the whole run.
    ```powershell
@@ -77,7 +81,7 @@ The owner runs this; an agent prepares and proves it but never performs the move
 With the fleet stopped (step 5):
 
 ```powershell
-C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\fleet_move\rollback.ps1 -Execute
+C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\fleet-move\rollback.ps1 -Execute
 ```
 
 It removes the junction and renames `E:\automation.pre-move` back. The original tree still holds its pre-move `projects.toml`, so the backup points at its old source and destination with no edit. Anything written under `C:\automation` since the cut-over stays there and is not carried back.
