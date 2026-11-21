@@ -67,6 +67,15 @@ Every decision waiting on Roberto is an answerable question, and the writer enfo
 - `plan wait "<text>"` files its text as the question, the short form of `plan ask`. It never writes an item with nothing to answer.
 - `validate()` does not enforce either rule, so a file written before them still loads.
 
+## Drain intake
+
+`chief_ops.py drain` adds queue rows itself for two kinds of open issue, recording each ref in its ledger so a row the chief removes stays removed:
+
+- **Audit issues**: the body starts with an `<!-- audit-managed: kind=<kind> -->` marker and still lists an unchecked `- [ ]` finding.
+- **Red-main issues** (kind `ci-red`): the issue carries the `ci-red-main` label, which the nightly Mac results job puts on a repo's "main's nightly gate is red" issue. No marker or findings list is needed. The row is queued ahead of the audit rows drain queued earlier, and its generic brief tells the lane to read the failing run, fix the cause in the repo, stop and comment when the cause is in project-scaffolding's workflow, and never re-run a workflow (the next nightly run is the proof).
+
+Both kinds skip an issue labelled `needs-owner`, `needs-validation` or `audit-meta`, one already in the plan or held by a lane, one drain added before, and a repo with `auto_ship = false`. Each drain-added row runs on Sonnet unless its kind says otherwise.
+
 ## Parked rows
 
 The Board's "Waiting for start" is the open questions plus every issue carrying `needs-owner`, newest first with a date. A parked row that does not say why would hide an owner step among umbrellas and blocked work, so the writer refuses `--status parked` without a kind:

@@ -7,12 +7,18 @@ judgment (verifying each merge, closing each lane) with the chief:
 1. **Switch.** `auto_drain` from `/api/board/chief/settings`. Only a literal
    `true` is on. Off, missing or unreadable prints `DRAIN=off reason=...`
    and nothing else happens.
-2. **Intake.** An open issue joins the plan queue only when its body starts
-   with an `<!-- audit-managed: kind=<kind> -->` marker (not
-   `cleanup-deferred`), it has no owner or ledger label, it still lists an
-   unchecked `- [ ]` finding, it is not already in
-   the plan, drain never added it before, and its repo is not
-   `auto_ship = false` in `hooks/projects.toml`.
+2. **Intake.** An open issue joins the plan queue in one of two ways. An audit
+   issue: its body starts with an `<!-- audit-managed: kind=<kind> -->` marker
+   (not `cleanup-deferred`) and it still lists an unchecked `- [ ]` finding. A
+   red-main issue: it carries the `ci-red-main` label (kind `ci-red`, opened by
+   the nightly Mac results job when a repo's nightly gate is red; no marker, no
+   findings list needed). Both need no owner, validation or ledger label, not
+   already in the plan, never added by drain before, and a repo that is not
+   `auto_ship = false` in `hooks/projects.toml`. Red-main rows are queued ahead
+   of the audit rows drain queued earlier (a red `main` outranks a cleanup
+   finding) and get their own brief (`drain_run_ci_red.md`): read the failing
+   run, fix the cause in the repo, stop and comment when it is in
+   project-scaffolding's workflow, never re-run a workflow.
 3. **Dispatch.** Queued rows are dispatched top-down through `cmd_dispatch`, with
    every one of its refusals, skipping a busy repo. A row that carries its own
    `brief` file is briefed with it, whoever queued the row; a row drain added
@@ -76,6 +82,13 @@ LAST_FRESH_SECONDS = 120
 IDLE_ASK_ID = "slots-idle"
 BRIEF_DIRNAME = "chief-drain-briefs"
 BRIEF_TEMPLATE = Path(__file__).with_name("drain_brief.md")
+# What a lane is told to do, per kind: the shared preamble above wraps one of these.
+RUN_TEMPLATES = {"ci-red": Path(__file__).with_name("drain_run_ci_red.md")}
+RUN_TEMPLATE_DEFAULT = Path(__file__).with_name("drain_run_audit.md")
+
+# A repo's red nightly gate: the Mac results job opens or comments this issue, which has no audit marker.
+CI_RED_LABEL = "ci-red-main"
+CI_RED_KIND = "ci-red"
 
 # Lane model per audit kind, by docs/model-tiers.md difficulty; unlisted kinds are easy tier.
 KIND_MODELS = {
@@ -139,26 +152,28 @@ def select_intake(
     ledger_refs: Set[str],
     no_ship: Set[str],
 ) -> Tuple[List[Dict[str, str]], List[Tuple[str, str]]]:
-    """`(adds, skips)`: the audit issues to queue, and each audit issue left out with why.
+    """`(adds, skips)`: the issues to queue, and each one left out with why.
 
-    An issue with no audit marker is not drain's business and is never reported.
+    An issue is drain's business when its body starts with an audit marker or it carries the
+    `ci-red-main` label (kind `ci-red`, which has no findings list to check). Any other issue is
+    never reported. Adds come out red-main first: a red `main` outranks a cleanup finding.
     """
     in_plan = plan_refs(doc)
     known = {ref.lower() for ref in ledger_refs}
     adds: List[Dict[str, str]] = []
     skips: List[Tuple[str, str]] = []
     for issue in issues:
-        kind = marker_kind(issue.get("body") or "")
+        labels = {(label.get("name") or "").lower() for label in issue.get("labels") or []}
+        kind = CI_RED_KIND if CI_RED_LABEL in labels else marker_kind(issue.get("body") or "")
         if kind is None:
             continue
         repo = (issue.get("repository") or {}).get("name") or ""
         ref = f"{repo}#{issue.get('number')}"
-        labels = {(label.get("name") or "").lower() for label in issue.get("labels") or []}
         if kind in EXCLUDED_KINDS:
             reason = f"kind-{kind}"
         elif labels & EXCLUDED_LABELS:
             reason = "label-" + sorted(labels & EXCLUDED_LABELS)[0]
-        elif not _OPEN_FINDING.search(issue.get("body") or ""):
+        elif kind != CI_RED_KIND and not _OPEN_FINDING.search(issue.get("body") or ""):
             reason = "no-open-findings"
         elif ref.lower() in in_plan:
             reason = "in-plan"
@@ -171,12 +186,25 @@ def select_intake(
                          "title": _clean_title(issue.get("title") or "", kind)})
             continue
         skips.append((ref, reason))
+    adds.sort(key=lambda add: add["kind"] != CI_RED_KIND)  # stable: each group keeps fetch order
     return adds, skips
 
 
-def apply_adds(doc: Dict[str, Any], adds: List[Dict[str, str]]) -> None:
+def _first_audit_row(doc: Dict[str, Any], ledger: Dict[str, Any]) -> Optional[int]:
+    """1-based queue position of the first queued row drain added for an audit kind; None when there is none."""
+    for index, row in enumerate(doc["queue"], start=1):
+        kind = (ledger.get(f"{row['repo']}{row['ref']}") or {}).get("kind")
+        if row["status"] == chief_plan.QueueStatus.QUEUED and kind and kind != CI_RED_KIND:
+            return index
+    return None
+
+
+def apply_adds(doc: Dict[str, Any], adds: List[Dict[str, str]], ledger: Optional[Dict[str, Any]] = None) -> None:
+    """Queue each add. A red-main row goes ahead of the audit rows drain queued earlier, after any
+    red-main row already there; every other add goes to the end. `ledger` is drain's own refs."""
     for add in adds:
-        chief_plan.add_item(doc, add["ref"], add["title"], model=add["model"], note=f"auto-drain {add['kind']}")
+        at = _first_audit_row(doc, ledger or {}) if add["kind"] == CI_RED_KIND else None
+        chief_plan.add_item(doc, add["ref"], add["title"], model=add["model"], note=f"auto-drain {add['kind']}", at=at)
 
 
 def queued_rows(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -376,7 +404,8 @@ def remember(path: Path, adds: List[Dict[str, str]]) -> None:
 
 
 def write_brief(ref: str, kind: str) -> Path:
-    text = BRIEF_TEMPLATE.read_text(encoding="utf-8").replace("__REF__", ref).replace("__KIND__", kind)
+    run = RUN_TEMPLATES.get(kind, RUN_TEMPLATE_DEFAULT).read_text(encoding="utf-8")
+    text = BRIEF_TEMPLATE.read_text(encoding="utf-8").replace("__RUN__", run).replace("__REF__", ref).replace("__KIND__", kind)
     path = state_dir() / BRIEF_DIRNAME / (ref.replace("#", "-") + ".md")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -444,10 +473,10 @@ def _intake(args: argparse.Namespace, plan_path: Path, ledger_path: Path,
     for add in adds:
         print(f"{verb}={add['ref']} kind={add['kind']} model={add['model']}")
     if args.dry_run:
-        apply_adds(doc, adds)  # in memory only, so the dispatch preview sees the new rows
+        apply_adds(doc, adds, ledger)  # in memory only, so the dispatch preview sees the new rows
     elif adds:
         # Plan first: a ledger entry without its plan row would read as "removed" forever.
-        doc = chief_plan.update(plan_path, lambda d: apply_adds(d, adds))
+        doc = chief_plan.update(plan_path, lambda d: apply_adds(d, adds, ledger))
         remember(ledger_path, adds)
     ledger = {**ledger, **{add["ref"]: {"kind": add["kind"]} for add in adds}}
     return doc, ledger, adds

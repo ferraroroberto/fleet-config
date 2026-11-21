@@ -113,6 +113,57 @@ check(drain.marker_kind("  \n<!-- audit-managed: kind=stale -->\nbody") == "stal
       "the marker counts only on the body's first line")
 
 
+# ---- intake: a repo's red-main issue (ci-red-main label, no audit marker) ----------------
+
+def _red(repo, number, labels=(), body="Main's nightly gate is red.\n\nLatest failing run: 123."):
+    return {"number": number, "title": "main's nightly gate is red", "body": body,
+            "labels": [{"name": name} for name in ("ci-red-main", *labels)], "repository": {"name": repo}}
+
+
+_red_plan = chief_plan.empty_plan()
+chief_plan.add_item(_red_plan, "app-a#35", "already queued")
+chief_plan.set_lane(_red_plan, "app-a", "building", item="#36")
+_red_issues = [
+    _issue("app-a", 30),                                         # an audit row first in fetch order
+    _red("app-a", 31),
+    _red("app-a", 32, labels=("needs-owner",)),
+    _red("app-a", 33, labels=("needs-validation",)),
+    _red("app-a", 34, labels=("audit-meta",)),
+    _red("app-a", 35),
+    _red("app-a", 36),
+    _red("app-a", 37),
+    _red("site", 38),
+    _red("app-a", 39, body="<!-- audit-managed: kind=stale -->\n\n- [ ] a finding"),
+]
+red_adds, red_skips = drain.select_intake(_red_issues, _red_plan, {"app-a#37"}, {"site"})
+red_reasons = dict(red_skips)
+check([a["ref"] for a in red_adds] == ["app-a#31", "app-a#39", "app-a#30"],
+      f"a ci-red-main issue is queued with no findings list, red-main ahead of audit (got {[a['ref'] for a in red_adds]})")
+check({a["ref"]: a["kind"] for a in red_adds}["app-a#39"] == "ci-red",
+      "the ci-red-main label decides the kind even over an audit marker")
+check(red_adds[0]["model"] == "sonnet", "a ci-red row runs on sonnet")
+check(red_reasons.get("app-a#32") == "label-needs-owner", "a ci-red-main issue with needs-owner is excluded")
+check(red_reasons.get("app-a#33") == "label-needs-validation", "a ci-red-main issue with needs-validation is excluded")
+check(red_reasons.get("app-a#34") == "label-audit-meta", "a ci-red-main issue with the audit-meta label is excluded")
+check(red_reasons.get("app-a#35") == "in-plan", "a ci-red-main issue already in the plan is excluded")
+check(red_reasons.get("app-a#36") == "in-plan", "a ci-red-main issue a lane holds is excluded")
+check(red_reasons.get("app-a#37") == "removed-from-plan", "a ci-red-main issue the chief removed is excluded")
+check(red_reasons.get("site#38") == "auto-ship-off", "a ci-red-main issue in an auto_ship = false repo is excluded")
+
+# A red-main row lands ahead of the audit rows drain queued earlier, behind a red-main row already there.
+_order = chief_plan.empty_plan()
+chief_plan.add_item(_order, "app-a#1", "hand row")
+chief_plan.add_item(_order, "app-a#2", "audit row")
+chief_plan.add_item(_order, "app-a#3", "audit row")
+_ledger_rows = {"app-a#2": {"kind": "stale"}, "app-a#3": {"kind": "stale"}}
+drain.apply_adds(_order, [{"ref": "app-b#4", "kind": "ci-red", "model": "sonnet", "title": "red"},
+                          {"ref": "app-c#5", "kind": "ci-red", "model": "sonnet", "title": "red"},
+                          {"ref": "app-d#6", "kind": "stale", "model": "sonnet", "title": "audit"}], _ledger_rows)
+_queue = [f"{r['repo']}{r['ref']}" for r in _order["queue"]]
+check(_queue == ["app-a#1", "app-b#4", "app-c#5", "app-a#2", "app-a#3", "app-d#6"],
+      f"red-main rows go ahead of queued audit rows, in order; audit adds go last (got {_queue})")
+
+
 # ---- cmd_drain end to end against a fake launcher ------------------------------------
 
 class FakeLauncher:
@@ -265,6 +316,37 @@ check("DRAIN_SKIPPED=app-a#1 reason=issue-closed" in out,
 check("DRAIN_SKIPPED=app-b#2 reason=state-unknown" in out,
       f"a drain-owned row with an unreadable issue state is skipped, never passed (got {out!r})")
 check([b["number"] for b in fake.posted] == [3], f"only the open drain-owned row is dispatched (got {fake.posted})")
+
+# A red-main issue: queued as `ci-red`, dispatched ahead of an audit row, briefed with the generic ci-red brief.
+_reset()
+_red_issue = _red("app-b", 2)
+rc, out, plan_path, _ = _run(FakeLauncher({"auto_drain": True}, cap=1), [_issue("app-a", 1), _red_issue], dry_run=True)
+check("DRAIN_WOULD_ADD=app-b#2 kind=ci-red model=sonnet" in out and "DRAIN_WOULD_DISPATCH=app-b#2" in out
+      and "DRAIN_WOULD_DISPATCH=app-a#1" not in out,
+      f"dry-run queues the red-main issue and dispatches it first (got {out!r})")
+_reset()
+fake = FakeLauncher({"auto_drain": True}, cap=1)
+rc, out, plan_path, _ = _run(fake, [_issue("app-a", 1), _red_issue])
+check("DRAIN_ADDED=app-b#2 kind=ci-red model=sonnet" in out and [b["number"] for b in fake.posted] == [2],
+      f"a live pass adds the red-main issue and dispatches it ahead of the audit row (got {out!r})")
+check("DRAIN_BRIEF=" in out and "source=generic" in out, f"the red-main lane gets the generic brief (got {out!r})")
+check("app-b#2" in fake.posted[0]["brief"] and "ci-red" in fake.posted[0]["brief"]
+      and "gh run view" in fake.posted[0]["brief"] and "Never re-run a workflow" in fake.posted[0]["brief"]
+      and "Where further instructions come from" in fake.posted[0]["brief"],
+      "the ci-red brief carries the shared preamble and the red-main instructions")
+check([f"{r['repo']}{r['ref']}" for r in chief_plan.load(plan_path)["queue"]] == ["app-b#2", "app-a#1"],
+      "the red-main row sits ahead of the audit row in the plan")
+check(json.loads(_ledger.read_text(encoding="utf-8"))["refs"]["app-b#2"]["kind"] == "ci-red",
+      "the ledger records the red-main row's kind")
+# Run again with the audit row queued first on an earlier turn: the new red-main row still goes ahead of it.
+_reset()
+_early = chief_plan.empty_plan()
+chief_plan.add_item(_early, "app-a#1", "audit row earlier")
+_ledger.parent.mkdir(parents=True, exist_ok=True)
+_ledger.write_text(json.dumps({"version": 1, "refs": {"app-a#1": {"kind": "design-drift"}}}), encoding="utf-8")
+rc, out, plan_path, _ = _run(FakeLauncher({"auto_drain": True}, cap=0), [_issue("app-a", 1), _red_issue], plan=_early)
+check([f"{r['repo']}{r['ref']}" for r in chief_plan.load(plan_path)["queue"]] == ["app-b#2", "app-a#1"],
+      "a red-main row found on a later turn is queued ahead of audit rows already waiting")
 
 # ---- hand-queued rows (fleet-config#1925) ----------------------------------------------
 
