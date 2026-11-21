@@ -43,9 +43,12 @@ def drive(hook: str, payload: dict, state: Path, launcher_sid: str = "", agent: 
         env["APP_LAUNCHER_SESSION_ID"] = launcher_sid
     if entrypoint:
         env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
+    # Both legs pinned to UTF-8: the hooks log emoji, and the console code page
+    # (cp1252) cannot decode them, which left `stderr` None.
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run([PYTHON, str(HOOKS / f"{hook}.py")], input=json.dumps(payload),
-                          capture_output=True, text=True, timeout=30, env=env,
-                          creationflags=_lib.NO_WINDOW)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=30, env=env, creationflags=_lib.NO_WINDOW)
 
 
 def events(state: Path) -> list:

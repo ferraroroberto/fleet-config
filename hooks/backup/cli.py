@@ -98,16 +98,21 @@ def _same_volume(a: Path, b: Path) -> bool:
         return False
 
 
+def _volume_problem(source: Path, dest: Path) -> Optional[str]:
+    """The same-volume refusal alone, writing nothing, so a dry-run reports it too."""
+    if _same_volume(source, dest):
+        return (f"destination {dest} is on the same volume as {source} — "
+                "a same-volume snapshot dies with the volume")
+    return None
+
+
 def _preflight(source: Path, dest: Path) -> Optional[str]:
     """Refuse to write a snapshot that shares a volume with its source."""
     try:
         runtime_files.make_dirs(dest, parents=True, exist_ok=True)
     except OSError as exc:
         return f"destination {dest} is not writable: {exc}"
-    if _same_volume(source, dest):
-        return (f"destination {dest} is on the same volume as {source} — "
-                "a same-volume snapshot dies with the volume")
-    return None
+    return _volume_problem(source, dest)
 
 
 def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Path,
@@ -351,11 +356,12 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                 )
 
         for leg, groups, source, dest_root in legs:
-            if not dry_run:
-                problem = _preflight(source, dest_root)
-                if problem:
-                    logger.error("❌ %s leg: %s", leg, problem)
-                    codes.append(EXIT_DEST_UNUSABLE)
+            problem = _volume_problem(source, dest_root) if dry_run else _preflight(source, dest_root)
+            if problem:
+                logger.error("❌ %s leg: %s", leg, problem)
+                codes.append(EXIT_DEST_UNUSABLE)
+                # A dry-run writes nothing either way, so it still lists the leg.
+                if not dry_run:
                     continue
             manifest = run_leg(leg, groups, source, dest_root, cfg, today, dry_run,
                                force_rebuild_latest=rebuild_latest_full)

@@ -88,6 +88,12 @@ conversation_title — user titles in a titles.json sidecar (#1348)"]
   end
   tray --> CLAUDE
 
+  subgraph fleetmove["scripts/fleet_move/ — owner-run fleet-root move (docs/fleet-root-move.md)"]
+    MOVEPS1["cutover.ps1 · postcheck.ps1 · rollback.ps1\nstdlib helpers: measure_tree · copy_linked · backup_paths"]
+  end
+  MOVEPS1 -->|"edits [backup] source_root + dest"| PROJECTS
+  MOVEPS1 -->|"carries snapshots, hardlinks kept"| BACKUPDEST
+
   STREAMDECKREPO["stream-deck repo (own checkout)\nElgato plugin; its build resolves tray targets"] -.->|reads| PROJECTS
 
   subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]

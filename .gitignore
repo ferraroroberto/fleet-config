@@ -55,6 +55,9 @@ hooks/state/
 # The fleet registry is machine-local: its [global] architecture_ignore switch
 # is flipped per machine. hooks/projects.toml.example is the tracked template.
 hooks/projects.toml
+# The fleet-root cut-over (scripts/fleet_move/backup_paths.py) keeps the original
+# here before editing [backup]; it is machine-local like the file it copies.
+hooks/projects.toml.pre-move
 
 # UI proof screenshots and walkthrough pages (skills/_lib/ui_proof): screenshots
 # of a running app, never published.

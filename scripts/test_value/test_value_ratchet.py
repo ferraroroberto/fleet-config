@@ -14,7 +14,9 @@ Four rules, each its own failure mode:
   spawn-budget    A unit's process spawns in this run may not exceed its baseline entry; a unit with no
                   entry fails until `--update-baseline --allow-additions` records it, which shows in review.
   flake-ledger    A unit that both passed and failed on one tree hash, under one label, is a flake. It stays
-                  on the ledger until it passes `flake_clear_runs` runs in a row afterwards. The number of
+                  on the ledger until it passes `flake_clear_runs` runs in a row afterwards, or passes once
+                  after a commit in the history of HEAD carries `Flake-Fixed: <unit>` (a fail after that
+                  fix voids it and reopens a flake it closed). The number of
                   open flakes may not exceed the baseline's `flake_count`, and none may stay open longer
                   than the baseline's `flake_max_age_days`. Both figures only shrink. The unit named by
                   `host_unit` (the one that runs this verdict) is not counted: it could never collect the
@@ -431,9 +433,34 @@ def rule_spawn_budget(current: list[str], spawns: dict[str, int], baseline: Row)
 # ---------------------------------------------------------------- flake-ledger
 
 
-def open_flakes(ledger: list[Row], label: str, clear_runs: int) -> dict[str, datetime]:
+FIX_TRAILER = "Flake-Fixed"  # a commit-message trailer naming the unit whose flake that commit fixes
+
+
+def fix_marks(root: Path) -> dict[str, list[datetime]]:
+    """Per unit, the commit times of the `Flake-Fixed: <unit>` trailers in the history of HEAD.
+
+    Git unreadable gives no marks, so a flake then stays open until its passes clear it: the safe way round."""
+    out = _git(root, ["log", "HEAD", f"--grep=^{FIX_TRAILER}:", "-i",
+                      f"--format=%x01%ct%n%(trailers:key={FIX_TRAILER},valueonly,unfold)"])
+    marks: dict[str, list[datetime]] = defaultdict(list)
+    for block in (out or "").split("\x01")[1:]:
+        stamp, _, units = block.partition("\n")
+        try:
+            when = datetime.fromtimestamp(int(stamp.strip()), UTC)
+        except ValueError:
+            continue
+        for unit in filter(None, (u.strip() for u in units.splitlines())):
+            marks[unit].append(when)
+    return marks
+
+
+def open_flakes(ledger: list[Row], label: str, clear_runs: int,
+                fixes: dict[str, list[datetime]] | None = None) -> dict[str, datetime]:
     """Per open flake, the time its episode began. A unit with a pass and a fail on one tree is a flake,
-    known from the later of those rows; it closes after `clear_runs` passes in a row past that point."""
+    known from the later of those rows. It closes by one of two routes: `clear_runs` passes in a row past
+    that point, or, when a commit after the flake names the unit as fixed (`fixes`), one pass after that
+    commit. A fail after the fix voids it and reopens a flake it had closed, so the fix has to be named
+    again; the passes route is unchanged."""
     rows = [r for r in ledger if r.get("kind") == "unit" and r.get("label") == label and _utc(r.get("utc"))]
     groups: dict[tuple[str, str], list[Row]] = defaultdict(list)
     for r in rows:
@@ -446,37 +473,49 @@ def open_flakes(ledger: list[Row], label: str, clear_runs: int) -> dict[str, dat
     result: dict[str, datetime] = {}
     for unit, flakes in seen.items():
         events = sorted([(t, "flake") for t in flakes]
+                        + [(t, "fix") for t in (fixes or {}).get(unit, [])]
                         + [(_at(r), r.get("status")) for r in rows if r.get("unit") == unit])
         start: datetime | None = None
         passes = 0
         last_flake: datetime | None = None
+        fixed_at: datetime | None = None
+        closed_by_fix = False
         for when, what in events:
             if what == "flake":
                 start = start or when
-                last_flake, passes = when, 0
+                last_flake, passes, fixed_at, closed_by_fix = when, 0, None, False
+            elif what == "fix":
+                fixed_at = when if start is not None else None
             elif start is not None and last_flake is not None and when > last_flake:
                 passes = passes + 1 if what == PASS else 0
-                if passes >= clear_runs:
-                    start, passes = None, 0
+                if what == FAIL:
+                    fixed_at = None
+                if passes >= clear_runs or (what == PASS and fixed_at is not None and when > fixed_at):
+                    closed_by_fix = fixed_at is not None and passes < clear_runs
+                    start, passes, fixed_at = None, 0, None
+            elif start is None and closed_by_fix and what == FAIL and last_flake is not None and when > last_flake:
+                start, closed_by_fix = when, False
         if start is not None:
             result[unit] = start
     return result
 
 
-def countable_flakes(ledger: list[Row], cfg: Config) -> dict[str, datetime]:
+def countable_flakes(ledger: list[Row], cfg: Config,
+                     fixes: dict[str, list[datetime]] | None = None) -> dict[str, datetime]:
     """Open flakes minus the host unit: it runs this rule, so a flake of its own would fail it on every
     run and it could never collect the passes that close that flake. The ledger still holds its rows."""
-    flakes = open_flakes(ledger, cfg.label, cfg.flake_clear_runs)
+    flakes = open_flakes(ledger, cfg.label, cfg.flake_clear_runs, fixes)
     if cfg.host_unit:
         flakes.pop(cfg.host_unit, None)
     return flakes
 
 
-def rule_flake_ledger(ledger: list[Row] | None, cfg: Config, baseline: Row, now: datetime) -> Verdict:
+def rule_flake_ledger(ledger: list[Row] | None, cfg: Config, baseline: Row, now: datetime,
+                      fixes: dict[str, list[datetime]] | None = None) -> Verdict:
     if ledger is None:
         return Verdict("flake-ledger", UNKNOWN, ["the unit ledger is missing, so no flake can be counted"])
     v = Verdict("flake-ledger", PASS)
-    flakes = countable_flakes(ledger, cfg)
+    flakes = countable_flakes(ledger, cfg, fixes)
     cap_days = baseline["flake_max_age_days"]
     for unit, start in sorted(flakes.items(), key=lambda p: p[1]):
         age = (now - start).days
@@ -490,7 +529,7 @@ def rule_flake_ledger(ledger: list[Row] | None, cfg: Config, baseline: Row, now:
         v.lines.append(f"{len(flakes)} open flakes, above the baseline of {baseline['flake_count']}")
     elif not flakes:
         v.lines.append("no open flake")
-    if cfg.host_unit and cfg.host_unit in open_flakes(ledger, cfg.label, cfg.flake_clear_runs):
+    if cfg.host_unit and cfg.host_unit in open_flakes(ledger, cfg.label, cfg.flake_clear_runs, fixes):
         v.lines.append(f"{cfg.host_unit}: host unit, not counted")
     return v
 
@@ -528,8 +567,8 @@ def rule_hermetic(ledger: list[Row] | None, cfg: Config, baseline: Row, now: dat
 # ---------------------------------------------------------------- baseline capture and the map
 
 
-def update_baseline(baseline: Row | None, ledger: list[Row], cfg: Config,
-                    allow_additions: bool) -> tuple[Row, list[str]]:
+def update_baseline(baseline: Row | None, ledger: list[Row], cfg: Config, allow_additions: bool,
+                    fixes: dict[str, list[datetime]] | None = None) -> tuple[Row, list[str]]:
     """Shrink (and, with `allow_additions`, extend) the baseline from the last `capture_runs` runs."""
     runs = [r["run_id"] for r in ledger if r.get("kind") == "run" and r.get("label") == cfg.label][-cfg.capture_runs:]
     if not runs:
@@ -547,7 +586,7 @@ def update_baseline(baseline: Row | None, ledger: list[Row], cfg: Config,
         elif allow_additions:
             units[unit] = spawns
             notes.append(f"added {unit}: {spawns} spawns")
-    flakes = len(countable_flakes(ledger, cfg))
+    flakes = len(countable_flakes(ledger, cfg, fixes))
     flake_count = flakes if allow_additions and baseline is None else min(out["flake_count"], flakes)
     hermetic = [u for u in out["hermetic"] if u in observed]
     out = {**out, "units": dict(sorted(units.items())), "flake_count": flake_count, "hermetic": hermetic}
@@ -640,7 +679,7 @@ def _check(args: argparse.Namespace, root: Path, cfg: Config, baseline: Row, now
             verdicts.append(rule_spawn_budget(current, spawns, baseline)
                             if current is not None else Verdict(rule, UNKNOWN, no_report.lines))
         elif rule == "flake-ledger":
-            verdicts.append(rule_flake_ledger(ledger, cfg, baseline, now))
+            verdicts.append(rule_flake_ledger(ledger, cfg, baseline, now, fix_marks(root)))
         else:
             verdicts.append(rule_hermetic(ledger, cfg, baseline, now))
     for v in verdicts:
@@ -674,7 +713,8 @@ def main(argv: list[str] | None = None) -> int:
             if not (args.ledger and args.ledger.exists()):
                 print("NOT CONFIRMED: --update-baseline needs the unit ledger (--ledger)")
                 return 3
-            new, notes = update_baseline(baseline, read_jsonl(args.ledger), cfg, args.allow_additions)
+            new, notes = update_baseline(baseline, read_jsonl(args.ledger), cfg, args.allow_additions,
+                                     fix_marks(root))
             path.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
             print("\n".join(notes + [f"baseline: {len(new['units'])} units, {new['flake_count']} open flakes"]))
             return 0

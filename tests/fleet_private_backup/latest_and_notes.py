@@ -138,3 +138,19 @@ check(not bp.load_repo_overrides(fleet / "skipme", toml_path).enabled,
       "overrides: backup = false opts a repo out")
 check(bp.load_repo_overrides(fleet / "unknown-repo", toml_path).enabled,
       "overrides: a repo with no table defaults to being backed up")
+if sys.platform == "win32":
+    import _winapi
+
+    # The fleet root behind a junction (fleet-config#2166): the backup walks the
+    # real folder while projects.toml still names the junction's path.
+    linked_fleet = tmp / "fleet-junction"
+    _winapi.CreateJunction(str(fleet), str(linked_fleet))
+    junction_toml = tmp / "projects-junction.toml"
+    junction_toml.write_text(
+        "[myrepo]\n"
+        f'cwd_prefix = "{(linked_fleet / repo.name).as_posix()}"\n'
+        'backup_exclude = ["_local/vm/**"]\n',
+        encoding="utf-8",
+    )
+    check(bp.load_repo_overrides(repo, junction_toml).exclude == ("_local/vm/**",),
+          "overrides: a cwd_prefix written against a junctioned fleet root still matches")

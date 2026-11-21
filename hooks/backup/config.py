@@ -251,6 +251,12 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
     )
 
 
+def _real_key(path: Path) -> str:
+    """Comparison key for a repo path: resolved on both sides, so a fleet root behind
+    a junction still matches a `cwd_prefix` written against the junction's path."""
+    return str(path.resolve()).replace("\\", "/").rstrip("/").lower()
+
+
 def load_repo_overrides(repo_dir: Path, path: Optional[Path] = None) -> RepoOverrides:
     """Read `backup` / `backup_exclude` / `backup_include` / `backup_include_globs` /
     `backup_always_include` for one repo.
@@ -261,14 +267,14 @@ def load_repo_overrides(repo_dir: Path, path: Optional[Path] = None) -> RepoOver
     no overrides) — a new fleet repo is covered the day it is cloned.
     """
     data = _read_toml(_projects_toml_path(path))
-    target = str(repo_dir.resolve()).replace("\\", "/").rstrip("/").lower()
+    target = _real_key(repo_dir)
     for name, table in data.items():
         if name == "backup" or not isinstance(table, dict):
             continue
         prefix = table.get("cwd_prefix")
         if not isinstance(prefix, str):
             continue
-        if str(Path(prefix)).replace("\\", "/").rstrip("/").lower() != target:
+        if _real_key(Path(prefix)) != target:
             continue
         return RepoOverrides(
             enabled=bool(table.get("backup", True)),
