@@ -51,7 +51,7 @@ from chief.steer_delivery import (
     recent_output_window,
 )
 
-from . import compact, digest, launcher, mailbox, rails
+from . import compact, digest, lane_rows, launcher, mailbox, rails
 
 DEFAULT_TAIL = 2000
 
@@ -718,9 +718,31 @@ def cmd_stop(args: argparse.Namespace) -> int:
     except (TimeoutError, urllib.error.URLError) as exc:
         if not launcher.is_timeout(exc):
             raise
-        return _stop_after_timeout(args.base_url, resolved_sid, mode)
-    print(f"STOPPED sid={resolved_sid} mode={mode}")
-    return 0
+        rc = _stop_after_timeout(args.base_url, resolved_sid, mode)
+    else:
+        print(f"STOPPED sid={resolved_sid} mode={mode}")
+        rc = 0
+    if rc == 0:  # only a confirmed stop retires the lane; UNCONFIRMED / STILL_LIVE keep the row
+        _retire_plan_lane(args, resolved_sid)
+    return rc
+
+
+def _retire_plan_lane(args: argparse.Namespace, sid: str) -> None:
+    """Print the `PLAN_LANE=` line for the stopped session. The stop already happened, so a plan
+    that cannot be read or written is reported as `unknown` and never changes the exit code."""
+    plan_path = Path(args.plan_file) if getattr(args, "plan_file", None) else chief_plan.plan_file()
+    managed, _ = _chief_managed_rows()
+
+    def read_columns() -> Optional[Dict[str, Any]]:
+        try:
+            return launcher._request(args.base_url, "/api/board").get("columns") or {}
+        except (OSError, ValueError):
+            return None
+
+    try:
+        print(lane_rows.retire_after_stop(plan_path, sid, read_columns, managed))
+    except (ValueError, OSError) as exc:
+        print(f"PLAN_LANE=unknown reason={type(exc).__name__}: {exc}")
 
 
 def _stop_after_timeout(base_url: str, sid: str, mode: str) -> int:

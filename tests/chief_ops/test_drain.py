@@ -688,6 +688,31 @@ fake, out, doc = _hand(plan, cards=[_moved])
 check([p["repo"] for p in fake.posted] == ["busy"] and "reason=repo-busy" not in out,
       f"drain: an unmanaged session in another folder holds only that folder (got {out!r})")
 
+# Stale plan lanes: a lane no live session backs is named, a live one is not.
+_live_lane = _session_card(project="app-a", session_id="live0000")
+plan = _hand_plan(extra=[
+    lambda d: chief_plan.set_lane(d, "app-a", "building", item="#1", session="live0000"),
+    lambda d: chief_plan.set_lane(d, "app-b", "building", item="#2", session="gone0000"),
+])
+fake, out, doc = _hand(plan, cards=[_live_lane])
+check("PLAN_LANE_STALE=app-b session=gone0000" in out and "PLAN_LANE_STALE=app-a" not in out
+      and [lane["repo"] for lane in doc["lanes"]] == ["app-a", "app-b"],
+      f"drain: reports the stale lane, leaves the live one, and does not edit the plan (got {out!r})")
+
+
+class _BoardDown(FakeLauncher):
+    def request(self, base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            raise urllib.error.URLError("refused")
+        return super().request(base_url, path, method, body, timeout)
+
+
+_reset()
+rc, out, _plan_path, _ = _run(_BoardDown({"auto_drain": True}), [], plan=plan)
+check(rc == 1 and "PLAN_LANE_STALE=unknown reason=board-unreadable" in out and "DRAIN=unknown" in out
+      and "PLAN_LANE_STALE=app" not in out,
+      f"drain: an unreadable board is unknown, never a clean lane list (got {out!r})")
+
 # The subcommands are wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,
       "`chief_ops.py drain` reaches cmd_drain")

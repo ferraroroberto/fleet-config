@@ -42,6 +42,11 @@ Every action prints one line (`DRAIN_ADDED=`, `DRAIN_DISPATCHED=`,
 summary `DRAIN=done added=N dispatched=M`. `--dry-run` prints `DRAIN_WOULD_*`
 lines and writes nothing: no plan, no ledger, no brief, no dispatch.
 
+**Stale lanes.** After the board read, each plan lane no live session backs prints
+`PLAN_LANE_STALE=<repo> session=<sid|none>` (`lane_rows.stale_lines`); an unreadable board
+prints `PLAN_LANE_STALE=unknown reason=board-unreadable` and ends the drain with
+`DRAIN=unknown`, never a clean list.
+
 **Idle slots.** When worker slots are still free after the last dispatch, the
 summary is followed by `SLOTS_IDLE=<n> reason=<no-eligible-rows|all-after-unmet|
 dispatch-stopped>` (plus `no_lane_blocked=<repos>` for rows only a live lane holds
@@ -70,7 +75,7 @@ from fleet_core import fleet_repo_scan
 from fleet_core.hooks_state import state_dir
 from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows
 
-from . import commands, launcher, rails
+from . import commands, lane_rows, launcher, rails
 
 logger = logging.getLogger(__name__)
 
@@ -501,7 +506,16 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
         print(f"DRAIN=unknown reason=intake-failed ({exc})")
         return 1
 
-    columns = (launcher._request(args.base_url, "/api/board").get("columns") or {})
+    try:
+        columns = (launcher._request(args.base_url, "/api/board").get("columns") or {})
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        for line in lane_rows.stale_lines(doc, None, None):
+            print(line)
+        print(f"DRAIN=unknown reason=board-unreadable ({exc})")
+        return 1
+    managed, _ = commands._chief_managed_rows()
+    for line in lane_rows.stale_lines(doc, columns, managed):
+        print(line)
     busy = _busy_repos(columns)
     known = {ref.lower() for ref in ledger}
     free = _free_slots(args, columns, reply)

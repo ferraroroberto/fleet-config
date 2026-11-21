@@ -291,6 +291,16 @@ def session_holds_live_pty(columns: Dict[str, Any], sid: str) -> bool:
     return False
 
 
+def live_session_ids(columns: Dict[str, Any]) -> List[str]:
+    """Session ids of every card that holds a live PTY, in any column."""
+    return [
+        str(card.get("session_id") or "")
+        for bucket in (columns.get("claude_turn"), columns.get("your_turn"), columns.get("other"))
+        for card in bucket or []
+        if _holds_a_live_pty(card)
+    ]
+
+
 def refuse_dispatch(
     repo: str,
     mode: str,
