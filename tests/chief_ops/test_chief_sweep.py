@@ -104,12 +104,28 @@ LIVE_MARKER = {"work#11": {"owner_host": "box", "owner_pid": 4242, "owner_sessio
 MANAGED = {"lane14": {"repo": "work", "number": 14}}
 
 
-def sweep(dirs=(), markers=None, session_ids=frozenset(), pid_probe=lambda _p: False, managed=MANAGED):
+def proc(pid, name, exe="", cmdline=""):
+    return {"ProcessId": pid, "ParentProcessId": 1, "Name": name, "ExecutablePath": exe, "CommandLine": cmdline}
+
+
+def other_spelling(path):
+    """The fleet root is junctioned between two drive letters: the same folder under the other one."""
+    return [path, "Z:" + os.path.splitdrive(path)[1]]
+
+
+def own(path):
+    return [path]
+
+
+
+def sweep(dirs=(), markers=None, session_ids=frozenset(), pid_probe=lambda _p: False, managed=MANAGED,
+          processes=(), spellings=own):
     found = cs.scan(
         TMP,
         dirs=None if dirs is None else [cs._norm(d) for d in dirs],
         markers=LIVE_MARKER if markers is None else markers,
         session_ids=session_ids, pr_lookup=pr_lookup, host="box", pid_probe=pid_probe, managed=managed,
+        processes=None if processes is None else list(processes), spellings=spellings,
     )
     return {f.name: f for f in found}
 
@@ -160,7 +176,8 @@ check(cls(live_lane, 14) == cs.IN_USE and "live session lane14" in live_lane["wo
       "in-use: a live chief-managed session for the tree's repo#N holds it without a marker")
 check(cls(sweep(session_ids=frozenset({"lane14"}), managed={"lane14": {"repo": "work", "number": 15}}), 14) == cs.FINISHED,
       "finished: a live chief-managed session on a different issue does not hold the tree")
-check(cs.classify_worktree(wt13, dirs=[], markers={}, session_ids=set(), pr_lookup=pr_lookup, grace_s=0).cls == cs.FINISHED,
+check(cs.classify_worktree(wt13, dirs=[], markers={}, session_ids=set(), processes=[], pr_lookup=pr_lookup,
+                         grace_s=0).cls == cs.FINISHED,
       "finished: the same fresh tree past a zero grace period, so only the grace period held it")
 
 blind = sweep(dirs=None)
@@ -168,6 +185,48 @@ check(cls(blind, 1) == cs.UNKNOWN and "live sessions not established" in blind["
       "unknown: an unreadable board never lets a worktree read as finished")
 check(cls(blind, 9) == cs.UNKNOWN, "unknown: an unreadable board also holds back orphan-empty")
 check(cls(blind, 4) == cs.HAS_WORK, "has-work stands on git evidence alone, board or not")
+
+# ---- live processes (fleet-config#2198) -----------------------------------------
+
+
+def judge(path, processes, spellings=own):
+    """One folder through the classifier, so these checks do not rescan every worktree."""
+    return cs.classify_worktree(path, dirs=[], markers={}, session_ids=set(), processes=processes,
+                                pr_lookup=pr_lookup, spellings=spellings)
+
+
+slash = str(wt1).replace(chr(92), "/")
+app = [
+    proc(101, "python.exe", exe=str(wt1 / ".venv" / "Scripts" / "python.exe"), cmdline="python launcher.py --tray"),
+    proc(102, "node.exe", exe="C:/Program Files/nodejs/node.exe", cmdline=f'node "{slash}/server.js"'),
+    proc(103, "python.exe", exe=str(wt1 / ".venv" / "Scripts" / "python.exe"), cmdline="python -m other"),
+]
+held_by_proc = judge(wt1, app)
+check(held_by_proc.cls == cs.IN_USE, "in-use: a process running from the worktree holds it though no session or marker does")
+check("node.exe, python.exe" in held_by_proc.evidence,
+      "in-use: the reason names each process once, sorted, by name")
+check("launcher.py" not in held_by_proc.evidence and "server.js" not in held_by_proc.evidence
+      and "--tray" not in held_by_proc.evidence and str(TMP) not in held_by_proc.evidence,
+      "in-use: the reason never carries a command line or a path")
+check(judge(wt1, []).cls == cs.FINISHED, "finished: with no process naming it the same tree is finished")
+sibling = [proc(104, "python.exe", exe=str(TMP / "work-wt-15" / "python.exe"), cmdline=f"python {TMP}/work-wt-10/x.py")]
+check(judge(wt1, sibling).cls == cs.FINISHED, "finished: a sibling sharing a name prefix (-wt-15, -wt-10) is not a holder")
+
+tail = os.path.splitdrive(str(wt1))[1]
+elsewhere = [proc(201, "python.exe", cmdline=f"python Z:{tail.replace(chr(92), '/')}/launcher.py")]
+check(judge(wt1, elsewhere).cls == cs.FINISHED,
+      "finished: a process naming only the other drive spelling is invisible to a one-spelling match")
+check(judge(wt1, elsewhere, other_spelling).cls == cs.IN_USE,
+      "in-use: a process naming the other drive spelling of the junctioned root holds the worktree")
+check(judge(wt1, app, other_spelling).cls == cs.IN_USE,
+      "in-use: the drive's own spelling still matches when other spellings are tried too")
+
+blind_1 = judge(wt1, None)
+check(blind_1.cls == cs.UNKNOWN and "process list not established" in blind_1.evidence,
+      "unknown: an unreadable process list never lets a worktree read as finished")
+check(judge(wt2, None).cls == cs.UNKNOWN, "unknown: an unreadable process list also holds back a squash-merged tree")
+check(judge(TMP / "work-wt-9", None).cls == cs.UNKNOWN, "unknown: an unreadable process list also holds back orphan-empty")
+check(judge(wt4, None).cls == cs.HAS_WORK, "has-work stands on git evidence alone, process list or not")
 
 # ---- apply ---------------------------------------------------------------------
 
@@ -224,8 +283,9 @@ check(lines[2].endswith("-> unknown") and "gh error" in lines[2], "sessions: a f
 # ---- CLI ------------------------------------------------------------------------
 
 board = {"columns": {"claude_turn": [{"session_id": "s", "alive": True, "project_dir": str(TMP / "work-wt-7")}]}}
-saved_request = co.launcher._request
+saved_request, saved_table = co.launcher._request, cs.process_table
 co.launcher._request = lambda *_a, **_k: board
+cs.process_table = lambda: []
 try:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -265,7 +325,18 @@ try:
     check(code == 0 and "work-wt-7" in out.getvalue() and (TMP / "work-wt-7").exists()
           and (TMP / "work-wt-4").exists() and "unknown      work-wt-7" in out.getvalue(),
           "CLI: with the board unreadable --apply removes nothing and says unknown")
+
+    co.launcher._request = lambda *_a, **_k: {"columns": {}}
+    solo = TMP / "solo"                                  # one empty folder: the wiring needs no git facts
+    (solo / "work-wt-22").mkdir(parents=True)
+    cs.process_table = lambda: None
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = co.main(["sweep", "--root", str(solo), "--apply"])
+    check(code == 0 and (solo / "work-wt-22").exists() and "unknown      work-wt-22" in out.getvalue()
+          and "process list not established" in out.getvalue(),
+          "CLI: with the process list unreadable --apply removes nothing and says unknown")
 finally:
-    co.launcher._request = saved_request
+    co.launcher._request, cs.process_table = saved_request, saved_table
 
 _h.report_and_exit("test_chief_sweep")
