@@ -219,6 +219,7 @@ if real_spec.is_file():
     check(parsed.get("components.button-ghost.backgroundColor") == "transparent",
           "real design.md: ghost = transparent (the settled vocabulary, #296)")
 
+# host-identity-exempt: guards the live design spec on this machine, which only the real home holds
 real_dark = Path.home() / ".claude" / "design.dark.md"
 if real_dark.is_file():
     parsed_dark = dl.parse_spec(real_dark.read_text(encoding="utf-8", errors="replace"))

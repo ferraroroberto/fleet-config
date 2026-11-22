@@ -127,7 +127,7 @@ def cd_prefix_runs_in_outer_shell(check: _Checker) -> None:
     for tool, command in probes:
         code, stdout, stderr = run(
             "context_filter_hook",
-            {"tool_name": tool, "cwd": str(Path.home()), "tool_input": {"command": command}},
+            {"tool_name": tool, "cwd": tempfile.gettempdir(), "tool_input": {"command": command}},
             {"FLEET_CONTEXT_FILTER_MODE": "rewrite"},
         )
         rewritten = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"] if code == 0 and stdout.strip() else ""

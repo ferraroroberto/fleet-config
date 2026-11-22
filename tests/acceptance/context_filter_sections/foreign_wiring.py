@@ -15,6 +15,7 @@ def codex_wired_hook_fails_open(check: _Checker) -> None:
     # that supplied updatedInput. That makes a healthy hook look broken and
     # cannot be repaired without erasing the user's real command status, so
     # drive the hook through its real junction path and pin fail-open behavior.
+    # host-identity-exempt: drives the live codex junction on this machine, which only the real home holds
     codex_hook = Path.home() / ".codex" / "hooks" / "context_filter_hook.py"
     if codex_hook.exists():
         res = subprocess.run(
@@ -156,6 +157,7 @@ def copilot_payload_dialect(check: _Checker) -> None:
 
 def copilot_installed_copy_matches_source(check: _Checker) -> None:
     # ---- copilot hook wiring: installed copy must match the repo source (#547) ----
+    # host-identity-exempt: guards the live copilot install on this machine, which only the real home holds
     copilot_installed = Path.home() / ".copilot" / "hooks" / "fleet-context-filter.json"
     copilot_source = REPO / "hooks" / "agents" / "copilot" / "fleet-context-filter.json"
     def _normalized(path: Path) -> bytes:
@@ -184,6 +186,7 @@ def agy_installed_copy_matches_source(check: _Checker) -> None:
     # junctions), so drift between the repo source and the installed copy is
     # possible between installs — this is the same anti-staleness contract as
     # .fleet.toml. Skips when agy (or the plugin) is not on this machine.
+    # host-identity-exempt: guards the live agy install on this machine, which only the real home holds
     agy_installed = Path.home() / ".gemini" / "config" / "plugins" / "fleet-context-filter"
     agy_source = REPO / "hooks" / "agents" / "agy" / "fleet-context-filter"
     if agy_installed.exists():
