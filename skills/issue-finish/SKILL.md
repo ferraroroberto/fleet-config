@@ -276,7 +276,7 @@ Decision below is driven by the project's `## CI expectations` block
   baseline or visual proof, rendered geometry and an API probe; a criterion they show is ticked with the
   evidence. `yes` when the repro or acceptance re-ran and passed in this run; `scheduled` when all of it did
   except a criterion only a later scheduled run can show (the chief reads it); `no` only with one `--gap` per
-  criterion no such proof can show, class `device`, `owner-account`, `physical` or `third-party`. Before any
+  criterion no such proof can show, class `device`, `owner-account`, `physical`, `third-party`, `input-device`, `desktop-session` or `second-machine`. Before any
   gap, use the proof tools in docs/owner-check.md's "Owner-only gaps" (Playwright Chromium + WebKit phone
   profiles, the Mac runner, screenshots + /design-review, the launcher API, satellite SSH, the restart recipe,
   the hub's TTS, pywinauto/UIA); `finish` refuses a lane-provable criterion and names the tool.

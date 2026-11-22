@@ -17,7 +17,7 @@ Before declaring any gap, a lane uses every proof tool the fleet has:
 - the local hub's TTS for real speech input
 - pywinauto/UIA for Windows windows
 
-Visual verification by the lane is enough. What is left goes to Roberto only as `--gap <class>:<criterion>` with one of four classes:
+Visual verification by the lane is enough. What is left goes to Roberto only as `--gap <class>:<criterion>` with one of seven classes:
 
 | Class | Only for |
 | --- | --- |
@@ -25,6 +25,11 @@ Visual verification by the lane is enough. What is left goes to Roberto only as 
 | `owner-account` | An action in an account only Roberto holds, with real side effects or a sign-in only he has (moving real mail, a signup, a login). |
 | `physical` | A physical action no automation can perform (plugging hardware, being in a room). |
 | `third-party` | A person other than Roberto, or a paid or external service he must sign up for. |
+| `input-device` | A physical input device no emulation reaches. The criterion must name a pen, stylus, digitizer or drawing tablet. |
+| `desktop-session` | A locked or interactive desktop session, or a third-party recording app, that no headless lane can hold. The criterion must name a locked desktop or session, an interactive or signed-in desktop, or a recording app. |
+| `second-machine` | A clean second computer the lane has no access to. The criterion must name a second, another, clean or fresh computer, machine, PC or laptop. A satellite reachable over SSH stays lane-provable. |
+
+A criterion that names a pen or a locked or interactive desktop is not refused for the browser- and window-driving words (desktop, keys, click, drag, touch): Playwright and UIA cannot reach those, so they are no substitute. Every other refusal below still applies.
 
 There is no taste class: a genuine design choice is a plan-gate question before the build, never a validation after it.
 

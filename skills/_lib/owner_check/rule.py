@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 REQUIRED = "required"
 NONE = "none"
@@ -50,6 +50,9 @@ OWNER_CLASSES = {
     "owner-account": "an action in an account only the owner holds, with real side effects",
     "physical": "a physical action no automation can perform",
     "third-party": "a person other than the owner, or an external service he must sign up for",
+    "input-device": "a physical input device (a pen, stylus or digitizer) no emulation reaches",
+    "desktop-session": "a locked or interactive desktop session, or a third-party recording app, no headless lane can hold",
+    "second-machine": "a clean second computer the lane has no access to",
 }
 # Class descriptions recorded before the classes were narrowed, so a re-check can
 # still read an older gap back to its class.
@@ -79,6 +82,36 @@ _DEVICE_ITEMS = re.compile(
     r"home devices?)\b",
     re.IGNORECASE,
 )
+# Hardware and sessions a lane has no way to reach. Each kind is accepted only when
+# its criterion names one of these items, so the kind says what the owner must do.
+_INPUT_DEVICE_ITEMS = re.compile(
+    r"\b(pens?|styl(?:us|i)|digi[tz]izers?|(?:drawing|graphics|pen) tablets?)\b", re.IGNORECASE)
+_DESKTOP_SESSION_ITEMS = re.compile(
+    r"\b(locked (?:desktop|session|workstation|pc|computer)|desktop (?:is |being )?locked|"
+    r"(?:interactive|signed[- ]in|logged[- ]in) (?:desktop|session)|"
+    r"(?:screen[- ])?record(?:ing|er) apps?|screen recorders?)\b",
+    re.IGNORECASE,
+)
+_SECOND_MACHINE_ITEMS = re.compile(
+    r"\b(?:second|another|other|clean|fresh|separate) (?:computer|machine|pc|laptop)\b", re.IGNORECASE)
+# kind -> (items it must name, what a criterion naming none is told to do instead)
+_KIND_ITEMS: Dict[str, Tuple[re.Pattern, str]] = {
+    "device": (_DEVICE_ITEMS, "names no hardware emulation cannot reach: prove it with emulation "
+                              "(the WebKit phone profile or the Mac simulator)"),
+    "input-device": (_INPUT_DEVICE_ITEMS, "names no physical input device (pen, stylus, digitizer): "
+                                          "prove it with the browser's pointer events in Playwright"),
+    "desktop-session": (_DESKTOP_SESSION_ITEMS, "names no locked or interactive desktop session or recording app: "
+                                                "prove it with pywinauto/UIA in an unlocked session"),
+    "second-machine": (_SECOND_MACHINE_ITEMS, "names no second machine: prove it with the passwordless SSH "
+                                              "to a satellite or a fresh clone"),
+}
+# What a lane cannot drive on these: Playwright, UIA and the phone profile all need
+# a session and a screen they can reach, so a criterion naming one is not lane-provable.
+_UNDRIVABLE = re.compile("|".join(p.pattern for p in (_INPUT_DEVICE_ITEMS, _DESKTOP_SESSION_ITEMS)), re.IGNORECASE)
+_DRIVING_TOOLS = frozenset({
+    "Playwright for the browser, pywinauto/UIA for a Windows window",
+    "the WebKit phone profile",
+})
 # A gap criterion naming any of these is lane-provable, whatever its class; each
 # pattern names the tool to use instead. Closed list, no fuzzy matching.
 _LANE_PROVABLE: Tuple[Tuple[re.Pattern, str], ...] = tuple(
@@ -136,17 +169,24 @@ class Decision:
 def gap_refusal(cls: str, criterion: str) -> Optional[str]:
     """Why a lane may not hand this gap to the owner, naming the tool to use; None when it holds.
 
-    An allowlisted device item is cut out before the closed refusal list runs, so
-    "on-screen keyboard" is not refused as a keyboard check.
+    An allowlisted item of any kind is cut out before the closed refusal list runs, so
+    "on-screen keyboard" is not refused as a keyboard check. A criterion naming a pen
+    or a locked or interactive desktop also drops the browser- and window-driving
+    refusals: no lane can drive those, so Playwright and UIA are no substitute.
     """
-    rest = _DEVICE_ITEMS.sub(" ", criterion)
+    rest = criterion
+    undrivable = bool(_UNDRIVABLE.search(criterion))
+    for item_pattern, _ in _KIND_ITEMS.values():
+        rest = item_pattern.sub(" ", rest)
     for pattern, tool in _LANE_PROVABLE:
+        if undrivable and tool in _DRIVING_TOOLS:
+            continue
         m = pattern.search(rest)
         if m:
             return f"{criterion!r} is lane-provable ({m.group(0).strip()}): prove it with {tool}"
-    if cls == "device" and not _DEVICE_ITEMS.search(criterion):
-        return (f"{criterion!r} names no hardware emulation cannot reach: prove it with emulation "
-                "(the WebKit phone profile or the Mac simulator)")
+    required = _KIND_ITEMS.get(cls)
+    if required and not required[0].search(criterion):
+        return f"{criterion!r} {required[1]}"
     return None
 
 
