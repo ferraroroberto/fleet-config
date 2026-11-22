@@ -12,6 +12,7 @@ The scripts are in `scripts/fleet_move/`:
 | `measure_tree.py` | One walk of a tree that never enters a junction: bytes, files, heaviest folders, every link and its target, every `index.lock`. `compare` checks a copy against its source. |
 | `copy_linked.py` | Copies the backup snapshot store keeping its hardlinks, so the store's size does not multiply by the number of snapshots. |
 | `backup_paths.py` | Sets `[backup] source_root` and `dest` in `projects.toml`, keeping the original as `projects.toml.pre-move`. |
+| `copy_claude_history.py` | Copies each pre-move `~/.claude/projects/E--automation-*` folder (transcripts and `memory/`) into its `C--automation-*` twin. Dry-run unless `--apply`. |
 
 The Python helpers are stdlib-only and run with the base interpreter named in `fleet-config/.venv/pyvenv.cfg` (`-I`), never with a venv inside the tree, so nothing in the tree is held open when it is renamed.
 
@@ -43,6 +44,19 @@ The repo leg's preflight refuses a destination on the source's volume, and it co
 | The launcher's Jobs-tab pause | It pauses a job by deleting its scheduled task and keeping `paused_schedule` in `jobs.json`. A task with no `paused_schedule` stays enabled and fires during the window. | needs a change: list the `\AppLauncher\` and `\AppLauncherLite\` tasks still enabled after the pause, and disable them for the window |
 | Live writers during the copy | Files written or deleted mid-copy (hook state, the statusline, a job pruning its run folders) make robocopy exit 9 and the compare differ. | safe with `-Resume`: the delta passes converge instead of a full recopy |
 | `E:` shared over SMB | The volume is shared as `E`; a client session holding a file in the tree blocks the rename like a local process. | check: no open SMB sessions (`Get-SmbSession`) before the rename |
+
+## Joining the pre-move Claude history
+
+Claude Code keys a project's history folder by the session's working directory. Once sessions started from the resolved `C:/automation` path, they wrote to new `C--automation-*` folders under `~/.claude/projects`, while the history and per-project `memory/` from before the move stayed in the matching `E--automation-*` folders, so a new session started without that memory. `copy_claude_history.py` copies the old folders into the new ones:
+
+```powershell
+# dry run: one line per folder, nothing written
+E:/automation/fleet-config/.venv/Scripts/python.exe -I E:/automation/fleet-config/scripts/fleet_move/copy_claude_history.py
+# the copy, with every Claude Code session closed
+E:/automation/fleet-config/.venv/Scripts/python.exe -I E:/automation/fleet-config/scripts/fleet_move/copy_claude_history.py --apply
+```
+
+It copies and never moves or deletes: every `E--` folder stays until the owner removes it. A file whose relative path already exists in the twin is skipped. `memory/MEMORY.md` is merged by appending the source lines the twin lacks. Any other `memory/` file that exists in both with different bytes is a clash: the newer file by modified time wins and the clash is listed, which is the only case that replaces an existing file. `--apply` refuses while a session is open (the `~/.claude/sessions/<pid>.json` registry, each pid checked for a running process) or when that registry cannot be read, because live sessions write into the `C--` folders; a dry run only reports how many are open. Output is counts and file names, never file contents. A second `--apply` copies nothing new.
 
 ## Runbook
 
