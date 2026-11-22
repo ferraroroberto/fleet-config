@@ -59,7 +59,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, NamedTuple, Optional
+from typing import Callable, Iterable, NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
@@ -249,6 +249,38 @@ def probe(path: str) -> Probe:
         return Probe("UNKNOWN", [], err)
     holders = holders_for(path, processes)
     return Probe("LIVE" if holders else "CLEAR", holders, None)
+
+
+def wait_for(path: str, want: str, timeout_s: float = 30.0, interval_s: float = 0.25,
+             alive: Optional[Callable[[], Optional[int]]] = None,
+             probe_fn: Optional[Callable[[str], Probe]] = None,
+             clock: Callable[[], float] = time.monotonic,
+             sleep: Callable[[float], None] = time.sleep) -> Probe:
+    """Probe `path` until it reads `want`, else UNKNOWN — never the other verdict.
+
+    A deadline is not evidence: a directory that still reads CLEAR when the
+    wait for LIVE runs out has not been shown CLEAR, so it is UNKNOWN with the
+    last verdict in the reason. `alive` returns None while the expected holder
+    runs and its exit code once it has gone; a holder that exits before it is
+    seen makes the wait unanswerable (under load a fresh process can die at
+    launch), so that too is UNKNOWN, naming the exit code, rather than CLEAR.
+    """
+    probe_fn = probe_fn or probe
+    deadline = clock() + timeout_s
+    while True:
+        result = probe_fn(path)
+        if result.status == want:
+            return result
+        gone = alive() if alive is not None else None
+        if gone is not None:
+            return Probe("UNKNOWN", result.holders,
+                         f"the expected holder exited (code {gone}) before the probe read {want}; "
+                         f"last verdict {result.status}" + (f" ({result.reason})" if result.reason else ""))
+        if clock() >= deadline:
+            return Probe("UNKNOWN", result.holders,
+                         f"still {result.status} after {timeout_s:.0f}s waiting for {want}"
+                         + (f" ({result.reason})" if result.reason else ""))
+        sleep(interval_s)
 
 
 def cmd_check(path: str) -> None:

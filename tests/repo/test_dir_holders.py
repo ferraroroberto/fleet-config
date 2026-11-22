@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -162,6 +161,63 @@ check(bool(_r.reason) and "process-table query" in _r.reason,
       "probe: an UNKNOWN verdict names why it could not answer" + f" [{_r!r}]")
 
 
+# ---- wait_for: a deadline or a dead holder is UNKNOWN, never CLEAR (fleet-config#2202) ----
+# A fake probe and a fake clock, so the false CLEAR the live section hit once
+# under load (a holder that died at launch, read CLEAR for the whole window) is
+# reproduced with no spawn and no real delay.
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.t += s
+
+
+def _scripted(*verdicts: str):
+    """A probe returning each verdict in turn, then the last one forever."""
+    seq = list(verdicts)
+    calls = []
+
+    def fake(path: str) -> dh.Probe:
+        calls.append(path)
+        status = seq[min(len(calls), len(seq)) - 1]
+        return dh.Probe(status, [{"pid": 1}] if status == "LIVE" else [], None)
+    return fake, calls
+
+
+_clk = _FakeClock()
+_fake, _calls = _scripted("CLEAR")
+_r = dh.wait_for("X", "LIVE", timeout_s=17, probe_fn=_fake, clock=_clk, sleep=_clk.sleep)
+check(_r.status == "UNKNOWN" and "still CLEAR after 17s waiting for LIVE" in (_r.reason or ""),
+      f"wait_for: a window that ends still CLEAR is UNKNOWN, not CLEAR [{_r!r}]")
+check(_clk.t >= 17 and len(_calls) > 1, "wait_for: it keeps probing until the deadline")
+
+_clk = _FakeClock()
+_fake, _calls = _scripted("CLEAR")
+_r = dh.wait_for("X", "LIVE", timeout_s=17, alive=lambda: 3221225794,
+                 probe_fn=_fake, clock=_clk, sleep=_clk.sleep)
+check(_r.status == "UNKNOWN" and "exited (code 3221225794)" in (_r.reason or "") and len(_calls) == 1,
+      f"wait_for: a holder that died before it was seen stops the wait as UNKNOWN, naming its exit code [{_r!r}]")
+
+_clk = _FakeClock()
+_fake, _calls = _scripted("CLEAR", "CLEAR", "LIVE")
+_r = dh.wait_for("X", "LIVE", timeout_s=17, alive=lambda: None,
+                 probe_fn=_fake, clock=_clk, sleep=_clk.sleep)
+check(_r.status == "LIVE" and len(_calls) == 3 and _r.reason is None,
+      f"wait_for: a holder that shows up late inside the window is LIVE [{_r!r}]")
+
+_clk = _FakeClock()
+_fake, _calls = _scripted("LIVE")
+_r = dh.wait_for("X", "CLEAR", timeout_s=5, probe_fn=_fake, clock=_clk, sleep=_clk.sleep)
+check(_r.status == "UNKNOWN" and _r.holders == [{"pid": 1}] and "still LIVE" in (_r.reason or ""),
+      f"wait_for: a timed-out wait for CLEAR keeps the holders it saw [{_r!r}]")
+
+
 # ---- the real probe, end to end ----
 
 
@@ -209,12 +265,9 @@ try:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=NO_WINDOW,
     )
-    # Win32_Process lists a process as soon as it exists; give it a beat anyway.
-    for _ in range(20):
-        _r = dh.probe(str(_tmp))
-        if _r.status == "LIVE":
-            break
-        time.sleep(0.25)
+    # Win32_Process lists a process as soon as it exists, but under load the
+    # holder itself can die at launch; the wait reports that as UNKNOWN.
+    _r = dh.wait_for(str(_tmp), "LIVE", alive=_holder.poll)
 
     if _expect(_r, "LIVE", "probe: a live process naming the directory is LIVE, not CLEAR"):
         check(any(h["pid"] == _holder.pid for h in _r.holders),
@@ -226,11 +279,7 @@ try:
     # is not a holder, which is the whole zombie-shell point (fleet-config#534).
     _holder.terminate()
     _holder.wait(timeout=30)
-    for _ in range(20):
-        _r = dh.probe(str(_tmp))
-        if _r.status == "CLEAR":
-            break
-        time.sleep(0.25)
+    _r = dh.wait_for(str(_tmp), "CLEAR")
     _expect(_r, "CLEAR", "probe: after the holder exits the directory is CLEAR again")
 
     # The CLI contract the teardown brief actually invokes.
