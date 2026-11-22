@@ -80,6 +80,18 @@ Read each machine's `report=` markdown (the generated health report: verdict, fi
 
 Flag anything that looks like an engine bug rather than a machine problem, and say which you think it is.
 
+### 3b. Flag storage bloat and Docker problems
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/fleet-health/storage_diff.py analyse --out-dir <OUT_DIR from step 2>
+```
+
+Reads the hub's `run.storage` section from each machine's export (drives, known growers, top folders, Docker) and diffs it against the newest earlier run that has one. It measures nothing itself and never prunes, deletes or stops anything. Prints `STORAGE|` / `FLAG|` / `UNKNOWN|` lines, then a markdown block to paste into each entry. Flags: a drive under 10% or 50 GB free; a grower or top folder up more than 10% **and** 5 GB since the previous run (a folder new in the top list counts); the Docker engine not answering; a container `unhealthy` (stopped containers are not flagged). Thresholds are overridable with `FLEET_HEALTH_STORAGE_FREE_PCT`, `_FREE_GB`, `_GROWTH_PCT`, `_GROWTH_GB`.
+
+- **`UNKNOWN` is its own state.** A part the capture could not read, a previous size that was unknown, an export with no storage section (an older hub build) and a machine without Docker are all reported `unknown (<why>)`, never as zero and never as clean. List a machine with no storage section as **not covered for storage** in its entry.
+- **`status=baseline`** (no earlier section) means drives and Docker were judged but growth could not be: say so, do not call it "no growth".
+- Each growth flag names the folder and its growth, plus the safe cleanup when one is known; carry flags still open from last week forward as *still open*.
+
 ### 4. Append this run to the ledger
 
 ```
@@ -92,11 +104,12 @@ Write one entry per machine — **including the not-covered ones** — newest ru
 ### <machine-id> — <YYYY-MM-DD>
 
 **Findings** — what the data says: envelope, per-app load, and what changed vs the last run
+**Storage** — the step 3b block for this machine (flags, unknowns, or why it is not covered)
 **Annex** — `runs/<YYYY-MM-DD>/<machine>.{json,md}`
 **Recommendation** — concrete and actionable; if it was already open last run, say so explicitly
 ```
 
-A not-covered machine gets the same three headings, with **Findings** stating the reason it could not be measured and **Annex** reading `— (not covered)`.
+A not-covered machine gets the same headings (without **Storage**), with **Findings** stating the reason it could not be measured and **Annex** reading `— (not covered)`.
 
 Keep entries diffable: same headings, same order, no prose drift between runs.
 
@@ -110,7 +123,7 @@ cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_s
    --title "Fleet health — <YYYY-MM-DD>"
 🩺 Fleet health checkup — <YYYY-MM-DD> · <N> captured, <M> not covered
 
-<one line per machine: id · verdict · the single most interesting change>
+<one line per machine: id · verdict · the single most interesting change · storage flags (count, or "unknown")>
 EOF
 ```
 

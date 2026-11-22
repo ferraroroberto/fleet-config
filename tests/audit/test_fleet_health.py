@@ -48,6 +48,7 @@ from check_harness import CheckHarness  # noqa: E402
 
 sys.path.insert(0, str(SKILL))
 import capture  # noqa: E402
+import storage_diff  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -389,6 +390,146 @@ try:
               "cmd_collect: a confirmed still-running capture is still stopped")
     finally:
         capture._get, capture._post = _real_get, _real_post
+
+    # ------------------------------------------------ 4. storage and Docker flags
+    # `storage_diff.py` reads the hub's `run.storage` section out of each
+    # machine's export and diffs it against the newest earlier run. Synthetic
+    # exports only: the real ledger never enters the repo or the test.
+    G = storage_diff.GIB
+
+    def _storage(drives=None, growers=None, folders=None, docker=None) -> dict:
+        return {
+            "schema": 1,
+            "drives": {"status": "ok", "items": drives if drives is not None else [
+                {"mount": "D:", "status": "ok", "total_bytes": 1000 * G, "free_bytes": 500 * G}]},
+            "growers": {"status": "ok", "items": growers or []},
+            "top_folders": {"status": "ok", "roots": [
+                {"root": "R", "status": "ok", "folders": folders or []}]},
+            "docker": docker if docker is not None else {
+                "status": "ok", "server_version": "1",
+                "containers": {"status": "ok", "items": []},
+                "usage": {"status": "ok", "items": []}},
+        }
+
+    def _grower(label: str, size_gb=None, **extra) -> dict:
+        item = {"label": label, "path": "P/" + label}
+        if size_gb is None:
+            return {**item, "status": "unknown", "reason": "walk timed out", **extra}
+        return {**item, "status": "ok", "bytes": int(size_gb * G)}
+
+    def _folder(path: str, size_gb: float) -> dict:
+        return {"path": path, "status": "ok", "bytes": int(size_gb * G)}
+
+    def _write_export(run_dir: Path, machine: str, storage) -> None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        run = {"run_id": "r"} if storage is None else {"run_id": "r", "storage": storage}
+        (run_dir / (machine + ".json")).write_text(json.dumps({"run": run}), encoding="utf-8")
+
+    def _analyse(runs: Path, date: str) -> str:
+        code, out = _captured([str(SKILL / "storage_diff.py"), "analyse",
+                               "--out-dir", str(runs / date)], REPO)
+        check(code == 0, "storage_diff analyse: exits 0 under captured stdout (got %s)" % code)
+        return out
+
+    runs = tmp / "storage-runs"
+    prev_dir, cur_dir = runs / "2026-02-01", runs / "2026-02-08"
+
+    # ---- second run diffs against the first and flags a planted grower ----
+    _write_export(prev_dir, "box", _storage(
+        growers=[_grower("onedrive-logs", 20), _grower("model-cache", 100),
+                 _grower("small-grower", 1), _grower("gone-dark", 10)],
+        folders=[_folder("A", 40), _folder("B", 30)]))
+    _write_export(cur_dir, "box", _storage(
+        growers=[_grower("onedrive-logs", 30),        # +10 GB, +50%: flagged
+                 _grower("model-cache", 104),         # +4 GB: under the byte floor
+                 _grower("small-grower", 4),          # +300% but only 3 GB
+                 _grower("gone-dark", None)],         # unmeasured now
+        folders=[_folder("A", 40.2), _folder("NEW-BIG", 12), _folder("NEW-SMALL", 1)]))
+    out = _analyse(runs, "2026-02-08")
+    manifest = out.split("--- MARKDOWN ---")[0]
+    check("STORAGE|box|status=compared|previous=2026-02-01" in out,
+          "storage_diff: the second run diffs against the first")
+    check("FLAG|box|grower-growth|grower onedrive-logs +10.0 GB" in out,
+          "storage_diff: a planted grower growing past both thresholds is flagged")
+    check("2172" in manifest,
+          "storage_diff: the OneDrive flag names the known safe cleanup")
+    check("model-cache" not in out and "small-grower" not in out,
+          "storage_diff: growth under the byte floor or the percentage is not flagged")
+    check("FLAG|box|folder-growth|folder NEW-BIG" in out,
+          "storage_diff: a folder new in the top list and over the floor is flagged")
+    check("NEW-SMALL" not in out and "folder A" not in out,
+          "storage_diff: a small new folder and a flat folder are not flagged")
+    check("UNKNOWN|box|growth-unknown|grower gone-dark: size unknown (walk timed out)" in out
+          and "FLAG|box|grower-growth|grower gone-dark" not in out,
+          "storage_diff: an unmeasured grower is unknown, never diffed as zero or flagged")
+    check("**Storage** — box" in out,
+          "storage_diff: prints a ledger-ready markdown block")
+
+    # ---- a lower bound can prove growth; a previous unknown cannot be diffed ----
+    _write_export(prev_dir, "lb", _storage(growers=[_grower("a", 10), _grower("b", None)]))
+    _write_export(cur_dir, "lb", _storage(growers=[
+        _grower("a", None, lower_bound_bytes=30 * G), _grower("b", 50)]))
+    out = _analyse(runs, "2026-02-08")
+    check("FLAG|lb|grower-growth|grower a grew by at least 20.0 GB" in out,
+          "storage_diff: a lower bound past the thresholds proves growth")
+    check("UNKNOWN|lb|growth-unknown|grower b: previous size unknown" in out,
+          "storage_diff: a size whose previous value was unknown is not diffed")
+
+    # ---- Docker: unknown is its own flag, only unhealthy containers flag ----
+    _write_export(cur_dir, "dk", _storage(docker={
+        "status": "unknown", "reason": "docker info timed out after 8s"}))
+    out = _analyse(runs, "2026-02-08")
+    check("FLAG|dk|docker-unreachable|docker engine did not answer: docker info timed out"
+          in out, "storage_diff: an engine that does not answer is flagged, not passed")
+    check("STORAGE|dk|status=baseline" in out,
+          "storage_diff: a machine with no earlier storage section is a baseline")
+
+    _write_export(cur_dir, "nd", _storage(docker={
+        "status": "unknown", "reason": "docker CLI not on PATH"}))
+    _write_export(cur_dir, "ct", _storage(docker={
+        "status": "ok", "server_version": "1",
+        "containers": {"status": "ok", "items": [
+            {"name": "sick", "state": "running", "health": "unhealthy"},
+            {"name": "stopped", "state": "exited", "health": None},
+            {"name": "fine", "state": "running", "health": "healthy"}]},
+        "usage": {"status": "unknown", "reason": "docker system df timed out"}}))
+    out = _analyse(runs, "2026-02-08")
+    check("UNKNOWN|nd|docker-not-installed" in out and "FLAG|nd|" not in out,
+          "storage_diff: no Docker installed is unknown, not a flagged outage")
+    check("FLAG|ct|docker-unhealthy|container sick" in out,
+          "storage_diff: an unhealthy container is flagged")
+    check("stopped" not in out and "fine" not in out,
+          "storage_diff: stopped and healthy containers are not flagged")
+    check("UNKNOWN|ct|docker-unknown|docker usage totals: docker system df timed out" in out,
+          "storage_diff: an unmeasured Docker usage total reports unknown")
+
+    # ---- drives: percentage or absolute floor; unknown drive is not low ----
+    _write_export(cur_dir, "dr", _storage(drives=[
+        {"mount": "C:", "status": "ok", "total_bytes": 1000 * G, "free_bytes": 50 * G},
+        {"mount": "E:", "status": "ok", "total_bytes": 100 * G, "free_bytes": 40 * G},
+        {"mount": "F:", "status": "ok", "total_bytes": 1000 * G, "free_bytes": 400 * G},
+        {"mount": "G:", "status": "unknown", "reason": "usage did not return within 3s"}]))
+    out = _analyse(runs, "2026-02-08")
+    check("FLAG|dr|low-free-space|drive C:" in out,
+          "storage_diff: a drive under the free-space percentage is flagged")
+    check("FLAG|dr|low-free-space|drive E:" in out,
+          "storage_diff: a drive under the absolute free-space floor is flagged")
+    check("drive F:" not in out and "UNKNOWN|dr|drive-unknown|drive G:" in out,
+          "storage_diff: a roomy drive is quiet and an unreadable drive is unknown")
+
+    # ---- no section at all, and nothing is written ----
+    _write_export(cur_dir, "old", None)
+    before = sorted(p.name for p in cur_dir.iterdir())
+    out = _analyse(runs, "2026-02-08")
+    check("STORAGE|old|status=unknown|reason=no storage section" in out,
+          "storage_diff: an export with no storage section is unknown, not clean")
+    check(sorted(p.name for p in cur_dir.iterdir()) == before,
+          "storage_diff: the run directory is untouched (read-only)")
+    check(storage_diff.fmt_bytes(1536) == "1.5 KB",
+          "storage_diff: byte formatting is stable")
+    code, out = _captured([str(SKILL / "storage_diff.py"), "analyse",
+                           "--out-dir", str(tmp / "nowhere")], REPO)
+    check(code == 2, "storage_diff: a missing run directory is a usage error (2)")
 
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
