@@ -135,8 +135,48 @@ for text in ("device:the on-screen keyboard does not cover the composer on a rea
         rule.parse_gap(text)
     except ValueError as exc:
         check(False, f"an owner-only gap {text!r} is accepted, got {exc}")
+# Gaps only the owner's hands can close, each accepted under the kind that says so.
+NEW_KINDS = (
+    "input-device:the pen draws a pressure-sensitive stroke and the eraser end clears it",
+    "input-device:a stylus drag on the digitizer moves the card",
+    "desktop-session:Ctrl+Alt+F9 starts the recording while the desktop is locked",
+    "desktop-session:the third-party recording app captures the window on the interactive desktop",
+    "second-machine:the installer runs on a clean second computer",
+    "second-machine:another machine pulls the repo and starts the tray",
+)
+for text in NEW_KINDS:
+    try:
+        cls, _crit = rule.parse_gap(text)
+        check(cls == text.partition(":")[0], f"{text!r} keeps its own kind")
+    except ValueError as exc:
+        check(False, f"an owner-only gap {text!r} is accepted, got {exc}")
+# The old labels the lanes reworded these under still work for the same criteria.
+for text in ("physical:the pen draws a stroke and a drag moves it on the digitizer",
+             "physical:the installer runs on a clean second computer"):
+    try:
+        rule.parse_gap(text)
+    except ValueError as exc:
+        check(False, f"{text!r} stays accepted, got {exc}")
+# A kind needs its own item named, and what an agent can automate is still refused.
+NEW_KIND_MISUSE = (
+    ("input-device:the card moves", "names no physical input device"),
+    ("input-device:the pen button opens the menu in the screenshot", "design-review"),
+    ("desktop-session:the overlay opens", "names no locked or interactive desktop"),
+    ("desktop-session:the tray restart works while the desktop is locked", "restart recipe"),
+    ("second-machine:the overlay opens", "names no second machine"),
+    ("second-machine:a second machine pulls over ssh", "SSH"),
+    ("second-machine:a clean second computer runs after waiting for #123", "blocked-by"),
+)
+for text, tool in NEW_KIND_MISUSE:
+    try:
+        rule.parse_gap(text)
+        check(False, f"automatable gap {text!r} must be refused")
+    except ValueError as exc:
+        check(tool in str(exc), f"refusal of {text!r} names {tool!r}, got {exc}")
 check(rule.recorded_gap(rule.gap_reason("device", "the mic level moves")) == ("device", "the mic level moves"),
       "a recorded gap reads back to its class and criterion")
+for cls in ("input-device", "desktop-session", "second-machine"):
+    check(rule.recorded_gap(rule.gap_reason(cls, "x")) == (cls, "x"), f"a recorded {cls} gap reads back")
 check(rule.recorded_gap("the lane could not prove the cards match, because it needs a taste or judgement call")
       == ("taste", "the cards match"), "an old taste gap reads back by its old class name")
 check(rule.recorded_gap("a hand-written reason") is None, "hand text is no recorded gap")
