@@ -730,6 +730,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "custom settings/comments, appends native quota items, and stays idempotent against synthetic config files "
      "(#752); the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
+    ("codex_refusal_probe", "harness/test_codex_refusal_probe.py",
+     "the live Codex refusal probe reports a workspace Codex left untrusted as unknown naming the missing "
+     "trust, with a stand-in codex binary, never as pass or fail"),
     ("hook_dispatch", "hooks/test_hook_dispatch.py",
      "the one-process dispatcher's failure paths -- a crash, a raw "
      "sys.exit(2), stray stdout, a swallowed verdict -- need throwaway hook "

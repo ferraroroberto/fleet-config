@@ -13,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parents[1] / "hooks"))
 from _lib import NO_WINDOW, run_git
 
 REASON = "Fleet conformance sentinel refused"
+# Codex 0.169+ prints this and skips the project's .codex/hooks.json unless the folder is
+# persistently trusted; trusting it means writing the owner's real config, which a probe never does.
+TRUST_WARNING = "Untrusted project-local configuration is disabled"
 
 
 # The PreToolUse hook the probe installs: it records what Codex handed it, then refuses
@@ -103,6 +106,11 @@ Stop after these attempts. Do not read files, inspect policies, retry, combine c
             print("CONFORMANCE=unknown reason=Codex timed out after 150 seconds")
             return 1
     observations = root / "observations.jsonl"
+    if not observations.exists() and TRUST_WARNING in (root / "stderr.txt").read_text(encoding="utf-8", errors="replace"):
+        print("CONFORMANCE=unknown reason=Codex skipped the disposable project's hooks: project trust missing "
+              "(the -c trust override is ignored; `codex exec --trust` would write the real config, "
+              "and a disposable CODEX_HOME would need auth carried in)")
+        return 1
     if proc.returncode or not observations.exists():
         print("CONFORMANCE=unknown reason=CLI failed or hook invocation not observed")
         return 1
