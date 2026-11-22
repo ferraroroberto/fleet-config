@@ -21,6 +21,7 @@ at the timeout (not confirmed, never killed mid-restart).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import subprocess
 import sys
 import tempfile
@@ -53,7 +54,15 @@ def _spawn(argv: list[str], cwd: Optional[str], out) -> tuple[subprocess.Popen, 
     raise AssertionError("unreachable")
 
 
+def _utf8_stdio() -> None:
+    """Pin stdout/stderr to UTF-8: under a cp1252 console or capture the ❌ line would raise instead of reporting."""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def run(argv: list[str], cwd: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> int:
+    _utf8_stdio()
     with tempfile.TemporaryFile() as out:
         proc, breakaway = _spawn(argv, cwd, out)
         print(f"BREAKAWAY={'yes' if breakaway else 'no'}", flush=True)
