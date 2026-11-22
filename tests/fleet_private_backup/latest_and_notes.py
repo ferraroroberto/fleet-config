@@ -87,7 +87,7 @@ check("HOW TO RESTORE" in note and "Copy-Item" in note,
 check("manifest.json" in note and "hardlinked" in note,
       "note: it explains the manifest and why dated folders are cheap")
 check("backup_private.py" in note, "note: it names what wrote it")
-bp.write_restore_note(note_root, "transcripts", Path.home() / ".claude" / "projects")
+bp.write_restore_note(note_root, "transcripts", note_root / ".claude" / "projects")
 check("projects" in (note_root / bp.RESTORE_NOTE_NAME).read_text(encoding="utf-8"),
       "note: the transcripts leg gets its own example paths")
 missing_root = tmp / "nonexistent-dir" / "deeper"

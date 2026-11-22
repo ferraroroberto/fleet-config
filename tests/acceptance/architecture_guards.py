@@ -915,6 +915,7 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
                         pairs.add((event, name))
         return pairs
 
+    # host-identity-exempt: guards the live install on this machine, which only the real home holds
     live_path = Path.home() / ".claude" / "settings.json"
     if not live_path.exists():
         print("SKIP  settings_sync: no live ~/.claude/settings.json (skipped)")
@@ -923,6 +924,7 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
     template = wired(REPO / "settings.template.json")
     live = wired(live_path)
     unwired, pending = _settings_sync_split(
+        # host-identity-exempt: guards the live install on this machine, which only the real home holds
         sorted(template - live), Path.home() / ".claude" / "hooks")
     if unwired:
         print(f"FAIL  settings_sync: template hooks all wired live "

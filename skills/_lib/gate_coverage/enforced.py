@@ -70,6 +70,7 @@ CONVENTIONS: dict[str, tuple[str, str]] = {
     "must-use": ("claude-md-drift", "calls to a named primitive outside its one declared helper"),
     "subprocess-timeout": ("claude-md-drift", "blocking subprocess calls with no timeout"),
     "browser-per-iteration": ("claude-md-drift", "a browser or context opened inside a loop instead of one reused"),
+    "host-identity": ("claude-md-drift", "tests reading the real account name or home folder instead of the synthetic host"),
     "state-literal": ("maintainability", "lifecycle strings compared or stored as a state outside a declared machine"),
     "state-set-repeat": ("maintainability", "one set of lifecycle states spelled out in more than one module"),
     "state-write": ("maintainability", "lifecycle flags written from more than one module"),

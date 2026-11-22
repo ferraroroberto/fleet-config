@@ -56,6 +56,7 @@ Every rule the vendored script knows, and whether this repo turns it on.
 | `state-set-repeat` | on | one set of lifecycle states spelled in more than one module lets two readers disagree about which states count |
 | `state-write` | on | a lifecycle flag written from more than one module has no single owner |
 | `browser-per-iteration` | on | a script or test that opens a browser or context inside a loop refetches every asset per pass and leaves a `TIME_WAIT` socket per closed connection on the target port, a pool every local web app shares; one reused context, or `# browser-per-iteration-exempt: <why>` where a fresh one is the point (`tests/e2e/_paced_browser.py`) |
+| `host-identity` | on | a test that reads the real account name or home folder passes on the developer's machine and fails on another host; read it through `synthetic_host` (`tests/host/_synthetic_host.py`), or mark a guard over the live install with `# host-identity-exempt: <why>`; `exclude = ["tests/**"]` keeps test modules unscanned, so the marker is applied by hand |
 | `secret-compare` | off | the repo has no constant-time compare helper to route compares through |
 | `password-input-vendored` | off | the repo ships no sign-in page |
 | `nav-standalone-head` | off | the repo ships no web page that links the vendored nav |

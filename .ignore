@@ -20,4 +20,5 @@
 /skills/_lib/unit_history/unit_ledger.py
 /skills/_lib/unit_history/weekly_burst.py
 /tests/e2e/_paced_browser.py
+/tests/host/_synthetic_host.py
 # END vendored-copies
