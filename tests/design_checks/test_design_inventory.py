@@ -19,6 +19,7 @@ import datetime as _dt
 import json
 import os
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -570,5 +571,50 @@ check(refused, "`fleet --inventory --file` is refused: filing waits for the repo
 empty_dir = WORK / "no-sweep"
 empty_dir.mkdir()
 check(cli.main(["fleet-report", str(empty_dir), "--projects-toml", str(projects)]) == 2, "fleet-report without a capture manifest exits 2")
+
+# ---- INV-03's exception list: app-owned shapes are exempt, anything else still diverges ---------------
+
+from design_review import inv03_exempt  # noqa: E402
+
+
+def _bespoke_app(target: str, *keys: str) -> dict:
+    controls = [{"key": k, "kind": "button", "component": "bespoke", "role": "button", "label": "x", "family": "system-ui",
+                 "px": 14, "weight": "600", "n": 2} for k in keys]
+    return inv.app_inventory(target, {"screens": [{"id": "s1", "metrics": {"inventory": {"controls": controls, "text": []}}}]})
+
+
+only_listed = inv.compare([_bespoke_app("folder-explorer", "button.list-row", "button#scopePill")], REF, CATALOG)
+check(not [f for f in only_listed["findings"] if f["class"] == "INV-03"] and only_listed["counts"]["INV-03"] == 0,
+      f"INV-03: a listed shape in its own app is no finding: {only_listed['findings']}")
+check(only_listed.get("exempt") == [{"shape": "data row", "app": "folder-explorer", "count": 2},
+                                    {"shape": "scope pill", "app": "folder-explorer", "count": 2}],
+      f"INV-03: the listed shapes are reported as exempt, counted per control: {only_listed.get('exempt')}")
+
+mixed = inv.compare([_bespoke_app("folder-explorer", "button.list-row", "button.save-btn")], REF, CATALOG)
+mixed_f = [f for f in mixed["findings"] if f["class"] == "INV-03"]
+check(len(mixed_f) == 1 and mixed_f[0]["counts"] == {"folder-explorer": 2} and "reopens" not in mixed_f[0],
+      f"INV-03: an unlisted bespoke button still diverges, and only it is counted: {mixed_f}")
+check(mixed["exempt"] == [{"shape": "data row", "app": "folder-explorer", "count": 2}],
+      "INV-03: the same app's listed shape is exempt beside the unlisted one")
+
+second = inv.compare([_bespoke_app("folder-explorer", "button.list-row"), _bespoke_app("app-north", "button.list-row")], REF, CATALOG)
+second_f = [f for f in second["findings"] if f["class"] == "INV-03"]
+check(len(second_f) == 1 and second_f[0]["divergent"] == ["app-north"]
+      and second_f[0]["reopens"] == [{"shape": "data row", "owner": "folder-explorer"}],
+      f"INV-03: a listed class in a second app diverges and reopens the decision: {second_f}")
+second_line = inv.detail(second_f[0])
+check("reopens the decision on the data row, listed for folder-explorer" in second_line and "list-row" not in second_line,
+      f"INV-03: the line names the shape and owner, never the control key: {second_line}")
+check("exempt" in inv.render_section(second) and "folder-explorer data row 2" in inv.render_section(second),
+      "INV-03: the Inventory section lists what it left out")
+check("exempt" not in sec and all("reopens" not in f for f in sec["findings"]),
+      "INV-03: with no listed shape in the inventories the section is what it was before")
+
+# the documented table and the code list are one list
+core_doc = (REPO / "docs" / "skills" / "design-review-core.md").read_text(encoding="utf-8")
+doc_rows = {(m.group(1), m.group(2)): tuple(k.strip("` ") for k in m.group(3).split(","))
+            for m in re.finditer(r"^\| (.+?) \((.+?)\) \| (.+?) \|$", core_doc, re.M) if m.group(1) != "Shape"}
+code_rows = {(e.shape, e.app): e.keys for e in inv03_exempt.EXEMPT_SHAPES}
+check(doc_rows == code_rows, f"INV-03: docs/skills/design-review-core.md lists exactly EXEMPT_SHAPES: {set(doc_rows) ^ set(code_rows)}")
 
 _h.report_and_exit("test_design_inventory", skip_code=SKIP_EXIT)

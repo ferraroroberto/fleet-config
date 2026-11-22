@@ -17,7 +17,9 @@ divergent. An app is **divergent** when it renders anything other than the refer
 
 **Routing.** With one divergent app the finding has scope `app` and goes to that app's managed
 `design-review` issue. With two or more it has scope `fleet` and goes to the digest and fleet-config's
-issue. INV-03 counts the apps that carry the bespoke control. Every line's fix path is a vendored
+issue. INV-03 counts the apps that carry the bespoke control, leaving out the app-owned shapes on
+`inv03_exempt.EXEMPT_SHAPES`: those are reported under the section's `exempt` key instead, and the same
+class in a second app stays a finding that says it reopens the decision. Every line's fix path is a vendored
 component plus `/propagate-vendored`, never per-app restyling.
 
 **Normalising, DOM first.** It reads the control's `kind` and `component` from the inventory, then matches
@@ -46,6 +48,7 @@ The digest's `inventory` section (present only when at least one app has an inve
      "apps":         [{"target", "run", "source", "screens", "uncatalogued_screens", "classified"}],
      "missing":      [target],                      # no measured inventory in any run
      "catalog":      {"components": [name], "error": str|null},
+     "exempt":       [{"shape", "app", "count"}],   # INV-03 app-owned shapes left out; key present only when any were
      "counts":       {"INV-01": n, .., "app": n, "fleet": n},
      "findings":     [{"id", "class", "group", "scope", "reference", "reference_source",
                        "renderings": [{"rendering", "apps", "count"}], "apps", "divergent",
@@ -78,6 +81,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fleet_core import hooks_state  # noqa: E402
 
 from . import filing, report  # noqa: E402
+from .inv03_exempt import exempt_rows, exempt_shape, reopened_by  # noqa: E402
 
 SCHEMA_VERSION = 1
 CLASSES = ("INV-01", "INV-02", "INV-03", "INV-04")
@@ -334,6 +338,23 @@ def _finding(cls: str, group: str, renderings: Dict[str, Dict[str, str]], refere
             "divergent": divergent, "examples": examples, "counts": {}}
 
 
+def _note_bespoke(bespoke: Dict[str, Dict[str, dict]], exempt: Dict[Tuple[str, str], int],
+                  app: str, screen: str, kind: str, key: str, n: int) -> None:
+    """Tally one bespoke control for INV-03: an app-owned shape on the exception list is exempt, anything else diverges.
+
+    A listed key in an app the list does not name diverges and remembers which listing it reopens."""
+    shape = exempt_shape(app, key) if kind == "button" else None
+    if shape:
+        exempt[(shape, app)] = exempt.get((shape, app), 0) + n
+        return
+    b = bespoke.setdefault(kind, {}).setdefault(app, {"n": 0, "screen": screen, "reopens": {}})
+    b["n"] += n
+    b["screen"] = min(b["screen"], screen)
+    listed = reopened_by(app, key) if kind == "button" else None
+    if listed:
+        b["reopens"][listed.shape] = listed.app
+
+
 def _note_text(text: Seen, inv: dict, app: str, screen: str) -> None:
     """Tally one screen's text roles; text whose class names no role is never compared."""
     for tr in inv.get("text") or []:
@@ -367,6 +388,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
     actions: Seen = {}
     choices: Seen = {}
     bespoke: Dict[str, Dict[str, dict]] = {}
+    exempt: Dict[Tuple[str, str], int] = {}
     unclassified: Dict[str, dict] = {}
     observed_vendored = set()
     app_rows = []
@@ -412,9 +434,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
                 if comp == "unknown":
                     continue
                 if comp == "bespoke" and kind in KIND_COMPONENT:
-                    b = bespoke.setdefault(kind, {}).setdefault(t, {"n": 0, "screen": sid})
-                    b["n"] += n
-                    b["screen"] = min(b["screen"], sid)
+                    _note_bespoke(bespoke, exempt, t, sid, kind, str(c.get("key") or ""), n)
                 if kind in ACTION_KINDS:
                     action, why = action_of(c)
                     if action is None:
@@ -441,6 +461,7 @@ def compare(apps: List[dict], reference: Dict[str, str], catalog: Optional[Itera
         "counts": counts,
         "findings": findings,
         "unclassified": sorted(unclassified.values(), key=lambda u: (u["app"], u["reason"], u["kind"], u["component"], u["key"], u["label"])),
+        **({"exempt": exempt_rows(exempt)} if exempt else {}),
     }
 
 
@@ -472,13 +493,17 @@ def _inventory_findings(text: Seen, actions: Seen, choices: Seen,
             continue
         per_app = bespoke[kind]
         divergent = sorted(per_app)
-        findings.append({"id": f"INV-03-{_slug(kind)}", "class": "INV-03", "group": kind,
-                         "scope": "app" if len(divergent) == 1 else "fleet", "reference": f"vendored:{component}",
-                         "reference_source": "catalog" if component in set(catalog or ()) else "observed",
-                         "renderings": [{"rendering": f"bespoke {kind}", "apps": divergent, "count": len(divergent)}],
-                         "apps": divergent, "divergent": divergent,
-                         "examples": {a: per_app[a]["screen"] for a in divergent},
-                         "counts": {a: per_app[a]["n"] for a in divergent}})
+        finding = {"id": f"INV-03-{_slug(kind)}", "class": "INV-03", "group": kind,
+                   "scope": "app" if len(divergent) == 1 else "fleet", "reference": f"vendored:{component}",
+                   "reference_source": "catalog" if component in set(catalog or ()) else "observed",
+                   "renderings": [{"rendering": f"bespoke {kind}", "apps": divergent, "count": len(divergent)}],
+                   "apps": divergent, "divergent": divergent,
+                   "examples": {a: per_app[a]["screen"] for a in divergent},
+                   "counts": {a: per_app[a]["n"] for a in divergent}}
+        reopens = sorted({(shape, owner) for a in divergent for shape, owner in per_app[a]["reopens"].items()})
+        if reopens:
+            finding["reopens"] = [{"shape": shape, "owner": owner} for shape, owner in reopens]
+        findings.append(finding)
 
     for key in sorted(choices):
         choice, bucket = key.split("|", 1)
@@ -513,6 +538,8 @@ def detail(f: dict) -> str:
         total = sum(f["counts"].values())
         lead = (f"{_plural(total, 'control')} in {_plural(len(f['apps']), 'app')}: "
                 + ", ".join(f"{a} {f['counts'][a]}" for a in f["apps"]))
+        for r in f.get("reopens") or []:
+            lead += f" · reopens the decision on the {r['shape']}, listed for {r['owner']}"
     else:
         lead = "; ".join(f"{r['rendering']} in {_plural(r['count'], 'app')} ({', '.join(r['apps'])})" for r in f["renderings"])
         ref = f.get("reference")
@@ -585,6 +612,9 @@ def render_section(section: dict) -> str:
         f'<li><span class="badge sev sev-{SEVERITY}">{SEVERITY}</span> <code class="rid">{report._esc(f["id"])}</code> '
         f'{report._esc(summary(f)["title"])} <span class="badge badge-unm">{report._esc("cross-app" if f["scope"] == "fleet" else "single-app")}</span> '
         f'<span class="muted small">— {report._esc(detail(f))}</span></li>' for f in section.get("findings") or [])
+    exempt = section.get("exempt") or []
+    exempt_note = ('<p class="muted small">INV-03 exempt (app-owned shapes): '
+                   + report._esc(", ".join(f"{e['app']} {e['shape']} {e['count']}" for e in exempt)) + ".</p>") if exempt else ""
     found = f'<ul class="plain">{items}</ul>' if items else '<p class="muted">Every compared role, action and choice renders one way.</p>'
     missing = section.get("missing") or []
     cat = section.get("catalog") or {}
@@ -594,5 +624,5 @@ def render_section(section: dict) -> str:
     if cat.get("error"):
         notes.append(f"Component catalog unavailable ({cat['error']}); INV-03 used the vendored components seen in the inventories.")
     note = f'<p class="muted small">{report._esc(" ".join(notes))}</p>' if notes else ""
-    return report._section("inventory", "Inventory — cross-app comparison", f"<p>{report._esc(head)}</p>{found}{table}{note}",
+    return report._section("inventory", "Inventory — cross-app comparison", f"<p>{report._esc(head)}</p>{found}{exempt_note}{table}{note}",
                            "newest inventory per app; one divergent app files on its issue, two or more on the digest")
