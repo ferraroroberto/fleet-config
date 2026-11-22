@@ -873,6 +873,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         dirs=None if cards is None else chief_sweep.live_dirs(cards),
         markers=markers,
         session_ids=None if cards is None else chief_sweep.live_session_ids(cards),
+        processes=chief_sweep.process_table(),
         pr_lookup=chief_sweep.github_pr_lookup,
         managed=managed,
     )

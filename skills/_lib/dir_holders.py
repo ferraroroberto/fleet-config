@@ -92,8 +92,20 @@ def normalize(path: str) -> str:
 
 
 def names_path(text: Optional[str], key: str) -> bool:
-    """True when `text` mentions `key` — the directory or anything inside it."""
-    return bool(text) and key in normalize(text)
+    """True when `text` mentions `key` — the directory or anything inside it.
+
+    The match must end at a path boundary: `app-wt-1` does not name `app-wt-15`.
+    """
+    if not text:
+        return False
+    haystack = normalize(text)
+    start = haystack.find(key)
+    while start != -1:
+        end = start + len(key)
+        if end == len(haystack) or not (haystack[end].isalnum() or haystack[end] in "-_."):
+            return True
+        start = haystack.find(key, start + 1)
+    return False
 
 
 def ancestors(pid: int, processes: Iterable[dict]) -> set[int]:
@@ -192,15 +204,50 @@ def parse_table(out: str) -> tuple[Optional[list[dict]], Optional[int], Optional
     return procs, payload.get("self"), None
 
 
-def probe(path: str) -> Probe:
-    """Classify `path`: LIVE (nameable holders), CLEAR (none), UNKNOWN (couldn't ask)."""
+def snapshot() -> tuple[Optional[list[dict]], Optional[str]]:
+    """(process table minus the probing tree, error) — one read for many paths."""
     processes, ps_pid, err = _query()
     if err is not None:
-        return Probe("UNKNOWN", [], err)
+        return None, err
     exclude = ancestors(os.getpid(), processes)
     if ps_pid:
         exclude.add(int(ps_pid))
-    holders = holders_for(path, processes, exclude)
+    return [p for p in processes if p.get("ProcessId") not in exclude], None
+
+
+def drive_letters() -> list[str]:
+    """Drive letters that exist right now."""
+    return [c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{c}:\\")]
+
+
+def equivalent_spellings(path: str, letters: Optional[Iterable[str]] = None,
+                         realpath=os.path.realpath) -> list[str]:
+    """`path` plus every other spelling of the same directory under another drive letter.
+
+    The fleet root is junctioned between drives, so a process started from one
+    spelling names the directory in a way a plain match on the other misses.
+    A candidate counts only when it resolves to the same real directory.
+    """
+    drive, rest = os.path.splitdrive(str(path))
+    spellings = [str(path)]
+    if not drive:
+        return spellings
+    target = normalize(realpath(str(path)))
+    candidates = [realpath(str(path))]
+    candidates += [f"{c}:{rest}" for c in (drive_letters() if letters is None else letters)
+                   if c.upper() != drive[:1].upper()]
+    for cand in candidates:
+        if normalize(realpath(cand)) == target and normalize(cand) not in {normalize(s) for s in spellings}:
+            spellings.append(cand)
+    return spellings
+
+
+def probe(path: str) -> Probe:
+    """Classify `path`: LIVE (nameable holders), CLEAR (none), UNKNOWN (couldn't ask)."""
+    processes, err = snapshot()
+    if err is not None or processes is None:
+        return Probe("UNKNOWN", [], err)
+    holders = holders_for(path, processes)
     return Probe("LIVE" if holders else "CLEAR", holders, None)
 
 

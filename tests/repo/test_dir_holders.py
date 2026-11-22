@@ -48,6 +48,12 @@ check(dh.names_path("python E:/automation/alpha-wt-1/run.py", _key),
       "names_path: forward-slash spelling in a command line still matches")
 check(not dh.names_path("python E:\\automation\\alpha\\run.py", _key),
       "names_path: a sibling path that merely shares a prefix does not match")
+check(not dh.names_path("python E:\\automation\\alpha-wt-15\\run.py", _key)
+      and not dh.names_path("python E:\\automation\\alpha-wt-1.bak\\run.py", _key),
+      "names_path: a numbered sibling (-wt-15) or a dotted suffix is not the directory")
+check(dh.names_path("python E:\\automation\\alpha-wt-15\\run.py E:\\automation\\alpha-wt-1", _key)
+      and dh.names_path('python "E:\\automation\\alpha-wt-1" x', _key),
+      "names_path: a later boundary-clean mention, or a quoted bare path, still matches")
 check(not dh.names_path(None, _key), "names_path: a missing command line is not a match")
 check(not dh.names_path("", _key), "names_path: an empty command line is not a match")
 
@@ -95,6 +101,29 @@ check(dh.holders_for("E:/automation/alpha-wt-1", [{"Name": "broken.exe"}]) == []
       "holders_for: a row with no ProcessId is skipped, not a crash")
 check(dh.holders_for("E:/automation/alpha-wt-1", []) == [],
       "holders_for: an empty process table yields no holders")
+
+
+# ---- equivalent_spellings: the junctioned root under another drive letter (fleet-config#2198) ----
+
+
+def _resolver(real_root):
+    """A realpath stand-in: D:/E: are junctions of C:, everything else is itself."""
+    def resolve(p):
+        drive, rest = os.path.splitdrive(str(p))
+        return (real_root + rest) if drive.upper() in {"C:", "D:", "E:"} else str(p)
+    return resolve
+
+
+_spell = dh.equivalent_spellings("E:\\automation\\app-wt-1", letters="CDEZ", realpath=_resolver("C:"))
+check([dh.normalize(s) for s in _spell] ==
+      ["e:\\automation\\app-wt-1", "c:\\automation\\app-wt-1", "d:\\automation\\app-wt-1"],
+      f"equivalent_spellings: the given spelling first, then every drive that resolves to the same folder ({_spell})")
+check(dh.equivalent_spellings("Z:\\elsewhere\\x", letters="CDEZ", realpath=_resolver("C:")) == ["Z:\\elsewhere\\x"],
+      "equivalent_spellings: a folder no other drive resolves to has only its own spelling")
+check(dh.equivalent_spellings("relative\\x", letters="CDE") == ["relative\\x"],
+      "equivalent_spellings: a path with no drive has only its own spelling")
+check(any(dh.names_path("python E:/automation/app-wt-1/run.py", dh.normalize(s)) for s in _spell),
+      "equivalent_spellings: a command line in either spelling matches one of them")
 
 
 # ---- parse_table: the query's JSON, control characters included (fleet-config#991) ----

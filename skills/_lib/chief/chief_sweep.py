@@ -14,13 +14,15 @@ check, plan-only lanes). The judgment is mechanical, so it lives here rather tha
                 leaves the local SHAs ahead, so the PR is asked, not the log)
   in-use        a live launcher session's cwd is inside it, a live
                 active-issue marker names it, a live chief-managed session
-                is working that repo#N, or it is younger than the grace
+                is working that repo#N, a running process's executable or
+                command line names it (under either drive spelling of the
+                junctioned fleet root), or it is younger than the grace
                 period (a lane may not have published its marker yet)
   has-work      dirty tree, or commits that are not on the default branch
                 and not in a merged PR -- the only class the chief asks about
   orphan-empty  an empty folder that is not a git worktree
   unknown       anything the sweep could not establish (unreadable git, a PR
-                lookup that failed, an unreadable board) -- its own state,
+                lookup that failed, an unreadable board or process list) -- its own state,
                 never folded into `finished`
 
 `--apply` removes only `finished` (through `worktree_claim.remove_worktree`,
@@ -54,6 +56,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
+import dir_holders  # noqa: E402
 import git_run  # noqa: E402
 import worktree_residue  # noqa: E402
 from fleet_core import state_rows  # noqa: E402
@@ -124,6 +127,25 @@ def _holder(path: Path, dirs: Sequence[str]) -> Optional[str]:
     return None
 
 
+def process_table() -> Optional[List[Dict[str, Any]]]:
+    """Running processes minus this sweep's own tree, or None when unreadable."""
+    processes, err = dir_holders.snapshot()
+    if processes is None:
+        LOGGER.warning("⚠️ sweep: process list unreadable: %s", err)
+    return processes
+
+
+def _process_holders(
+    path: Path, processes: Sequence[Dict[str, Any]], spellings: Callable[[str], Sequence[str]],
+) -> List[str]:
+    """Sorted distinct names of processes whose exe or command line names `path`."""
+    names = set()
+    for spelling in spellings(str(path)):
+        for holder in dir_holders.holders_for(spelling, processes):
+            names.add(holder["name"] or Path(holder["exe"]).name or f"pid {holder['pid']}")
+    return sorted(names, key=str.casefold)
+
+
 def _live_managed_session(
     repo: str, number: int, managed: Mapping[str, Any], session_ids: set,
 ) -> Optional[str]:
@@ -179,33 +201,20 @@ def _merged_pr_covers_head(path: Path, head: str, prs: List[Dict[str, Any]]) -> 
 # ---- classification ----------------------------------------------------------
 
 
-def classify_worktree(
+def _live_holder(
     path: Path,
     *,
-    dirs: Optional[Sequence[str]],
     markers: Optional[Mapping[str, Any]],
     session_ids: Optional[set],
-    pr_lookup: PrLookup,
-    host: Optional[str] = None,
-    pid_probe: Callable[[int], Optional[bool]] = state_rows.pid_state,
-    managed: Optional[Mapping[str, Any]] = None,
-    grace_s: float = GRACE_S,
-    now: Callable[[], float] = time.time,
-) -> Finding:
-    """Class + evidence for one `<repo>-wt-<N>` folder. See the module docstring.
-
-    `dirs` / `markers` / `session_ids` are None when the board or the marker
-    file could not be read: a removable verdict then cannot be established and
-    degrades to `unknown`, while `has-work` (git evidence alone) still stands.
-    `managed` is the chief-managed session map (session id -> {repo, number}):
-    a live session in it for this folder's repo#N holds the tree whether or not
-    its marker was published or read back correctly.
-    """
+    processes: Optional[Sequence[Dict[str, Any]]],
+    managed: Optional[Mapping[str, Any]],
+    host: Optional[str],
+    pid_probe: Callable[[int], Optional[bool]],
+    spellings: Callable[[str], Sequence[str]],
+) -> Optional[Finding]:
+    """`in-use` (or `unknown` for an owner that cannot be called dead) when a
+    marker, a chief-managed session or a running process holds the tree."""
     name = path.name
-    held = _holder(path, dirs) if dirs is not None else None
-    if held:
-        return Finding(name, path, IN_USE, f"live session cwd {held}")
-
     match = WORKTREE_RE.match(name)
     marker_key = active_issue.marker_key(match.group("repo"), int(match.group("number"))) if match else ""
     row = (markers or {}).get(marker_key)
@@ -224,7 +233,52 @@ def classify_worktree(
         if sid:
             return Finding(name, path, IN_USE, f"live session {sid[:8]} (chief-managed {marker_key})")
 
-    live_known = dirs is not None and markers is not None
+    if processes is not None:
+        running = _process_holders(path, processes, spellings)
+        if running:
+            return Finding(name, path, IN_USE, f"running process from the tree: {', '.join(running)}")
+    return None
+
+
+def classify_worktree(
+    path: Path,
+    *,
+    dirs: Optional[Sequence[str]],
+    markers: Optional[Mapping[str, Any]],
+    session_ids: Optional[set],
+    processes: Optional[Sequence[Dict[str, Any]]],
+    pr_lookup: PrLookup,
+    host: Optional[str] = None,
+    pid_probe: Callable[[int], Optional[bool]] = state_rows.pid_state,
+    managed: Optional[Mapping[str, Any]] = None,
+    grace_s: float = GRACE_S,
+    now: Callable[[], float] = time.time,
+    spellings: Callable[[str], Sequence[str]] = dir_holders.equivalent_spellings,
+) -> Finding:
+    """Class + evidence for one `<repo>-wt-<N>` folder. See the module docstring.
+
+    `dirs` / `markers` / `session_ids` / `processes` are None when the board, the
+    marker file or the process list could not be read: a removable verdict then cannot be established and
+    degrades to `unknown`, while `has-work` (git evidence alone) still stands.
+    `managed` is the chief-managed session map (session id -> {repo, number}):
+    a live session in it for this folder's repo#N holds the tree whether or not
+    its marker was published or read back correctly.
+    """
+    name = path.name
+    held = _holder(path, dirs) if dirs is not None else None
+    if held:
+        return Finding(name, path, IN_USE, f"live session cwd {held}")
+
+    live = _live_holder(
+        path, markers=markers, session_ids=session_ids, processes=processes, managed=managed,
+        host=host, pid_probe=pid_probe, spellings=spellings,
+    )
+    if live:
+        return live
+
+    live_known = dirs is not None and markers is not None and processes is not None
+    not_established = ("live sessions not established" if dirs is None or markers is None
+                       else "process list not established")
 
     if (path / ".git").is_dir():
         return Finding(name, path, UNKNOWN, "a real repository named like a worktree")
@@ -234,7 +288,7 @@ def classify_worktree(
         if cls != "orphan-empty":
             return Finding(name, path, UNKNOWN, why)
         if not live_known:
-            return Finding(name, path, UNKNOWN, "empty folder, live sessions not established")
+            return Finding(name, path, UNKNOWN, f"empty folder, {not_established}")
         return Finding(name, path, ORPHAN_EMPTY, "empty folder, not a git worktree")
 
     try:
@@ -269,7 +323,7 @@ def classify_worktree(
             return Finding(name, path, HAS_WORK, f"{facts} pr={states}")
 
     if not live_known:
-        return Finding(name, path, UNKNOWN, f"{evidence}; live sessions not established")
+        return Finding(name, path, UNKNOWN, f"{evidence}; {not_established}")
     try:
         age_s = now() - (path / ".git").stat().st_mtime
     except OSError as exc:
