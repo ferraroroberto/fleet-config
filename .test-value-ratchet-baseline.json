@@ -226,6 +226,7 @@
     "near_limit": 127,
     "owner_check": 1,
     "payload_normalization": 12,
+    "perf_idle": 1,
     "perf_review": 31,
     "perf_stall": 1,
     "perf_sweep": 1,

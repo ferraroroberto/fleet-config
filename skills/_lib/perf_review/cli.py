@@ -281,6 +281,7 @@ def main(argv: Optional[list] = None) -> int:
     w.add_argument("--only", help="one repo name instead of the fleet")
     w.add_argument("--duration", type=float, default=300.0, help="seconds of endpoint timing per app (default 300)")
     w.add_argument("--settle", type=int, default=40, help="seconds each cold page is watched to learn poll intervals")
+    w.add_argument("--idle-window", type=float, default=60.0, help="seconds each app's own process tree is sampled idle for CPU and process starts (0 = skip)")
     w.add_argument("--lock-wait", type=float, default=20.0, help="minutes to wait per app for the box to be free of gates")
     w.add_argument("--no-file", action="store_true", help="measure only; touch no issue")
     w.add_argument("--detach", action="store_true",

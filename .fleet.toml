@@ -294,6 +294,12 @@ interval_s = 2.0
 why        = "waits for a just-launched Grok Bot to reach a settled state, bounded by settle_seconds"
 
 [[request_budget.loops]]
+path       = "skills/_lib/perf_review/idle_sample.py"
+function   = "sample"
+interval_s = 3.0
+why        = "reads the local process table to watch one app's own process tree for a bounded idle window; the spacing sets how short-lived a child can be and still be seen, and nothing is sent to the app"
+
+[[request_budget.loops]]
 path       = "skills/_lib/perf_review/http_probe.py"
 function   = "time_endpoints.loop"
 interval_s = 30.0
