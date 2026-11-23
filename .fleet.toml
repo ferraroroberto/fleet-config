@@ -228,3 +228,127 @@ enabled       = true
 baseline      = ".request-budget-ratchet-baseline.json"
 server_paths  = ["*.py", "hooks/**", "skills/**", ".claude/**"]
 browser_paths = ["hooks/**", "skills/**", ".claude/**"]
+
+# Loops that run with no viewer and must keep their cadence: each is a bounded wait in a one-shot helper or a
+# probe whose cadence is the measurement. The ratchet counts a declared loop as met; one that stops matching is
+# printed on every run so the declaration can be removed.
+
+[[request_budget.loops]]
+path       = "hooks/restart_and_verify_webapp.py"
+function   = "_wait_port_free"
+interval_s = 0.5
+why        = "a one-shot restart helper waiting for the old process to release its port, bounded by its deadline"
+
+[[request_budget.loops]]
+path       = "hooks/restart_and_verify_webapp.py"
+function   = "_wait_port_listening"
+interval_s = 0.5
+why        = "a one-shot restart helper waiting for the new process to bind its port, bounded by its deadline"
+
+[[request_budget.loops]]
+path       = "hooks/restart_and_verify_webapp.py"
+function   = "_verify_build"
+interval_s = 0.5
+why        = "a one-shot build-identity check polling the app's version endpoint until it reports the new sha, bounded by VERIFY_TIMEOUT_S"
+
+[[request_budget.loops]]
+path       = "skills/_lib/box_lock.py"
+function   = "held"
+interval_s = 5.0
+why        = "queues for the box lock in arrival order and polls the holder until the lock frees or the timeout passes; an unattended run has no viewer to wake it"
+
+[[request_budget.loops]]
+path       = "skills/_lib/chief/commands.py"
+function   = "_poll_delivery"
+interval_s = 2.0
+why        = "a one-shot steer command confirming delivery, polling at the caller's --poll-interval (default 2 s) until the deadline"
+
+[[request_budget.loops]]
+path       = "skills/_lib/design_review/web/page_walk.py"
+function   = "scroll_through"
+interval_s = 0.15
+why        = "scrolls a page in steps so lazy images load; the pause is the render settle between steps and the loop ends at the page bottom"
+
+[[request_budget.loops]]
+path       = "skills/_lib/design_review/web/preview.py"
+function   = "PreviewServer.__enter__"
+interval_s = 0.25
+why        = "a bounded wait-for-ready on a preview server it just started, ending at STARTUP_TIMEOUT_S or when the process exits"
+
+[[request_budget.loops]]
+path       = "skills/_lib/dir_holders.py"
+function   = "wait_for"
+interval_s = 0.25
+why        = "a bounded probe of a directory's holders until it reads the wanted state, ending at its timeout or when the holder exits"
+
+[[request_budget.loops]]
+path       = "skills/_lib/fleet_core/state_rows.py"
+function   = "state_lock"
+interval_s = 0.025
+why        = "retries an atomic mkdir lock held by another writer for a few milliseconds; contention is brief and the wait ends at timeout_seconds"
+
+[[request_budget.loops]]
+path       = "skills/_lib/grokbot/status.py"
+function   = "ensure"
+interval_s = 2.0
+why        = "waits for a just-launched Grok Bot to reach a settled state, bounded by settle_seconds"
+
+[[request_budget.loops]]
+path       = "skills/_lib/perf_review/http_probe.py"
+function   = "time_endpoints.loop"
+interval_s = 30.0
+why        = "GET-only timing of one endpoint at the app's own poll spacing for a bounded measurement window; the spacing is the measurement"
+
+[[request_budget.loops]]
+path       = "skills/_lib/scheduled/process_scope.py"
+function   = "ProcessScope.terminate"
+interval_s = 0.01
+why        = "waits up to TERMINATE_TIMEOUT_SECONDS (2 s) for a killed process group to empty, so teardown is confirmed before the run reports"
+
+[[request_budget.loops]]
+path       = "skills/_lib/scheduled/wait_for_sentinel.py"
+function   = "wait_for_sentinel"
+interval_s = 5.0
+why        = "a one-shot wait for a sentinel file at --poll-interval-seconds (default 5 s), bounded by --timeout-seconds"
+
+[[request_budget.loops]]
+path       = "skills/_lib/scheduled_runner.py"
+function   = "_watch_for_stall"
+interval_s = 1.0
+why        = "the stall watchdog of a scheduled run: it must notice silence or a cancel while no one is attending, polling every 0.1 s on cancel and otherwise a tenth of the stall timeout (1 to 30 s)"
+
+[[request_budget.loops]]
+path       = "skills/_lib/scheduled_runner.py"
+function   = "_pump"
+interval_s = 0.01
+why        = "drains the child's pipes to the progress formatter until the run and its process group finish; the short pause is the idle backoff of a bounded run"
+
+[[request_budget.loops]]
+path       = "skills/_lib/scheduled_runner.py"
+function   = "run_process"
+interval_s = 0.01
+why        = "drains the child's pipes for at most DRAIN_TIMEOUT_SECONDS after an interrupt"
+
+[[request_budget.loops]]
+path       = "skills/_lib/stall_probe.py"
+function   = "Probe._http_loop"
+interval_s = 1.0
+why        = "the always-on stall probe: a 1 s GET against its own endpoint is the measurement, so a slower cadence would miss the stalls it exists to catch"
+
+[[request_budget.loops]]
+path       = "skills/_lib/stall_probe.py"
+function   = "Probe._disk_loop"
+interval_s = 1.0
+why        = "the always-on stall probe: one timed disk read per volume per second is the measurement"
+
+[[request_budget.loops]]
+path       = "skills/_lib/stall_probe.py"
+function   = "Probe._disk_watch"
+interval_s = 1.0
+why        = "the always-on stall probe: reports a read that is still stuck past disk_hung_s while it is stuck, which needs a short check cadence"
+
+[[request_budget.loops]]
+path       = "skills/_lib/stall_probe.py"
+function   = "Probe.run"
+interval_s = 0.1
+why        = "the always-on stall probe: the 0.1 s sleep and its overshoot are the measurement of a scheduler stall"
