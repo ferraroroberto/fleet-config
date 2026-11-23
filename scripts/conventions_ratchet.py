@@ -214,7 +214,7 @@ EXIT_PASS, EXIT_RISE, EXIT_CONFIG, EXIT_NOT_CONFIRMED = 0, 1, 2, 3
 # would not resolve in a consumer tree), the documented exception.
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
-_CONFIG_KEYS = {"enabled", "baseline", "rules", "exclude", "print_paths", "secret_helpers", "git_wrappers", "must_use"}
+_CONFIG_KEYS = {"enabled", "baseline", "rules", "exclude", "exclude_by_rule", "print_paths", "secret_helpers", "git_wrappers", "must_use"}
 _MUST_USE_KEYS = {"call", "helper", "why", "paths"}
 
 
@@ -246,6 +246,7 @@ class Config:
     git_wrappers: tuple[str, ...] = ()
     must_use: tuple[MustUse, ...] = ()
     state_machines: tuple[Any, ...] = ()  # conventions_state.StateMachine
+    exclude_by_rule: tuple[tuple[str, tuple[str, ...]], ...] = ()  # (rule, globs): that rule skips those files only
 
 
 @dataclass(frozen=True)
@@ -352,15 +353,17 @@ def parse_config(toml_text: str) -> Config | None:
         raise ConfigError(f"[conventions_ratchet] unknown rule(s) {', '.join(bad)}; known: {', '.join(RULES)}")
     if "must-use" in rules and not entries:
         raise ConfigError("[conventions_ratchet] rule must-use needs a [[conventions_ratchet.must_use]] entry")
+    cfg_rules = tuple(r for r in RULES if r in rules or (r == "must-use" and entries))
     cfg = Config(
         baseline,
-        tuple(r for r in RULES if r in rules or (r == "must-use" and entries)),
+        cfg_rules,
         _str_list(table, "exclude", ()),
         _str_list(table, "print_paths", DEFAULT_PRINT_PATHS),
         _str_list(table, "secret_helpers", ()),
         _str_list(table, "git_wrappers", ()),
         entries,
-        _machines(data.get("state_machines", [])),
+        _checked(_state.parse_machines, data.get("state_machines", [])),
+        _checked(_readers.parse_exclude_by_rule, table.get("exclude_by_rule", {}), cfg_rules),
     )
     for rule, key in REQUIRED_KEYS.items():
         if rule in cfg.rules and not getattr(cfg, key):
@@ -368,9 +371,9 @@ def parse_config(toml_text: str) -> Config | None:
     return cfg
 
 
-def _machines(raw: object) -> tuple[Any, ...]:
+def _checked(parse: Callable[..., Any], *args: object) -> tuple[Any, ...]:  # a sibling's ValueError is a config error
     try:
-        return tuple(_state.parse_machines(raw))
+        return tuple(parse(*args))
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
 
@@ -455,6 +458,7 @@ def rules_for(path: str, cfg: Config) -> frozenset[str]:
         rules.discard("secret-compare")
     if any(_under(path, w) for w in cfg.git_wrappers):
         rules.discard("git-wrapper")
+    rules -= _readers.rules_skipped(path, cfg.exclude_by_rule)
     if "must-use" in rules and not entries_for(path, cfg):
         rules.discard("must-use")
     if any(path == m.module for m in cfg.state_machines):

@@ -478,3 +478,21 @@ def matches_any(text: str, globs: tuple[str, ...]) -> bool:
 def _under(path: str, prefix: str) -> bool:
     prefix = prefix.replace("\\", "/").strip("/")
     return path == prefix or path.startswith(prefix + "/")
+
+
+def parse_exclude_by_rule(raw: object, enabled: tuple[str, ...]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """`exclude_by_rule = { rule = [globs] }` -> (rule, globs) pairs; a typo'd or unlisted rule is a `ValueError`."""
+    where = "[conventions_ratchet] exclude_by_rule"
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where} must be a table of rule = [globs]")
+    for rule, globs in raw.items():
+        if rule not in enabled:
+            raise ValueError(f"{where}: {rule!r} is not a rule listed in rules ({', '.join(enabled)})")
+        if not isinstance(globs, list) or not all(isinstance(g, str) and g for g in globs):
+            raise ValueError(f"{where}: {rule} must be a list of non-empty strings")
+    return tuple((rule, tuple(g.replace("\\", "/") for g in globs)) for rule, globs in raw.items())
+
+
+def rules_skipped(path: str, by_rule: tuple[tuple[str, tuple[str, ...]], ...]) -> set[str]:
+    """The rules whose `exclude_by_rule` globs match `path`."""
+    return {rule for rule, globs in by_rule if matches_any(path, globs)}
