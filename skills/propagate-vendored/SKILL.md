@@ -339,9 +339,15 @@ above; steps 5-7 run once for the whole repo.
    here could close the *scaffold's* tracking issue on merge) — and the Test
    plan. No paragraph hard-wraps (rendered markdown).
 
-7. Auto-merge on green: `gh pr merge --auto --squash --delete-branch` (or the
-   repo's own merge convention if its CLAUDE.md states one). Do not force-merge
-   past a red gate/CI.
+7. Auto-merge on green through the visual-proof merge helper:
+   `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ui_proof merge <worktree-or-repo> --pr <PR> -- --auto --squash --delete-branch`
+   (or the repo's own merge flags if its CLAUDE.md states them). Run it once
+   per PR; never wrap merges in your own script or loop, and never call
+   `gh pr merge` from code — the merge hook cannot see a merge a script
+   spawns, and the helper carries its check. `MERGE=refused` (exit 1: UI diff
+   with no `.proof/<PR>/index.html`; exit 3: proof state unknown) means
+   BLOCKED with its `NEED=`/`REASON=` line. Do not force-merge past a red
+   gate/CI.
    **In `MODE=worktree`, drop `--delete-branch`** — from a worktree its local
    half fails (`'main' is already used by worktree at <primary>`). Once merged:
    `remove-worktree <worktree-path>`, then land the primary and restart what serves it, one command —

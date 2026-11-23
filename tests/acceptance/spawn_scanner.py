@@ -24,6 +24,7 @@ duplication bucket two runs running.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -349,6 +350,90 @@ def _git_wrapper_unit_check() -> Tuple[int, int]:
           7 not in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
     check("gh_wrapper: `subprocess.Popen(['gh', ...])` is reported too",
           8 in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
+
+    return check.failures, check.total
+
+
+_MERGE_WRAPPER_FILE = "skills/_lib/ui_proof/merge.py"
+_MERGE_SCAN_PREFIXES = ("skills/", ".claude/skills/")
+_MERGE_CMD_RE = re.compile(r"^\s*gh(?:\.exe)?\s+pr\s+merge\b")
+
+
+def _raw_merge_sites_in_tree(tree, label: str) -> "list[str]":
+    """Every literal `gh pr merge` in a parsed `tree`, as `label:line`: a list or
+    tuple with adjacent `"pr", "merge"` strings (the argv `run_gh` or a spawn
+    takes), or a call whose first argument is a whole `gh pr merge ...` command
+    string (a `shell=True` spawn). Prose that merely mentions the command is
+    neither shape."""
+    import ast
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.List, ast.Tuple)):
+            words = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None
+                     for e in node.elts]
+            if any(a == "pr" and b == "merge" for a, b in zip(words, words[1:])):
+                offenders.append(f"{label}:{node.lineno}")
+        elif isinstance(node, ast.Call) and node.args:
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and _MERGE_CMD_RE.match(first.value):
+                offenders.append(f"{label}:{node.lineno}")
+    return offenders
+
+
+def _raw_merge_sites() -> "list[str]":
+    """Every literal `gh pr merge` under `skills/` and `.claude/skills/`, outside
+    the one helper that is supposed to contain it."""
+    import ast
+
+    offenders: list[str] = []
+    for py in _runtime_py_files():
+        label = py.relative_to(REPO).as_posix()
+        if label == _MERGE_WRAPPER_FILE or not label.startswith(_MERGE_SCAN_PREFIXES):
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
+            offenders.append(f"{label}: unparseable ({exc})")
+            continue
+        offenders.extend(_raw_merge_sites_in_tree(tree, label))
+    return offenders
+
+
+def _merge_wrapper_unit_check() -> Tuple[int, int]:
+    """No skill merges a PR except through `ui_proof merge`.
+
+    The `ui_proof_merge_guard` hook reads only the commands an agent types, so a
+    `gh pr merge` that a script spawns skips the visual-proof check without a
+    trace: the merge succeeds and nothing says the check never ran. The helper
+    carries the same gate, and this static scan keeps every scripted merge on it.
+    """
+    check = _Checker()
+
+    offenders = _raw_merge_sites()
+    check(f"merge_wrapper: no literal `gh pr merge` in {', '.join(_MERGE_SCAN_PREFIXES)} "
+          f"(merge through `ui_proof merge`; helper exempt: {_MERGE_WRAPPER_FILE})",
+          not offenders,
+          "scripted merges outside the helper at:\n" + "\n".join(offenders))
+
+    import ast
+
+    synthetic = (
+        "import subprocess\n"
+        "git_run.run_gh(['pr', 'merge', '7', '--squash'])\n"
+        "subprocess.run(['gh', 'pr', 'merge', str(n)], creationflags=NO_WINDOW)\n"
+        "subprocess.run('gh pr merge 7 --auto', shell=True, creationflags=NO_WINDOW)\n"
+        "print('run `gh pr merge` after the gate')\n"
+        "git_run.run_gh(['pr', 'view', '7'])\n"
+        "ALLOWED = ('pr merge', 'pr create')\n"
+    )
+    lines = {int(o.rsplit(":", 1)[1]) for o in _raw_merge_sites_in_tree(ast.parse(synthetic), "synthetic")}
+    check("merge_wrapper: `run_gh(['pr', 'merge', ...])` is reported", 2 in lines, f"seen: {sorted(lines)}")
+    check("merge_wrapper: `subprocess.run(['gh', 'pr', 'merge', ...])` is reported", 3 in lines, f"seen: {sorted(lines)}")
+    check("merge_wrapper: a `shell=True` `gh pr merge` string is reported", 4 in lines, f"seen: {sorted(lines)}")
+    check("merge_wrapper: prose naming the command is NOT reported", 5 not in lines, f"seen: {sorted(lines)}")
+    check("merge_wrapper: another `gh pr` verb is NOT reported", 6 not in lines, f"seen: {sorted(lines)}")
+    check("merge_wrapper: a lone 'pr merge' string is NOT reported", 7 not in lines, f"seen: {sorted(lines)}")
 
     return check.failures, check.total
 
