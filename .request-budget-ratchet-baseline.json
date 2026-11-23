@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "entries": [
+    {"key": "hooks/restart_and_verify_webapp.py", "counts": {"unwatched-loop": 3}},
+    {"key": "skills/_lib/box_lock.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/chief/commands.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/design_review/web/page_walk.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/design_review/web/preview.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/dir_holders.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/fleet_core/state_rows.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/grokbot/status.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/perf_review/http_probe.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/scheduled/process_scope.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/scheduled/wait_for_sentinel.py", "counts": {"unwatched-loop": 1}},
+    {"key": "skills/_lib/scheduled_runner.py", "counts": {"unwatched-loop": 3}},
+    {"key": "skills/_lib/stall_probe.py", "counts": {"unwatched-loop": 4}}
+  ]
+}

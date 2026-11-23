@@ -24,7 +24,8 @@ issue-reference-in-comment ratchet (`comment_ratchet_gate`), the instruction-fil
 lint ratchet (`instruction_ratchet_gate`), the stale-doc-reference ratchet
 (`doc_refs_ratchet_gate`), the unreferenced-definition ratchet
 (`dead_code_ratchet_gate`), the fleet-convention rule ratchet
-(`conventions_ratchet_gate`), the runtime-write ratchet and the snapshot/probe
+(`conventions_ratchet_gate`), the request-budget ratchet
+(`request_budget_ratchet_gate`), the runtime-write ratchet and the snapshot/probe
 bracket around the whole run (`runtime_write/runtime_write_ratchet_gate`), the
 fleet-scope enumeration guard (`fleet_scope_guard`), the ratchet and skills
 index drift check (`docs_index/`), the foreign-tool-id-leak
@@ -175,6 +176,9 @@ from acceptance.prose_guards.skill_rule_checks import (  # noqa: E402
     _skill_git_rules_check,
     _unattended_worktree_mandate_check,
 )
+from acceptance.request_budget.request_budget_ratchet_gate import (  # noqa: E402
+    _request_budget_ratchet_check,
+)
 from acceptance.run_history.tally import Tally  # noqa: E402
 from acceptance.runtime_write.runtime_write_ratchet_gate import (  # noqa: E402
     _runtime_write_probe_check,
@@ -200,7 +204,7 @@ from acceptance.wire_checks.tool_id_leak_scanner import _tool_id_leak_unit_check
 _RATCHET_CHECKS = (
     _static_ratchet_check, _docs_ratchet_check, _structure_ratchet_check, _comment_ratchet_check,
     _instruction_ratchet_check, _instruction_delta_check, _doc_refs_ratchet_check, _dead_code_ratchet_check,
-    _conventions_ratchet_check, _runtime_write_ratchet_check,
+    _conventions_ratchet_check, _runtime_write_ratchet_check, _request_budget_ratchet_check,
 )
 # One named home per shared behaviour, no private copies: the single-home scan and
 # the git global-option walk it points at. The dead-function scan keeps the home

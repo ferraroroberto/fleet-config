@@ -37,6 +37,8 @@ synthetic_host = { src = "tests/host/_synthetic_host.py", sha = "160b54e2e0bcf76
 paced_browser = { src = "tests/e2e/_paced_browser.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "tests/e2e/_paced_browser.py" }
 runtime_write_ratchet = { src = "scripts/runtime_write_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/runtime_write_ratchet.py" }
 runtime_write_resolve = { src = "scripts/runtime_write_resolve.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "scripts/runtime_write_resolve.py" }
+request_budget_ratchet = { src = "scripts/request_budget_ratchet.py", sha = "564864cb95a8b416c16d1a1e1e9f31b9d5b2ec8e", dest = "scripts/request_budget_ratchet.py" }
+request_budget_scan = { src = "scripts/request_budget_scan.py", sha = "564864cb95a8b416c16d1a1e1e9f31b9d5b2ec8e", dest = "scripts/request_budget_scan.py" }
 instruction_frontmatter = { src = "scripts/instruction_frontmatter.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_frontmatter.py" }
 instruction_repeats = { src = "scripts/instruction_repeats.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_repeats.py" }
 test_value_ratchet = { src = "scripts/test_value_ratchet.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "scripts/test_value/test_value_ratchet.py" }
@@ -216,3 +218,14 @@ base_ref       = "origin/main"
 label          = "gate"
 hermetic_label = "weekly-hermetic-gate"
 host_unit      = "_test_value_ratchet_check"
+
+# Request budget ratchet: counts fixed-rate polls, short or unbounded server loops, shared default-pool
+# submits and a web app without the timing middleware, and fails when a file's count for a rule rises.
+# The code lives under hooks/, skills/, .claude/ and the repo-root modules rather than the scaffold's
+# default src/ and app/, so the scan paths name those. The repo serves no HTTP, so RB4 (a scan per request,
+# which needs handler_dirs) is off and RB6 (the timing middleware) has no app to read.
+[request_budget_ratchet]
+enabled       = true
+baseline      = ".request-budget-ratchet-baseline.json"
+server_paths  = ["*.py", "hooks/**", "skills/**", ".claude/**"]
+browser_paths = ["hooks/**", "skills/**", ".claude/**"]
