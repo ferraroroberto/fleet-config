@@ -28,17 +28,19 @@ import sys
 import time
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import box_lock  # noqa: E402
 from design_review import fleet  # noqa: E402
+from design_review.plan import PlanError, resolve_target  # noqa: E402
 from fleet_core import (
     hooks_state,  # noqa: E402
     runtime_files,  # noqa: E402
 )
 from no_window import NO_WINDOW  # noqa: E402
 
-from . import cli, report  # noqa: E402
+from . import cli, idle_sample, report  # noqa: E402
 
 DEFAULT_LOCK_WAIT_MIN = 20.0
 LOCK_REPO = "perf-sweep"
@@ -80,10 +82,29 @@ def _tail(text: str, prefix: str) -> str:
     return lines[-1][len(prefix):].strip() if lines else ""
 
 
+def idle_for(repo: str, args: argparse.Namespace) -> dict:
+    """The app's idle figures, with the last run's and the rise flags; `unknown` with a reason, never an exception.
+
+    Taken before the page load so the app is idle (nothing of ours is hitting it) while its own tree is watched.
+    """
+    window = float(getattr(args, "idle_window", 0) or 0)
+    try:
+        port = urlsplit(resolve_target(repo).base_url).port
+        result = idle_sample.sample(port, window)
+    except (PlanError, OSError, ValueError) as exc:
+        return idle_sample.unknown(f"{type(exc).__name__}: {exc}"[:200])
+    prev = idle_sample.previous_sample(repo)
+    result["previous"] = {k: prev[k] for k in ("cpu_s_min", "procs_min", "ts")} if prev else None
+    result["rise"] = idle_sample.rise(prev, result)
+    idle_sample.record(repo, result, _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"))
+    return result
+
+
 def measure_app(repo: str, args: argparse.Namespace) -> dict:
     """Measure and (unless `--no-file`) file one app; the digest row, never an exception."""
     row: dict = {"repo": repo, "state": "unmeasured", "reason": "", "fails": [], "unmeasured_checks": 0,
-                 "regressed": [], "slower": [], "fixed": [], "build": None, "issue": None}
+                 "regressed": [], "slower": [], "fixed": [], "build": None, "issue": None,
+                 "idle": idle_for(repo, args)}
     ns = argparse.Namespace(repo=repo, url=None, python=None, duration=args.duration, min_spacing=cli.MIN_SPACING_S,
                             settle=args.settle, no_load=False)
     tee = _Tee(sys.stdout)
@@ -140,6 +161,21 @@ def _cell(row: dict) -> Tuple[str, str]:
     return over or "-", "; ".join(moved) or "-"
 
 
+def _idle_cells(row: dict) -> str:
+    """`CPU | procs | change` cells; an unsampled or unknown app reads `unknown`, never 0."""
+    idle = row.get("idle") or {}
+    if idle.get("state") != "measured":
+        return "unknown | unknown | unknown"
+    prev = idle.get("previous")
+    if not prev:
+        change = "first sample"
+    else:
+        change = f"CPU {idle['cpu_s_min'] - prev['cpu_s_min']:+.2f}, procs {idle['procs_min'] - prev['procs_min']:+.2f}"
+        if idle.get("rise"):
+            change += " RISE (" + "+".join(idle["rise"]) + ")"
+    return f"{idle['cpu_s_min']:.2f} | {idle['procs_min']:.2f} | {change}"
+
+
 def left_out(projects_toml: Optional[Path] = None, only: Optional[str] = None) -> List[Tuple[str, str]]:
     """`(repo, reason)` for web-looking repos the sweep has no port for; empty when one app is named."""
     return [] if only else fleet.left_out_targets(projects_toml)
@@ -152,18 +188,25 @@ def render_digest(rows: List[dict], dormant: List[str], date: str, omitted: Opti
     lines = [f"# Perf sweep {date}", "",
              f"{len(rows)} web apps: {count['pass']} pass, {count['over-budget']} over budget, {count['unmeasured']} unmeasured, "
              f"{len(worse)} slower than the last run." + (f" Dormant, not measured: {', '.join(dormant)}." if dormant else ""),
-             "", "| App | Result | Over budget | Since last run | Build | Issue |", "| --- | --- | --- | --- | --- | --- |"]
+             "", "| App | Result | Over budget | Since last run | Build | Issue | Idle CPU s/min | Idle procs/min | Idle vs last run |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
         over, moved = _cell(r)
         result = r["state"] + (f" ({r['unmeasured_checks']} checks unmeasured)" if r["state"] == "unmeasured" and r["unmeasured_checks"] else "")
-        lines.append(f"| {r['repo']} | {result} | {over} | {moved} | {r['build'] or '-'} | {r['issue'] or '-'} |")
+        lines.append(f"| {r['repo']} | {result} | {over} | {moved} | {r['build'] or '-'} | {r['issue'] or '-'} | {_idle_cells(r)} |")
     lines.append("")
+    risen = [f"{r['repo']} ({'+'.join(r['idle']['rise'])})" for r in rows if (r.get("idle") or {}).get("rise")]
+    if risen:
+        lines += [f"Idle load rose since the last run: {', '.join(risen)}.", ""]
     stale = [r["repo"] for r in rows if r["build"] in ("behind", "differs")]
     if stale:
         lines += [f"Serving an older build than the checkout, so a merged fix is not live in these numbers: {', '.join(stale)}.", ""]
     down = [r for r in rows if r["state"] == "unmeasured" and r["reason"]]
     if down:
         lines += ["## Unmeasured", ""] + [f"- {r['repo']}: {r['reason']}" for r in down] + [""]
+    idle_unknown = [r for r in rows if (r.get("idle") or {}).get("state") != "measured"]
+    if idle_unknown:
+        lines += ["## Idle sample unknown", ""] + [f"- {r['repo']}: {(r.get('idle') or {}).get('reason') or 'not sampled'}" for r in idle_unknown] + [""]
     if omitted:
         lines += ["## Left out", ""] + [f"- {name}: {why}" for name, why in omitted] + [""]
     return "\n".join(lines)
@@ -267,7 +310,8 @@ def dispatch_sweep(a: argparse.Namespace) -> int:
         if out_path.exists():
             out_path.unlink()
         child_argv = ["sweep", "--duration", str(a.duration), "--settle", str(a.settle),
-                      "--lock-wait", str(a.lock_wait), "--out", str(out_path)]
+                      "--lock-wait", str(a.lock_wait), "--idle-window", str(getattr(a, "idle_window", 0)),
+                      "--out", str(out_path)]
         if a.only:
             child_argv += ["--only", a.only]
         if a.no_file:

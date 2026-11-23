@@ -19,6 +19,7 @@ description: Weekly phone-speed check of every fleet web app, one at a time — 
 - **Read-only on the apps.** The sweep only loads pages and sends GETs. It never starts, restarts or kills anything. A down port is `unmeasured`, never a pass; restarting it is the owner's call. A window where every timed route stalled together is `unmeasured (machine busy)`, not over budget, and files nothing.
 - **One app at a time, and only on a quiet box.** Each app is timed under an exclusive `box_lock` (no lane gate runs meanwhile; a gate that queues takes the gap between two apps). An app whose lock does not free within the wait is `unmeasured (BOX_BUSY)`.
 - **Never end the turn while the sweep runs.** It takes about 7 minutes per app and nothing wakes a session that ends its turn (`fleet-config#314`). Launch it detached and block on the sentinel file with `wait_for_sentinel.py`, re-invoking on an unfinished result — never a model-composed `Monitor` wait (`fleet-config#609`, `fleet-config#1558`: one such wait returned without blocking and ended a headless turn on a notification that never came).
+- **Idle sample, still read-only.** Each app's own process tree is watched for 60 s before its page load: CPU s/min and processes started/min, with the change since last run and a `RISE` flag (thresholds in `idle_sample.py`). A tree that cannot be found is `unknown`, never 0.
 - **Public-safe output.** The digest holds repo names, check ids and numbers only: no hostnames, no page text, no screenshots.
 
 ## Steps
@@ -68,7 +69,7 @@ for step 3.
 `cat` the `digest_file` path from step 2's `SWEEP_RESULT` and print it verbatim. Then one line: `SWEEP=done
 measured=N unmeasured=M` and the issues opened, updated or closed (all already on disk at the end of the digest text).
 
-Call out, in one sentence each: apps with a regression or a slower p95 since the last run, apps over budget, apps `unmeasured` and why (a restart recipe, if the repo's `CLAUDE.md` has one, goes in the line as a suggestion for the owner), and apps serving an older build than their checkout.
+Call out, in one sentence each: apps with a regression or a slower p95 since the last run, apps over budget, apps `unmeasured` and why (a restart recipe, if the repo's `CLAUDE.md` has one, goes in the line as a suggestion for the owner), apps whose idle CPU or process starts rose, and apps serving an older build than their checkout.
 
 ## Notes
 

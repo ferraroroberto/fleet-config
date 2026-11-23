@@ -445,6 +445,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "reported unmeasured with no issue filed, filing from the run's own "
      "directory, and the digest and exit codes -- is testable on its own, "
      "with no live app or issue touched (fleet-config#1686)"),
+    ("perf_idle", "web_review/test_perf_idle.py",
+     "/perf-sweep's live idle sample -- CPU seconds and processes started a "
+     "minute read from a fake process table for the app's own tree only "
+     "(children and grandchildren from birth, a neighbour and a reused PID "
+     "left out), an unfound listener, an unreadable table or a restart "
+     "mid-window reported unknown and never zero, the rise flag, the "
+     "measured-only ledger and the digest columns -- is testable on its own, "
+     "with no live app or process signalled (fleet-config#2220)"),
     ("perf_stall", "web_review/test_perf_stall.py",
      "/perf-review's all-routes stall -- a delay injected on every route of a "
      "fixture app reads unmeasured (machine busy) with the signal named and "
