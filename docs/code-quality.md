@@ -72,7 +72,7 @@ The finish flow runs these in order, each deterministic:
 
 ## The ratchets
 
-Ten ratchets gate this repository. Each section below says what it catches, why, and what a hit and its fix look like. The mechanics (flags, exit codes, baseline format, scope options) are the same for all of them and are described in [The life of a check](#the-life-of-a-check); the linked scaffold page for each ratchet is the full reference.
+Eleven ratchets gate this repository. Each section below says what it catches, why, and what a hit and its fix look like. The mechanics (flags, exit codes, baseline format, scope options) are the same for all of them and are described in [The life of a check](#the-life-of-a-check); the linked scaffold page for each ratchet is the full reference.
 
 ### Static analysis
 
@@ -186,6 +186,12 @@ LOG = state_dir() / "run.log"
 
 Reference: [runtime write ratchet](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/runtime-write-ratchet.md).
 
+### Request budget
+
+Reads browser JavaScript and server Python and counts, per file, the code that spends requests or wakeups whether or not anyone is looking: a fixed-rate poll that reaches the server, a poll under 2 s, a server loop that sleeps under 5 s (or an interval the source does not fix) or starts a process each pass, a directory scan in a request handler, a submit to the shared default thread pool, and a web app without the timing middleware. A count above the baseline fails; a loop that must run while nobody is viewing is declared in `.fleet.toml` with its reason. Why: background work that is cheap once is paid every second on every machine, so it can only go down. Here the repo serves no HTTP, so the hits are loops in hooks and skills.
+
+Reference: [request budget ratchet](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/request-budget-ratchet.md).
+
 ### Test value
 
 Holds the test suite's cost and asks each new test unit (a check function or a suite file) to show its value. A new unit passes with a red-before-fix record, a covered source line no other unit covers in the weekly coverage map, or a `test-value-exempt: <reason>` marker; each unit's process spawns may not rise above its baseline; open flakes (a pass and a fail on one tree) may not grow in number or age past the cap; and, weekly, a unit red in a fresh clone but green in the primary checkout fails. Why: tests are a cost to justify, and the spawn count measures cost without flaking under load the way wall time does. A missing coverage map or ledger is exit 3. The fix is to show the evidence (run the new test red on the pre-fix tree), drop the unit, or mark it exempt with a real reason.
@@ -297,7 +303,7 @@ The manual steps below are what those scripts automate.
 
 Not everything described here is switched on everywhere. State as of the current main branch:
 
-- **On in this repository's gate:** all nine ratchets; the hook matrix, spawn scanner, tree boundary, fleet-scope guard, index drift and tool-id leak checks; the debug-tag scan, instruction delta, gate evidence, red-first evidence and PR-body checker in the finish flow.
+- **On in this repository's gate:** all eleven ratchets; the hook matrix, spawn scanner, tree boundary, fleet-scope guard, index drift and tool-id leak checks; the debug-tag scan, instruction delta, gate evidence, red-first evidence and PR-body checker in the finish flow.
 - **Off until a repository opts in:** the comment ratchet's docstring and history-phrase rules; the conventions ratchet's `secret-compare`, `password-input-vendored`, `login-lockout` and `no-pwsh-stub` rules (this repository leaves them off, see [`ratchets.md`](ratchets.md) for each reason); the instruction ratchet's file-shape and repeated-text rules, which a repository enables per table; every ratchet in a repository that has not declared its table.
 - **Awaiting adoption in other repositories:** the newest rules, such as the docstring and history-phrase counts, the import-order rule and the instruction-file shape rules, have landed in the source repository as opt-in. Each repository records its existing debt with `--init` or `--update-baseline --allow-additions` in its own pull request, and the per-repository burn-down follows from those baselines.
 - **Live but harness-limited:** the default-branch commit guard is wired in the settings template and in the live agent settings, so it blocks `git commit` on the default branch in Claude Code. The other harnesses do not support the event (see [`cross-agent-parity.md`](cross-agent-parity.md)). A new machine takes effect once its live settings are refreshed from the template, and the acceptance run's settings-sync check fails by name until they are.
