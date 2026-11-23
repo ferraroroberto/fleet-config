@@ -1,4 +1,4 @@
-"""CLI for the visual-proof gate: `record`, `check`, `capture`, `capture-before|after`, `build`, `prune` (see the package docstring)."""
+"""CLI for the visual-proof gate: `record`, `check`, `gate`, `merge`, `capture`, `capture-before|after`, `build`, `prune` (see the package docstring)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from ui_proof import capture_run, merge_gate, proof, store, walkthrough  # noqa: E402
+from ui_proof import capture_run, merge, merge_gate, proof, store, walkthrough  # noqa: E402
 
 
 def _print_verdict(v: proof.Verdict) -> None:
@@ -43,6 +43,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     gate.add_argument("repo", type=Path, help="the merge command's working directory")
     gate.add_argument("--pr", default=None, help="the PR as gh names it: number, URL or branch (default: current branch)")
     gate.add_argument("--repo-slug", default=None, help="owner/name from the merge's -R/--repo")
+    mrg = sub.add_parser("merge", help="the one scripted `gh pr merge`: runs `gate` first, merges only on pass "
+                                       "(exit: gh's own once run, 1 refused, 3 unknown)")
+    mrg.add_argument("repo", type=Path, help="the checkout the merge runs from")
+    mrg.add_argument("--pr", required=True, help="the PR as gh names it: number, URL or branch")
+    mrg.add_argument("--repo-slug", default=None, help="owner/name of the PR's repo (default: the checkout's origin)")
+    mrg.add_argument("gh_args", nargs="*",
+                     help="after `--`: the `gh pr merge` flags, e.g. -- --auto --squash")
     for phase in store.PHASES:
         cap = sub.add_parser(f"capture-{phase}", help=f"copy the {phase} screenshots into .proof/")
         cap.add_argument("repo", type=Path)
@@ -89,6 +96,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1 if verdict.blocks else 0
     if args.cmd == "gate":
         code, lines = merge_gate.run(args.repo, args.pr, args.repo_slug)
+        print("\n".join(lines))
+        return code
+    if args.cmd == "merge":
+        gh_args = args.gh_args[1:] if args.gh_args[:1] == ["--"] else args.gh_args
+        code, lines = merge.merge(repo, args.pr, args.repo_slug, gh_args)
         print("\n".join(lines))
         return code
     return _store_command(repo, args)

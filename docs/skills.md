@@ -62,7 +62,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 ## Shared primitives and gates
 
 - [Concurrent same-repo work (claim-or-worktree)](skills/concurrent-same-repo-work.md) — `worktree_claim.py`, worktree twin, side-instance preflight, land-primary, teardown, `active_issue.py`
-- [UX-conformance gate (diff-keyed design check)](skills/ux-conformance-gate.md) — `ux_surface.py`: does a diff touch a design-gated surface; `ui_proof`: the visual-proof merge gate and the per-repo `.proof/<PR>` before/after page
+- [UX-conformance gate (diff-keyed design check)](skills/ux-conformance-gate.md) — `ux_surface.py`: does a diff touch a design-gated surface; `ui_proof`: the visual-proof merge gate, `ui_proof merge` (the one scripted `gh pr merge`) and the per-repo `.proof/<PR>` before/after page
 - [Deploy-coverage gate (merged is not shipped)](skills/deploy-coverage-gate.md) — `deploy_coverage.py`: a merged change is not a shipped change
 - [Owner checks (work that needs Roberto, marked by code)](owner-check.md) — `owner_check/`: the rule, the `needs-validation` / `needs-owner` labels and comment block, the `/issue-add` · `/issue-start` · `/issue-finish` call points, back-fill
 - [Gate evidence (a green bound to the tree it ran against)](skills/gate-evidence.md) — `gate_evidence.py`: a pass bound to a content hash

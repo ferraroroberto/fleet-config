@@ -242,6 +242,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "PR's own file list when it is not (a mobile PWA-shell file included), "
      "and every fact it cannot establish reported as GATE=unknown "
      "(fleet-config#1768)"),
+    ("ui_proof_merge", "web_review/test_ui_proof_merge.py",
+     "`ui_proof merge`, the one scripted `gh pr merge` -- a refused or "
+     "unknown gate never reaches gh, a pass merges once in the judged repo, "
+     "-R among the gh args is refused, and the owner's logged bypass "
+     "(fleet-config#2215)"),
     ("ui_proof_merge_guard", "hooks/test_ui_proof_merge_guard.py",
      "the `gh pr merge` proof hook -- merge parsing incl. -R and cd, only an "
      "explicit GATE=pass passes, unknown/crash/timeout refuse with their own "

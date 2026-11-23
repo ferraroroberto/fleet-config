@@ -59,5 +59,11 @@ and answers the finish gate's question.
       `GATE=refuse` exit 1, `GATE=unknown` exit 3. No UX surface answers
       `n/a` before any `gh` call (see `merge_gate.py`).
 
+  merge <cwd> --pr <number|url|branch> [--repo-slug owner/name] -- <gh pr merge flags>
+      The one scripted `gh pr merge`: runs `gate` and merges only on
+      `GATE=pass`, in the repo the gate judged; refuses on `refuse` (exit 1)
+      or unknown (exit 3) without merging. Skills and helpers merge through
+      this, since the hook never sees a merge a script spawns (see `merge.py`).
+
 Directory execution: `python <...>/skills/_lib/ui_proof check .`.
 """
