@@ -77,6 +77,10 @@ check(heal.job_rerun_safe(_jobs(rerun_safe=True), "job-b") == (False, "job-not-f
 check(heal.job_rerun_safe({"oops": 1}, "job-a") == (None, "jobs-unreadable"), "an unreadable jobs list is unknown")
 check([heal.run_outcome({"status": s}) for s in ("success", "failed", "running", "weird")]
       == ["success", "failed", "pending", "unknown"], "run status maps to outcome, an odd one to unknown")
+check([heal.run_outcome({"run": {"status": s}}) for s in ("success", "failed", "running")]
+      == ["success", "failed", "pending"], "the launcher's wrapped {'run': {...}} reply reads by its status")
+check([heal.run_outcome(r) for r in ({}, {"run": None}, {"run": "x"}, {"run": {}}, None)] == ["unknown"] * 5,
+      "a reply carrying no run record reads unknown")
 
 
 # ---- end to end against a fake launcher ---------------------------------------------------
@@ -106,7 +110,7 @@ class FakeLauncher:
                 raise self.run_exc
             return {"run_id": f"rerun{len(self.runs)}", "job_id": "job-a"}
         if path.startswith("/api/jobs/job-a/runs/"):
-            return {"status": self.run_status, "output_tail": _PRIVATE}
+            return {"run": {"run_id": path.rsplit("/", 1)[1], "status": self.run_status, "output_tail": _PRIVATE}}
         raise AssertionError(f"unexpected {method} {path}")
 
 

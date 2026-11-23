@@ -123,7 +123,12 @@ def job_rerun_safe(jobs_reply: Any, job_id: str) -> Tuple[Optional[bool], str]:
 
 
 def run_outcome(record: Any) -> str:
-    """`success`, `failed`, `pending` or `unknown` for a run record from the launcher."""
+    """`success`, `failed`, `pending` or `unknown` for a run reply from the launcher.
+
+    The runs endpoint wraps the record as `{"run": {...}}`; a bare record is read too.
+    """
+    if isinstance(record, dict) and "run" in record:
+        record = record["run"]
     status = record.get("status") if isinstance(record, dict) else None
     if status in _RUN_OUTCOMES:
         return _RUN_OUTCOMES[status]
