@@ -22,7 +22,7 @@ from config_edit import (  # noqa: E402
     merge_table,
 )
 
-RETENTION_DAYS = 730
+RETENTION_DAYS = 3650
 
 
 class RetentionConfigError(ValueError):

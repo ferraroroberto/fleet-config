@@ -337,7 +337,7 @@ class SessionRetentionTests(unittest.TestCase):
             "cleanupPeriodDays": 30,
         }
         updated, changed = session_retention.merge_claude_settings(original)
-        self.assertEqual(updated["cleanupPeriodDays"], 730)
+        self.assertEqual(updated["cleanupPeriodDays"], 3650)
         self.assertEqual(updated["env"], {"SECRET": "kept"})
         self.assertEqual(original["cleanupPeriodDays"], 30)
         self.assertEqual(set(changed), {
@@ -384,7 +384,7 @@ class SessionRetentionTests(unittest.TestCase):
             codex.write_text('[tui]\nterminal_title = true\n', encoding="utf-8")
             states = session_retention.configure(claude, codex, apply=True)
             self.assertEqual(states, ("updated", "updated"))
-            self.assertEqual(json.loads(claude.read_text(encoding="utf-8"))["cleanupPeriodDays"], 730)
+            self.assertEqual(json.loads(claude.read_text(encoding="utf-8"))["cleanupPeriodDays"], 3650)
             self.assertEqual(tomllib.loads(codex.read_text(encoding="utf-8"))["history"]["persistence"], "save-all")
             proc = subprocess.run(
                 [sys.executable, str(ROOT / "session_retention.py"), "--check",
@@ -392,7 +392,7 @@ class SessionRetentionTests(unittest.TestCase):
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
             )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertIn("claude=unchanged codex=unchanged days=730", proc.stdout)
+            self.assertIn("claude=unchanged codex=unchanged days=3650", proc.stdout)
 
     def test_installer_switch_is_scoped_forwarded_and_invokes_helper(self) -> None:
         installer = (ROOT / "install.ps1").read_text(encoding="utf-8")
