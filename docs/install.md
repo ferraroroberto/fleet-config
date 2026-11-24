@@ -67,9 +67,9 @@ The named roles are `easy` (Luna/xhigh), `normal` (Terra/high), and `hard` (Sol/
 .\install.ps1 -ConfigureSessionRetention
 ```
 
-The switch runs `session_retention.py` atomically. It changes only Claude's `cleanupPeriodDays` and `env.CLAUDE_CODE_SKIP_PROMPT_HISTORY` plus Codex's two history keys; other JSON values, TOML comments/order, permissions, and secrets survive. `--check` provides a read-only drift check. Scoped/worktree installation refuses this user-home mutation. Open fresh sessions after applying it. OpenAI's current configuration reference documents no separate day-based local pruning control for Codex, so that control is unavailable rather than silently assumed to match Claude's 730-day setting; `save-all` with no byte cap is the documented native guarantee, and the independent archive below supplies indefinite recovery.
+The switch runs `session_retention.py` atomically. It changes only Claude's `cleanupPeriodDays` and `env.CLAUDE_CODE_SKIP_PROMPT_HISTORY` plus Codex's two history keys; other JSON values, TOML comments/order, permissions, and secrets survive. `--check` provides a read-only drift check. Scoped/worktree installation refuses this user-home mutation. Open fresh sessions after applying it. OpenAI's current configuration reference documents no separate day-based local pruning control for Codex, so that control is unavailable rather than silently assumed to match Claude's ten-year (3650-day) setting; `save-all` with no byte cap is the documented native guarantee, and the independent archive below supplies indefinite recovery.
 
-These settings keep native sessions directly resumable for at least 730 days. The explicit-deletion-only archives described in [the private-backup guide](fleet-private-backup.md) provide the separate data-loss guarantee after native cleanup; provider-side retention is unrelated and unchanged.
+These settings keep native sessions directly resumable for at least ten years (3650 days). The explicit-deletion-only archives described in [the private-backup guide](fleet-private-backup.md) provide the separate data-loss guarantee after native cleanup; provider-side retention is unrelated and unchanged.
 
 ## Scoped project discovery
 
