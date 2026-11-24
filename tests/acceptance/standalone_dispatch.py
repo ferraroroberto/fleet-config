@@ -743,7 +743,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the opt-in Codex model-policy merger preserves unrelated settings, validates the generated four-model catalog, "
      "and leaves config untouched on a failed native preflight (#793); the opt-in Codex footer merger preserves "
      "custom settings/comments, appends native quota items, and stays idempotent against synthetic config files "
-     "(#752); the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
+     "(#752); the opt-in Claude/Codex retention merger preserves unrelated settings, pins a ten-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
     ("codex_refusal_probe", "harness/test_codex_refusal_probe.py",
      "the live Codex refusal probe reports a workspace Codex left untrusted as unknown naming the missing "

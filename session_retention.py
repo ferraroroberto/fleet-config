@@ -1,4 +1,4 @@
-"""Configure two-year local session retention for Claude Code and Codex.
+"""Configure ten-year local session retention for Claude Code and Codex.
 
 The helper updates only the retention keys it owns. Claude's JSON settings keep
 all unrelated values (including machine-local permissions and secrets), while

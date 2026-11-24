@@ -131,7 +131,7 @@ fleet-config/
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
 ├── grok_statusline.py              # Grok Build status line (command row, Claude's limits labelled as Claude's) + its opt-in ~/.grok/config.toml merge
 ├── codex_model_policy.py           # opt-in, atomic merge of the versioned Codex model policy (codex/) into ~/.codex/config.toml
-├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
+├── session_retention.py            # opt-in, atomic ten-year Claude/Codex native-session retention config
 ├── config_edit.py                  # atomic_write, line-level TOML regexes and the quote/comment-aware TOML scanner shared by the three root config writers above
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires scripts/shell/claude-otel-project.ps1 into $PROFILE
