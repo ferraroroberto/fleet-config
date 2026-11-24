@@ -30,8 +30,8 @@ comment_ratchet = { src = "scripts/comment_ratchet.py", sha = "1ed07ddb5002d4513
 instruction_ratchet = { src = "scripts/instruction_ratchet.py", sha = "a04abc7b3af872cbac974401dd0945587eac6cef", dest = "scripts/instruction_ratchet.py" }
 doc_refs_ratchet = { src = "scripts/doc_refs_ratchet.py", sha = "a68f6e49393f0ef0b94ab3c79f4338a50d89fa49", dest = "scripts/doc_refs_ratchet.py" }
 dead_code_ratchet = { src = "scripts/dead_code_ratchet.py", sha = "4d0b0ff30e23eb95c73c4b0b1517ec6a43d3a836", dest = "scripts/dead_code_ratchet.py" }
-conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "78df565389899bdb33b7f676b7e216fda39acb42", dest = "scripts/conventions_ratchet.py" }
-conventions_readers = { src = "scripts/conventions_readers.py", sha = "78df565389899bdb33b7f676b7e216fda39acb42", dest = "scripts/conventions_readers.py" }
+conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "3292ebd1981706edcf29a32bd0854a04a6eefe1e", dest = "scripts/conventions_ratchet.py" }
+conventions_readers = { src = "scripts/conventions_readers.py", sha = "3292ebd1981706edcf29a32bd0854a04a6eefe1e", dest = "scripts/conventions_readers.py" }
 conventions_state = { src = "scripts/conventions_state.py", sha = "4d0b0ff30e23eb95c73c4b0b1517ec6a43d3a836", dest = "scripts/conventions_state.py" }
 synthetic_host = { src = "tests/host/_synthetic_host.py", sha = "160b54e2e0bcf76541d0a5f9bb4d6265dd493c31", dest = "tests/host/_synthetic_host.py" }
 paced_browser = { src = "tests/e2e/_paced_browser.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "tests/e2e/_paced_browser.py" }
@@ -114,7 +114,7 @@ baseline = ".dead-code-ratchet-baseline.json"
 [conventions_ratchet]
 enabled      = true
 baseline     = ".conventions-ratchet-baseline.json"
-rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use", "state-literal", "state-set-repeat", "state-write", "browser-per-iteration", "host-identity"]
+rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use", "state-literal", "state-set-repeat", "state-write", "browser-per-iteration", "path-sep", "host-identity"]
 # tests/ is exempt from the NO_WINDOW rule (CLAUDE.md). The exemption is scoped to that one
 # rule, so `host-identity`, which reads test modules only, still scans tests/.
 exclude_by_rule = { no-window = ["tests/**"] }
