@@ -61,7 +61,7 @@ The named roles are `easy` (Luna/xhigh), `normal` (Terra/high), and `hard` (Sol/
 
 ## Session retention opt-in
 
-[Anthropic's session documentation](https://code.claude.com/docs/en/sessions) says Claude Code deletes local session files after 30 days by default and that `cleanupPeriodDays` controls that window. The [official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) exposes Codex `history.persistence = "save-all" | "none"` and says `history.max_bytes` drops oldest entries when set; the [developer-command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) documents the native resume paths. The fleet pins a two-year native-resume floor and removes Codex's byte cap with one idempotent command from the primary checkout:
+[Anthropic's session documentation](https://code.claude.com/docs/en/sessions) says Claude Code deletes local session files after 30 days by default and that `cleanupPeriodDays` controls that window. The [official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) exposes Codex `history.persistence = "save-all" | "none"` and says `history.max_bytes` drops oldest entries when set; the [developer-command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) documents the native resume paths. The fleet pins a ten-year native-resume floor and removes Codex's byte cap with one idempotent command from the primary checkout:
 
 ```powershell
 .\install.ps1 -ConfigureSessionRetention
