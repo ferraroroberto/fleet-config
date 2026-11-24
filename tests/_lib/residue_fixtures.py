@@ -8,6 +8,7 @@ stdlib plus `no_window`; a git failure raises `AssertionError` like the suites' 
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,8 @@ def make_origin_and_primary(
     stripped stdout, `commit(cwd, name, text, msg)` writes, adds and commits one file.
     """
     no_hooks = Path(tempfile.mkdtemp(prefix=f"{prefix}-nohooks-"))
+    # The branch report reads the owner keep-list from the hooks state dir; a temp one keeps every suite off the real list.
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix=f"{prefix}-state-")
 
     def git(cwd: Path, *args: str) -> str:
         # `core.hooksPath` -> an empty dir: this machine carries a global commit

@@ -18,7 +18,12 @@ gets exactly one class, evaluated cheapest-first, first hit wins:
 
   default      -- the default branch. Never touched.
   checked-out  -- checked out in the primary or any registered worktree.
-  no-issue     -- the name is not `<type>/<N>-slug`, so there is no issue to
+  owner-keep   -- matches a line of the owner keep-list (`residue/keep_list.py`:
+                  `branch-keep-list.txt` in the hooks state dir). Kept, local and
+                  remote, before any lookup. An unreadable list is its own state:
+                  the verdict is `partial`, a `NOTE=` says why, and `--delete`
+                  deletes nothing that run (exit 1).
+  no-issue    -- the name is not `<type>/<N>-slug`, so there is no issue to
                   prove closed, and the tip carries work the default branch
                   lacks. Kept. (One contained in the default branch is `landed`.)
   open-issue   -- issue N is open (protects a freshly cut, still-empty branch,
@@ -142,6 +147,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 import worktree_residue as wr  # noqa: E402
 from fleet_core import fleet_repo_scan  # noqa: E402
+from residue import keep_list  # noqa: E402
 from residue.gh_lookups import (  # noqa: E402
     ClosingPr,
     ClosingPrsFn,
@@ -163,11 +169,12 @@ UNLANDED = "unlanded"
 OPEN_PR = "open-pr"
 LANDED = "landed"
 SUPERSEDED = "superseded"
+OWNER_KEEP = "owner-keep"
 
 DELETABLE = (LANDED, SUPERSEDED)
 
 # Classes the summary counts as "left alone on purpose".
-_KEEP = (DEFAULT, CHECKED_OUT, NO_ISSUE, OPEN_ISSUE, OPEN_PR)
+_KEEP = (DEFAULT, CHECKED_OUT, OWNER_KEEP, NO_ISSUE, OPEN_ISSUE, OPEN_PR)
 
 VERDICT_COMPLETE = "complete"
 VERDICT_PARTIAL = "partial"
@@ -218,6 +225,7 @@ class Report(NamedTuple):
     verdict: str
     reason: str
     notes: List[str]
+    keep_error: str = ""  # set when the owner keep-list could not be established: nothing may be deleted
 
 
 # ---- pure core ------------------------------------------------------------
@@ -388,8 +396,11 @@ class _Judge:
 
     def __init__(self, repo: Path, default_ref: str, issue_state_fn: IssueStateFn,
                  open_pr_heads_fn: OpenPrHeadsFn, closing_prs_fn: ClosingPrsFn,
-                 own_prs_fn: OwnPrsFn) -> None:
+                 own_prs_fn: OwnPrsFn, keep: keep_list.KeepList = keep_list.KeepList(),
+                 repo_name: str = "") -> None:
         self.repo = repo
+        self.keep = keep
+        self.repo_name = repo_name or repo.name
         self.default_ref = default_ref
         self.default_name = default_ref[len("origin/"):] if default_ref.startswith("origin/") else default_ref
         self._issue_state_fn = issue_state_fn
@@ -485,7 +496,8 @@ class _Judge:
 
     def prefetch(self, refs: Sequence[Ref], checked_out: Set[str]) -> None:
         """Fill the issue and proof caches for `refs` on a small pool."""
-        live = [r for r in refs if r.name != self.default_name and r.name not in checked_out]
+        live = [r for r in refs if r.name != self.default_name and r.name not in checked_out
+                and not self.keep.match(self.repo_name, r.name)]
         numbers = sorted({n for n in (branch_issue(r.name) for r in live) if n is not None})
         with ThreadPoolExecutor(max_workers=LOOKUP_WORKERS) as pool:
             list(pool.map(self.state, numbers))
@@ -503,6 +515,9 @@ class _Judge:
         issue = branch_issue(ref.name)
         is_default = ref.name == self.default_name
         is_checked_out = ref.name in checked_out
+        kept = None if is_default or is_checked_out else self.keep.match(self.repo_name, ref.name)
+        if kept:  # decided before any lookup: the owner's word needs no proof, and a keep is never deleted
+            return Row(ref, issue, OWNER_KEEP, f"on the owner keep-list ({kept.text})")
         gated = is_default or is_checked_out or issue is None
         state = None if gated else self.state(issue)  # type: ignore[arg-type]
         readable = False
@@ -542,6 +557,11 @@ class _Judge:
 
 # ---- report ------------------------------------------------------------------
 
+def _primary_name(repo: Path, worktrees: Sequence[wr.WorktreeEntry]) -> str:
+    """The primary checkout's folder name, which a `<repo>:` keep-list entry names (a linked worktree reports it too)."""
+    return Path(worktrees[0].path).name if worktrees else repo.name
+
+
 def build_report(
     repo: Path,
     fetch: bool = True,
@@ -579,14 +599,18 @@ def build_report(
 
     worktrees = wr.parse_all_worktrees(porcelain)
     checked_out = {w.branch for w in worktrees if w.branch}
+    keep = keep_list.load()
     judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), issue_state_fn, open_pr_heads_fn, closing_prs_fn,
-                   own_prs_fn)
+                   own_prs_fn, keep, _primary_name(repo, worktrees))
     refs = local + remote
     judge.prefetch(refs, checked_out)
     rows = [judge.judge(ref, checked_out) for ref in refs]
+    if keep.error:  # a kept branch may read as landed below, so the counts are not the whole picture
+        verdict = VERDICT_PARTIAL
+        notes.append(f"owner keep-list unreadable ({keep.error}); nothing will be deleted this run")
 
     orphans = find_orphans(worktrees[0].path, [w.path for w in worktrees]) if worktrees else []
-    return Report(rows, orphans, verdict, "", notes)
+    return Report(rows, orphans, verdict, "", notes, keep.error)
 
 
 def render(report: Report, include_branches: bool = True) -> List[str]:
@@ -691,6 +715,8 @@ def delete_landed(
     """
     named = set(names)
     outcomes: List[Outcome] = []
+    if report.keep_error:  # unknown is not "nothing is kept": a listed branch could read as landed
+        return [Outcome("refused", "-", "*", "", f"owner keep-list unreadable, so nothing is deleted: {report.keep_error}")]
     for name in names:
         if not any(r.ref.name == name for r in report.rows):
             outcomes.append(Outcome("refused", "-", name, "", "no such branch in the report"))
@@ -726,8 +752,12 @@ def _attempt(repo: Path, row: Row, lookups_factory: LookupsFactory) -> Outcome:
     if sha_now != ref.sha:
         return Outcome("skipped", ref.where, ref.name, sha_now, f"tip moved since the report ({ref.sha[:7]} -> {sha_now[:7]})")
     porcelain = git_run.run_git_or_raise(repo, "worktree", "list", "--porcelain")
-    checked_out = {w.branch for w in wr.parse_all_worktrees(porcelain) if w.branch}
-    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), *lookups_factory())
+    worktrees = wr.parse_all_worktrees(porcelain)
+    checked_out = {w.branch for w in worktrees if w.branch}
+    keep = keep_list.load()  # re-read: the owner may have added a line since the report
+    if keep.error:
+        return Outcome("skipped", ref.where, ref.name, sha_now, f"owner keep-list unreadable: {keep.error}")
+    judge = _Judge(repo, git_run.resolve_default_branch_ref(repo), *lookups_factory(), keep, _primary_name(repo, worktrees))
     fresh = judge.judge(Ref(ref.name, ref.where, sha_now), checked_out)
     if fresh.cls not in DELETABLE:
         return Outcome("skipped", ref.where, ref.name, sha_now, f"no longer deletable, CLASS={fresh.cls}: {fresh.reason}")
@@ -807,7 +837,7 @@ def cmd_delete(repo: Path, names: Sequence[str], remote: bool, fetch: bool) -> i
     outcomes = delete_landed(repo, report, lambda: make_gh_lookups(repo_slug(repo)), names, remote)
     for line in render_outcomes(outcomes):
         print(line)
-    if any(o.action == "failed" for o in outcomes):
+    if report.keep_error or any(o.action == "failed" for o in outcomes):
         return 1
     # An explicit request that was not carried out is not a success, even when it was refused safely.
     return 1 if names and any(o.action != "deleted" for o in outcomes) else 0

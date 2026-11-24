@@ -527,6 +527,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "is testable "
      "on its own against real throwaway git repos with injected `gh` "
      "lookups (fleet-config#1516, #1528)"),
+    ("branch_residue_keep_list", "residue/test_branch_residue_keep_list.py",
+     "a landed branch on the owner keep-list is owner-keep and survives `--delete --remote`; an unreadable list deletes nothing, on real git (#2224)"),
     ("branch_residue_contained", "repo/test_branch_residue_contained.py",
      "a no-issue branch lands only when contained in main, else keep or unknown, on real git (#1958)"),
     ("stall_probe", "claude_progress/test_stall_probe.py",
