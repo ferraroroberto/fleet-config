@@ -111,6 +111,7 @@
     "box_lock": 8,
     "branch_residue": 2940,
     "branch_residue_contained": 234,
+    "branch_residue_keep_list": 138,
     "browser_verify": 2,
     "cert_drift": 7,
     "check_or_write": 1,
