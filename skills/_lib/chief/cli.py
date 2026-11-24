@@ -15,6 +15,7 @@ from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 from . import (
     commands,
     compact,
+    doctor,
     drain,
     heal,
     journal,
@@ -109,6 +110,7 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     si.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
     si.set_defaults(func=drain.cmd_slots_idle)
 
+    doctor.add_parser(sub)
     heal.add_parser(sub)
     journal.add_parser(sub)
     proposals.add_parser(sub)

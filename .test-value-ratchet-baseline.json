@@ -117,6 +117,7 @@
     "check_or_write": 1,
     "chief_cap_raised": 1,
     "chief_ci_failed": 1,
+    "chief_doctor": 2,
     "chief_drain": 1,
     "chief_heal": 17,
     "chief_inbox": 35,

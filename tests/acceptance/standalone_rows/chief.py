@@ -68,6 +68,12 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "dispatch filling free slots from the top of its own rows, skipping "
      "busy repos and stopping on a refusal or unconfirmed dispatch, against "
      "a fake launcher (fleet-config#1881), and the SLOTS_IDLE line and the slots-idle read behind the chief's Stop-hook hold (fleet-config#1941)"),
+    ("chief_doctor", "chief_ops/test_doctor.py",
+     "chief_ops doctor -- settings.json hook targets and slashes, the hooks "
+     "and skills links (another checkout, broken, missing), each read verb's "
+     "expected line, an unreadable mailbox and an unreachable launcher as "
+     "unknown, waiter heartbeats, launcher log grouping, redaction of paths, "
+     "names and session ids, and a full run writing nothing (fleet-config#2226)"),
     ("chief_heal", "chief_ops/test_heal.py",
      "chief_ops heal -- the chief_job_self_heal switch (off, missing and "
      "unreadable write and fire nothing), the ledger with its repeated-cause "

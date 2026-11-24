@@ -83,6 +83,17 @@ Subcommands
       An off, missing or unreadable switch prints `DRAIN=off reason=...` and does
       nothing; the first refusal or unconfirmed dispatch ends the drain.
 
+  doctor [--checkout PATH] [--base-url URL]
+      Read-only check of this machine's chief setup (`chief/doctor.py`): the
+      install (commit vs `origin/main`, `.venv`, the `~/.claude` hooks and
+      skills links, every `settings.json` hook command's target and slashes),
+      each read verb timed against its expected line, the mailbox, doorbell
+      and waiter heartbeats, and the last 24 h of launcher and hook log
+      errors grouped by message. One `CHECK <area>.<name>=pass|fail|unknown`
+      line per fact, then `DOCTOR=pass|fail|unknown fails=<n> unknowns=<n>`;
+      exit 0 only on pass. Paths, user and host names are redacted. The
+      diagnostics run that wraps it: `.claude/skills/chief/diagnostics.md`.
+
   heal record|rerun|outcome|show <job_id> [--run RUN] [--cause C]
        [--issue R#N] [--pr R#N] [--base-url URL]
       Job self-heal (`chief/heal.py`). With Settings'
