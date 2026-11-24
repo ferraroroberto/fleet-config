@@ -388,6 +388,8 @@ A chief-dispatched worker's real "blocked, needs input" moment, a worker's turn 
 **Read [ideas.md](ideas.md) whenever your terminal receives a message starting `Idea from the Board:`**: file it with `/issue-add` (the owner's prompt as grounding, no attachment posted) or drop it, and record either outcome only through `scan.py ideas apply|filter`.
 
 ## Propose systemic fixes (fleet-config#2107)
+**Read [diagnostics.md](diagnostics.md) whenever the owner asks for a diagnostics run**: `chief_ops.py doctor` (read-only `CHECK`/`DOCTOR=` lines), a throwaway-lane round trip only on the owner's OK, and one redacted Markdown report.
+
 **Read [systemic-fixes.md](systemic-fixes.md) whenever an incident, lane failure, repeated steer or review finding shows a class of problem (2+ occurrences, or a mechanism that repeats by construction)**: one `plan ask` per pattern with the smallest sound fix, filed only after the owner says yes, journalled either way.
 
 ## Verify before you trust a worker's report
@@ -447,13 +449,9 @@ instead:
 
 ## Safety rails (non-negotiable)
 
-1. **Default verb is the safe one.** Issue starts use `mode: "start"`; a
-   free-text ask is filed as an issue first and then started the same way.
-   Escalate to `"yolo"` **only when the user's message contains the literal
-   word "yolo"** — never infer it.
-   `chief_ops.py dispatch` backs this mechanically: it refuses `--mode
-   yolo` outright unless `--yolo-confirmed` is also passed, so only pass
-   that flag when you've confirmed the literal word.
+1. **Default verb is the safe one.** Issue starts use `mode: "start"`; a free-text ask is filed as an issue first and then started the same way.
+   Escalate to `"yolo"` **only when the user's message contains the literal word "yolo"** — never infer it.
+   `chief_ops.py dispatch` backs this mechanically: it refuses `--mode yolo` outright unless `--yolo-confirmed` is also passed, so only pass that flag when you've confirmed the literal word.
 2. **Deterministic issue lists only.** Pick issue numbers exclusively from
    the board payload's backlog or `chief_ops.py issues` / `gh_issue_fetch.py fetch` output. Never invent,
    guess, or "remember" a number; if the user's reference doesn't match a
