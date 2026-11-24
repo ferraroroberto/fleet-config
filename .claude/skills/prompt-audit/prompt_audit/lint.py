@@ -411,7 +411,7 @@ def unnamed_imports(skill_path: Path, text: str,
     out, seen = [], set()
     for n, line in unfenced_lines(text):
         for ticked, linked in _SCRIPT_REF.findall(line):
-            raw = ticked or linked
+            raw = (ticked or linked).replace("\\", "/")
             for base in (skill_path.parent, repo_dir):
                 cand = (base / raw).resolve()
                 if cand.is_file() and cand.is_relative_to(root):
