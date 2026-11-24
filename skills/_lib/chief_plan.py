@@ -77,6 +77,8 @@ WAITING_FIELDS = {"text", "ref", "id", "repo", "question", "detail", "recommenda
 OPTION_FIELDS = {"label", "description", "recommended"}
 
 _LOCAL_REF = re.compile(r"#[1-9][0-9]*")
+# A lane that runs a skill (an upstream-sync run) has no issue, so its `item` names the skill.
+_SKILL_ITEM = re.compile(r"skill:[a-z0-9][a-z0-9-]{0,63}")
 _REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUALIFIED_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(#[1-9][0-9]*)")
 _NO_LANE = re.compile(r"no-lane:([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -166,8 +168,9 @@ def validate(doc: Any) -> List[str]:
         if "session" in lane:
             _check_text(errors, f"{where}.session", lane["session"], required=False)
         item = lane.get("item", "")
-        if item and (not isinstance(item, str) or not _LOCAL_REF.fullmatch(item)):
-            errors.append(f"{where}.item: must be #N or empty")
+        if item and (not isinstance(item, str)
+                     or not (_LOCAL_REF.fullmatch(item) or _SKILL_ITEM.fullmatch(item))):
+            errors.append(f"{where}.item: must be #N, skill:<name> or empty")
         _check_model(errors, where, lane)
 
     seen = set()
@@ -724,13 +727,20 @@ def add_question(
     return row["id"]
 
 
-def clear_waiting(doc: Dict[str, Any], key: str) -> None:
-    """Drop a waiting item by 1-based index, by its id, by its `repo#N` ref, or by exact text."""
+def clear_waiting(doc: Dict[str, Any], key: str) -> bool:
+    """Drop a waiting item by 1-based index, by its id, by its `repo#N` ref, or by exact text.
+
+    Returns False when nothing matches: an instruction typed into the terminal is not a Board
+    answer, so `unwait` on it is a no-op for the caller to report, not a failure.
+    """
     rows = doc["waiting_on_roberto"]
     if key.isdigit():
-        rows.pop(_position(int(key), len(rows)))
-        return
+        if not 1 <= int(key) <= len(rows):
+            return False
+        rows.pop(int(key) - 1)
+        return True
     kept = [row for row in rows if key not in (row.get("id"), row.get("ref"), row["text"])]
     if len(kept) == len(rows):
-        raise ValueError(f"nothing waiting matches {key!r}")
+        return False
     doc["waiting_on_roberto"] = kept
+    return True

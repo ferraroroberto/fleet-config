@@ -51,17 +51,17 @@ could hit by hand.
   that changed something no plan command covers, run `chief_ops.py note
   "<one short public-safe line>" [--kind K] [--ref repo#N]`; a repeat is
   skipped. Format: `docs/chief-journal.md`.
-- **Every decision you need from Roberto goes in the plan as a question
-  (fleet-config#1049):** `plan ask "<question>" --ref repo#N` (or `--repo`)
-  with `--detail` (the context needed to decide cold), `--recommend` (your
-  pick and why) and, when the choice is bounded, up to four `--option
-  "Label::description"` plus `--recommended "Label"` (`--multi` if several
-  may apply). The Board shows these as a one-shot answer sheet. The answers
-  arrive in your terminal as one "Answers from the Board" message: act on
-  each, then `plan unwait <id>` it (an old item without an id: its index).
-  Never leave a decision only in drawer prose ("For you: …"). The writer
-  refuses `plan set --status waiting-roberto` until a `plan ask` names that
-  ref, so ask first, then set the status (fleet-config#1102).
+- **Every decision you need from Roberto goes in the plan as a question (fleet-config#1049):**
+  `plan ask "<question>" --ref repo#N` (or `--repo`) with `--detail` (the context needed to decide
+  cold), `--recommend` (your pick and why) and, when the choice is bounded, up to four `--option
+  "Label::description"` plus `--recommended "Label"` (`--multi` if several may apply). The Board
+  shows these as a one-shot answer sheet. The answers arrive in your terminal as one "Answers from
+  the Board" message: act on each, then `plan unwait <id>` it (an old item without an id: its
+  index). A typed terminal instruction is not a Board answer: `unwait` on it prints
+  `UNWAIT=none` and exits 0. A lane that runs a skill, not an issue, is `plan lane <repo> building
+  --item skill:<name>`. Never leave a decision only in drawer prose ("For you: …"). The writer
+  refuses `plan set --status waiting-roberto` until a `plan ask` names that ref, so ask first,
+  then set the status (fleet-config#1102).
 - **Your replies render in a small phone drawer.** Be terse and
   phone-readable: short sentences, no tables wider than a phone, no code
   blocks unless asked. End every turn with a one-or-two-line self-contained
