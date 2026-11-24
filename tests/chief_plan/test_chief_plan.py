@@ -11,6 +11,9 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_plan/test_
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -23,6 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import chief_plan as cp  # noqa: E402
+from chief.plan_cli import add_cli  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -164,6 +168,17 @@ ok["waiting_on_roberto"].append({"text": "no ref needed"})
 ok["lanes"].append({"repo": "fleet-config", "status": "idle"})
 check(cp.validate(ok) == [], "waiting ref, lane item and lane session are optional")
 
+skill_doc = _valid()
+cp.set_lane(skill_doc, "fleet-config", "building", item="skill:upstream-sync", session="sid-9")
+check(cp.validate(skill_doc) == [] and skill_doc["lanes"][-1]["item"] == "skill:upstream-sync",
+      "a lane item may name a skill run")
+check(json.loads(json.dumps(skill_doc)) == skill_doc and cp.validate(json.loads(json.dumps(skill_doc))) == [],
+      "a skill-run lane round-trips through JSON")
+for bad_item in ("skill:", "skill:Up Sync", "skill:x#1", "upstream-sync", "#0"):
+    bad = _valid()
+    bad["lanes"][0]["item"] = bad_item
+    check(any("lanes[0].item" in e for e in cp.validate(bad)), f"lane item {bad_item!r} is rejected")
+
 
 # ---- mutations ----------------------------------------------------------------
 
@@ -242,11 +257,12 @@ check([r["ref"] for r in doc["queue"]] == ["#1273", "#135"], "remove_item drops 
 
 cp.add_waiting(doc, "Tab persistence?")
 cp.add_waiting(doc, "Inset rows?", ref="app-launcher#1128")
-cp.clear_waiting(doc, "app-launcher#1128")
+check(cp.clear_waiting(doc, "app-launcher#1128") is True, "clear_waiting reports a match")
 cp.clear_waiting(doc, "Tab persistence?")
 cp.clear_waiting(doc, "1")
 check(doc["waiting_on_roberto"] == [], "clear_waiting matches by ref, by exact text and by 1-based index")
-check("nothing waiting" in _raises(cp.clear_waiting, doc, "gone"), "clear_waiting on no match refuses")
+check(cp.clear_waiting(doc, "gone") is False and cp.clear_waiting(doc, "7") is False,
+      "clear_waiting on no match (id or index) is a no-op that reports False")
 
 
 # ---- structured questions (fleet-config#1049) ---------------------------------
@@ -456,6 +472,25 @@ try:
     check(r.returncode == 2 and "pick is already used" in r.stderr, "CLI ask refuses a duplicate --id")
     r = plan("unwait", "q2")
     check(r.returncode == 0 and "waiting=2" in r.stdout, "CLI unwait removes an item by id")
+    # In-process, not spawned: the spawn budget holds this unit's subprocess count.
+    def plan_here(*argv: str) -> str:
+        parser = argparse.ArgumentParser()
+        add_cli(parser)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            args = parser.parse_args(["--plan-file", str(cli_dir / "chief-plan.json"), *argv])
+            assert args.func(args) == 0
+        return out.getvalue()
+
+    out = plan_here("unwait", "q2")
+    check("UNWAIT=none id=q2" in out and "waiting=2" in out,
+          "CLI unwait of an id that is not waiting prints UNWAIT=none, exits 0 and writes nothing")
+    plan_here("lane", "fleet-config", "building", "--item", "skill:upstream-sync")
+    lane = next((x for x in cp.load(cli_dir / "chief-plan.json")["lanes"] if x["repo"] == "fleet-config"), {})
+    check(lane.get("item") == "skill:upstream-sync", "CLI lane takes a skill:<name> item and the plan keeps it")
+    check("skill:<name>" in _raises(plan_here, "lane", "fleet-config", "building", "--item", "upstream-sync"),
+          "CLI lane still refuses a bare word item")
+    plan_here("drop-lane", "fleet-config")
     r = plan("add", "life-os#9", "hand row", "--brief", "E:/tmp/F_lifeos9.md", "--after", "life-os#8,no-lane:fleet-config")
     row = next((x for x in json.loads(plan("show").stdout)["queue"] if x["ref"] == "#9"), {})
     check(r.returncode == 0 and row.get("brief") == "E:/tmp/F_lifeos9.md"

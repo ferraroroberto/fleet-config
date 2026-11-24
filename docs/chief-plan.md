@@ -36,7 +36,7 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | --- | --- |
 | `version` | `1`. |
 | `updated_at` | UTC, `YYYY-MM-DDTHH:MM:SSZ`, stamped by the writer on every write. |
-| `lanes[]` | One live worker lane per repo: `repo` and `status` required; `item` (`#N`), `session` and `model` optional. |
+| `lanes[]` | One live worker lane per repo: `repo` and `status` required; `item` (`#N`, or `skill:<name>` for a lane that runs a skill such as `upstream-sync`), `session` and `model` optional. |
 | `lanes[].status` | `building` \| `gate` \| `idle` \| `waiting`. |
 | `queue[]` | The chief's intended order, first to last: `repo`, `ref`, `title` and `status` required; `note`, `brief` and `after` optional. `repo` + `ref` is unique. |
 | `queue[].ref` | `#N`, local to `repo`. |
@@ -59,7 +59,7 @@ The writer is stricter than the readers. It writes only these fields, single-lin
 
 ## Questions for Roberto
 
-A waiting item with `question` is one entry on the Board's one-shot answer sheet (app-launcher). Roberto answers the whole sheet at once; the answers reach the chief's terminal as one "Answers from the Board" message. The chief acts on each answer and removes the item with `plan unwait <id>`. The Board never writes the plan file.
+A waiting item with `question` is one entry on the Board's one-shot answer sheet (app-launcher). Roberto answers the whole sheet at once; the answers reach the chief's terminal as one "Answers from the Board" message. The chief acts on each answer and removes the item with `plan unwait <id>`. An id that is not waiting (an instruction typed into the terminal is not a Board answer) prints `UNWAIT=none id=<id>` and exits 0, writing nothing. The Board never writes the plan file.
 
 Every decision waiting on Roberto is an answerable question, and the writer enforces it:
 
@@ -112,7 +112,8 @@ chief_ops.py plan drop-lane app-launcher
 chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131      # = plan ask with only the question
 chief_ops.py plan ask "<question>" [--repo R] [--ref R#N] [--detail "…"] [--recommend "…"] \
     [--option "Label::description" …(≤4)] [--recommended "Label"] [--multi] [--id ID] [--text "card line"]
-chief_ops.py plan unwait q2                     # or the 1-based index, the repo#N ref, or the exact text
+chief_ops.py plan lane fleet-config building --item "skill:upstream-sync"   # a skill-run lane: no issue, so the item names the skill (the Board card shows it as plain text, no link)
+chief_ops.py plan unwait q2                     # or the 1-based index, the repo#N ref, or the exact text; no match prints UNWAIT=none, exit 0
 chief_ops.py plan clear
 ```
 

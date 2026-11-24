@@ -84,8 +84,11 @@ def _lane_mutation(args: argparse.Namespace, events: List[JournalEvent]) -> Call
         set_lane(doc, args.repo, args.status, args.item, args.session, args.model)
         # A status change on a lane already on the item is not a new dispatch.
         if args.item and args.item != prior:
-            ref = f"{args.repo}{args.item}"
-            events.append(("dispatched", f"lane started on {ref}", ref))
+            if args.item.startswith("skill:"):  # no issue to link to
+                events.append(("dispatched", f"lane started on {args.repo} {args.item}", None))
+            else:
+                ref = f"{args.repo}{args.item}"
+                events.append(("dispatched", f"lane started on {ref}", ref))
     return mutate
 
 
@@ -122,10 +125,13 @@ def _ask_mutation(add: Callable[[Dict[str, Any]], str], added: List[str],
     return mutate
 
 
-def _unwait_mutation(args: argparse.Namespace, events: List[JournalEvent]) -> Callable[[Dict[str, Any]], None]:
+def _unwait_mutation(args: argparse.Namespace, events: List[JournalEvent],
+                     notes: List[str]) -> Callable[[Dict[str, Any]], None]:
     def mutate(doc: Dict[str, Any]) -> None:
         before = list(doc["waiting_on_roberto"])
-        clear_waiting(doc, args.key)
+        if not clear_waiting(doc, args.key):
+            notes.append(f"UNWAIT=none id={args.key}")
+            return
         events.extend(("answered", f"answered: {row['text']}", row.get("ref"))
                       for row in before if row not in doc["waiting_on_roberto"])
     return mutate
@@ -155,7 +161,7 @@ def _mutation(action: str, args: argparse.Namespace, added: List[str],
         "set": lambda: _set_mutation(args, events, notes),
         "wait": lambda: _ask_mutation(lambda d: add_waiting(d, args.text, args.ref), added, events),
         "ask": lambda: _ask_mutation(lambda d: _ask(d, args), added, events),
-        "unwait": lambda: _unwait_mutation(args, events),
+        "unwait": lambda: _unwait_mutation(args, events, notes),
     }[action]()
 
 
@@ -199,7 +205,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     lane = acts.add_parser("lane", help="set the lane for a repo (upsert)")
     lane.add_argument("repo")
     lane.add_argument("status", choices=LANE_STATUSES)
-    lane.add_argument("--item", default=None, help="#N the lane is on")
+    lane.add_argument("--item", default=None, help="#N the lane is on, or skill:<name> for a skill run")
     lane.add_argument("--session", default=None)
     lane.add_argument("--model", default=None, help=f"{'|'.join(MODELS)}; omitted keeps it, \"\" clears it")
 
@@ -260,7 +266,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     ask.add_argument("--text", default=None,
                      help="the short card line (default: the question, trimmed)")
 
-    unwait = acts.add_parser("unwait", help="clear a waiting item (index, id, repo#N or text)")
+    unwait = acts.add_parser("unwait", help="clear a waiting item (index, id, repo#N or text); no match prints UNWAIT=none, exit 0")
     unwait.add_argument("key")
 
     acts.add_parser("clear", help="reset to an empty plan")
