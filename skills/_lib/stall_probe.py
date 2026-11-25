@@ -55,7 +55,6 @@ import json
 import os
 import random
 import re
-import ssl
 import subprocess
 import sys
 import threading
@@ -66,6 +65,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from chief import launcher_scheme  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import atomic_write_text, state_dir  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -93,7 +93,6 @@ SUSPEND_SHARE = 0.5     # a gap is a suspend when more than this share of it was
 POWER_SETTLE_S = 8.0    # Power-Troubleshooter logs the wake a few seconds after it
 POWER_LOOKBACK_S = 30.0
 MAX_LOG_BYTES = 5_000_000
-LAUNCHER_JOBS_URL = "https://127.0.0.1:8445/api/jobs"
 PDH_COUNTERS = (
     r"\Memory\Committed Bytes", r"\Memory\Commit Limit", r"\Memory\Available MBytes",
     r"\Memory\Pages Input/sec", r"\Memory\Page Faults/sec", r"\Processor(_Total)\% Processor Time",
@@ -228,11 +227,9 @@ def tcp_states() -> Dict[str, Any]:
     return counts if res.returncode == 0 else {"error": f"netstat exit {res.returncode}"}
 
 
-def running_jobs(url: str = LAUNCHER_JOBS_URL) -> Any:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-    with urllib.request.urlopen(url, timeout=JOBS_API_TIMEOUT_S, context=ctx) as resp:
-        jobs = json.loads(resp.read().decode("utf-8")).get("jobs") or []
+def running_jobs(base_url: str = launcher_scheme.DEFAULT_BASE_URL) -> Any:
+    """Ids of the launcher jobs running now; raises when the launcher cannot be read, so the caller records why."""
+    jobs = launcher_scheme.request(base_url, "/api/jobs", timeout=JOBS_API_TIMEOUT_S).get("jobs") or []
     return sorted(str(job.get("id")) for job in jobs if job.get("running") is True)
 
 

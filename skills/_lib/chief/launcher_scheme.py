@@ -31,6 +31,9 @@ from typing import Any, Dict, Optional, Tuple
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# The scheme here is a hint; `resolve` swaps in the one the port serves.
+DEFAULT_BASE_URL = "https://127.0.0.1:8445"
+
 # Loopback answers in milliseconds; a port silent this long is treated as unknown, not as a scheme.
 PROBE_TIMEOUT = 2.0
 _PROBE = b"HEAD / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n"
