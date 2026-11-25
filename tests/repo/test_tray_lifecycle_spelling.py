@@ -78,7 +78,16 @@ OWNERSHIP = [
     ('python.exe "C:/automation/some-repo/launcher.py" session-host', True),
     # the mixed form: an E: venv launching a C: launcher path
     (r"E:\automation\some-repo\.venv\Scripts\pythonw.exe C:\automation\some-repo\launcher.py session-host", True),
+    # the same role from scripts/, the spelling a repo has while its launchers move
+    (r'"C:\Python314\pythonw.exe" E:\automation\some-repo\scripts\launcher.py session-host --port 9', True),
+    ('python.exe "C:/automation/some-repo/scripts/launcher.py" session-host', True),
+    (r"E:\automation\some-repo\.venv\Scripts\pythonw.exe C:\automation\some-repo\scripts\launcher.py session-host", True),
     # near misses that are not this repo
+    (r"C:\Python314\pythonw.exe C:\automation\some-repo\scripts\launcher.py tray", False),
+    (r"C:\Python314\pythonw.exe E:\automation\some-repo-wt-3\scripts\launcher.py session-host", False),
+    (r"C:\Python314\pythonw.exe E:\automation\other-repo\scripts\launcher.py session-host", False),
+    (r"C:\Python314\pythonw.exe C:\automation\some-repo\other\scripts\launcher.py session-host", False),
+    (r"C:\Python314\pythonw.exe C:\automation\some-repo\scripts\sub\launcher.py session-host", False),
     (r"C:\automation\some-repo-wt-3\.venv\Scripts\pythonw.exe launcher.py tray", False),
     ("E:/automation/some-repo-wt-3/.venv/Scripts/pythonw.exe launcher.py tray", False),
     (r"E:\automation\other-repo\.venv\Scripts\pythonw.exe launcher.py tray", False),
@@ -172,9 +181,20 @@ def spawn(script: Path, *args: str) -> tuple[subprocess.Popen, int]:
 
 
 def alive(pid: int) -> bool:
-    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
-                         timeout=30, creationflags=NW).stdout
-    return str(pid) in out
+    """Whether ``pid`` is still running, asked of the OS directly: a ``tasklist`` spawn per poll
+    would spend the unit's spawn budget on bookkeeping."""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        return bool(kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))) and code.value == 259
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
 
 
 def wait_dead(pid: int, seconds: float = 10) -> bool:
@@ -298,6 +318,23 @@ try:
     check(res.returncode == 0 and f"Reclaiming :{host_port} from PID {host_pid}" in res.stdout and wait_dead(host_pid),
           f"only a caller naming the session-host's port reclaims it, with no .venv in its command line "
           f"(rc={res.returncode} out={res.stdout[-200:]!r})")
+    # the same role from <repo>/scripts/launcher.py is this repo's too; a same-named
+    # launcher under another repo's scripts/ is not
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "launcher.py").write_text(SESSION_HOST, encoding="ascii")
+    (outside / "scripts").mkdir()
+    (outside / "scripts" / "launcher.py").write_text(SESSION_HOST, encoding="ascii")
+    foreign_port, scripts_port = free_port(), free_port()
+    foreign, foreign_pid = spawn(outside / "scripts" / "launcher.py", "session-host", "--port", str(foreign_port))
+    spawned.append(foreign)
+    scripts_host, scripts_pid = spawn(repo / "scripts" / "launcher.py", "session-host", "--port", str(scripts_port))
+    spawned.append(scripts_host)
+    res = script_action("reclaim", venv, "-ScriptDir", str(repo), "-Ports", f"{scripts_port},{foreign_port}")
+    check(res.returncode == 0 and f"Reclaiming :{scripts_port} from PID {scripts_pid}" in res.stdout
+          and wait_dead(scripts_pid),
+          f"reclaim stops this repo's session-host launched from scripts/ (rc={res.returncode} out={res.stdout[-200:]!r})")
+    check(alive(foreign_pid) and f"Reclaiming :{foreign_port}" not in res.stdout,
+          "reclaim leaves another repo's scripts/ session-host alone")
 finally:
     for p in spawned:
         p.kill()
