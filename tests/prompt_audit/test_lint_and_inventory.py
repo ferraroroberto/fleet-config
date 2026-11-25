@@ -355,6 +355,11 @@ nmd, nstatus = pa.render_digest({"date": "d", "scan_ran": True, "rubric": rub,
 check(nstatus == "complete" and "`guides=not-checked`" in nmd
       and "<!-- prompt-audit-digest run=d status=complete scan=posted guides=not-checked update-issue=none -->" in nmd,
       "every source not-checked still scans and stamps a delivered scan (#834)")
+capmd, capstatus = pa.render_digest(dict(part_run, paused="cap", judgments={}), RULES)
+check(capstatus == "partial" and " paused=cap -->" in capmd.splitlines()[1],
+      "a run that hit the rate-gate pause cap stamps paused=cap so delivery_check.py can refuse it")
+check("paused=" not in md.splitlines()[1] and "paused=" not in pmd.splitlines()[1],
+      "a run that was not paused carries no paused= field")
 
 
 # ======== scan-anyway, chat ping and prompt-drift routing ========

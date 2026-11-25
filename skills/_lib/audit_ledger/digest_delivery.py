@@ -31,7 +31,9 @@ Two strictness levels, because the callers genuinely differ:
 A strict caller whose stamp proves delivery with fields other than
 `delivery=posted` passes its own ``delivered`` predicate (`/prompt-audit`:
 `scan=posted`, plus `update-issue=#N` when `guides=changed`). `status=complete` is
-required either way.
+required either way, unless the caller sets `partial_delivers=True`: a `partial`
+digest that was posted still names what it left unmeasured, so for that caller the
+run delivered and its own ``delivered`` predicate decides what else is disqualifying.
 
 Strictness is a **constructor argument, not a CLI flag**, on purpose:
 `claude_progress.run_delivery_check` invokes the script as
@@ -140,6 +142,7 @@ def classify(
     max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
     *,
     require_complete: bool = False,
+    partial_delivers: bool = False,
     stamp_prefix: str = "context-purge-digest",
     delivered: DeliveredPredicate = delivery_posted,
     repo: str = "",
@@ -174,7 +177,7 @@ def classify(
             f"'{stamp_prefix}' stamp -- run status could not be established")
 
     status = stamp.get("status")
-    if status != "complete":
+    if status != "complete" and not (partial_delivers and status == "partial"):
         unreached = f" ({stamp['unreached']} repo(s) unreached)" if "unreached" in stamp else ""
         return Verdict(
             False, "partial",
@@ -187,7 +190,7 @@ def classify(
 
     proof = " ".join(f"{k}={v}" for k, v in stamp.items() if k not in ("run", "status"))
     return Verdict(True, "confirmed",
-                   f"digest comment on {where} is {age:.1f}h old (status=complete, {proof})")
+                   f"digest comment on {where} is {age:.1f}h old (status={status}, {proof})")
 
 
 # ---- gh-backed check --------------------------------------------------------
@@ -199,6 +202,7 @@ def check_delivery(
     *,
     max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
     require_complete: bool = False,
+    partial_delivers: bool = False,
     stamp_prefix: str = "context-purge-digest",
     delivered: DeliveredPredicate = delivery_posted,
     now: Optional[dt.datetime] = None,
@@ -230,8 +234,8 @@ def check_delivery(
 
     return classify(
         comments, now, max_age_hours,
-        require_complete=require_complete, stamp_prefix=stamp_prefix,
-        delivered=delivered, repo=repo, number=keep,
+        require_complete=require_complete, partial_delivers=partial_delivers,
+        stamp_prefix=stamp_prefix, delivered=delivered, repo=repo, number=keep,
     )
 
 
@@ -242,6 +246,7 @@ def main_for(
     *,
     description: str,
     require_complete: bool = False,
+    partial_delivers: bool = False,
     stamp_prefix: str = "context-purge-digest",
     delivered: DeliveredPredicate = delivery_posted,
     default_max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
@@ -259,6 +264,7 @@ def main_for(
         repo, kind, ledger_title,
         max_age_hours=args.max_age_hours,
         require_complete=require_complete,
+        partial_delivers=partial_delivers,
         stamp_prefix=stamp_prefix,
         delivered=delivered,
     )
