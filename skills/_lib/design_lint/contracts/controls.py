@@ -277,6 +277,44 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
                      f"{n_btn} button rule(s) conform to the tier vocabulary")]
 
 
+# A button selector that also names an in-flight state class: the app's own
+# busy look, where the contract is `[aria-busy="true"]` (vendored button.css).
+_BUTTON_SEL_RE = re.compile(r"btn|button", re.I)
+_INFLIGHT_STATE_RE = re.compile(
+    r"\.(?:is-|btn-|button-)?(?:loading|busy|working|pending|in-?flight)(?![\w-])", re.I)
+
+
+def _check_button_busy(ctx: _ContractsCtx) -> List[dict]:
+    # 11b. a slow action's busy look is `aria-busy` on the button (design.md
+    #      Components, button tiers), drawn by the vendored button.css and set
+    #      by `runBusy`. A button rule keyed on its own `.loading` / `.busy` /
+    #      `.pending` state class is the hand-rolled in-flight look. WARN, never
+    #      FAIL: each app migrates in its own issue. App-authored CSS only, so
+    #      the vendored recipe (which keys on the attribute) is never a hit.
+    css = ctx.css_own
+    sites: List[str] = []
+    n_btn = 0
+    for bm in _BLOCK_RE.finditer(css):
+        for sel in _split_top_level_commas(bm.group(1)):
+            if not _BUTTON_SEL_RE.search(sel):
+                continue
+            n_btn += 1
+            if "aria-busy" not in sel and _INFLIGHT_STATE_RE.search(sel):
+                sites.append(_loc_at(css, bm.end(1) - 1))
+    if n_btn == 0:
+        return [_result("button-busy", "NA", "no button rules found")]
+    if not sites:
+        return [_result("button-busy", "PASS",
+                         "no button draws its own in-flight state class (aria-busy is the one busy look)")]
+    sites = sorted(set(sites))
+    shown = ", ".join(sites[:6])
+    more = f" (showing 6 of {len(sites)})" if len(sites) > 6 else ""
+    return [_result("button-busy", "WARN",
+                     f"{len(sites)} button rule(s) set their own in-flight look instead of "
+                     f'[aria-busy="true"] (vendored button.css, set by runBusy; design.md '
+                     f"Components, button tiers): {shown}{more}", sites[0])]
+
+
 def _storage_key_re(markup: str, suffix: str, const_re: str) -> str:
     """A localStorage key naming `<app>.<suffix>`, in any shape the fleet writes it.
 

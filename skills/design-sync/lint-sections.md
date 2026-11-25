@@ -78,6 +78,13 @@ read.
     without accent text WARN — the tiers live in design.md `components`
     (#296). App-authored CSS only (#940 — Leaflet's popup close button is
     Leaflet's tier choice, not the adopting app's).
+  - **button-busy** — a button rule keyed on its own in-flight state class
+    (`.loading`, `.busy`, `.working`, `.pending`, `.in-flight`, with an
+    `is-`/`btn-`/`button-` prefix) WARNs with `file:line`: a slow action's
+    busy look is `aria-busy="true"` from the vendored `button/` (set by
+    `runBusy`), never a per-app class (#2236, project-scaffolding#959).
+    App-authored CSS only; a rule that also names `aria-busy` is not a hit.
+    WARN, never FAIL, while each app migrates.
   - **user-selectable theme** — pre-paint `data-theme` boot script in
     `<head>` + a persisted `.theme` localStorage toggle; either missing
     FAILs. A missing or spec-drifted scheme-gated `theme-color` meta pair

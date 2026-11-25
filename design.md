@@ -622,6 +622,26 @@ draws no surface at all. Every tier shares the **one
 trio, home-automation#362): `canvas-subtle` in light (`fg-muted` 4.93:1), the
 `border-muted` value in dark (4.08:1, see `design.dark.md`; disabled text is
 exempt from WCAG 1.4.3). Never opacity on a solid fill.
+**A slow action says it is working** (project-scaffolding#959): a button that
+starts slow work (Refresh, Sync, Run, Save) carries `aria-busy="true"` while the
+work runs, on any of the four tiers. The label stays and an inline spinner
+leads it (a leading `.icon` glyph is hidden so the ring never sits beside the
+glyph it stands in for). The button takes the disabled recipe's flat control fill
+and `line` border, never opacity on a solid fill, and keeps its label at AA
+(`muted` in light, `ink` in dark, see `design.dark.md`) because a busy control
+is still saying what is happening, unlike a disabled one. It ignores taps
+(`pointer-events: none`) but is **not** `disabled`: focus stays on it and a
+screen reader hears the busy state. Under `prefers-reduced-motion` the ring stops
+turning; the dimmed fill and the open arc still read as working. An app never
+draws its own in-flight look (a `.loading` / `.busy` class, a swapped label, its
+own spinner on a button): `/design-sync` reports it (`button-busy`).
+**`runBusy(button, work, { start, done, fail })`** (the vendored
+`button/busy.js`, which imports the vendored `toast`) owns the whole sequence,
+so a slow action never hand-rolls an in-flight flag: one tap, one run. A second
+call while the button is busy is ignored, busy clears in `finally` (success,
+rejection and a synchronous throw alike), and the outcome goes to the `toast`:
+an optional `start` message, the `done` success message, and on failure the
+`fail` lead text followed by the error's own text as an error toast.
 A destructive action **in a dialog or a menu** takes the **outlined
 recipe**, the final Delete of a confirm dialog included (transparent on a
 hairline, `danger-text` text and a `danger` border, never a fill or tint;

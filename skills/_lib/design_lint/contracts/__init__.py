@@ -27,6 +27,7 @@ from .a11y import (
 from .charts import _check_chart_noncolor_cue, _check_chart_tick_budget
 from .color_scheme import _check_color_scheme_follows_theme
 from .controls import (
+    _check_button_busy,
     _check_button_tiers,
     _check_chevron_placement,
     _check_disclosure_box,
@@ -72,6 +73,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_viewport_lock,
     _check_status_bar_style,
     _check_button_tiers,
+    _check_button_busy,
     _check_theme_toggle,
     _check_text_size,
     _check_range_tab,
