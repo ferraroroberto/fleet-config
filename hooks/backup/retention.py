@@ -265,7 +265,7 @@ def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
         return {
             "status": "fail", "files": 0, "sessions": 0, "added": 0,
             "updated": 0, "unchanged": 0, "retained_missing": 0,
-            "unresolved_sessions": [], "errors": [str(exc)],
+            "unresolved_sessions": [], "vanished_sessions": [], "errors": [str(exc)],
         }
     files = prior.get("files") if isinstance(prior.get("files"), dict) else {}
     sessions = prior.get("sessions") if isinstance(prior.get("sessions"), dict) else {}
@@ -326,9 +326,11 @@ def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
             stored["last_seen"] = manifest.get("date")
             sessions[session_id] = stored
 
-    unresolved = _unresolved_sessions(sessions, files, manifest.get("date"))
+    unresolved, vanished_sessions = _unresolved_sessions(
+        sessions, files, manifest.get("date"), _vanished_keys(manifest))
     if unresolved:
         errors.append(f"{len(unresolved)} current session(s) reference an unarchived native path")
+    _log_vanished_sessions(vanished_sessions)
 
     _write_archive_manifest(dest_root, leg, files, sessions, errors)
 
@@ -341,20 +343,47 @@ def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
         "unchanged": unchanged,
         "retained_missing": len(set(files) - current_keys),
         "unresolved_sessions": unresolved,
+        "vanished_sessions": vanished_sessions,
         "errors": errors,
     }
 
 
-def _unresolved_sessions(sessions: Dict[str, Any], files: Dict[str, Any], date: Any) -> List[str]:
-    """Sessions seen this run whose native path has no archived file."""
-    unresolved = []
+def _vanished_keys(manifest: Dict[str, Any]) -> set[str]:
+    """`group/rel` keys the snapshot step recorded as vanished mid-run."""
+    return {
+        f"{group}/{str(rel).replace(chr(92), '/')}"
+        for group, payload in (manifest.get("groups") or {}).items()
+        for rel in payload.get("vanished") or []
+    }
+
+
+def _log_vanished_sessions(session_ids: Sequence[str]) -> None:
+    """Name each session whose transcript vanished, so a recurrence is diagnosable."""
+    for session_id in session_ids:
+        logger.info("   ℹ️ session %s: transcript vanished before it was archived "
+                    "(the snapshot step already counted it as vanished) — not a failure",
+                    session_id)
+
+
+def _unresolved_sessions(sessions: Dict[str, Any], files: Dict[str, Any], date: Any,
+                         vanished_keys: set[str]) -> Tuple[List[str], List[str]]:
+    """Split this run's sessions that have no archived file into `(unresolved, vanished)`.
+
+    A session whose file the snapshot step recorded as vanished is a benign state of
+    its own; one whose file was never reported vanished is a real archive gap.
+    """
+    unresolved: List[str] = []
+    vanished: List[str] = []
     for session_id, session in sessions.items():
         if session.get("last_seen") != date:
             continue
         path = session.get("path")
-        if path and f"{session.get('group')}/{str(path).replace('\\', '/')}" not in files:
-            unresolved.append(session_id)
-    return unresolved
+        if not path:
+            continue
+        key = f"{session.get('group')}/{str(path).replace(chr(92), '/')}"
+        if key not in files:
+            (vanished if key in vanished_keys else unresolved).append(session_id)
+    return unresolved, vanished
 
 
 def _write_archive_manifest(dest_root: Path, leg: str, files: Dict[str, Any],
