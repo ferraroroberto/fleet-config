@@ -39,7 +39,7 @@
           detect -VenvDir "<repo>\.venv" -TrayMatch "launcher\.py\s+tray"
       reclaim -> kills the owning PID of each listed port whose CommandLine is
                  under this repo's .venv, or is this repo's `launcher.py
-                 session-host` (orphan-proof), printing each reclaim; exits 1
+                 session-host` at the root or under scripts\ (orphan-proof), printing each reclaim; exits 1
                  when an owned holder is still alive after the stop:
         powershell.exe -NoProfile -NonInteractive -File tray_lifecycle.ps1 `
           reclaim -VenvDir "<repo>\.venv" -Ports "8445,8446"
@@ -130,7 +130,10 @@ function Test-UnderVenv {
 
 # A session-host re-execs from the base interpreter, so its CommandLine can carry the
 # repo's launcher.py but no .venv path. Ownership is then the repo root plus the role
-# (`launcher.py session-host`), never the port or image name alone. Reclaim only ever
+# (`launcher.py session-host`), never the port or image name alone. The launcher is
+# accepted at the root and under `<root>\scripts\`, the two spellings a repo can use
+# while its launchers move into scripts/; both stay anchored to the repo root, so
+# another repo's same-named launcher is still foreign. Reclaim only ever
 # looks at the caller's own -Ports, so a session-host is reached only by a caller that
 # names its port; a tray restart that leaves that port out never touches it.
 function Get-RepoRoot {
@@ -142,7 +145,7 @@ function Test-IsRepoSessionHost {
     param([string] $CommandLine)
     $root = Get-PathPattern (Get-RepoRoot)
     if (-not $root) { return $false }
-    return Test-PathPattern $CommandLine ($root + '[\\/]+launcher\.py["'']?\s+session-host(\s|$)')
+    return Test-PathPattern $CommandLine ($root + '[\\/]+(scripts[\\/]+)?launcher\.py["'']?\s+session-host(\s|$)')
 }
 
 function Test-OwnsProcess {
