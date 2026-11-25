@@ -196,6 +196,50 @@ unknown_audit = bp.audit_session_archive(corrupt_archive_dest, {"projects": bp.S
 check(unknown_audit["status"] == "unknown",
       f"archive audit: an unreadable index is unknown, never ok, got {unknown_audit}")
 
+# ---- a transcript that vanishes between listing and copying is not an archive gap
+vanish_src = tmp / "vanish-source"
+vanish_dest = tmp / "vanish-dest"
+vanish_id = "44444444-4444-4444-8444-444444444444"
+kept_id = "55555555-5555-4555-8555-555555555555"
+kept_file = _write(vanish_src / f"{kept_id}.jsonl", "kept")
+ghost_name = f"{vanish_id}.jsonl"
+vanish_sel = bp.Selection(
+    # Listed by the walk, gone by the time the snapshot copies it.
+    files=[(vanish_src / ghost_name, ghost_name, 4),
+           (kept_file, kept_file.name, kept_file.stat().st_size)],
+    sessions=[{"id": vanish_id, "path": ghost_name, "archived": False},
+              {"id": kept_id, "path": kept_file.name, "archived": False}],
+)
+vanish_run = bp.run_leg(
+    bp.CLAUDE_SESSIONS_LEG, {"projects": vanish_sel}, vanish_src,
+    vanish_dest, rd_cfg, "2026-08-13", False,
+)
+check(vanish_run["groups"]["projects"]["vanished"] == [ghost_name],
+      "vanished: the snapshot step classifies the missing transcript as vanished")
+check(vanish_run["archive"]["status"] == "pass" and not vanish_run["archive"]["errors"],
+      f"vanished: the archive step agrees it is not a failure, got {vanish_run['archive']}")
+check(vanish_run["archive"]["vanished_sessions"] == [vanish_id]
+      and vanish_run["archive"]["unresolved_sessions"] == [],
+      "vanished: the session is reported as its own state, named by id, not unresolved")
+check(vanish_run["status"] == bp.LegStatus.OK,
+      f"vanished: the leg passes, got {vanish_run['status']}")
+
+# An existing file the archive failed to take is still a real gap.
+gap_dest = tmp / "gap-dest"
+gap_snapshot = tmp / "gap-snapshot"
+gap_snapshot.mkdir()
+gap_manifest = {
+    "leg": bp.CLAUDE_SESSIONS_LEG, "date": "2026-08-14",
+    "groups": {"projects": {
+        "files": [], "vanished": [],
+        "sessions": [{"id": vanish_id, "path": ghost_name, "archived": False}],
+    }},
+}
+gap_result = bp.reconcile_session_archive(gap_dest, gap_snapshot, gap_manifest)
+check(gap_result["status"] == "fail" and gap_result["unresolved_sessions"] == [vanish_id]
+      and gap_result["vanished_sessions"] == [],
+      f"vanished: a session that did not vanish yet has no archived file still fails, got {gap_result}")
+
 # ---- a corrupt database is its own failure state, never a silent omission
 _write(corrupt_dir / "task-os" / "notes.md", "still fine")
 corrupt_cfg = _cfg(tmp, runtime_data_src=corrupt_dir, runtime_data_dest=tmp / "corrupt-dest")
