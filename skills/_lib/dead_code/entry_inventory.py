@@ -47,16 +47,15 @@ import argparse
 import ast
 import json
 import re
-import ssl
 import subprocess
 import sys
-import urllib.request
 import warnings
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from chief import launcher_scheme  # noqa: E402
 from fleet_core import runtime_files  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from git_run import run_git  # noqa: E402
@@ -66,7 +65,6 @@ from dead_code import start_beacon  # noqa: E402
 
 SCHEMA = 1
 WINDOW_DAYS = 90
-JOBS_URL = "https://127.0.0.1:8445/api/jobs"
 POWERSHELL = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 LAUNCHER_EXTS = (".bat", ".cmd", ".ps1", ".sh")
 DOC_EXTS = (".md", ".txt", ".rst")
@@ -108,11 +106,8 @@ def _local_to_utc(stamp: Optional[str]) -> Optional[str]:
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def collect_jobs(repo: Path, url: str = JOBS_URL) -> List[Dict[str, Any]]:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-    with urllib.request.urlopen(url, timeout=60, context=ctx) as resp:
-        jobs = json.loads(resp.read().decode("utf-8")).get("jobs") or []
+def collect_jobs(repo: Path, base_url: str = launcher_scheme.DEFAULT_BASE_URL) -> List[Dict[str, Any]]:
+    jobs = launcher_scheme.request(base_url, "/api/jobs", timeout=60).get("jobs") or []
     out = []
     for job in jobs:
         target = _repo_rel(repo, str(job.get("script_path") or ""))
@@ -184,11 +179,11 @@ def collect_beacon(repo: Path, venv: Path, ledger: Optional[Path] = None) -> Dic
     return out
 
 
-def collect(repo: Path, jobs_url: str = JOBS_URL, tasks: bool = True, venv: Optional[Path] = None,
+def collect(repo: Path, launcher_url: str = launcher_scheme.DEFAULT_BASE_URL, tasks: bool = True, venv: Optional[Path] = None,
             ledger: Optional[Path] = None) -> Dict[str, Any]:
     evidence: Dict[str, Any] = {"schema": SCHEMA, "repo": repo.name,
                                 "collected_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    for key, fn in (("jobs", lambda: collect_jobs(repo, jobs_url)), ("tasks", (lambda: collect_tasks(repo)) if tasks else list),
+    for key, fn in (("jobs", lambda: collect_jobs(repo, launcher_url)), ("tasks", (lambda: collect_tasks(repo)) if tasks else list),
                     ("beacon", lambda: collect_beacon(repo, venv or repo / ".venv", ledger))):
         try:
             evidence[key], evidence[f"{key}_error"] = fn(), None
@@ -549,13 +544,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--window-days", type=int, default=WINDOW_DAYS)
     ap.add_argument("--keep", default=None, help="JSON list of {path, reason, expires} keep entries")
     ap.add_argument("--out-dir", default=None, help="output folder (default: <hooks state>/dead_code/<repo>)")
-    ap.add_argument("--jobs-url", default=JOBS_URL)
+    ap.add_argument("--launcher-url", default=launcher_scheme.DEFAULT_BASE_URL, help="loopback app-launcher base URL; the scheme is a hint")
     ap.add_argument("--venv", default=None, help="venv carrying the start beacon (default: <repo>/.venv)")
     args = ap.parse_args(argv)
     repo = Path(args.repo).resolve()
     out_dir = Path(args.out_dir) if args.out_dir else state_dir() / "dead_code" / repo.name
     if args.command in ("collect", "run"):
-        evidence = collect(repo, args.jobs_url, venv=Path(args.venv).resolve() if args.venv else None)
+        evidence = collect(repo, args.launcher_url, venv=Path(args.venv).resolve() if args.venv else None)
         beacon = evidence["beacon"] if isinstance(evidence["beacon"], dict) else {}
         print(f"EVIDENCE={_write_output(out_dir, 'evidence.json', evidence)} jobs={len(evidence['jobs'])} "
               f"tasks={len(evidence['tasks'])} jobs_error={evidence['jobs_error']} tasks_error={evidence['tasks_error']} "

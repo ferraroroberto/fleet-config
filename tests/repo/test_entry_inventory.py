@@ -195,7 +195,7 @@ try:
     check(rc == 0 and json.loads((tmp / "cli" / "verdict.json").read_text(encoding="utf-8"))["as_of"] == "2026-09-30",
           "the CLI writes verdict.json, taking as-of from the evidence's collection date")
     check(git(repo, "status", "--porcelain") == "", "the target repo's git status is clean after a run")
-    collected = ei.collect(repo, jobs_url="https://127.0.0.1:1/api/jobs", tasks=False)
+    collected = ei.collect(repo, launcher_url="https://127.0.0.1:1", tasks=False)
     check(collected["jobs"] == [] and collected["jobs_error"], f"an unreachable jobs API is recorded as an error, not as no jobs -- {collected.get('jobs_error')}")
 
     source = (REPO / "skills" / "_lib" / "dead_code" / "entry_inventory.py").read_text(encoding="utf-8")

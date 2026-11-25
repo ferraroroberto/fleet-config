@@ -24,8 +24,16 @@ from pathlib import Path
 
 from _suite import _h, check, co  # noqa: E402
 from chief import launcher_scheme  # noqa: E402
+from dead_code import entry_inventory  # noqa: E402
+
+# isort: split
+import stall_probe  # noqa: E402
 
 _BOARD = {"columns": {"claude_turn": [], "your_turn": [], "other": []}, "running_jobs": []}
+_JOBS = {"jobs": [
+    {"id": "nightly", "running": True, "script_path": "C:/repo/jobs/run.bat", "last_run": {"started_at": "2026-11-24T05:00:00"}},
+    {"id": "idle", "running": False, "script_path": "C:/repo/jobs/idle.bat", "paused": True},
+]}
 
 
 def _openssl() -> str:
@@ -56,7 +64,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 -- http.server's naming
         type(self).handled.append(("GET", self.path))
-        self._reply(_BOARD if self.path == "/api/board" else {})
+        self._reply({"/api/board": _BOARD, "/api/jobs": _JOBS}.get(self.path, {}))
 
     def do_POST(self) -> None:  # noqa: N802 -- http.server's naming
         type(self).handled.append(("POST", self.path))
@@ -128,6 +136,36 @@ try:
                       f"board reads a {_serves}-only launcher from a {_hint}:// base URL (rc={rc} {out[:120]!r})")
         finally:
             _stop(_srv)
+
+    # ---- the Jobs API readers follow the serve mode too, whatever the hint ----
+    for _serves in ("http", "https"):
+        _srv = _start(_serves, _tls)
+        _port = _srv.server_address[1]
+        try:
+            for _hint in ("http", "https"):
+                launcher_scheme._schemes.clear()
+                _Handler.handled.clear()
+                _base = f"{_hint}://127.0.0.1:{_port}"
+                check(stall_probe.running_jobs(_base) == ["nightly"],
+                      f"stall_probe lists the running jobs of a {_serves}-only launcher from a {_hint}:// base URL")
+                _rows = entry_inventory.collect_jobs(Path("C:/repo"), _base)
+                check([r["id"] for r in _rows] == ["idle", "nightly"] and _rows[0]["paused"] is True,
+                      f"entry_inventory reads the jobs of a {_serves}-only launcher from a {_hint}:// base URL ({_rows})")
+                check(_Handler.handled == [("GET", "/api/jobs")] * 2, f"each helper made one Jobs API call ({_Handler.handled})")
+        finally:
+            _stop(_srv)
+
+    # ---- an unreachable launcher is an unknown with its reason, never an empty job list ----
+    _free = socket.socket()
+    _free.bind(("127.0.0.1", 0))
+    _gone = f"https://127.0.0.1:{_free.getsockname()[1]}"
+    _free.close()
+    launcher_scheme._schemes.clear()
+    _probe = stall_probe._safely(lambda: stall_probe.running_jobs(_gone))
+    check(isinstance(_probe, dict) and _probe.get("error"), f"stall_probe records an unreachable launcher as an error ({_probe})")
+    _evidence = entry_inventory.collect(Path("C:/repo"), _gone, tasks=False, venv=_tmp / "no-venv", ledger=_tmp / "no-ledger")
+    check(_evidence["jobs"] == [] and _evidence["jobs_error"],
+          f"entry_inventory records an unreachable launcher as jobs_error, not as no jobs ({_evidence['jobs_error']})")
 
     # ---- the launcher switched to HTTPS under a cached HTTP answer ----
     _srv = _start("https", _tls)

@@ -23,8 +23,7 @@ import git_run
 
 from . import launcher_scheme, rails
 
-# The scheme here is a hint; `launcher_scheme.resolve` swaps in the one the port serves.
-DEFAULT_BASE_URL = "https://127.0.0.1:8445"
+DEFAULT_BASE_URL = launcher_scheme.DEFAULT_BASE_URL
 DEFAULT_OWNER = "ferraroroberto"
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
