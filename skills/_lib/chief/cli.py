@@ -23,6 +23,7 @@ from . import (
     mailbox,
     plan_cli,
     proposals,
+    timings,
 )
 
 
@@ -32,7 +33,14 @@ def build_parser(description: str) -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     _add_read_commands(sub)
     _add_act_commands(sub)
+    _add_timings_command(sub)
     return p
+
+
+def _add_timings_command(sub: argparse._SubParsersAction) -> None:
+    tm = sub.add_parser("timings", help="the chief timings in use, from the launcher's chief settings (fleet-config#2238)")
+    tm.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)
+    tm.set_defaults(func=timings.cmd_timings)
 
 
 def _add_read_commands(sub: argparse._SubParsersAction) -> None:
@@ -84,8 +92,9 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
 
     ib = sub.add_parser("inbox", help="mailbox v2: claim the pending batch, or --count it (fleet-config#1455)")
     ib.add_argument("--count", action="store_true", help="print PENDING=<n> and claim nothing")
-    ib.add_argument("--stale-after", type=float, default=mailbox.CLAIM_STALE_SECONDS,
-                    help="seconds before an unacked claim is re-offered")
+    ib.add_argument("--stale-after", type=float, default=None,
+                    help="seconds before an unacked claim is re-offered (default: the launcher's "
+                         f"chief_reoffer_minutes, else {mailbox.CLAIM_STALE_SECONDS:g})")
     ib.add_argument("--older-than", type=float, default=0.0,
                     help="with --count: count only events that have waited at least this many seconds")
     ib.add_argument("--base-url", default=launcher.DEFAULT_BASE_URL)

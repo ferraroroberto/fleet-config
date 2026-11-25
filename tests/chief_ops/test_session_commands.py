@@ -123,10 +123,19 @@ for _off in (0, -1, True, "30", 1.5, None):
           f"resolve_wake_mode: a fallback of {_off!r} is off and keeps the waiter rule unchanged")
 
 
+_SETTINGS_PATH = "/api/board/chief/settings"
+_WAKE_SETTINGS = {"settings": {"chief_reoffer_minutes": 20}}
+_wake_full = ""  # the whole `wake` output of the last `_run_wake`, `TIMINGS` line included
+
+
 def _run_wake(reply):
+    """`(exit code, the WAKE= line, config reads)`; the settings read behind the `TIMINGS` line is stubbed apart."""
+    global _wake_full
     calls: list = []
 
-    def fake_request(base, path):
+    def fake_request(base, path, **_kw):
+        if path == _SETTINGS_PATH:
+            return _WAKE_SETTINGS
         calls.append(path)
         if isinstance(reply, BaseException):
             raise reply
@@ -140,7 +149,8 @@ def _run_wake(reply):
             code = co.main(["wake"])
     finally:
         co.launcher._request = old_request
-    return code, out.getvalue().strip(), calls
+    _wake_full = out.getvalue().strip()
+    return code, _wake_full.splitlines()[0], calls
 
 
 _code, _out, _calls = _run_wake({"chief_doorbell": True, "port": 8445})
@@ -157,6 +167,14 @@ check(_code == 1 and _out == "WAKE=waiter doorbell=unknown reason=launcher confi
 _code, _out, _calls = _run_wake({"chief_doorbell": True, "chief_fallback_minutes": 30})
 check(_code == 0 and _out == "WAKE=doorbell doorbell=on fallback=launcher minutes=30",
       "wake CLI: reports the launcher fallback from /api/config (#2237)")
+check(_wake_full.splitlines()[1:] == ["TIMINGS rering=60s(default: setting missing) reoffer=20m(settings) "
+                                      "hold=10m(default: setting missing) stall=45m(default: setting missing)"],
+      "wake CLI: a TIMINGS line follows, naming the value in use and its source (#2238)")
+_run_wake(_wake_urlerr.URLError("refused"))
+check(_wake_full.splitlines()[1:] == ["TIMINGS rering=60s(default: launcher unreachable) "
+                                      "reoffer=15m(default: launcher unreachable) hold=10m(default: launcher unreachable) "
+                                      "stall=45m(default: launcher unreachable)"],
+      "wake CLI: an unreachable launcher reports every timing as the default, with the reason (#2238)")
 
 
 # ---- context + self-compact (fleet-config#1052): launcher always stubbed ----
@@ -207,7 +225,9 @@ try:
     posts: list = []
     world = {"percent": 42, "settings": {"auto_compact_threshold": 30}, "caller": CHIEF}
 
-    def fake_request(base, path, method="GET", body=None):
+    def fake_request(base, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board/chief/settings":  # the chief timings: no setting stored, so the defaults apply
+            return {"settings": {}}
         if path == "/api/board":
             return {"columns": {"claude_turn": [{"alive": True, "label": "chief", "session_id": CHIEF}]}}
         if path.endswith("/context"):

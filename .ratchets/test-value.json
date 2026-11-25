@@ -139,6 +139,7 @@
     "chief_plan_prune": 5,
     "chief_proposals": 1,
     "chief_sweep": 770,
+    "chief_timings": 1,
     "claude_progress_delivery": 14,
     "claude_progress_retry": 16,
     "claude_progress_run_outcome": 1,

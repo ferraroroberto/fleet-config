@@ -262,7 +262,7 @@ A reader that only needs to know *whether there is work* (the doorbell) counts b
 
 - **R**: entries directly in `chief-inbox/` that are regular files, whose name ends in `.json` and does **not** start with `.`.
 - **S**: entries directly in `chief-inbox/.claimed/` that are regular files, whose name ends in `.json` and does not start with `.`, **and** whose claim is stale. A claim is stale when its name matches `^(\d+)-(.+)\.json$` and `now_ms - int(group 1) >= CLAIM_STALE_MS`, **or** when the name does not match that pattern at all (a claim with no readable time counts as stale, erring toward waking the chief).
-- `CLAIM_STALE_MS` = **900,000** (15 minutes, `chief.mailbox.CLAIM_STALE_SECONDS`).
+- `CLAIM_STALE_MS` = **900,000** by default (15 minutes, `chief.mailbox.CLAIM_STALE_SECONDS`). The launcher's Settings > Chief re-offer window (`chief_reoffer_minutes`, 10-120) replaces it: the launcher's ring rule reads it every tick, and `inbox` reads it from `GET /api/board/chief/settings` (`chief.timings`) unless `--stale-after` is given. An unreadable or out-of-range value keeps 15 minutes and `wake`'s `TIMINGS` line says so.
 
 Never counted:
 
@@ -295,7 +295,7 @@ The steps:
 3. **Read.** Unparseable files and events past the 24 h TTL are deleted (`dropped=`). A claimed file that cannot be *read* is never deleted (see [A failed read is not junk](#a-failed-read-is-not-junk)). The rest are printed with their `id` and excerpt, followed by an `ACK=chief_ops.py ack <ids>` line. Ids that came back through step 1 are marked `re-offered`.
 4. **Ack.** After handling, `ack` deletes each id's file, from `.claimed/` or (if it was re-offered meanwhile) from the root. An id with no file prints `ACK_MISSING=<id>` and exits 1.
 
-A chief that dies between claim and ack leaves stale claims behind. They count as pending again after 15 minutes, so a doorbell rings and the next `inbox` re-offers the same ids. The chief dedupes by `id`.
+A chief that dies between claim and ack leaves stale claims behind. They count as pending again after the re-offer window (15 minutes by default), so a doorbell rings and the next `inbox` re-offers the same ids. The chief dedupes by `id`.
 
 
 ### A failed read is not junk

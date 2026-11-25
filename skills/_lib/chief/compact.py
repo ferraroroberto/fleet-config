@@ -14,10 +14,10 @@ DEFAULT_COMPACT_THRESHOLD = 30
 # The pre-compact refresh must have just run: handover log and plan both
 # written within this window, or the compaction would drop state they lack.
 COMPACT_FRESH_SECONDS = 600
-# The Stop hook (hooks/chief_waiter_stop.py) nudges at most once per window,
-# and a queued self-compact silences it for the same window: the compaction
-# runs when the turn ends, while the percentage is still over the threshold.
-COMPACT_NUDGE_SECONDS = 600
+# The Stop hook (hooks/chief_waiter_stop.py) nudges at most once per hold window
+# (`timings.py`, Settings > Chief), and a queued self-compact silences it for the
+# same window: the compaction runs when the turn ends, while the percentage is
+# still over the threshold.
 COMPACT_QUEUED_MARKER = "chief-compact-queued"
 DEFAULT_COMPACT_FOCUS = (
     "Keep the in-flight lanes (sid, repo#N, state), steers still awaiting "
