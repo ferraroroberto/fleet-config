@@ -257,7 +257,9 @@ bar tokens are `--tabbar-bg` `rgba(42,45,52,0.55)`, `--tabbar-border`
 Structurally unchanged from the Light theme — the four button tiers
 (`button-primary` / `button-tint` / `button-ghost` / `button-surface`, one
 shared `button-disabled` recipe; the accent derivatives are the same
-`color-mix` strings over the brighter dark accent), `card`,
+`color-mix` strings over the brighter dark accent; the busy state is the same
+flat disabled fill with its label in `ink` (12.88:1) rather than `muted`
+(4.08:1), because a busy control still has to be read), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
 `page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `history-mark`, `row-swipe`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill`, `code-inline` / `file-chip`, `code-listing`, `chat-turn`, `toast` and `row-menu` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from

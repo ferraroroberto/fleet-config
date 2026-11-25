@@ -450,6 +450,33 @@ bt_fill_primary = run_contracts(".button-primary { background: var(--accent-fill
 check(bt_fill_primary["button-tiers"]["status"] == "PASS",
       "the primary may fill with accent-fill (#963)")
 
+# ---- button busy state (fleet-config#2236) ----
+
+check(good["button-busy"]["status"] == "NA", "no button rules -> button-busy NA")
+bb_own = run_contracts(
+    ".refresh-btn { color: var(--ink); }\n"
+    ".refresh-btn.loading { opacity: 0.5; }\n"
+    ".sync-btn.is-busy::after { content: ''; }")
+check(bb_own["button-busy"]["status"] == "WARN"
+      and "2 button rule(s)" in bb_own["button-busy"]["detail"]
+      and bb_own["button-busy"]["evidence"] == "s.css:2",
+      "a button's own .loading / .is-busy class WARNs with file:line (#2236)")
+bb_attr = run_contracts(
+    ".button-surface { color: var(--ink); }\n"
+    '.button-surface[aria-busy="true"] { cursor: progress; }\n'
+    ".button-surface:disabled { color: var(--muted); }")
+check(bb_attr["button-busy"]["status"] == "PASS",
+      "aria-busy is the one busy look and passes (#2236)")
+bb_group = run_contracts(".row-btn, .row-btn.pending { color: var(--ink); }")
+check(bb_group["button-busy"]["status"] == "WARN",
+      "a state class inside a selector group is still a hit (#2236)")
+bb_other = run_contracts(".job.loading { opacity: 0.6; }\n.save-btn { color: var(--ink); }")
+check(bb_other["button-busy"]["status"] == "PASS",
+      "a loading class on something that is not a button is not a hit (#2236)")
+bb_name = run_contracts(".preload-btn, .loading-bar-btn { color: var(--ink); }")
+check(bb_name["button-busy"]["status"] == "PASS",
+      "a longer class name containing the word is not a state class (#2236)")
+
 # ---- user-selectable theme (fleet-config#290) ----
 
 TT_SPEC = {"icons.size.inline": "16px", "colors.canvas": "#ffffff"}
