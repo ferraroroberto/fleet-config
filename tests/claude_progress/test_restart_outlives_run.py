@@ -11,7 +11,9 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import io
+import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -127,8 +129,9 @@ class HelperContractTests(unittest.TestCase):
         # The helper never kills a recipe it reports as running; the test reaps it so no sleeper outlives the run.
         pid = re.search(r"\(pid (\d+)\)", out.getvalue())
         self.assertIsNotNone(pid, out.getvalue())
-        subprocess.run(["taskkill", "/F", "/T", "/PID", pid.group(1)], capture_output=True,
-                       creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0, timeout=30)
+        # SIGTERM is TerminateProcess on Windows: it reaps without a spawn, which the unit's spawn budget counts.
+        with contextlib.suppress(OSError):
+            os.kill(int(pid.group(1)), signal.SIGTERM)
 
     def test_empty_recipe_is_refused(self):
         with self.assertRaises(SystemExit):
