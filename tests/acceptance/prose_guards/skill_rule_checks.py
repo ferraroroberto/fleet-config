@@ -261,6 +261,9 @@ def _chief_wake_check() -> Tuple[int, int]:
     check("chief wake: the doorbell line names the fallback waiter with the mailbox constants (#1938)",
           "fallback=waiter seconds=1800" in waking and "--older-than 600" in waking
           and "inbox --count $OLDER" in waking and "one fallback waiter" in waking)
+    check("chief wake: the launcher's fallback ring means arm no waiter (#2237)",
+          "fallback=launcher minutes=N" in waking and "Arm no waiter" in waking
+          and "none on `fallback=launcher`" in compact)
     check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
     # The section body lives in its on-demand doc; SKILL.md keeps the pointer.
     incoming = (skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]

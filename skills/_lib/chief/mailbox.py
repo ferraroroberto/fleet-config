@@ -438,21 +438,47 @@ def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dro
 
 # ---- which reader wakes the chief ---------------------------------------------
 
+def launcher_fallback_minutes(config: Dict[str, Any]) -> Optional[int]:
+    """N of the launcher's own fallback ring (`chief_fallback_minutes`), or None when off or unreadable.
+
+    Only a whole number above 0 counts: the launcher then rings the chief for an
+    event that has waited N minutes whether or not the doorbell is on, so the
+    chief needs no waiter of its own. 0, a missing key or any other value keeps
+    the waiter rule.
+    """
+    value = config.get("chief_fallback_minutes")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
 def resolve_wake_mode(
     config: Optional[Dict[str, Any]], unread_reason: str = "launcher unreachable",
 ) -> Tuple[str, bool]:
-    """`(WAKE= line, known)` from the launcher's `chief_doorbell` switch.
+    """`(WAKE= line, known)` from the launcher's `chief_doorbell` and `chief_fallback_minutes`.
 
-    A confirmed `true` rings the chief but still names a long fallback waiter
-    A doorbell that fails silently otherwise leaves nothing to wake
-    a chief that sits idle. An unread or non-boolean setting is `unknown` and
-    says arm the full waiter, so a chief never ends a turn with no wake path.
-    The line keeps its `WAKE=doorbell` prefix: `hooks/chief_waiter_stop.py`
-    reads that prefix and the fallback adds no heartbeat requirement.
+    With the launcher's fallback on, the launcher owns the backup wake and the
+    line names `fallback=launcher minutes=N`: no waiter. Its prefix is
+    `WAKE=doorbell` with the switch on, else `WAKE=launcher`; `known` still
+    reports whether the doorbell switch itself was read. With the fallback off
+    or unreadable: a confirmed `true` rings the chief but still names a long
+    fallback waiter, because a doorbell that fails silently otherwise leaves
+    nothing to wake an idle chief; an unread or non-boolean switch is
+    `unknown` and says arm the full waiter, so a chief never ends a turn with
+    no wake path. `hooks/chief_waiter_stop.py` reads the `WAKE=doorbell` and
+    `WAKE=launcher` prefixes as needing no waiter heartbeat.
     """
     if config is None:
         return f"WAKE=waiter doorbell=unknown reason={unread_reason}", False
     value = config.get("chief_doorbell")
+    minutes = launcher_fallback_minutes(config)
+    if minutes is not None:
+        tail = f"fallback=launcher minutes={minutes}"
+        if value is True:
+            return f"WAKE=doorbell doorbell=on {tail}", True
+        if value is False:
+            return f"WAKE=launcher doorbell=off {tail}", True
+        return f"WAKE=launcher doorbell=unknown {tail} reason=launcher config has no boolean chief_doorbell", False
     if value is True:
         return f"WAKE=doorbell doorbell=on fallback=waiter seconds={FALLBACK_WAITER_SECONDS}", True
     if value is False:

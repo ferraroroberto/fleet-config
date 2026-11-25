@@ -80,12 +80,11 @@ writes it, on Claude, Codex and Pi alike; contract `docs/chief-mailbox.md`):
 one event per worker turn end (`Stop`), session exit, permission gate, or
 hookless death the launcher's reaper records. Events wait there while nothing
 reads them, so a fresh boot, a compaction or a missed wake loses nothing.
-What changes is **what tells you to read it**, and that is Roberto's switch
-in Settings > Chief > Doorbell (`chief_doorbell`):
+What changes is **what tells you to read it**, and that is Roberto's switch in Settings > Chief > Doorbell (`chief_doorbell`):
 
-**At the end of every turn, run `chief_ops.py wake`** (a cheap read of that
-switch) and act on its line:
+**At the end of every turn, run `chief_ops.py wake`** (that switch plus Settings > Chief > Fallback check) and act on its line:
 
+- `… fallback=launcher minutes=N` (`WAKE=doorbell` or `WAKE=launcher`): the launcher itself rings you when an event waits N minutes or slots sit free beside queued rows, doorbell on or off. **Arm no waiter**; one in flight runs out. The rules below apply only with the fallback 0 or unreadable.
 - `WAKE=doorbell doorbell=on fallback=waiter seconds=1800` — the doorbell is
   your primary wake: while you are idle with events pending and nothing typed
   in your input line, the launcher types one fixed line into your terminal
@@ -180,8 +179,8 @@ One chief session runs indefinitely; compact yourself early, on your own terms. 
 On either, and **only at a quiet tick** (no steer awaiting verification, no half-made decision, no merge mid-flight):
 
 1. Refresh the handover log and the plan (`plan …`).
-2. `chief_ops.py wake`. Arm the waiter the line names (the full one on `WAKE=waiter`, the long fallback on `WAKE=doorbell`; one armed before a compaction still wakes you after it, #1052).
-3. `chief_ops.py self-compact`. On `COMPACT_QUEUED` end the turn at once: the `/compact` runs then, SessionStart re-injects the handover, and the doorbell (or the waiter's exit) gives you your next turn.
+2. `chief_ops.py wake`. Arm the waiter the line names (the full one on `WAKE=waiter`, the long fallback on `WAKE=doorbell … fallback=waiter`, none on `fallback=launcher`; one armed before a compaction still wakes you after it, #1052).
+3. `chief_ops.py self-compact`. On `COMPACT_QUEUED` end the turn at once: the `/compact` runs then, SessionStart re-injects the handover, and the doorbell, the launcher's fallback ring or the waiter's exit gives you your next turn.
 
 `self-compact` reads the threshold from app-launcher Settings (0 = off; unreadable, 30, reason printed) and refuses, each with its own `REFUSED=` line, below it, on an unknown percentage, on a handover log or plan older than 10 minutes, and when the caller isn't the live chief. Treat a refusal as information: fix the stale refresh or wait for the next tick; never retry past it.
 

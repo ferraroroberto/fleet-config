@@ -286,7 +286,7 @@ Edge cases, decided:
 
 ## Reading (the chief)
 
-The chief reads with `chief_ops.py inbox`, then `chief_ops.py ack <id…>` (at-least-once), when the doorbell rings. While `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown, it arms a one-shot waiter that polls `inbox --count` and then reads with `inbox` the same way. With the switch on, `wake` still names one long fallback waiter (`fallback=waiter seconds=1800`) that polls `inbox --count --older-than 600`, so a doorbell that fails silently delays events by about 10 minutes plus its poll, not hours.
+The chief reads with `chief_ops.py inbox`, then `chief_ops.py ack <id…>` (at-least-once), when the doorbell rings. While `chief_ops.py wake` reports the launcher's `chief_doorbell` switch off or unknown, it arms a one-shot waiter that polls `inbox --count` and then reads with `inbox` the same way. With the switch on, `wake` still names one long fallback waiter (`fallback=waiter seconds=1800`) that polls `inbox --count --older-than 600`, so a doorbell that fails silently delays events by about 10 minutes plus its poll, not hours. When Settings > Chief > Fallback check (`chief_fallback_minutes`) is above 0, the launcher itself rings the chief for an event that has waited that many minutes, doorbell on or off, and `wake` names `fallback=launcher minutes=<N>` instead of any waiter (prefix `WAKE=doorbell`, or `WAKE=launcher` with the switch off or unknown).
 
 The steps:
 
