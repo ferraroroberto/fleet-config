@@ -85,11 +85,11 @@ REFUSAL = ("No waiter armed while lanes are live: launch the poll (run_in_backgr
            "before ending the turn.")
 COMPACT_NUDGE_MARKER = "chief-compact-nudge"
 COMPACT_QUEUED_MARKER = "chief-compact-queued"
-# Equals skills/_lib/chief/compact.py COMPACT_NUDGE_SECONDS (hooks do not import skills).
+# The hold window when the launcher's `chief_hold_minutes` cannot be read; equals
+# skills/_lib/chief/timings.py's default (hooks do not import skills).
 COMPACT_DEBOUNCE_S = 600
 SLOTS_NUDGE_MARKER = "chief-slots-nudge"
-# Equals the compact window: one idle-slot hold per ten minutes, so a chief that answers it never loops.
-SLOTS_DEBOUNCE_S = COMPACT_DEBOUNCE_S
+_HOLD_IN_USE = re.compile(r"hold=(\d+)m\(")
 _COMPACT_DUE = re.compile(r"^COMPACT_DUE percent=(\d+) threshold=(\d+)\s*$")
 _PROBE_TIMEOUT_S = 25.0
 
@@ -192,11 +192,30 @@ def launcher_wakes() -> bool:
     return any(l.startswith(_NO_WAITER_PREFIXES) for l in out.splitlines())
 
 
-def _marker_recent(path: Path, now: float, window: float = COMPACT_DEBOUNCE_S) -> bool:
-    try:
-        return now - path.stat().st_mtime < window
-    except OSError:
-        return False
+def hold_window_s() -> float:
+    """The hold window in seconds: the launcher's `chief_hold_minutes`, else `COMPACT_DEBOUNCE_S`.
+
+    Read through `chief_ops.py timings`, which already degrades an unreadable setting to its default and says so;
+    only a verb that did not run at all is logged here.
+    """
+    out = _chief_ops("timings")
+    match = _HOLD_IN_USE.search(out or "")
+    if match is None:
+        logger.warning("chief_waiter_stop: hold window not read (%s) -- using %ss", (out or "no answer").strip()[:80],
+                       COMPACT_DEBOUNCE_S)
+        return float(COMPACT_DEBOUNCE_S)
+    return int(match.group(1)) * 60.0
+
+
+def _marker_recent(now: float, *paths: Path) -> bool:
+    """Is any marker younger than the hold window? The window is read only once a marker exists to compare."""
+    ages = []
+    for path in paths:
+        try:
+            ages.append(now - path.stat().st_mtime)
+        except OSError:
+            continue
+    return bool(ages) and min(ages) < hold_window_s()
 
 
 def _write_marker(name: str, clock: float) -> bool:
@@ -218,7 +237,7 @@ def compact_refusal(now: Optional[float] = None) -> Optional[str]:
     """The message that holds the chief's turn end at the compact threshold, or None."""
     clock = time.time() if now is None else now
     state = _lib.state_dir()
-    if _marker_recent(state / COMPACT_NUDGE_MARKER, clock) or _marker_recent(state / COMPACT_QUEUED_MARKER, clock):
+    if _marker_recent(clock, state / COMPACT_NUDGE_MARKER, state / COMPACT_QUEUED_MARKER):
         return None
     line = next((l for l in (_chief_ops("compact-due") or "").splitlines() if l.startswith("COMPACT_")), "")
     match = _COMPACT_DUE.match(line)
@@ -243,7 +262,7 @@ def slots_refusal(now: Optional[float] = None) -> Optional[str]:
     """
     clock = time.time() if now is None else now
     state = _lib.state_dir()
-    if _marker_recent(state / SLOTS_NUDGE_MARKER, clock, SLOTS_DEBOUNCE_S):
+    if _marker_recent(clock, state / SLOTS_NUDGE_MARKER):
         return None
     lines = (_chief_ops("slots-idle") or "").splitlines()
     idle = next((l for l in lines if l.startswith("SLOTS_IDLE=")), "")

@@ -62,6 +62,11 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "say/stop prefix resolution, say --verify's bounded resend after a "
      "transport failure (exact-text transcript check before every resend), "
      "the wake doorbell and context + self-compact work with the launcher stubbed"),
+    ("chief_timings", "chief_ops/test_chief_timings.py",
+     "the chief's re-offer, hold, stall and re-ring timings read from the launcher's chief "
+     "settings -- each value range-checked, an unreadable or out-of-range one keeping today's "
+     "default and saying why, in the inbox, the Stop hook, the stall watchdog and `wake` "
+     "(fleet-config#2238)"),
     ("chief_launcher_scheme", "chief_ops/test_launcher_scheme.py",
      "chief verbs follow the launcher's HTTP or HTTPS setting -- local fake "
      "plain and TLS servers, a stale-scheme read retried once, a dropped "

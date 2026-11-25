@@ -17,14 +17,15 @@ checks first, the process probe last.
    `[06:08]` says nothing about the time of day. The `<run_id>` directory is a
    `YYYYMMDDTHHMMSS` wall-clock start stamp, so a line's real time is
    `run_id + elapsed`; the log file's mtime against now is the true silence.
-2. **Silence shorter than 45 minutes is not a stall, by construction.**
-   `claude_progress.py` runs a watchdog (`DEFAULT_STALL_TIMEOUT_SECONDS`,
-   2700s) that kills a run whose stream has genuinely gone quiet, emits `⏱ no
+2. **Silence shorter than the stall limit is not a stall, by construction.**
+   The limit is the launcher's `chief_stall_minutes` (`stall=` in `wake`'s
+   `TIMINGS` line; 45 minutes, `DEFAULT_STALL_TIMEOUT_SECONDS`, when the
+   launcher cannot supply it, which the run's first log line says). `claude_progress.py` runs a watchdog that kills a run whose stream has genuinely gone quiet, emits `⏱ no
    stream activity for …` into the log, and exits `124`. A permanently hung
    lane is therefore not a failure mode you have to catch by hand — had it
    truly stalled, the adapter would have ended it and said so. (Overridable
-   per-run via `--stall-timeout` or `CLAUDE_PROGRESS_STALL_TIMEOUT`; `0`
-   disables it, so confirm the bound holds before leaning on it.)
+   per-run via `--stall-timeout` or `CLAUDE_PROGRESS_STALL_TIMEOUT`, which beat the
+   setting; `0` disables it, so confirm the bound holds before leaning on it.)
 3. **The normal shape of a long silence is one slow tool call.** An agent
    running a repo's verification gate sits inside a single call for several
    minutes and emits no milestone until it returns. Suspect that before

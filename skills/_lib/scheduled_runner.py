@@ -198,15 +198,31 @@ def run_delivery_check(script: str, formatter: "ProgressFormatter") -> bool:
     return False
 
 
-def resolve_stall_timeout(explicit: Optional[float] = None) -> float:
-    """Flag beats env beats built-in default; ``<= 0`` disables the watchdog."""
+def resolve_stall_timeout(explicit: Optional[float] = None, default: float = DEFAULT_STALL_TIMEOUT_SECONDS) -> float:
+    """Flag beats env beats ``default``; ``<= 0`` disables the watchdog."""
     if explicit is not None:
         return max(0.0, explicit)
     raw = os.environ.get("CLAUDE_PROGRESS_STALL_TIMEOUT", "")
     try:
         return max(0.0, float(raw))
     except (TypeError, ValueError):
-        return DEFAULT_STALL_TIMEOUT_SECONDS
+        return default
+
+
+def resolve_stall_with_launcher(explicit: Optional[float], progress: ProgressFormatter) -> float:
+    """The watchdog limit: flag, then env, then the launcher's ``chief_stall_minutes``, then the built-in default.
+
+    The launcher is asked only when neither override is set. A setting that cannot be read leaves the built-in
+    default in force and the log line says so, so a changed limit is never silent.
+    """
+    if explicit is not None or os.environ.get("CLAUDE_PROGRESS_STALL_TIMEOUT", "").strip():
+        return resolve_stall_timeout(explicit)
+    from chief import timings  # noqa: PLC0415 -- only a run with no override pays the import and the read
+
+    item = timings.fetch()["chief_stall_minutes"]
+    origin = "launcher Settings" if item.source == "settings" else f"default: {item.reason}"
+    progress.emit(f"⏱ stall watchdog {item.value} min ({origin})")
+    return resolve_stall_timeout(None, item.seconds)
 
 
 def _kill_process_tree(process: subprocess.Popen) -> bool:
@@ -604,7 +620,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         # is a post-condition on the run as a whole, so it runs once, against
         # whatever the final attempt left behind.
         exit_code = run_with_transient_retry(
-            command, formatter=progress, stall_timeout=resolve_stall_timeout(flags.stall_timeout)
+            command, formatter=progress, stall_timeout=resolve_stall_with_launcher(flags.stall_timeout, progress)
         )
         if flags.delivery_check and not run_delivery_check(flags.delivery_check, progress):
             # Runs whatever the child reported, and outranks a clean exit only:

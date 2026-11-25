@@ -32,7 +32,7 @@ from grokbot import status as grokbot_status
 from no_window import NO_WINDOW
 from vendored_wave import primaries
 
-from chief import chief_sweep
+from chief import chief_sweep, timings
 
 # `say --verify`'s delivery classifier is its own subsystem;
 # only the names this CLI actually calls are imported.
@@ -167,15 +167,16 @@ def cmd_fleet_jobs(args: argparse.Namespace) -> int:
 def cmd_inbox(args: argparse.Namespace) -> int:
     """Mailbox v2: claim the pending batch for handling, or just count it."""
     inbox = mailbox.chief_inbox_dir()
+    stale_after = timings.stale_after_seconds(args.stale_after, args.base_url)
     if args.count:
         try:
-            print(f"PENDING={mailbox.count_pending(inbox, stale_after=args.stale_after, older_than=args.older_than)}")
+            print(f"PENDING={mailbox.count_pending(inbox, stale_after=stale_after, older_than=args.older_than)}")
         except OSError as exc:
             print(f"PENDING=unknown reason={type(exc).__name__}: {exc}")
             return 1
         return 0
-    events, reoffered, dropped = mailbox.claim_mailbox(inbox, stale_after=args.stale_after)
-    print(mailbox.format_mailbox_batch(events, reoffered, dropped, stale_after=args.stale_after))
+    events, reoffered, dropped = mailbox.claim_mailbox(inbox, stale_after=stale_after)
+    print(mailbox.format_mailbox_batch(events, reoffered, dropped, stale_after=stale_after))
     # The context check rides the path the chief runs every wake; it is silent
     # unless due or unknown, and only for the live chief itself.
     caller = rails.caller_session_id()
@@ -232,6 +233,9 @@ def cmd_wake(args: argparse.Namespace) -> int:
         pass
     line, known = mailbox.resolve_wake_mode(config, reason)
     print(line)
+    # A launcher that just failed to answer config is not asked again: the values in use are the defaults.
+    in_use = timings.fetch(args.base_url) if config is not None else timings.resolve(None, reason)
+    print(timings.format_line(in_use))
     return 0 if known else 1
 
 

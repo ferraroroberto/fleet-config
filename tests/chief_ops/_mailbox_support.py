@@ -24,7 +24,7 @@ def publish(inbox: Path, name: str, event: dict) -> None:
 def run_cli(inbox: Path, *argv: str) -> "tuple[int, str]":
     old_dir, old_request = co.mailbox.chief_inbox_dir, co.launcher._request
     co.mailbox.chief_inbox_dir = lambda: inbox
-    co.launcher._request = lambda base, path: {}  # the timeout path's board digest, never a live launcher
+    co.launcher._request = lambda base, path, **_kw: {}  # the timeout path's board digest, never a live launcher
     try:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

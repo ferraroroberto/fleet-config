@@ -41,7 +41,7 @@ from fleet_core import hooks_state
 from git_run import run_git
 from no_window import NO_WINDOW
 
-from . import doctor_logs, launcher, mailbox, rails, waiter_heartbeat
+from . import doctor_logs, launcher, mailbox, rails, timings, waiter_heartbeat
 
 PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
 CHIEF_OPS = Path(__file__).resolve().parents[1] / "chief_ops.py"
@@ -299,7 +299,8 @@ class Doctor:
 
     # --- mailbox ------------------------------------------------------------------------------
 
-    def check_mailbox(self) -> Check:
+    def check_mailbox(self, stale_after: float = mailbox.CLAIM_STALE_SECONDS) -> Check:
+        """`stale_after` is the launcher's claim re-offer window (the default when it cannot be read)."""
         inbox = mailbox.chief_inbox_dir()
         now_ms = mailbox._now_ms()
         try:
@@ -320,7 +321,7 @@ class Doctor:
         problems = []
         if old_pending is not None and old_pending > PENDING_STALE_S:
             problems.append("an event waited past the fallback waiter")
-        if old_claimed is not None and old_claimed > mailbox.CLAIM_STALE_SECONDS:
+        if old_claimed is not None and old_claimed > stale_after:
             problems.append("a claim stayed unacked past the stale window")
         if problems:
             detail["reason"] = "; ".join(problems)
@@ -400,7 +401,7 @@ class Doctor:
         checks = [self.check_commit(), self.check_venv(), self.check_link("hooks"), self.check_link("skills")]
         checks += self.check_settings()
         checks += self.check_verbs()
-        checks.append(self.check_mailbox())
+        checks.append(self.check_mailbox(timings.fetch(self.base_url)["chief_reoffer_minutes"].seconds))
         checks += self.check_doorbell()
         checks.append(self.check_waiters())
         log_checks, groups = self.check_logs()
