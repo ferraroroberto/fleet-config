@@ -8,7 +8,10 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/claude_progress/
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
+import io
+import re
 import subprocess
 import sys
 import tempfile
@@ -66,9 +69,12 @@ class RestartOutlivesRunTests(unittest.TestCase):
         self.addCleanup(scope.close)
         root = scope.launch(command)
         self.assertEqual(root.wait(timeout=60), 0, root.stderr.read().decode(errors="replace"))
-        deadline = time.monotonic() + 10
+        # The recipe writes the pid before it exits, so a clean root exit means the file exists; the bound only
+        # absorbs filesystem lag under box load, and a miss reads as a named failure, not a FileNotFoundError.
+        deadline = time.monotonic() + 30
         while not self.pid_file.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
+        self.assertTrue(self.pid_file.exists(), "the recipe exited 0 without recording its child's pid")
         child = int(self.pid_file.read_text())
         self.child_pids.append(child)
         return scope, child
@@ -112,11 +118,17 @@ class HelperContractTests(unittest.TestCase):
         self.assertIn("BREAKAWAY=", done.stdout)
 
     def test_a_recipe_past_the_timeout_is_reported_not_killed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            script = Path(tmp) / "slow.py"
-            script.write_text("import time; time.sleep(8)\n", encoding="utf-8")
-            code = detached_restart.run([sys.executable, str(script)], timeout=0.5)
+        # `-c`, not a script file: a recipe still starting up at the 0.5 s timeout holds its script open, and the
+        # temp-dir cleanup then fails on Windows (PermissionError) under load. No file, nothing to hold.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = detached_restart.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
         self.assertEqual(code, detached_restart.TIMEOUT_EXIT)
+        # The helper never kills a recipe it reports as running; the test reaps it so no sleeper outlives the run.
+        pid = re.search(r"\(pid (\d+)\)", out.getvalue())
+        self.assertIsNotNone(pid, out.getvalue())
+        subprocess.run(["taskkill", "/F", "/T", "/PID", pid.group(1)], capture_output=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0, timeout=30)
 
     def test_empty_recipe_is_refused(self):
         with self.assertRaises(SystemExit):
