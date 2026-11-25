@@ -48,7 +48,8 @@ It runs before the waiter check because an armed waiter says nothing about idle 
 
 It fails open everywhere it cannot establish a fact -- an unreadable session
 state, an unreachable launcher -- and says so in the log; the launcher's
-doorbell mode (`wake` -> `WAKE=doorbell`) needs no waiter, so it is allowed too.
+doorbell or fallback ring (`wake` -> `WAKE=doorbell` or `WAKE=launcher`) needs no
+waiter, so it is allowed too.
 """
 
 from __future__ import annotations
@@ -180,10 +181,15 @@ def fleet_job_running() -> Optional[bool]:
     return None
 
 
-def doorbell_on() -> bool:
-    """The launcher's doorbell wakes the chief with no waiter; unknown means arm one."""
+# `WAKE=doorbell`: the doorbell rings the chief; `WAKE=launcher`: the launcher's
+# own fallback ring does. Either wakes it with no waiter; `WAKE=waiter` needs one.
+_NO_WAITER_PREFIXES = ("WAKE=doorbell", "WAKE=launcher")
+
+
+def launcher_wakes() -> bool:
+    """The launcher's doorbell or fallback ring wakes the chief with no waiter; unknown means arm one."""
     out = _chief_ops("wake") or ""
-    return any(l.startswith("WAKE=doorbell") for l in out.splitlines())
+    return any(l.startswith(_NO_WAITER_PREFIXES) for l in out.splitlines())
 
 
 def _marker_recent(path: Path, now: float, window: float = COMPACT_DEBOUNCE_S) -> bool:
@@ -311,7 +317,7 @@ def main() -> None:
         _lib.allow()
     if not lanes and not fleet_job_running():
         _lib.allow()
-    if doorbell_on():
+    if launcher_wakes():
         _lib.allow()
     _lib.block(REFUSAL)
 

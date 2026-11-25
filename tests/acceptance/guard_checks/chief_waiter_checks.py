@@ -198,6 +198,20 @@ def _compact_gate_checks(check: _Checker, tmp: Path) -> None:
     _seed_state(tmp, lane_status="working")
 
 
+def _launcher_fallback_checks(check: _Checker, tmp: Path) -> None:
+    """A lane working, no heartbeat: the launcher's own fallback ring allows; off or unknown refuses."""
+    for wake in ("WAKE=doorbell doorbell=on fallback=launcher minutes=30",
+                 "WAKE=launcher doorbell=off fallback=launcher minutes=30",
+                 "WAKE=launcher doorbell=unknown fallback=launcher minutes=30 reason=x"):
+        code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher(wake=wake))
+        check(f"chief_waiter_stop: the launcher's fallback ring needs no waiter heartbeat ({wake}) -> allowed",
+              code == 0)
+    for wake in ("WAKE=waiter doorbell=unknown reason=launcher unreachable", ""):
+        code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher(wake=wake))
+        check(f"chief_waiter_stop: fallback off or unknown keeps the waiter rule ({wake or 'no answer'}) -> refused",
+              code == 2)
+
+
 def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
     """`chief_waiter_stop.py` + `waiter_heartbeat.py`: the four issue payloads,
     the expiry/dead-pid rule, and the never-refuse-headless guarantee."""
@@ -231,6 +245,7 @@ def _chief_waiter_stop_unit_checks() -> Tuple[int, int]:
 
         code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher(wake="WAKE=doorbell doorbell=on fallback=waiter seconds=1800"))
         check("chief_waiter_stop: doorbell on needs no waiter heartbeat, fallback line included -> allowed", code == 0)
+        _launcher_fallback_checks(check, tmp)
 
         _seed_state(tmp, lane_status="needs-you")
         code, _ = _drive(tmp, CHIEF_PAYLOAD, _launcher())

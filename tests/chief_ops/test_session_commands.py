@@ -106,6 +106,22 @@ _line, _known = co.resolve_wake_mode(None, "launcher unreachable")
 check(_line == "WAKE=waiter doorbell=unknown reason=launcher unreachable" and _known is False,
       "resolve_wake_mode: an unread launcher is unknown, and arms the waiter")
 
+# ---- the launcher's own fallback ring replaces the waiter (fleet-config#2237) ----
+check(co.resolve_wake_mode({"chief_doorbell": True, "chief_fallback_minutes": 30})
+      == ("WAKE=doorbell doorbell=on fallback=launcher minutes=30", True),
+      "resolve_wake_mode: doorbell on with the launcher fallback names no waiter")
+check(co.resolve_wake_mode({"chief_doorbell": False, "chief_fallback_minutes": 5})
+      == ("WAKE=launcher doorbell=off fallback=launcher minutes=5", True),
+      "resolve_wake_mode: doorbell off with the launcher fallback still names no waiter")
+_line, _known = co.resolve_wake_mode({"chief_fallback_minutes": 30})
+check(_line.startswith("WAKE=launcher doorbell=unknown fallback=launcher minutes=30 reason=") and _known is False,
+      "resolve_wake_mode: an unread doorbell stays unknown while the launcher fallback covers the wake")
+for _off in (0, -1, True, "30", 1.5, None):
+    check(co.resolve_wake_mode({"chief_doorbell": True, "chief_fallback_minutes": _off}) == (_FALLBACK_LINE, True)
+          and co.resolve_wake_mode({"chief_doorbell": False, "chief_fallback_minutes": _off})
+          == ("WAKE=waiter doorbell=off", True),
+          f"resolve_wake_mode: a fallback of {_off!r} is off and keeps the waiter rule unchanged")
+
 
 def _run_wake(reply):
     calls: list = []
@@ -138,6 +154,9 @@ check(_code == 1 and _out == "WAKE=waiter doorbell=unknown reason=launcher unrea
 _code, _out, _calls = _run_wake(_wake_urlerr.HTTPError("u", 404, "nf", None, None))
 check(_code == 1 and _out == "WAKE=waiter doorbell=unknown reason=launcher config unreadable (HTTP 404)",
       "wake CLI: an HTTP error is unknown, named apart from unreachable")
+_code, _out, _calls = _run_wake({"chief_doorbell": True, "chief_fallback_minutes": 30})
+check(_code == 0 and _out == "WAKE=doorbell doorbell=on fallback=launcher minutes=30",
+      "wake CLI: reports the launcher fallback from /api/config (#2237)")
 
 
 # ---- context + self-compact (fleet-config#1052): launcher always stubbed ----
