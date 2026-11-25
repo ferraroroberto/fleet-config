@@ -13,8 +13,12 @@ is one digest comment on the audit-managed `prompt-audit ledger` issue
 needs all of:
 
   1. a digest comment inside the window         -> the run delivered at all
-  2. `status=complete`                           -> every planned file judged
-  3. `scan=posted`                               -> the scan ran and posted
+  2. `status=complete` or `status=partial`       -> a posted partial digest names
+                                                    the unmeasured files, so it
+                                                    delivered
+  3. `scan=posted`, no `paused=cap`              -> the scan ran and posted; a run
+                                                    that hit the rate-gate pause cap
+                                                    judged nothing and is not one
   4. `guides=changed` needs `update-issue=#N`    -> a moved guide also filed the
                                                     rule-set update issue
 
@@ -59,6 +63,8 @@ def delivered(stamp: dict) -> Optional[str]:
     update = stamp.get("update-issue")
     if scan != "posted":
         return f"reports scan={scan or 'unknown'} -- the scan was not posted"
+    if stamp.get("paused") == "cap":
+        return "reports paused=cap -- the rate gate paused the run past its cap and nothing was judged"
     if guides not in ("unchanged", "not-checked", "changed"):
         return f"reports guides={guides or 'unknown'} -- whether a rule-set update issue was due is not established"
     if guides == "changed" and not (update and _ISSUE_REF.match(update)):
@@ -71,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         REPO, KIND, LEDGER_TITLE,
         description="Did this /prompt-audit run deliver a complete digest?",
         require_complete=True,
+        partial_delivers=True,
         stamp_prefix=STAMP_PREFIX,
         delivered=delivered,
         argv=argv,

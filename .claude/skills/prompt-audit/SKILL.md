@@ -34,7 +34,7 @@ No argument → the full run.
 - **Run from the `fleet-config` repo root.** Put fetched pages and run files in a freshly created, uniquely named scratch directory outside the repo (e.g. `<session temp>/prompt-audit-<date>-<time>`). Never delete through a variable-built path — a harness prompts on `rm` against a variable that could be empty, which blocks an unattended run; a new directory per run needs no cleanup.
 - **Writes are exactly these:** `~/.claude/prompt-audit/state.json` and the page cache beside it (`pages/<id>.md`, step 2); the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; when the coverage check finds new uncovered sections or a lead gets a new trace result, one comment on that issue each (creating it if none is open, steps 2b and 2c); lead trace results in `state.json` (step 2c); and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
 - **Unknown is never a pass.** A page that could not be fetched is `not-checked`, never `unchanged`. A file whose judgment did not come back is `unmeasured`, never `compliant`. A skipped file is listed as skipped, so "not in the findings" cannot read as "not looked at".
-- **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
+- **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured), and that posted partial digest is a delivery: the Job stays green and the digest names what was left unmeasured.
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
 - **Numbers come from `audit.py`.** Counts, verdicts, plan actions and the digest's tallies are its output — copy them, never estimate them.
 - **Unattended runs** (the weekly `run-weekly.bat` job, fleet-config#834) follow the same steps plus two gates: the rate gate before step 6's fan-out, and step 9's delivery assertion. Nobody can answer a question, so never ask one.
@@ -154,7 +154,7 @@ Nothing to scan (`scan=0`) → skip steps 5–6; the digest still posts and list
 <py> C:/Users/rober/.claude/skills/_lib/rate_gate.py check
 ```
 
-`DECISION=OK` or `UNKNOWN` (interactive-only: a scheduled run with no fresh signal reads `PAUSE`, fleet-config#825) → dispatch. `PAUSE` → dispatch nothing yet; wait in place against the printed `WAIT_SECONDS` (never `RESETS_AT`: only `WAIT_SECONDS` fits the stall watchdog, fleet-config#891) with a foreground, bounded wait (`Monitor`'s until-loop, never a backgrounded sleep), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → judge nothing: every planned file is `null` in `judgments` (unmeasured, so the digest still posts as `status=partial` and names them), and step 9 prints the failure marker. Record the `DECISION=` / `REASON=` / `MODE=` lines for the report.
+`DECISION=OK` or `UNKNOWN` (interactive-only: a scheduled run with no fresh signal reads `PAUSE`, fleet-config#825) → dispatch. `PAUSE` → dispatch nothing yet; wait in place against the printed `WAIT_SECONDS` (never `RESETS_AT`: only `WAIT_SECONDS` fits the stall watchdog, fleet-config#891) with a foreground, bounded wait (`Monitor`'s until-loop, never a backgrounded sleep), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → judge nothing: every planned file is `null` in `judgments` (unmeasured, so the digest still posts as `status=partial` and names them), set `"paused": "cap"` in `run.json` (it stamps `paused=cap`), and step 9 prints the failure marker. Record the `DECISION=` / `REASON=` / `MODE=` lines for the report.
 
 Group the planned files by repo. Split `fleet-config` into three groups (the global file and its always-on files, `skills/`, `.claude/skills/`); repos with at most two small files may share one worker, up to eight repos per worker. Dispatch one **easy-tier** worker per group through the capability contract (tier intent: [`docs/model-tiers.md`](E:/automation/fleet-config/docs/model-tiers.md); stay within host slots and that doc's concurrency caps). No reliable spawn-and-collect → judge the groups serially in this session and say so in the report. Collect every worker's terminal result before step 7.
 
@@ -183,12 +183,13 @@ Write `<scratch>/run.json`:
   "evals": "<the evals.json object from step 2d>",
   "gate": ["<every GATE= line from step 5>"],
   "scan_ran": true,
+  "paused": null,
   "plan": ["<every PLAN= line from step 4>"],
   "judgments": {"<path>": [<findings>] }
 }
 ```
 
-`update_issue` is the `"#<N>"` from step 3 when a guide changed, else `null`. `judgments` holds each judged file's findings list, or `null` for an unmeasured one; a planned file left out of `judgments` is treated as unmeasured. Then:
+`update_issue` is the `"#<N>"` from step 3 when a guide changed, else `null`. `paused` is `"cap"` only when step 5's rate gate hit its pause cap, else `null`. `judgments` holds each judged file's findings list, or `null` for an unmeasured one; a planned file left out of `judgments` is treated as unmeasured. Then:
 
 ```
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
@@ -219,7 +220,7 @@ A failed write is reported with its error; the run does not claim delivery witho
 
 ### 9. Delivery assertion and report
 
-Before the report, check what this run actually delivered. **Delivered** means all of: a `LEDGER_COMMENT=` URL from step 8.2; `DIGEST=status=complete`; a scan (step 8.3 ran with no `DRIFT=…|error=` line — zero findings is still a delivery); and, when a guide changed, the rule-set update issue filed or commented (`update_issue` is `#N`). Anything else — no comment URL, a `partial` digest, a drift error, a changed guide with no update issue, the rate gate's pause cap — prints this literal line in the report, one reason, ASCII after the dash:
+Before the report, check what this run actually delivered. **Delivered** means all of: a `LEDGER_COMMENT=` URL from step 8.2; `DIGEST=status=complete` or `partial`; a scan (step 8.3 ran with no `DRIFT=…|error=` line — zero findings is still a delivery); and, when a guide changed, the rule-set update issue filed or commented (`update_issue` is `#N`). A digest that reads `partial` because some files ended unmeasured still counts: it posted and names them, so the Job stays green. Anything else — no comment URL, a drift error, a changed guide with no update issue, the rate gate's pause cap (`paused=cap`) — prints this literal line in the report, one reason, ASCII after the dash:
 
 ```
 SCHEDULED-RUN-FAILED — <what was not delivered, one line>

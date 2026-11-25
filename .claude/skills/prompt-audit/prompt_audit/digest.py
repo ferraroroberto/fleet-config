@@ -67,7 +67,7 @@ def _with_r44(judgments: dict, evals: object) -> dict:
 def partition_run(run: dict) -> dict:
     """Split a run into what was judged, skipped and not established.
 
-    `run`: {date, dry_run, sources: [VERDICT= lines], update_issue, scan_ran,
+    `run`: {date, dry_run, sources: [VERDICT= lines], update_issue, scan_ran, paused,
     plan: [PLAN= lines], judgments: {path: [finding, ...] | null}, rubric}.
     A planned-scan file with no judgment (absent or null) is an unmeasured file; a
     judged file carrying any per-rule `unmeasured` verdict is only partly
@@ -170,7 +170,8 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     # Machine-readable, ASCII, near the top so the comment-size cap never cuts it:
     # the scheduled job's delivery_check.py reads it.
     stamp = (f"<!-- {STAMP_PREFIX} run={run.get('date') or 'unknown'} status={status} scan={scan} "
-             f"guides={guides} update-issue={run.get('update_issue') or 'none'} -->")
+             f"guides={guides} update-issue={run.get('update_issue') or 'none'}"
+             f"{' paused=cap' if run.get('paused') == 'cap' else ''} -->")
 
     out = [f"## prompt-audit digest — {run.get('date', '')}", stamp, "",
            f"`status={status}` · `guides={guides}` · `rubric={str(run.get('rubric', ''))[:12]}`"

@@ -268,6 +268,8 @@ PA_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-ru
 PA_NO_GUIDES = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted update-issue=none -->"
 PA_PARTIAL = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted guides=unchanged update-issue=none -->"
 PA_DRY = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=dry-run guides=unchanged update-issue=none -->"
+PA_PAUSED = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted guides=unchanged update-issue=none paused=cap -->"
+PA_PARTIAL_CHANGED = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted guides=changed update-issue=none -->"
 
 pa_codes = characterize(pa_mod, audit_issue, {
     "scan-posted": lambda f: setattr(f, "comments", [_live(2, PA_SCAN)]),
@@ -278,6 +280,8 @@ pa_codes = characterize(pa_mod, audit_issue, {
     "no-guides-field": lambda f: setattr(f, "comments", [_live(2, PA_NO_GUIDES)]),
     "partial": lambda f: setattr(f, "comments", [_live(2, PA_PARTIAL)]),
     "dry-run-stamp": lambda f: setattr(f, "comments", [_live(2, PA_DRY)]),
+    "pause-cap": lambda f: setattr(f, "comments", [_live(2, PA_PAUSED)]),
+    "partial-changed-no-issue": lambda f: setattr(f, "comments", [_live(2, PA_PARTIAL_CHANGED)]),
     "stale": lambda f: setattr(f, "comments", [_live(30, PA_SCAN)]),
     "no-stamp": lambda f: setattr(f, "comments", [_live(2, "## prompt-audit digest `status=complete`")]),
     "other-caller-stamp": lambda f: setattr(f, "comments", [_live(2, COMPLETE)]),
@@ -285,12 +289,26 @@ pa_codes = characterize(pa_mod, audit_issue, {
     "gh-error": lambda f: setattr(f, "raise_on_view", SystemExit("gh issue view failed (exit 1)")),
 }, issues=PA_ISSUES)
 
-for label in ("scan-posted", "scan-guides-not-checked", "scan-and-update"):
+for label in ("scan-posted", "scan-guides-not-checked", "scan-and-update", "partial"):
     check(pa_codes[label] == 0, f"prompt-audit: {label} exits 0 (saw {pa_codes[label]})")
 for label in ("changed-no-update-issue", "update-without-scan", "no-guides-field",
-              "partial", "dry-run-stamp", "stale", "no-stamp",
+              "pause-cap", "partial-changed-no-issue", "dry-run-stamp", "stale", "no-stamp",
               "other-caller-stamp", "no-ledger", "gh-error"):
     check(pa_codes[label] != 0, f"prompt-audit: {label} exits non-zero (saw {pa_codes[label]})")
+
+# A posted partial digest is a delivery (it names the unmeasured files); the pause cap is not.
+check(pa_codes["partial"] == 0 and purge_codes["partial-stamp"] != 0,
+      "prompt-audit counts a posted partial digest as delivered while context-purge still fails it")
+_pa_kw = dict(require_complete=True, stamp_prefix="prompt-audit-digest", delivered=pa_mod.delivered)
+_pp = dd.classify([_c(2, PA_PARTIAL)], NOW, 12.0, partial_delivers=True, **_pa_kw)
+check(_pp.confirmed is True and "status=partial" in _pp.detail,
+      "classify: partial_delivers confirms a posted partial digest and the proof still says partial")
+_strict = dd.classify([_c(2, PA_PARTIAL)], NOW, 12.0, **_pa_kw)
+check(_strict.confirmed is False and _strict.state == "partial",
+      "classify: partial_delivers is opt-in -- the default stays strict")
+_cap = dd.classify([_c(2, PA_PAUSED)], NOW, 12.0, partial_delivers=True, **_pa_kw)
+check(_cap.confirmed is False and "paused=cap" in _cap.detail,
+      "classify: a pause-cap digest is not a delivery even when partial delivers, and says why")
 check(dd.parse_stamp(PA_UPDATE, prefix="prompt-audit-digest").get("update-issue") == "#900",
       "stamp: hyphenated keys parse whole (update-issue=, not issue=)")
 
