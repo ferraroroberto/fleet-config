@@ -4,7 +4,7 @@ Runs the vendored `scripts/request_budget_ratchet.py` against this repo and fail
 file's count for a rule (a fixed-rate poll that reaches the server, a poll under the 2 s
 floor, an unwatched server loop, a directory scan in a handler, a submit to the shared
 default pool, a web app without the timing middleware) rises above the committed
-`.request-budget-ratchet-baseline.json`. The output names each file, the line and the rule.
+`.ratchets/request-budget.json`. The output names each file, the line and the rule.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason
 `static_ratchet_gate` gives: `shared._subprocess_unit_check` reads exit

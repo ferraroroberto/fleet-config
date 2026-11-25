@@ -13,7 +13,7 @@ Four layers:
      adopted, in-scope file and its digest labels them.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_gate_enforced.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -115,7 +115,7 @@ _tmp = Path(tempfile.mkdtemp(prefix="gate_enforced_"))
 try:
     _py = "def dead_fn():\n    return 1\n"
     adopted = _repo(_tmp, "adopted", {".fleet.toml": _FULL_TOML, "scripts/instruction_ratchet.py": _INSTR_SRC,
-                                      ".static-ratchet-baseline.json": _baseline([{"key": "dup:a"}]), "m.py": _py})
+                                      ".ratchets/static.json": _baseline([{"key": "dup:a"}]), "m.py": _py})
     _g = enforced.read_gate(str(adopted))
     _owned = {(c["ratchet"], c["bucket"]) for c in _g["checks"]}
     check(_g["state"] == "adopted" and {("static_ratchet", "duplication"), ("dead_code_ratchet", "stale"),
@@ -144,7 +144,7 @@ try:
           f"read_gate: a repo with no .fleet.toml on origin claims nothing, got {_p}")
 
     broken = _repo(_tmp, "broken", {".fleet.toml": _FULL_TOML, "scripts/instruction_ratchet.py": _INSTR_SRC,
-                                    ".static-ratchet-baseline.json": "{nope", "m.py": _py})
+                                    ".ratchets/static.json": "{nope", "m.py": _py})
     _b = enforced.read_gate(str(broken))
     check(_b["state"] == "unknown" and "not valid JSON" in _b["reason"] and not _b["checks"] and _b["prompt"] is None,
           f"read_gate: an unreadable baseline is unknown and claims nothing, got {_b}")

@@ -1,6 +1,6 @@
 """Test-value ratchet stage.
 
-Runs `scripts/test_value/test_value_ratchet.py` with the per-change rules (`new-test-value`,
+Runs `scripts/test_value_ratchet.py` with the per-change rules (`new-test-value`,
 `spawn-budget`, `flake-ledger`) against this run's live unit and spawn reports, the unit ledger and the
 weekly coverage map. The reports exist only when the gate runs through `gate_evidence.py run`, which
 sets their env vars; a plain `run_acceptance.py` gives the script nothing to read, and it exits 3.
@@ -18,7 +18,7 @@ from unit_history import ledger
 
 from acceptance.shared import REPO, run_ratchet_script
 
-SCRIPT = REPO / "scripts" / "test_value" / "test_value_ratchet.py"
+SCRIPT = REPO / "scripts" / "test_value_ratchet.py"
 
 # A few seconds over the ledger, plus the one coverage run of new units that new-test-value may make,
 # itself bounded by `coverage_timeout_s` in .fleet.toml. This only turns a hung child into NOT CONFIRMED.

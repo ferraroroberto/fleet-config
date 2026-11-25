@@ -6,7 +6,7 @@ halves:
 - the static check (`_runtime_write_ratchet_check`) fails when a tracked Python
   file gains a write target whose path resolves under a code folder (`hooks`,
   `skills`, `scripts`, `.claude`), or a new one it cannot resolve, beyond the
-  committed `.runtime-write-ratchet-baseline.json`;
+  committed `.ratchets/runtime-write.json`;
 - the runtime bracket: `_runtime_write_snapshot_check` records the untracked and
   ignored files under the code folders before the first acceptance check, and
   `_runtime_write_probe_check`, after the last, fails on any file the run added

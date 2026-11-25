@@ -3,7 +3,7 @@
 Runs the vendored `scripts/instruction_ratchet.py` against this repo and fails when
 a prompt-audit lint rule's hit count in an instruction file (`CLAUDE.md`, a
 `SKILL.md`, the docs a skill links to, `global-CLAUDE.md`) rises above its entry in
-the committed `.instruction-ratchet-baseline.json`, or a file passes its size cap.
+the committed `.ratchets/instruction.json`, or a file passes its size cap.
 The output names each file, the rule and every hit with its line.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason

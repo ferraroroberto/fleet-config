@@ -2,7 +2,7 @@
 
 Runs the vendored `scripts/static_ratchet.py` against this repo and fails on a
 duplicate block or an unused import/variable that is not in the committed
-`.static-ratchet-baseline.json`. Baselined hits never fail; a new one is named
+`.ratchets/static.json`. Baselined hits never fail; a new one is named
 by key in the output.
 
 Deliberately its own check, not a row in `standalone_dispatch`: that table runs

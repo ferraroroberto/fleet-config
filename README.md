@@ -202,8 +202,9 @@ fleet-config/
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── tests/run_weekly_units.py       # the burn, load and wall-clock units the gate leaves out, run weekly by `/weekly-burst`
-├── scripts/                        # the ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.<name>-ratchet-baseline.json` — index: docs/ratchets.md
-│   ├── test_value/test_value_ratchet.py  # vendored from project-scaffolding: new-test-value, spawn-budget, flake-ledger and the weekly hermetic rule over the unit ledger
+├── .ratchets/                      # one baseline per ratchet, `<name>.json`: the debt each gate burns down to zero — index: docs/ratchets.md
+├── scripts/                        # the ratchet scripts and their helpers, vendored byte-for-byte from project-scaffolding (`.fleet.toml` [vendored]) and run by `tests/run_acceptance.py`, each against its `.ratchets/<name>.json` — index: docs/ratchets.md
+│   ├── test_value_ratchet.py  # vendored from project-scaffolding: new-test-value, spawn-budget, flake-ledger and the weekly hermetic rule over the unit ledger
 │   ├── tray/tray_lifecycle.ps1     # this repo's own: junctioned via scripts/tray/ → ~/.claude/tray — the ONE machine-local copy; canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 │   ├── fleet_move/                 # this repo's own: the fleet-root move to another volume behind a junction — cutover.ps1 / postcheck.ps1 / rollback.ps1 + stdlib helpers, including `copy_claude_history.py` which joins pre-move `E--` Claude history folders into their `C--` twins (docs/fleet-root-move.md)
 │   └── shell/claude-otel-project.ps1  # this repo's own (not vendored): dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)

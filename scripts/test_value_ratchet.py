@@ -35,7 +35,7 @@ Opt-in, per adopter, in `.fleet.toml` (every key but `enabled` optional, default
 
     [test_value_ratchet]
     enabled     = true
-    baseline    = ".test-value-ratchet-baseline.json"
+    baseline    = ".ratchets/test-value.json"
     unit_roots  = ["tests"]                            # where units are declared (and their exempt markers)
     unit_runner = ["-m", "pytest", "-q", "-p", "scripts.unit_ledger_pytest"]
                                                        # argv after the interpreter; runs the units
@@ -68,6 +68,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
+import importlib.util
 import json
 import os
 import re
@@ -81,6 +83,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 Row = dict[str, Any]  # one ledger, report, baseline or map object as read from JSON
@@ -96,13 +99,31 @@ COVERAGE_REPORT_ENV = "FLEET_GATE_COVERAGE_REPORT"
 COVERAGE_ROOT_ENV = "FLEET_GATE_COVERAGE_ROOT"
 # A nested coverage run must not write into the outer run's live reports.
 OUTER_REPORT_ENVS = ("FLEET_GATE_UNIT_REPORT", "FLEET_GATE_SPAWN_REPORT", "FLEET_GATE_UNIT", "FLEET_GATE_WTREE")
+def _load_sibling(name: str) -> ModuleType:
+    """A sibling module, loaded by path so `python -P` (scripts/ off `sys.path`) finds it."""
+    try:
+        if __package__:  # imported as a package member (the tests)
+            return importlib.import_module(f"{__package__}.{name}")
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
+        assert spec is not None and spec.loader is not None
+        module = sys.modules[spec.name] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except (ImportError, OSError, SyntaxError):
+        print(f"test_value_ratchet: NOT CONFIRMED: {name}.py is missing beside this script -- vendor both "
+              "(manifest keys test_value_ratchet and ratchet_baseline)")
+        sys.exit(3)
+
+
+_baseline = _load_sibling("ratchet_baseline")  # where the baseline lives, and its move into .ratchets/
+DEFAULT_BASELINE = ".ratchets/test-value.json"
 EXEMPT_RE = re.compile(r"test-value-exempt:\s*\S")
 HEADER_END_RE = re.compile(r"(?:import|from|def|class|async\s+def)\s")
 
 
 @dataclass
 class Config:
-    baseline: str = ".test-value-ratchet-baseline.json"
+    baseline: str = DEFAULT_BASELINE
     unit_roots: tuple[str, ...] = ("tests",)
     unit_runner: tuple[str, ...] = ("-m", "pytest", "-q", "-p", "scripts.unit_ledger_pytest")
     base_ref: str = "origin/main"
@@ -154,6 +175,7 @@ def load_config(root: Path) -> Config | None:
         elif not isinstance(value, type(default)) or isinstance(value, bool):
             raise ConfigError(f"[test_value_ratchet] {key} must be a {type(default).__name__}")
         setattr(cfg, key, value)
+    cfg.baseline = _baseline.configured(cfg.baseline, DEFAULT_BASELINE)
     return cfg
 
 
@@ -213,6 +235,9 @@ def base_baseline_units(root: Path, cfg: Config, current: Row) -> set[str] | Non
     if base is None or not base.strip():
         return None
     text = _git(root, ["show", f"{base.strip()}:{cfg.baseline}"])
+    if text is None and cfg.baseline == DEFAULT_BASELINE:
+        # A merge base from before `.ratchets/` holds the baseline at the old root path.
+        text = _git(root, ["show", f"{base.strip()}:{_baseline.legacy_of(DEFAULT_BASELINE)}"])
     if text is None:
         return set(current["units"])
     try:
@@ -579,13 +604,16 @@ def update_baseline(baseline: Row | None, ledger: list[Row], cfg: Config, allow_
             observed[str(r["unit"])] = max(observed[str(r["unit"])], int(r.get("spawns") or 0))
     out = baseline or empty_baseline()
     notes: list[str] = []
-    units = dict(out["units"])
+    units: dict[str, int] = {}
     for unit, spawns in observed.items():
-        if unit in units:
-            units[unit] = min(units[unit], spawns)
+        if unit in out["units"]:
+            units[unit] = min(out["units"][unit], spawns)
         elif allow_additions:
             units[unit] = spawns
             notes.append(f"added {unit}: {spawns} spawns")
+    # A unit the captured runs no longer report is gone: keeping it would let a module re-created
+    # at that path skip `new-test-value`.
+    notes.extend(f"dropped {unit}: not in the last {len(runs)} run(s)" for unit in sorted(set(out["units"]) - set(units)))
     flakes = len(countable_flakes(ledger, cfg, fixes))
     flake_count = flakes if allow_additions and baseline is None else min(out["flake_count"], flakes)
     hermetic = [u for u in out["hermetic"] if u in observed]
@@ -702,7 +730,9 @@ def main(argv: list[str] | None = None) -> int:
         if cfg is None:
             print("test_value_ratchet: not enabled in .fleet.toml")
             return 0
-        path = root / cfg.baseline
+        path = _baseline.resolve(root, cfg.baseline, DEFAULT_BASELINE, "test_value_ratchet")
+        if path is None:
+            return 2
         baseline = parse_baseline(path.read_text(encoding="utf-8")) if path.exists() else None
         if args.build_map:
             if not args.out:

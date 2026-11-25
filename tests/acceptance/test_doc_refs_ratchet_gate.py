@@ -17,7 +17,7 @@ tests/test_doc_refs_ratchet.py and are not repeated here. The script needs only
 git and the stdlib, so there is no prerequisite to skip over.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_doc_refs_ratchet_gate.py`  (also invoked by tests/run_acceptance.py)
 """

@@ -3,7 +3,7 @@
 Runs the vendored `scripts/doc_refs_ratchet.py` against this repo and fails when
 `README.md`, `CLAUDE.md` or a `docs/**/*.md` page names a repo path, `python -m`
 module or relative link that does not exist and is not in the committed
-`.doc-refs-ratchet-baseline.json`. The output names each doc, the line and the
+`.ratchets/doc-refs.json`. The output names each doc, the line and the
 reference.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason

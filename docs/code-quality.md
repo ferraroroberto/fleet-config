@@ -205,7 +205,7 @@ def _another_copy_check(): ...
 def _docs_scan_check(): ...
 ```
 
-Reference: `scripts/test_value/test_value_ratchet.py`, vendored from project-scaffolding (project-scaffolding's `test-value-ratchet` guide covers adoption); index entry in [ratchets.md](ratchets.md).
+Reference: `scripts/test_value_ratchet.py`, vendored from project-scaffolding (project-scaffolding's `test-value-ratchet` guide covers adoption); index entry in [ratchets.md](ratchets.md).
 
 ### Other ratchets in the family
 
@@ -268,7 +268,7 @@ The manual steps below are what those scripts automate.
    ```toml
    [structure_ratchet]
    enabled  = true
-   baseline = ".structure-ratchet-baseline.json"
+   baseline = ".ratchets/structure.json"
 
    [vendored]
    structure_ratchet = { src = "scripts/structure_ratchet.py", sha = "<source commit>", dest = "scripts/structure_ratchet.py" }

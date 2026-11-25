@@ -3,7 +3,7 @@
 Runs the vendored `scripts/docs_ratchet.py` against this repo and fails when
 `README.md` outgrows 40 KiB or its baselined size, or when `README.md` or
 `docs/**/*.md` gains an issue reference, a dated heading or a changelog heading
-beyond the committed `.docs-ratchet-baseline.json`. A new marker is named by
+beyond the committed `.ratchets/docs.json`. A new marker is named by
 file, kind and line in the output.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason

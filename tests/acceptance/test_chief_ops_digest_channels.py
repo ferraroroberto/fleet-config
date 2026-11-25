@@ -5,7 +5,7 @@ The digest and `rails.repo_occupancy` decide "is this card a worker" through the
 occupancy gate counts as an occupant, and the caller's own card is marked `(you, chief)`.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_chief_ops_digest_channels.py`  (also invoked by tests/run_acceptance.py)
 """

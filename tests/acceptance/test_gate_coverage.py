@@ -12,7 +12,7 @@ Three layers:
      section as its own key.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_gate_coverage.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -23,7 +23,9 @@ import json
 import shutil
 import sys
 import tempfile
+import types
 from pathlib import Path
+from typing import Optional
 from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -61,8 +63,8 @@ _TOML = (
     '[e2e]\nfoo = 1\n'
 )
 _cfg = reader.read_config(_TOML)
-check(_cfg == {"ratchets": {"static_ratchet": ".static-ratchet-baseline.json", "docs_ratchet": "ci/docs.json",
-                            "conventions_ratchet": ".conventions-ratchet-baseline.json"},
+check(_cfg == {"ratchets": {"static_ratchet": ".ratchets/static.json", "docs_ratchet": "ci/docs.json",
+                            "conventions_ratchet": ".ratchets/conventions.json"},
                "rules": ["git-wrapper", "no-window"]},
       f"read_config: enabled tables with default or declared baselines, a disabled one dropped, got {_cfg!r}")
 check(reader.read_config(None) == {"ratchets": {}, "rules": []} and reader.read_config("") == {"ratchets": {}, "rules": []},
@@ -83,7 +85,33 @@ for _bad, _why in (("{nope", "invalid JSON"), (json.dumps({"version": 2, "entrie
                    (_baseline([{"key": "a"}]), "missing count field"), (_baseline([{"key": "a", "count": True}]), "bool count"),
                    (_baseline([{"nokey": 1}]), "entry without a key")):
     check(_raises(lambda b=_bad: reader.count_hits(b, "count")), f"count_hits: {_why} is Unknown, never zero")
-check(reader.default_baseline("dead_code_ratchet") == ".dead-code-ratchet-baseline.json", "default_baseline: the ratchet's own default name")
+check(reader.default_baseline("dead_code_ratchet") == ".ratchets/dead-code.json", "default_baseline: the ratchet's own default name")
+_old = ".static-ratchet-baseline.json"
+
+
+def _fake_git(files: dict[str, str]):
+    def run(args, **_kw):
+        if "ls-tree" in args:
+            return types.SimpleNamespace(returncode=0, stderr="", stdout="".join(p + "\n" for p in args[args.index("--") + 1:] if p in files))
+        return types.SimpleNamespace(returncode=0, stderr="", stdout=files[args[-1].split(":", 1)[1]])
+    return run
+
+
+def _count(files: dict[str, str], path: str) -> Optional[int]:
+    with mock.patch.object(reader.git_run, "run_git", _fake_git(files)):
+        text = reader.read_baseline(Path("."), "origin/main", path, reader.default_baseline("static_ratchet"))
+    return None if text is None else reader.count_hits(text, None)
+
+
+_one, _two = _baseline([{"key": "dup:a"}]), _baseline([{"key": "dup:a"}, {"key": "dup:b"}])
+check(_count({".ratchets/static.json": _two, _old: _one}, ".ratchets/static.json") == 2, "read_baseline: the .ratchets/ copy is read first")
+check(_count({_old: _one}, ".ratchets/static.json") == 1, "read_baseline: a ref from before the move falls back to the old root name")
+check(_count({}, ".ratchets/static.json") is None, "read_baseline: neither home present is absent, so the ratchet counts zero")
+check(_count({_old: _one}, "ci/static.json") is None, "read_baseline: a configured path gets no fallback")
+_old_key = reader.read_config('[static_ratchet]\nenabled = true\nbaseline = ".static-ratchet-baseline.json"\n'
+                              '[docs_ratchet]\nenabled = true\nbaseline = ".static-ratchet-baseline.json"\n')
+check(_old_key["ratchets"] == {"static_ratchet": ".ratchets/static.json", "docs_ratchet": ".static-ratchet-baseline.json"},
+      f"read_config: a key naming the table's own old root default reads as the new default, any other path as written, got {_old_key!r}")
 
 
 # ---- 2. the section ----
@@ -118,10 +146,10 @@ check(section.parse_state("\n".join(_sec["state_lines"])) == {"alpha": {"ratchet
 _same = section.build(_ENTRIES, "\n".join(_sec["state_lines"]), "2026-10-31")
 check("ratchets 2 (±0)  rules 1 (±0)  hits 5 (±0)" in _same["lines"][0], "build: an unchanged repo shows ±0")
 _MIXED = {"repo": "echo", "state": "adopted", "hits": {"docs_ratchet": 7}, "rules": [],
-          "unknown": {"comment_ratchet": ".comment-ratchet-baseline.json: baseline is not an object with version 1"}}
+          "unknown": {"comment_ratchet": ".ratchets/comment.json: baseline is not an object with version 1"}}
 _msec = section.build([_MIXED], "gate:echo: ratchets=2 rules=0 hits=7\n", "2026-10-24")
 check(_msec["lines"][0] == "- echo  ratchets 2 (±0)  rules 0 (±0)  hits 7 (partial)  [comment unknown "
-                           "(.comment-ratchet-baseline.json: baseline is not an object with version 1), docs 7]",
+                           "(.ratchets/comment.json: baseline is not an object with version 1), docs 7]",
       f"build: an uncountable table is its own unknown cell beside the counted ones, its hit change withheld, got {_msec['lines'][0]!r}")
 check(_msec["state_lines"][1] == "gate:echo: ratchets=2 rules=0 hits=unknown" and section.parse_state(_msec["state_lines"][1]) == {},
       f"build: a partial reading stores no hit count, so next week shows (new) not a fake delta, got {_msec['state_lines'][1]!r}")
@@ -149,6 +177,7 @@ def _make_repo(root: Path, name: str, files: dict[str, str]) -> Path:
     run_git(root, "clone", "-q", str(up), str(work), check=check)
     if files:
         for rel, text in files.items():
+            (up / rel).parent.mkdir(parents=True, exist_ok=True)
             (up / rel).write_text(text, encoding="utf-8")
             run_git(up, "add", rel, check=check)
         run_git(up, "commit", "-q", "-m", "adopt", check=check)
@@ -163,20 +192,20 @@ def _make_repo(root: Path, name: str, files: dict[str, str]) -> Path:
 _tmp = Path(tempfile.mkdtemp(prefix="gate_coverage_"))
 try:
     _make_repo(_tmp, "alpha", {".fleet.toml": "[static_ratchet]\nenabled = true\n[comment_ratchet]\nenabled = true\n",
-                               ".static-ratchet-baseline.json": _baseline([{"key": "dup:a"}, {"key": "dup:b"}])})
+                               ".ratchets/static.json": _baseline([{"key": "dup:a"}, {"key": "dup:b"}])})
     _make_repo(_tmp, "beta", {})
     _make_repo(_tmp, "gamma", {".fleet.toml": "[static_ratchet]\nenabled = true\n[docs_ratchet]\nenabled = true\n",
-                               ".static-ratchet-baseline.json": "{nope",
-                               ".docs-ratchet-baseline.json": _baseline([{"key": "a", "markers": ["x", "y", "z"]}])})
+                               ".ratchets/static.json": "{nope",
+                               ".ratchets/docs.json": _baseline([{"key": "a", "markers": ["x", "y", "z"]}])})
     _make_repo(_tmp, "delta", {".fleet.toml": "[static_ratchet\n"})
     with mock.patch.object(fas.fleet_repo_scan, "ignored_repos", return_value=frozenset()):
         _report = fas.gate_report(str(_tmp), None, load_state=lambda: "gate:alpha: ratchets=2 rules=0 hits=1\n")
-        _by = {ln.split()[1]: ln for ln in _report["lines"][:4]}
+        _by = {ln.split()[1]: ln for ln in _report["lines"][:7]}
         check(_by["alpha"] == "- alpha  ratchets 2 (±0)  rules 0 (±0)  hits 2 (+1)  [comment 0, static 2]",
               f"gate_report: alpha read from origin/main while the working tree disables it; a missing baseline is 0, got {_by['alpha']!r}")
         check(_by["beta"] == "- beta  not adopted", f"gate_report: no .fleet.toml -> not adopted, got {_by['beta']!r}")
         check(_by["gamma"].startswith("- gamma  ratchets 2 (new)  rules 0 (new)  hits 3 (partial)  [docs 3, static unknown "
-                                      "(.static-ratchet-baseline.json: baseline is not valid JSON"),
+                                      "(.ratchets/static.json: baseline is not valid JSON"),
               f"gate_report: an unparseable baseline marks only its table unknown, docs still counts, got {_by['gamma']!r}")
         check(_by["delta"].startswith("- delta  unknown (") and "does not parse" in _by["delta"],
               f"gate_report: an unparseable .fleet.toml still makes the whole repo unknown, got {_by['delta']!r}")

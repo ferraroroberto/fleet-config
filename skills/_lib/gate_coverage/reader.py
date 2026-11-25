@@ -9,7 +9,8 @@ counted makes only its own table unknown, with its reason in `unknown`; the othe
 tables still count.
 
 An enabled ratchet whose baseline file is absent counts zero hits: the ratchet
-itself reads a missing baseline as empty.
+itself reads a missing baseline as empty. A baseline is read at `.ratchets/<name>.json`,
+falling back to the old root name `.<name>-ratchet-baseline.json` on a ref from before the move.
 """
 
 from __future__ import annotations
@@ -22,7 +23,14 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
-from structure_debt.baseline import BASELINE_VERSION, Unknown, read_ref_file  # noqa: E402
+from structure_debt.baseline import (  # noqa: E402
+    BASELINE_FOLDER,
+    BASELINE_VERSION,
+    Unknown,
+    configured_baseline,
+    read_baseline,
+    read_ref_file,
+)
 
 # Each vendored ratchet's `.fleet.toml` table and the baseline-entry field that holds its hits.
 # None: every entry is one hit (a duplicate block, an unused import, an oversized file).
@@ -39,8 +47,8 @@ RATCHETS: dict[str, Optional[str]] = {
 
 
 def default_baseline(table: str) -> str:
-    """The ratchet's own default baseline path: `static_ratchet` -> `.static-ratchet-baseline.json`."""
-    return "." + table.replace("_", "-") + "-baseline.json"
+    """The ratchet's own default baseline path: `dead_code_ratchet` -> `.ratchets/dead-code.json`."""
+    return f"{BASELINE_FOLDER}/{table.removesuffix('_ratchet').replace('_', '-')}.json"
 
 
 def read_config(toml_text: Optional[str]) -> dict:
@@ -62,7 +70,7 @@ def read_config(toml_text: Optional[str]) -> dict:
             raise Unknown(f"{fleet_toml.FILENAME} [{table}] is not a table")
         if entry.get("enabled") is not True:
             continue
-        path = entry.get("baseline", default_baseline(table))
+        path = configured_baseline(entry.get("baseline", default_baseline(table)), default_baseline(table))
         if not isinstance(path, str):
             raise Unknown(f"{fleet_toml.FILENAME} [{table}] baseline is not a string")
         ratchets[table] = path
@@ -122,7 +130,7 @@ def read_repo(repo_path: str) -> dict:
         hits: dict[str, int] = {}
         unknown: dict[str, str] = {}
         for table, path in config["ratchets"].items():
-            text = read_ref_file(repo, ref, path)
+            text = read_baseline(repo, ref, path, default_baseline(table))
             try:
                 hits[table] = 0 if text is None else count_hits(text, RATCHETS[table])
             except Unknown as exc:

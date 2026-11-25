@@ -9,7 +9,7 @@ A real loopback server stands in for the launcher:
   - success output and an HTTP error status keep their existing shape.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_chief_ops_transport.py`  (also invoked by tests/run_acceptance.py)
 """
