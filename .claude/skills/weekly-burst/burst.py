@@ -38,7 +38,7 @@ from unit_history import ledger, weekly_burst  # noqa: E402
 
 KEEP_RUNS = weekly_burst.KEEP_RUNS
 GATE_EVIDENCE = REPO / "skills" / "_lib" / "gate_evidence.py"
-TEST_VALUE = REPO / "scripts" / "test_value" / "test_value_ratchet.py"
+TEST_VALUE = REPO / "scripts" / "test_value_ratchet.py"
 _prune = weekly_burst.prune
 
 

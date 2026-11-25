@@ -1,4 +1,4 @@
-"""Tests for the test-value ratchet (scripts/test_value/test_value_ratchet.py, fleet-config#2120).
+"""Tests for the test-value ratchet (scripts/test_value_ratchet.py, fleet-config#2120).
 
 Each rule is driven through the script's own `main()` against a throwaway git repo, a fake unit ledger
 and fake live reports:
@@ -33,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-sys.path[:0] = [str(REPO / "scripts" / "test_value"), str(REPO / "tests" / "_lib")]
+sys.path[:0] = [str(REPO / "scripts"), str(REPO / "tests" / "_lib")]
 import test_value_ratchet as tvr  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
 from git_fixtures import init_repo  # noqa: E402
@@ -79,7 +79,8 @@ def make_repo(tmp: Path) -> Path:
     """`main` holds a baseline with `_old_unit_check`; the checked-out `feature` branch adds tests."""
     repo = init_repo()
     (repo / ".fleet.toml").write_text(CONFIG, encoding="utf-8")
-    (repo / ".test-value-ratchet-baseline.json").write_text(json.dumps(
+    (repo / ".ratchets").mkdir(exist_ok=True)
+    (repo / ".ratchets" / "test-value.json").write_text(json.dumps(
         {"units": {"_old_unit_check": 5}, "flake_count": 0, "flake_max_age_days": 14, "hermetic": []}), encoding="utf-8")
     (repo / "fake_runner.py").write_text(FAKE_RUNNER, encoding="utf-8")
     (repo / "src").mkdir()
@@ -110,7 +111,7 @@ def run(repo: Path, *args: str) -> tuple[int, str]:
 def set_baseline(repo: Path, **fields) -> None:
     data = {"units": {}, "flake_count": 0, "flake_max_age_days": 14, "hermetic": []}
     data.update(fields)
-    (repo / ".test-value-ratchet-baseline.json").write_text(json.dumps(data), encoding="utf-8")
+    (repo / ".ratchets" / "test-value.json").write_text(json.dumps(data), encoding="utf-8")
 
 
 tmp = Path(tempfile.mkdtemp(prefix="test_value_"))
@@ -213,10 +214,10 @@ try:
                          unit_row("c", "pass", "t1", stamp(1), spawns=3),
                          {"kind": "run", "run_id": "t1-" + stamp(1), "label": "gate", "utc": stamp(1)}])
     run(repo, "--update-baseline", "--ledger", str(ledger))
-    got = json.loads((repo / ".test-value-ratchet-baseline.json").read_text(encoding="utf-8"))["units"]
+    got = json.loads((repo / ".ratchets" / "test-value.json").read_text(encoding="utf-8"))["units"]
     check(got == {"a": 4, "b": 2}, f"--update-baseline shrinks an entry, never raises one, adds nothing ({got})")
     run(repo, "--update-baseline", "--allow-additions", "--ledger", str(ledger))
-    got = json.loads((repo / ".test-value-ratchet-baseline.json").read_text(encoding="utf-8"))["units"]
+    got = json.loads((repo / ".ratchets" / "test-value.json").read_text(encoding="utf-8"))["units"]
     check(got == {"a": 4, "b": 2, "c": 3}, f"--allow-additions records a new unit ({got})")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

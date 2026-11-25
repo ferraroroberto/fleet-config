@@ -67,7 +67,8 @@ def make_repo() -> Path:
     (repo / "IGNORED_MARKER").write_text("only the working tree has this\n", encoding="utf-8")
     (repo / "src.py").write_text("VALUE = 1\n", encoding="utf-8")
     (repo / ".fleet.toml").write_text("[test_value_ratchet]\nenabled = true\n", encoding="utf-8")
-    (repo / ".test-value-ratchet-baseline.json").write_text('{"units": {}}\n', encoding="utf-8")
+    (repo / ".ratchets").mkdir()
+    (repo / ".ratchets" / "test-value.json").write_text('{"units": {}}\n', encoding="utf-8")
     for cmd in (["add", "-A"], ["commit", "-q", "-m", "fake dispatchers"]):
         subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
     return repo
@@ -121,7 +122,7 @@ try:
           f"medians come from the gate history ({summary['medians']})")
     check(all((STATE / "weekly-burst" / leg["log"]).is_file() for leg in summary["legs"]),
           "each leg's log is kept in the state dir")
-    check(not [p for p in repo.glob("*.json") if p.name != ".test-value-ratchet-baseline.json"] and not (repo / "weekly-burst").exists(), "nothing is written next to the code")
+    check(not list(repo.glob("*.json")) and not (repo / "weekly-burst").exists(), "nothing is written next to the code")
 
     # ---- the hermetic legs ran in a detached clone: the ignored file is not there ----
     in_tree = {r["unit"] for r in ledger.load(label="weekly-units") if r.get("kind") == "unit"}

@@ -11,7 +11,7 @@ Three layers:
      with no baseline is `not adopted`; one with an unparseable baseline is `unknown`.
 
 Lives under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_structure_debt.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -22,6 +22,7 @@ import json
 import shutil
 import sys
 import tempfile
+import types
 from pathlib import Path
 from unittest import mock
 
@@ -129,9 +130,45 @@ check(_round == {"alpha": {"files": 2, "fns": 1, "dirs": 1, "excess": 730},
       "build: the stored state lines parse back to this run's readings")
 
 
+# ---- 3a. where the baseline is looked for ----
+
+
+class _FakeGit:
+    """`git ls-tree` / `git show` over a dict of path -> text, so the lookup order needs no repo."""
+
+    def __init__(self, files: dict[str, str]) -> None:
+        self.files = files
+
+    def __call__(self, args, **_kw):
+        out = types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        if "ls-tree" in args:
+            out.stdout = "".join(p + "\n" for p in args[args.index("--") + 1:] if p in self.files)
+        else:
+            out.stdout = self.files[args[-1].split(":", 1)[1]]
+        return out
+
+
+def _read(files: dict[str, str], path: str) -> str | None:
+    with mock.patch.object(baseline.git_run, "run_git", _FakeGit(files)):
+        return baseline.read_baseline(Path("."), "origin/main", path, baseline.DEFAULT_BASELINE)
+
+
+_OLD = ".structure-ratchet-baseline.json"
+check(baseline.DEFAULT_BASELINE == ".ratchets/structure.json", "the default baseline is in .ratchets/")
+check(_read({".ratchets/structure.json": "new", _OLD: "old"}, baseline.DEFAULT_BASELINE) == "new",
+      "read_baseline: the .ratchets/ copy wins when both exist")
+check(_read({_OLD: "old"}, baseline.DEFAULT_BASELINE) == "old", "read_baseline: a ref from before the move falls back to the old root name")
+check(_read({}, baseline.DEFAULT_BASELINE) is None, "read_baseline: neither home present is absent, not empty")
+check(_read({_OLD: "old"}, "ci/structure.json") is None, "read_baseline: a configured path gets no fallback")
+check(baseline.configured_baseline(_OLD, baseline.DEFAULT_BASELINE) == baseline.DEFAULT_BASELINE
+      and baseline.configured_baseline("ci/structure.json", baseline.DEFAULT_BASELINE) == "ci/structure.json",
+      "configured_baseline: the old root default means the new default, any other path stays")
+
+
 # ---- 3. structure_report on real git repos: the default branch is what is read ----
 
 def _commit(repo: Path, name: str, text: str, message: str) -> None:
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
     (repo / name).write_text(text, encoding="utf-8")
     run_git(repo, "add", name, check=check)
     run_git(repo, "commit", "-q", "-m", message, check=check)
@@ -153,6 +190,7 @@ def _make_repo(root: Path, name: str, origin_baseline: str | None) -> Path:
         run_git(work, "fetch", "-q", "origin", check=check)
     # The checkout disagrees with origin: another branch, and a local file that must not be read.
     run_git(work, "checkout", "-q", "-b", "feature", check=check)
+    (work / baseline.DEFAULT_BASELINE).parent.mkdir(exist_ok=True)
     (work / baseline.DEFAULT_BASELINE).write_text(_baseline_text([]), encoding="utf-8")
     run_git(work, "remote", "set-url", "origin", f"https://github.com/ferraroroberto/{name}.git", check=check)
     return work
@@ -165,7 +203,7 @@ try:
     _make_repo(_tmp, "gamma", "{nope")
     with mock.patch.object(fas.fleet_repo_scan, "ignored_repos", return_value=frozenset()):
         _report = fas.structure_report(str(_tmp), None, load_state=lambda: _PRIOR)
-        _by = {ln.split()[1]: ln for ln in _report["lines"][:3]}
+        _by = {ln.split()[1]: ln for ln in _report["lines"][:6]}
         check(_by["alpha"] == "- alpha  files 2 (+1)  fns 1 (±0)  dirs 1 (±0)  excess 730 (+630)",
               f"structure_report: alpha counted from origin/main while the working tree holds an empty baseline, got {_by['alpha']!r}")
         check(_by["beta"] == "- beta  not adopted", f"structure_report: no baseline -> not adopted, got {_by['beta']!r}")

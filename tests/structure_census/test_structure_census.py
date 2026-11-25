@@ -87,8 +87,8 @@ _tmp = throwaway_dir("structure_census_")
 _up, _work = make_upstream_and_clone(_tmp, check)
 _commit(_up, {"src/big.py": _BIG}, "2026-01-01T00:00:00Z", "big file")
 _commit(_up, {"src/big.py": "x = 1\n", ".fleet.toml": _TOML, "scripts/vendored_tool.py": _NEAR, "src/near.py": _NEAR,
-              ".structure-ratchet-baseline.json": json.dumps({"version": 1, "entries": []}),
-              ".comment-ratchet-baseline.json": "{}"},
+              ".ratchets/structure.json": json.dumps({"version": 1, "entries": []}),
+              ".ratchets/comment.json": "{}"},
         "2026-06-01T00:00:00Z", "split and adopt")
 run_git(_work, "fetch", "-q", "origin", check=check)
 (_work / "src" / "local_only.py").parent.mkdir(exist_ok=True)

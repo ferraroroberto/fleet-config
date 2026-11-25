@@ -2,7 +2,7 @@
 
 Runs the vendored `scripts/structure_ratchet.py` against this repo and fails when
 a file, a function or a flat directory outgrows its limit and is new or above its
-entry in the committed `.structure-ratchet-baseline.json`, or when the root
+entry in the committed `.ratchets/structure.json`, or when the root
 folders do not match the `shape` and `extra_roots` declared in `.fleet.toml`. The
 output names the finding, the rule and where the code goes instead.
 

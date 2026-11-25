@@ -10,7 +10,7 @@ Two layers, both pure (no `gh`, no network, no git):
 
 The end-to-end gate on real git branches lives in tests/audit/test_audit_issue.py. This file is
 under tests/acceptance/ because the flat tests/ directory is baselined in
-`.structure-ratchet-baseline.json` and takes no new module.
+`.ratchets/structure.json` and takes no new module.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/acceptance/test_structural_scope.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -75,6 +75,10 @@ check(scope.scaffold_owned("app/webapp/static/_vendored/nav/nav.js", _CATALOG, s
 check(not scope.scaffold_owned("app/webapp/static/_vendored/navigator.js", _CATALOG, set()),
       "scaffold_owned: a sibling path that only shares a prefix is not the component")
 check(scope.scaffold_owned(".fleet.toml", _CATALOG, {"no-window"}), "scaffold_owned: switching on an existing rule")
+for _home in (".ratchets/conventions.json", ".conventions-ratchet-baseline.json"):
+    check(scope.scaffold_owned(_home, _CATALOG, {"no-window"}), f"scaffold_owned: switching on an existing rule via {_home}")
+check(not scope.scaffold_owned(".ratchets/static.json", _CATALOG, {"no-window"}),
+      "scaffold_owned: another ratchet's baseline does not switch a conventions rule")
 check(not scope.scaffold_owned(".fleet.toml", _CATALOG, {"no-raw-sql"}), "scaffold_owned: a rule the scaffold does not have is not owned")
 check(not scope.scaffold_owned("tests/test_x.py", _CATALOG, {"no-window"}),
       "scaffold_owned: a switched-on rule does not make an unrelated check owned")

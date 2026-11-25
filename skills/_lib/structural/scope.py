@@ -28,7 +28,12 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
-from structure_debt.baseline import Unknown, read_ref_file  # noqa: E402
+from structure_debt.baseline import (  # noqa: E402
+    Unknown,
+    default_baseline,
+    legacy_baseline,
+    read_ref_file,
+)
 
 # A `not encodable` or `repo-specific` reason shorter than this is a shrug, not a reason.
 MIN_NOT_ENCODABLE_WORDS = 8
@@ -36,7 +41,8 @@ MIN_SCOPE_WHY_WORDS = 8
 # The fleet sibling layout: this file is <automation>/fleet-config/skills/_lib/structural/scope.py.
 DEFAULT_SCAFFOLD = Path(__file__).resolve().parents[4] / "project-scaffolding"
 CONVENTIONS_SCRIPT = "scripts/conventions_ratchet.py"
-CONVENTIONS_BASELINE = ".conventions-ratchet-baseline.json"
+# Both homes of the conventions baseline: a diff from before the move to `.ratchets/` still switches a rule.
+CONVENTIONS_BASELINES = (default_baseline("conventions"), legacy_baseline(default_baseline("conventions")))
 
 _DECLARATION_RE = re.compile(r"^[ \t]*Structural-check:[ \t]*(.*?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
 _NOT_ENCODABLE_RE = re.compile(r"^not[ \t]+encodable[ \t]*:?[ \t]*(.*)$", re.IGNORECASE)
@@ -123,7 +129,7 @@ def scaffold_owned(path: str, catalog: dict, switched_on: set[str]) -> bool:
     """A published component (the path or anything under it), or an existing conventions rule switched on."""
     if any(path == src or path.startswith(src.rstrip("/") + "/") for src in catalog["components"]):
         return True
-    switches_rule = path == fleet_toml.FILENAME or path.endswith(CONVENTIONS_BASELINE)
+    switches_rule = path == fleet_toml.FILENAME or path.endswith(CONVENTIONS_BASELINES)
     return switches_rule and bool(switched_on) and switched_on <= set(catalog["rules"])
 
 

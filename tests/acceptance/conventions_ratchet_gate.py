@@ -3,7 +3,7 @@
 Runs the vendored `scripts/conventions_ratchet.py` against this repo and fails when
 a file's hit count for an enabled rule (`no-window`, `logging-not-print`,
 `no-drive-path`, `git-wrapper`, `subprocess-timeout`) rises above the committed
-`.conventions-ratchet-baseline.json`. The output names each file, the line and the
+`.ratchets/conventions.json`. The output names each file, the line and the
 rule.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason

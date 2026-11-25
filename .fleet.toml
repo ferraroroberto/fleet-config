@@ -21,27 +21,27 @@ depends_on = ["project-scaffolding", "local-llm-hub", "app-launcher"]
 # [vendored] -- components copied byte-for-byte from project-scaffolding, with the
 # scaffold commit each came from. Re-vendor through /propagate-vendored, never by hand.
 [vendored]
-static_ratchet = { src = "scripts/static_ratchet.py", sha = "fe8cc1bdbd038ed65947186248df13072eceb25a", dest = "scripts/static_ratchet.py" }
-docs_ratchet   = { src = "scripts/docs_ratchet.py", sha = "8f15c49560adbc076d24a8a63dd671868ffa7a4e", dest = "scripts/docs_ratchet.py" }
-structure_ratchet = { src = "scripts/structure_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/structure_ratchet.py" }
+static_ratchet = { src = "scripts/static_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/static_ratchet.py" }
+docs_ratchet   = { src = "scripts/docs_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/docs_ratchet.py" }
+structure_ratchet = { src = "scripts/structure_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/structure_ratchet.py" }
 structure_layout = { src = "scripts/structure_layout.py", sha = "a04abc7b3af872cbac974401dd0945587eac6cef", dest = "scripts/structure_layout.py" }
 structure_band = { src = "scripts/structure_band.py", sha = "3b708fd3c54ab7b93b08d489406c405762c83c41", dest = "scripts/structure_band.py" }
-comment_ratchet = { src = "scripts/comment_ratchet.py", sha = "1ed07ddb5002d4513adf0ce45f1bfaf68f3acc32", dest = "scripts/comment_ratchet.py" }
-instruction_ratchet = { src = "scripts/instruction_ratchet.py", sha = "a04abc7b3af872cbac974401dd0945587eac6cef", dest = "scripts/instruction_ratchet.py" }
-doc_refs_ratchet = { src = "scripts/doc_refs_ratchet.py", sha = "a68f6e49393f0ef0b94ab3c79f4338a50d89fa49", dest = "scripts/doc_refs_ratchet.py" }
-dead_code_ratchet = { src = "scripts/dead_code_ratchet.py", sha = "4d0b0ff30e23eb95c73c4b0b1517ec6a43d3a836", dest = "scripts/dead_code_ratchet.py" }
-conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "3292ebd1981706edcf29a32bd0854a04a6eefe1e", dest = "scripts/conventions_ratchet.py" }
-conventions_readers = { src = "scripts/conventions_readers.py", sha = "3292ebd1981706edcf29a32bd0854a04a6eefe1e", dest = "scripts/conventions_readers.py" }
+comment_ratchet = { src = "scripts/comment_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/comment_ratchet.py" }
+instruction_ratchet = { src = "scripts/instruction_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/instruction_ratchet.py" }
+doc_refs_ratchet = { src = "scripts/doc_refs_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/doc_refs_ratchet.py" }
+dead_code_ratchet = { src = "scripts/dead_code_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/dead_code_ratchet.py" }
+conventions_ratchet = { src = "scripts/conventions_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/conventions_ratchet.py" }
+conventions_readers = { src = "scripts/conventions_readers.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/conventions_readers.py" }
 conventions_state = { src = "scripts/conventions_state.py", sha = "4d0b0ff30e23eb95c73c4b0b1517ec6a43d3a836", dest = "scripts/conventions_state.py" }
 synthetic_host = { src = "tests/host/_synthetic_host.py", sha = "160b54e2e0bcf76541d0a5f9bb4d6265dd493c31", dest = "tests/host/_synthetic_host.py" }
 paced_browser = { src = "tests/e2e/_paced_browser.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "tests/e2e/_paced_browser.py" }
-runtime_write_ratchet = { src = "scripts/runtime_write_ratchet.py", sha = "4a06ca84fc9c5005d4be7fa505c9d0e7c0472dba", dest = "scripts/runtime_write_ratchet.py" }
+runtime_write_ratchet = { src = "scripts/runtime_write_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/runtime_write_ratchet.py" }
 runtime_write_resolve = { src = "scripts/runtime_write_resolve.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "scripts/runtime_write_resolve.py" }
-request_budget_ratchet = { src = "scripts/request_budget_ratchet.py", sha = "564864cb95a8b416c16d1a1e1e9f31b9d5b2ec8e", dest = "scripts/request_budget_ratchet.py" }
+request_budget_ratchet = { src = "scripts/request_budget_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/request_budget_ratchet.py" }
 request_budget_scan = { src = "scripts/request_budget_scan.py", sha = "5ba99b0a04b1b5d7b3689f8f7a59bd3fe625a9bc", dest = "scripts/request_budget_scan.py" }
 instruction_frontmatter = { src = "scripts/instruction_frontmatter.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_frontmatter.py" }
 instruction_repeats = { src = "scripts/instruction_repeats.py", sha = "e55de9619b9625c5499e1b9077350f9860e6037b", dest = "scripts/instruction_repeats.py" }
-test_value_ratchet = { src = "scripts/test_value_ratchet.py", sha = "ce64203b017ba636c82737ee7f768c9ef6f422cd", dest = "scripts/test_value/test_value_ratchet.py" }
+test_value_ratchet = { src = "scripts/test_value_ratchet.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/test_value_ratchet.py" }
 unit_ledger = { src = "scripts/unit_ledger.py", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/unit_ledger.py" }
 spawn_probe = { src = "scripts/spawn_probe", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/spawn_probe" }
 weekly_burst = { src = "scripts/weekly_burst.py", sha = "d775560589d869555cd021475145f7e175a274d5", dest = "skills/_lib/unit_history/weekly_burst.py" }
@@ -50,9 +50,11 @@ weekly_burst = { src = "scripts/weekly_burst.py", sha = "d775560589d869555cd0214
 # What each fails on, its gate, options, baseline size and scaffold doc, and the
 # conventions rules that stay off and why: docs/ratchets.md, which
 # tests/acceptance/docs_index/ holds to these tables.
+ratchet_baseline = { src = "scripts/ratchet_baseline.py", sha = "48db2132dab2dfc38b6154948ca17fd1f4b9232f", dest = "scripts/ratchet_baseline.py" }
+
 [static_ratchet]
 enabled  = true
-baseline = ".static-ratchet-baseline.json"
+baseline = ".ratchets/static.json"
 # The hooks-tier copy of skills/_lib/fleet_core/runtime_files.py: hooks must import with only their own
 # directory on sys.path, so the guard is repeated there, and tests/repo/test_runtime_files.py holds the
 # shared functions to the same code. The skills copy is scanned.
@@ -60,15 +62,15 @@ exclude  = ["hooks/runtime_files/**"]
 
 [docs_ratchet]
 enabled  = true
-baseline = ".docs-ratchet-baseline.json"
+baseline = ".ratchets/docs.json"
 
 [structure_ratchet]
 enabled  = true
-baseline = ".structure-ratchet-baseline.json"
+baseline = ".ratchets/structure.json"
 
 [comment_ratchet]
 enabled         = true
-baseline        = ".comment-ratchet-baseline.json"
+baseline        = ".ratchets/comment.json"
 docstrings      = true
 history_phrases = true
 # A dated incident opener ("On 2026-09-09 ..."), a "Take N" or "first attempt" retelling, and a
@@ -82,7 +84,7 @@ extra_history_patterns = [
 
 [instruction_ratchet]
 enabled     = true
-baseline    = ".instruction-ratchet-baseline.json"
+baseline    = ".ratchets/instruction.json"
 skill_dirs  = ["skills", ".claude/skills"]
 extra_files = ["global-CLAUDE.md"]
 ci_expectations     = true
@@ -93,7 +95,7 @@ repeated_text_words = 12
 [doc_refs_ratchet]
 enabled  = true
 trees    = true
-baseline = ".doc-refs-ratchet-baseline.json"
+baseline = ".ratchets/doc-refs.json"
 # Intentional pointers: files other repos or tools own (Pi's installed docs, a Codex
 # method name, the hub and scaffold docs, the adopter repos' e2e, gate and site preview
 # files) and a sample path quoted from a transcript.
@@ -109,11 +111,11 @@ allow_refs = [
 
 [dead_code_ratchet]
 enabled  = true
-baseline = ".dead-code-ratchet-baseline.json"
+baseline = ".ratchets/dead-code.json"
 
 [conventions_ratchet]
 enabled      = true
-baseline     = ".conventions-ratchet-baseline.json"
+baseline     = ".ratchets/conventions.json"
 rules        = ["no-window", "logging-not-print", "no-drive-path", "git-wrapper", "subprocess-timeout", "must-use", "state-literal", "state-set-repeat", "state-write", "browser-per-iteration", "path-sep", "host-identity"]
 # tests/ is exempt from the NO_WINDOW rule (CLAUDE.md). The exemption is scoped to that one
 # rule, so `host-identity`, which reads test modules only, still scans tests/.
@@ -194,7 +196,7 @@ derive = "leg_status"
 
 [runtime_write_ratchet]
 enabled      = true
-baseline     = ".runtime-write-ratchet-baseline.json"
+baseline     = ".ratchets/runtime-write.json"
 # The repo-scope skills' Python lives under .claude/skills/, beside hooks/ and skills/.
 code_folders = ["hooks", "skills", "scripts", ".claude"]
 # hooks/state is the live hooks-state folder ~/.claude/hooks resolves to: running sessions write it, not the
@@ -210,7 +212,7 @@ safe_calls   = ["_dedup_file", "_marker_path", "audit_record_path", "data_dir", 
 # coverage map, all passed in as arguments by tests/acceptance/test_value/test_value_ratchet_gate.py.
 [test_value_ratchet]
 enabled        = true
-baseline       = ".test-value-ratchet-baseline.json"
+baseline       = ".ratchets/test-value.json"
 unit_roots     = ["tests"]
 unit_runner    = ["tests/run_acceptance.py"]
 base_ref       = "origin/main"
@@ -225,7 +227,7 @@ host_unit      = "_test_value_ratchet_check"
 # which needs handler_dirs) is off and RB6 (the timing middleware) has no app to read.
 [request_budget_ratchet]
 enabled       = true
-baseline      = ".request-budget-ratchet-baseline.json"
+baseline      = ".ratchets/request-budget.json"
 server_paths  = ["*.py", "hooks/**", "skills/**", ".claude/**"]
 browser_paths = ["hooks/**", "skills/**", ".claude/**"]
 

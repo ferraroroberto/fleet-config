@@ -2,7 +2,7 @@
 
 Runs the vendored `scripts/comment_ratchet.py` against this repo and fails when a
 file's count of `#NNN` issue references inside comments rises above its entry in
-the committed `.comment-ratchet-baseline.json`, or a file not in the baseline
+the committed `.ratchets/comment.json`, or a file not in the baseline
 carries any. The output names each file with every reference and its line.
 
 Deliberately its own check, not a row in `standalone_dispatch`, for the reason
