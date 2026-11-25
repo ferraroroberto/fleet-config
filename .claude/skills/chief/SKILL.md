@@ -196,8 +196,9 @@ watchdog as not a stall, suspect one slow tool call, then sample the
 
 ## Reaching the launcher (auth story)
 
-The webapp is `https://127.0.0.1:8445` — self-signed cert, so **always
-`curl -sk`**. The session-host is plain `http://127.0.0.1:8446` (avoid it;
+The webapp is `127.0.0.1:8445`, HTTPS with a self-signed cert unless the
+owner switched it to plain HTTP — `chief_ops.py` follows whichever it serves;
+a raw call uses **`curl -sk https://…`** (or `http://` after a switch). The session-host is plain `http://127.0.0.1:8446` (avoid it;
 the webapp API is the supported surface). **Loopback bypasses all auth** —
 `BearerTokenMiddleware` short-circuits for 127.0.0.1/::1/localhost,
 including the passkey-gated terminal endpoints — so you never need a token
@@ -305,7 +306,8 @@ just the launcher call):
   alluding to it.
 - Stop a worker: `chief_ops.py stop <sid>` (quit by default; add `--kill`
   only on an explicit "kill/force" ask). A slow launcher prints `UNCONFIRMED=timeout ...` (exit 1;
-  re-read before retrying), a dead one `UNREACHABLE=...` (exit 2); `stop` after a timeout re-reads
+  re-read before retrying), a dead one `UNREACHABLE=...` (exit 2), a write that hit the launcher mid-switch
+  between HTTP and HTTPS `WRONG_SCHEME=...` (exit 2; not sent, just retry); `stop` after a timeout re-reads
   the board: `STOPPED` or `STILL_LIVE`. A confirmed stop and `plan set --status merged|parked`
   drop the lane's plan row (`PLAN_LANE=…`); a `drain` `PLAN_LANE_STALE=` row: `plan drop-lane`.
 - Free-text goal (no issue yet): the launcher no longer takes free text

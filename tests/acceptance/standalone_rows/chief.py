@@ -62,6 +62,11 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "say/stop prefix resolution, say --verify's bounded resend after a "
      "transport failure (exact-text transcript check before every resend), "
      "the wake doorbell and context + self-compact work with the launcher stubbed"),
+    ("chief_launcher_scheme", "chief_ops/test_launcher_scheme.py",
+     "chief verbs follow the launcher's HTTP or HTTPS setting -- local fake "
+     "plain and TLS servers, a stale-scheme read retried once, a dropped "
+     "write reported WRONG_SCHEME and never resent, refused vs dropped kept "
+     "apart"),
     ("chief_drain", "chief_ops/test_drain.py",
      "chief_ops drain -- the auto_drain switch (off, missing and unreadable "
      "do nothing), every intake exclusion, dry-run writing nothing, and "

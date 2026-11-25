@@ -3,25 +3,27 @@ plus the one `gh issue view` per issue ref.
 
 All HTTP goes through `_request`, which calls `assert_loopback` first: the tool
 can never address anything but this PC's launcher, even with a `--base-url`
-override. stdlib `urllib` only, never a `curl` subprocess. A transport failure
-is reported as its own state by each wrapper, never folded into a verdict.
+override. The scheme in a base URL is only a hint: every call goes over
+whichever scheme the launcher's port serves (`launcher_scheme.py`). stdlib
+`urllib` only, never a `curl` subprocess. A transport failure is reported as
+its own state by each wrapper, never folded into a verdict.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
-import ssl
 import subprocess
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 import git_run
 
-from . import rails
+from . import launcher_scheme, rails
 
+# The scheme here is a hint; `launcher_scheme.resolve` swaps in the one the port serves.
 DEFAULT_BASE_URL = "https://127.0.0.1:8445"
 DEFAULT_OWNER = "ferraroroberto"
 
@@ -61,12 +63,20 @@ def transport_failure(exc: BaseException) -> Optional[Tuple[str, int]]:
     None for anything else (an HTTP status, a bad body) so it keeps its own
     handling.
 
-    Two distinct states, never folded together: `UNCONFIRMED` -- the launcher
-    stayed silent past the budget, so a write may still have landed -- and
-    `UNREACHABLE` -- the connection itself failed, so nothing was sent.
+    Distinct states, never folded together: `UNCONFIRMED` -- the launcher
+    stayed silent past the budget or dropped the connection, so a write may
+    still have landed -- `UNREACHABLE` -- the connection itself failed, so
+    nothing was sent -- and `WRONG_SCHEME` -- the port answered in the other
+    protocol, so the request was never handled and the next call uses the
+    scheme it serves. An HTTP status is the launcher refusing, handled by
+    each wrapper.
     """
     if is_timeout(exc):
         return f"UNCONFIRMED=timeout after {REQUEST_TIMEOUT:g}s", 1
+    if isinstance(exc, launcher_scheme.WrongSchemeError):
+        return f"WRONG_SCHEME={exc.reason}", 2
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, http.client.HTTPException)):
+        return f"UNCONFIRMED=connection dropped with no answer ({type(exc).__name__})", 1
     if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
         return f"UNREACHABLE={exc.reason}", 2
     return None
@@ -192,13 +202,6 @@ def fetch_codex_catalog(base_url: str) -> Tuple[Optional[List[Dict[str, Any]]], 
 
 # ---- the transport and the session-input wrappers ---------------------------
 
-def _ssl_context() -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
 def _request(
     base_url: str,
     path: str,
@@ -206,15 +209,9 @@ def _request(
     body: Optional[dict] = None,
     timeout: float = REQUEST_TIMEOUT,
 ) -> Dict[str, Any]:
-    url = base_url.rstrip("/") + path
-    assert_loopback(url)
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {"Content-Type": "application/json"} if data is not None else {}
-    req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    context = _ssl_context() if url.startswith("https://") else None
-    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
-        raw = resp.read().decode("utf-8")
-    return json.loads(raw) if raw else {}
+    """One JSON call to the launcher, over the scheme its port serves (`launcher_scheme.request`)."""
+    assert_loopback(base_url.rstrip("/") + path)
+    return launcher_scheme.request(base_url, path, method=method, body=body, timeout=timeout)
 
 
 def fetch_issue_state(repo: str, number: int, owner: str = DEFAULT_OWNER) -> Dict[str, Any]:

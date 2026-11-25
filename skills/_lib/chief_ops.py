@@ -24,8 +24,9 @@ into four fan-out skills, but not chief — `verify` closes that gap by
 wrapping it, so chief re-checks a worker's self-reported state instead of
 trusting it.
 
-Talks to the app-launcher webapp (`https://127.0.0.1:8445`, self-signed
-cert — loopback bypasses all auth via `BearerTokenMiddleware`) via stdlib
+Talks to the app-launcher webapp (port 8445, over HTTPS or plain HTTP,
+whichever that port serves — `chief/launcher_scheme.py`; loopback bypasses all
+auth via `BearerTokenMiddleware`) via stdlib
 `urllib.request` only — never a `curl` subprocess, so the "curl consumed
 the loop's stdin" bug class cannot recur. Every request is routed through
 one `_request()` that calls `assert_loopback` first: the tool refuses to
@@ -312,6 +313,7 @@ stdlib only, plus the `gh` CLI for `issues`.
 
 from __future__ import annotations
 
+import http.client
 import logging
 import sys
 import urllib.error
@@ -403,7 +405,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         return args.func(args)
-    except (ValueError, urllib.error.URLError, TimeoutError) as exc:
+    except (ValueError, urllib.error.URLError, TimeoutError, ConnectionResetError,
+            ConnectionAbortedError, http.client.HTTPException) as exc:
         failure = launcher.transport_failure(exc)
         if failure is not None:
             print(failure[0])

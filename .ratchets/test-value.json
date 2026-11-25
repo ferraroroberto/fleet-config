@@ -123,6 +123,7 @@
     "chief_inbox": 35,
     "chief_job_failed": 1,
     "chief_journal": 28,
+    "chief_launcher_scheme": 2,
     "chief_machine_critical": 1,
     "chief_mailbox": 1,
     "chief_managed": 2,
