@@ -34,8 +34,10 @@ HARNESS_FIRST_LINES: Sequence[Pattern[str]] = tuple(re.compile(p) for p in (
     r"^(?:apply_patch verification failed|failed to parse function arguments|unsupported call)",
     r"^(?:File has not been read yet|File does not exist|String to replace not found|Found \d+ matches of the string)",
 ))
-_RATCHET_HEAD = re.compile(r"^\s*([a-z][a-z ]*?) ratchet: (?!PASS\b)")
-_RATCHET_PASS = re.compile(r"^\s*[a-z][a-z ]*? ratchet: PASS\b")
+_RATCHET_HEAD = re.compile(r"^\s*([a-z][a-z ]*?) ratchet: ")
+#: Headers that report no failure: a pass, and the notes the structure ratchet prints before its verdict.
+_RATCHET_OK = re.compile(r"^\s*[a-z][a-z ]*? ratchet: (?:PASS\b|warning band\b|layout check not applicable\b"
+                         r"|the .+? (?:is|are) not recorded in\b)")
 _RULE = re.compile(r"\[([a-z][a-z0-9 _-]*)\]")
 #: Order matters: quotes and paths go first so the digits inside them are not masked twice.
 _MASKS: Sequence[tuple] = (
@@ -60,14 +62,16 @@ def ratchet_rules(text: str) -> List[str]:
     """`<name>_ratchet:<rule>` for each rule a failing ratchet's output names, in order.
 
     A ratchet prints `<name> ratchet: ...` and then one line per finding carrying its
-    rule id in brackets. A failing header with no rule line records rule `-`.
+    rule id in brackets. A failing header with no rule line records rule `-`. A header
+    that reports no failure closes the block, so its `[warning]` lines name no rule.
     """
     found: List[str] = []
     current: Optional[str] = None
     named = False
     for line in text.splitlines():
-        head = _RATCHET_HEAD.match(line)
-        if head or _RATCHET_PASS.match(line):
+        ok = _RATCHET_OK.match(line)
+        head = None if ok else _RATCHET_HEAD.match(line)
+        if head or ok:
             if current and not named:
                 found.append(f"{current}:-")
             current = f"{head.group(1).strip().replace(' ', '_')}_ratchet" if head else None

@@ -197,6 +197,21 @@ got = sig.ratchet_rules(gate)
 check(got == ["structure_ratchet:file-length", "docs_ratchet:-"],
       f"each failing ratchet recorded, a passing one and hook markers not (got {got})")
 
+# The structure ratchet prints its warning band before its verdict; the band is never the failure.
+sys.path.insert(0, str(REPO / "scripts"))
+from structure_band import warning_lines  # noqa: E402
+
+band = warning_lines({"files": ["a.py: 950 lines"], "functions": [], "dirs": [], "unknown": ["b.js"]}, 0.9)
+got = sig.ratchet_rules("\n".join((*band, "structure ratchet: 1 finding(s) above the baseline:",
+                                   "  [file length] skills/_lib/y.py has 1200 lines; was 0")))
+check(got == ["structure_ratchet:file-length"], f"warning band then a real failure: the failing rule only (got {got})")
+got = sig.ratchet_rules("\n".join((
+    "structure ratchet: the near-limit band is not recorded in .ratchets/structure.json yet -- ...",
+    "structure ratchet: the extra roots and placement are not recorded in .ratchets/structure.json yet -- ...",
+    *band, "structure ratchet: layout check not applicable (no `shape` in .fleet.toml)",
+    "structure ratchet: PASS (0 baselined)", "Exit code 1")))
+check(got == [], f"warning band and notes with no failure: no ratchet signature (got {got})")
+
 # ---- unmeasured, never an empty digest ----
 for lines, why in (([{"type": "summary"}], "no message records"),
                    ([{"type": "session", "cwd": CWD}], "a Pi header alone")):
