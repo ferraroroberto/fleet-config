@@ -17,6 +17,7 @@ A skill's main `SKILL.md` holds what every invocation needs. Material only some 
 The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose always-on description is the spec.
 
 - [`/issue-add`](../skills/issue-add/SKILL.md) — turn a rough idea or transcript into a well-formed, labelled, self-assigned issue
+- [`/issue-grill`](skills/issue-grill.md) — owner-invoked interview in rounds of recommended answers, then one OK and the `/issue-add` filing; the round format is the shared [interview rounds](skills/interview-rounds.md) reference
 - [`/issue-start`](../skills/issue-start/SKILL.md) — claim the repo, sync main, cut the branch or worktree, then plan or build by type label
 - [`/issue-finish`](../skills/issue-finish/SKILL.md) — acceptance, docs, gate, PR, merge, branch teardown and tray restart
 - [`/issue-yolo`](skills/issue-yolo.md) — the whole workflow in one run, no plan gate, hard validation before ship
