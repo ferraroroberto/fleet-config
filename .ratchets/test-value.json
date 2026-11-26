@@ -238,6 +238,7 @@
     "pr_body": 1,
     "prompt_audit_evals": 1,
     "prompt_audit_lint": 1,
+    "proposal_report": 1,
     "quota_snapshots": 14,
     "rate_gate": 10,
     "readme_fence_refs": 1,

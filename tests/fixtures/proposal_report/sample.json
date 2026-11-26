@@ -1,0 +1,11 @@
+{
+  "id": "sample-week-48",
+  "title": "Sample improvement proposals",
+  "suggestions": [
+    {"id": "cache-board", "title": "Cache the Board's first load", "summary": "Serve the last board snapshot while the fresh one builds.", "repo": "demo-app", "category": "speed", "impact": 5, "effort": 2, "evidence": "Cold load takes 4 s on a phone.", "home": "demo-app/webapp"},
+    {"id": "split-index", "title": "Split the 900-line index page", "summary": "Move each tab into its own module.", "repo": "demo-app", "category": "structure", "impact": 3, "effort": 4},
+    {"id": "retry-label", "title": "Name the retry reason in the log", "summary": "One log line per retry with its cause.", "repo": "demo-tools", "category": "logging", "impact": 2, "effort": 1},
+    {"id": "rewrite-sync", "title": "Rewrite the sync engine", "summary": "Replace the polling sync with a push channel.", "repo": "demo-tools", "category": "structure", "impact": 2, "effort": 5},
+    {"id": "dedupe-alerts", "title": "Collapse duplicate alerts", "summary": "Group alerts with one cause into one message.", "repo": "demo-tools", "category": "logging", "impact": 5, "effort": 2}
+  ]
+}
