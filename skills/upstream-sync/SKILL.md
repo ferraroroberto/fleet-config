@@ -1,6 +1,6 @@
 ---
 name: upstream-sync
-description: Bring an outside source repo's merged work into the local copy built from it — read the `[upstream]` watermark in `.fleet.toml`, survey the source's merged items since then (apply / adapt / skip), and port each one through `/issue-add` + an `/issue-yolo` lane that reuses the source code and fixes it forward until the gate passes. One shot by default; `--dry-run` only surveys. E.g. "/upstream-sync", "/upstream-sync https://github.com/o/r sonnet", "/upstream-sync --dry-run".
+description: Port an outside source repo's merged work into the local copy built from it — survey items since the `.fleet.toml` `[upstream]` watermark (apply/adapt/skip), then port each via `/issue-add` and an `/issue-yolo` lane reusing the source code, fixed forward to a green gate. `--dry-run` only surveys. E.g. "/upstream-sync", "/upstream-sync https://github.com/o/r sonnet", "/upstream-sync --dry-run".
 ---
 
 # upstream-sync
