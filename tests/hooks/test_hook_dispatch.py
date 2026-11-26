@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     answered, verdicts, err = run("fake_raw_exit")
     check("a raw sys.exit(2) still refuses, its stderr the reason",
-          answered and verdicts == [harness_wire.Verdict("block", "raw refusal")] and err == "", repr(verdicts))
+          answered and verdicts == [harness_wire.Verdict("block", "raw refusal", hook="fake_raw_exit")] and err == "", repr(verdicts))
 
     answered, verdicts, err = run("fake_noisy_allow")
     check("stray stdout goes to stderr, never the JSON channel",
@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     answered, verdicts, _ = run("fake_swallow")
     check("an `except Exception` can't swallow a recorded verdict",
-          answered and verdicts == [harness_wire.Verdict("block", "still refused")], repr(verdicts))
+          answered and verdicts == [harness_wire.Verdict("block", "still refused", hook="fake_swallow")], repr(verdicts))
 
     check("the collector is off again after each hook", harness_wire._COLLECTOR is None)
 
@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory() as tmp:
         collected += run(name)[1]
     code, out, err = emit(collected)
     check("a refusal outranks a nudge: exit 2, reason on stderr, stdout clean",
-          code == 2 and out == "" and err.strip() == "refused", f"{code} {out!r} {err!r}")
+          code == 2 and out == "" and err.strip() == "[hook:fake_block] refused", f"{code} {out!r} {err!r}")
 
     code, out, _ = emit(run("fake_warn")[1] + run("fake_warn")[1])
     check("nudges merge into one systemMessage",

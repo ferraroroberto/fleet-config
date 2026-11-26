@@ -10,6 +10,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/audit/test_retro
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -102,6 +103,35 @@ priv_cwd = str(ROOT / "life-os")
 priv = [dict(r, cwd=priv_cwd) for r in records]
 pout = rd.build(write(priv), rd.DEFAULT_PRIVATE)
 check(pout["private_session"] and pout["repeat_reads"] == [], "a private session lists no read paths")
+
+# ---- the refusing hook is named on both wirings ----
+def dispatch_refusal(command, *hooks):
+    """A real `hook_dispatch.py` refusal, wrapped the way the transcript records it."""
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(REPO),
+               "tool_input": {"command": command}}
+    res = subprocess.run([sys.executable, str(REPO / "hooks" / "hook_dispatch.py"), *hooks],
+                         input=json.dumps(payload).encode("utf-8"), capture_output=True, timeout=60)
+    check(res.returncode == 2, f"the dispatcher refuses {command!r} (got {res.returncode})")
+    return (f"PreToolUse:Bash hook error: [python hook_dispatch.py {' '.join(hooks)}]: "
+            + res.stderr.decode("utf-8"))
+
+
+def refusals(text):
+    return rd.build(write([call("h", "Bash", command="x"), result("h", text, error=True)]), [])["hook_refusals"]
+
+
+hooks = ("bash_cmdexe_syntax_guard", "safe_kill_guard")
+got = refusals(dispatch_refusal("git push --force origin main", *hooks))
+check(got == {"PreToolUse:Bash:safe_kill_guard": 1}, f"a dispatcher refusal names its hook (got {got})")
+got = refusals(dispatch_refusal("cmd.exe /c dir && git push --force origin main", *hooks))
+check(got == {"PreToolUse:Bash:bash_cmdexe_syntax_guard": 1, "PreToolUse:Bash:safe_kill_guard": 1},
+      f"two hooks refusing one call are each counted (got {got})")
+got = refusals("PreToolUse:Bash hook error: [python hook_dispatch.py a b]: Blocked: no marker")
+check(got == {"PreToolUse:Bash:unknown": 1}, f"an unmarked refusal is unknown (got {got})")
+got = refusals("PreToolUse:Bash hook error: [shim -Hook venv_discipline]: Blocked:\n[hook:quoted] -Hook other")
+check(got == {"PreToolUse:Bash:venv_discipline": 1}, f"the shim's own name wins over quoted text (got {got})")
+got = refusals("PreToolUse:Bash hook error: [command hook 1]: Blocked: run run-hook.ps1 -Hook other")
+check(got == {"PreToolUse:Bash:unknown": 1}, f"a name quoted in the reason is not the refusing hook (got {got})")
 
 # ---- classify_error ----
 check(rd.classify_error("File has not been read yet. Read it first") == "file_state", "file-state class")

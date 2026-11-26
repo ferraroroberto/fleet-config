@@ -38,6 +38,7 @@ class Verdict(NamedTuple):
     text: str  # refusal reason, nudge, or the rewritten command
     reason: str = ""  # rewrite_command()'s permissionDecisionReason
     payload: Optional[Dict[str, Any]] = None  # rewrite_command()'s payload
+    hook: str = ""  # the module that answered, set by hook_dispatch.py
 
 
 class Collected(SystemExit):
@@ -654,19 +655,27 @@ def allow() -> "NoReturn":
     sys.exit(0)
 
 
+def _refusal_text(verdict: Verdict) -> str:
+    """One refusal as written, opening with `[hook:<module>] `. One process
+    answers for many hooks and the harness only shows its command line, so
+    the text is what names the refusing one (`skills/_lib/retro/digest.py`
+    reads it back)."""
+    return f"[hook:{verdict.hook}] {verdict.text}" if verdict.hook else verdict.text
+
+
 def emit_collected(verdicts: List[Verdict]) -> "NoReturn":
     """Answer once for every hook `hook_dispatch.py` ran in this process.
 
     Folds the verdicts the way the harness folds parallel hook processes: any
-    block refuses, with every refusal's reason in order, and any rewrite is
-    dropped with it. Otherwise a rewrite applies. Claude's rewrite envelope
+    block refuses, with every refusal's reason in order and tagged with its
+    hook, and any rewrite is dropped with it. Otherwise a rewrite applies. Claude's rewrite envelope
     also carries the nudges in its top-level `systemMessage`, the field a
     lone `warn()` uses on `PreToolUse`. Otherwise the nudges go out as one
     `warn()`, and with no verdict at all the call is allowed. The dialect of
     each answer is still the emitters' own, picked from `_ACTIVE_AGENT` /
     `_ACTIVE_EVENT`, which the caller sets by reading the payload first.
     """
-    blocks = [v.text for v in verdicts if v.kind == "block"]
+    blocks = [_refusal_text(v) for v in verdicts if v.kind == "block"]
     if blocks:
         block("\n\n".join(blocks))
     warns = [v.text for v in verdicts if v.kind == "warn"]

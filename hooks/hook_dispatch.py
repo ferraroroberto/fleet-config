@@ -14,7 +14,8 @@ the way Codex already calls its hook modules (`codex-hooks.json`). No shim
 sits in between, so stdin reaches `read_stdin_json()` as the harness's own
 UTF-8 bytes.
 
-What each hook sees and says is unchanged:
+What each hook sees and says is unchanged, except that a refusal opens with
+`[hook:<module>] `, since the command line names every hook in the list:
 
 - every hook reads its own fresh copy of the original payload, so no guard
   ever sees a rewritten command, and the order of names on the command line
@@ -64,6 +65,7 @@ def run_hook(name: str, raw: bytes, verdicts: List[harness_wire.Verdict]) -> boo
     saved_stdin, saved_argv = sys.stdin, sys.argv
     saved_handlers = list(logging.root.handlers)
     answered = True
+    first = len(verdicts)
     try:
         with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
             try:
@@ -90,6 +92,7 @@ def run_hook(name: str, raw: bytes, verdicts: List[harness_wire.Verdict]) -> boo
         harness_wire._COLLECTOR = None
         sys.stdin, sys.argv = saved_stdin, saved_argv
         logging.root.handlers[:] = saved_handlers
+    verdicts[first:] = [v._replace(hook=name) for v in verdicts[first:]]
     noise = captured_out.getvalue() + captured_err.getvalue()
     if noise:
         sys.stderr.write(noise)

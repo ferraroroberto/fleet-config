@@ -5,7 +5,7 @@ Two halves:
 1. **Differential.** Every hook-matrix case for a shell `PreToolUse` hook,
    Claude- and Grok-shaped, is replayed through `hook_dispatch.py <hook>` and
    must match the hook's own process byte for byte: exit code, stdout and
-   stderr.
+   stderr. The one addition is a refusal's `[hook:<module>] ` tag.
 2. **Folding.** The full Bash list run in one process: a refusal wins and drops
    the rewrite, refusals combine, a nudge rides along with a rewrite, a lone
    rewrite is byte-identical to `context_filter_hook`'s own, the order of names
@@ -60,6 +60,13 @@ def dispatch_spawn(hooks: List[str], payload: Dict[str, Any]) -> Tuple[int, byte
     return res.returncode, res.stdout, res.stderr
 
 
+def untagged(hook: str, result: Result) -> Result:
+    """A dispatch result without the refusal tag its hook's own process never writes."""
+    code, out, err = result
+    tag = f"[hook:{hook}] "
+    return code, out.replace(tag, "", 1), err.replace(tag, "", 1)
+
+
 def bash(command: str, **extra: Any) -> Dict[str, Any]:
     return {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(REPO),
             "session_id": "dispatch-acceptance", "tool_input": {"command": command}, **extra}
@@ -74,7 +81,8 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
             if hook not in BASH_HOOKS:
                 continue
             want, got = standalone(hook, payload), dispatch([hook], payload)
-            check(f"hook_dispatch: matches its own process: {label}", got == want,
+            tagged = want[0] != 2 or f"[hook:{hook}] " in got[2]
+            check(f"hook_dispatch: matches its own process: {label}", tagged and untagged(hook, got) == want,
                   f"standalone={want!r} dispatch={got!r}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
