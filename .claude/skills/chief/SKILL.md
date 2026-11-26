@@ -357,7 +357,7 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   words: "If that work is finished, yes, you have to delete it… I trust your
   judgment"). After each lane closes and at quiet ticks run
   `chief_ops.py sweep --apply`: it removes only `finished` (clean, nothing
-  beyond `origin/main` or all of it in a merged PR, so an open umbrella issue or
+  beyond `origin/main`, the same tree as it, or all of it in a merged PR, so an open umbrella issue or
   a plan lane's empty tree no longer needs a question) via `worktree_claim.py
   remove-worktree`, never `rm -rf`, and `orphan-empty` folders via `rmdir`.
   Ask only for `has-work` (dirty or unmerged). Report `in-use`, `unknown` and

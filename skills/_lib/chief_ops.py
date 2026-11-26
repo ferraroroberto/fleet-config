@@ -261,7 +261,8 @@ Subcommands
   sweep [--apply] [--root DIR]
       The chief's worktree sweep: one line per
       `<repo>-wt-<N>` folder with its class and evidence -- `finished`
-      (clean, nothing beyond the default branch or all of it in a merged PR),
+      (clean, nothing beyond the default branch, a tree identical to it, or all
+      of it in a merged PR),
       `in-use` (a live session's cwd or a live active-issue marker),
       `has-work` (dirty or unmerged -- the only class the chief asks about),
       `orphan-empty` (empty non-git folder) or `unknown` (not established) --
