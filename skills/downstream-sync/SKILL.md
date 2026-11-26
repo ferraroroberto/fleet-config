@@ -1,6 +1,6 @@
 ---
 name: downstream-sync
-description: Hand a local copy's own features back to the outside source repo it was built from, as specs — list the local work the source lacks (read-only), let the owner pick, write one code-free, public-safe feature spec per pick, and file each on the source only after a per-item OK. Sibling of /upstream-sync; shares its `[upstream]` table. E.g. "/downstream-sync", "/downstream-sync --since abc123", "what have we built that the source doesn't have".
+description: Hand a local copy's own features back to its outside source repo as specs — list local work the source lacks (read-only), owner picks, write one code-free, public-safe spec per pick, file each on the source only after a per-item OK. Sibling of /upstream-sync (shares `[upstream]`). E.g. "/downstream-sync", "/downstream-sync --since abc123", "what have we built that the source doesn't have".
 ---
 
 # downstream-sync
