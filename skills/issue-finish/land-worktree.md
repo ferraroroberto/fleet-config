@@ -55,6 +55,10 @@ Loaded on demand from `/issue-finish` step 5 when pre-flight's `worktree_claim.p
          declaring `tray_cmd` serves out of its checkout, so fast-forwarding
          would serve one UI out of two commits. The named restart is the
          remedy — nothing here is broken.
+       - `PRIMARY=unknown reason=<why>` — the tree is current, but what is
+         being served is not established: a web checkout with no `webapp_port`
+         in `hooks/projects.toml`, or a running build that cannot be read.
+         Report it as it is; it is not `live`.
        **Put that line in the finish summary, verbatim, next to the merge
        result** — never absent, never implied by silence. "Merged" and "live"
        are two facts and the summary carries both.

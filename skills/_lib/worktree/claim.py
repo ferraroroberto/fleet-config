@@ -189,18 +189,22 @@ def land_primary_check(
     return True, f"clean, on {main_branch}, claim {reason}, {service_reason}"
 
 
-def format_primary_state(ok: bool, reason: str, behind: Optional[int] = None) -> str:
+def format_primary_state(ok: bool, reason: str, behind: Optional[int] = None,
+                         doubt: Optional[Tuple[str, str]] = None) -> str:
     """The one machine-readable line a worktree lane's finish summary carries.
 
-    `PRIMARY=live behind=0`, or `PRIMARY=stale reason=<why>`. "Merged" and
-    "live" are two separate facts: a lane that could not establish the second
-    reports it as its own named state rather than letting silence imply
-    success. An uncountable `behind` is likewise stale, never passing -- the
-    fleet's unknown-is-not-pass rule.
+    `PRIMARY=live behind=0`, `PRIMARY=stale reason=<why>` or
+    `PRIMARY=unknown reason=<why>`. "Merged" and "live" are two separate facts:
+    a lane that could not establish the second reports it as its own named state
+    rather than letting silence imply success. An uncountable `behind` is stale,
+    never passing, and a `doubt` about the serving process
+    (`service_probe.server_doubt`) replaces the `live` a level tree would earn.
     """
     if not ok:
         return f"PRIMARY=stale reason={reason}"
     if behind == 0:
+        if doubt:
+            return f"PRIMARY={doubt[0]} reason={doubt[1]}"
         return "PRIMARY=live behind=0"
     if behind is None or behind < 0:
         return "PRIMARY=stale reason=could not count commits behind origin"

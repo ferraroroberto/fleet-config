@@ -15,7 +15,12 @@ Per repo, one line:
                                                  are never restarted here; the owner does it
   PRIMARY=stale reason=no-restart-recipe         a service is declared but neither `restart_cmd` nor `api_version_path`
   PRIMARY=stale reason=<guard or restart detail> dirty tree, off main, claim held, restart
-                                                 failed or its build identity not confirmed
+                                                 failed or its build identity not confirmed,
+                                                 or a level tree behind an older running build
+  PRIMARY=unknown reason=<why>                   server state not established: a web checkout
+                                                 with no declared port, or an unreadable build
+
+Only `live` counts as live: `stale` and `unknown` both exit 1 and are listed as stale primaries.
 
 Restart only happens when the service was listening before the landing and HEAD moved; a
 service that is down is not started, and a level tree is not restarted.
@@ -147,6 +152,9 @@ def land_one(name: str, tbl: Mapping[str, object], never_kill: frozenset, issue:
 def _would(name: str, repo: Path, kind: str, state: str, verdict: Tuple[bool, str],
            behind: Optional[Callable[[Path], Optional[int]]]) -> Outcome:
     n = behind(repo) if behind else None
+    doubt = sp.server_doubt(repo, (lambda: _head(repo)) if n == 0 else None) if n is not None else None
+    if doubt and (n == 0 or verdict[0]):
+        return Outcome(name, f"WOULD={doubt[0]} reason={doubt[1]}", False)
     if n == 0:
         return Outcome(name, "WOULD=nothing (already level)", True)
     if n is None:
@@ -168,7 +176,8 @@ def stale_line(outcomes: Sequence[Outcome]) -> str:
 
 def _reason(line: str) -> str:
     head = line.split(" | ", 1)[0]
-    return head.split("reason=", 1)[1] if "reason=" in head else head
+    why = head.split("reason=", 1)[1] if "reason=" in head else head
+    return f"unknown: {why}" if head.startswith(("PRIMARY=unknown", "WOULD=unknown")) else why
 
 
 def behind_counts(tables: Mapping[str, Mapping[str, object]], names: Sequence[str],

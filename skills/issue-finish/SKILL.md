@@ -353,7 +353,7 @@ any drift fixed, the `VISUAL_PROOF=` line and the proof page `SENT=` line — st
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not
 touched / confirmed live / merged but not yet live / unknown — step 6b),
 the live build line, the step-4 `Merge danger:` line, and the step-5 `OWNER_CHECK=` line. **Worktree mode also carries step 5's `PRIMARY=` line
-verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right
+verbatim** — `PRIMARY=live behind=0`, `stale` or `unknown` with its `reason=` — right
 next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
 (both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting
 only the first is reporting a deploy it never established.

@@ -4,6 +4,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/worktree_claim/t
 """
 from __future__ import annotations
 
+import http.server
+import json
 import os
 import shutil
 import sys
@@ -11,6 +13,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from _suite import _h, check, sp, wc, wclaim, wgit  # noqa: E402
 
@@ -752,5 +756,105 @@ try:
 finally:
     wgit.subprocess.run = _real_run
     shutil.rmtree(_junction_tmp, ignore_errors=True)
+
+# ---- a current tree is not a live server (#2255) ----
+#
+# No process is spawned: git and the listener table are stubbed, the version
+# endpoint is a real loopback server answering with the commit it "runs".
+
+
+class _Version(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        if self.path != "/api/version":
+            self.send_error(404)
+            return
+        body = json.dumps({"git_sha": "9af573f"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_a):
+        pass
+
+
+_doubt_base = Path(tempfile.mkdtemp(prefix="wc-doubt-"))
+_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Version)
+threading.Thread(target=_server.serve_forever, daemon=True).start()
+_port = _server.server_address[1]
+_card, _broken, _plain, _built, _mute = (_doubt_base / n for n in ("card", "broken", "plain", "built", "mute"))
+for _dir in (_card, _broken, _plain, _built, _mute):
+    _dir.mkdir()
+(_card / ".fleet.toml").write_text('port = ":8020"\n', encoding="utf-8")
+(_broken / ".fleet.toml").write_text("port = [", encoding="utf-8")
+_registry = _doubt_base / "projects.toml"
+_registry.write_text("".join(
+    f'[{d.name}]\ncwd_prefix = "{d.as_posix()}"\n' for d in (_card, _broken, _plain)
+) + "".join(
+    f'[{d.name}]\ncwd_prefix = "{d.as_posix()}"\nwebapp_port = {_port}\ntray_cmd = "tray.bat"\n'
+    f'api_version_path = "{path}"\n' for d, path in ((_built, "/api/version"), (_mute, "/silent"))
+), encoding="utf-8")
+_old_head, _same_head = (lambda: "1705558abc"), (lambda: "9af573f000")
+
+
+def _doubt(repo, head=_old_head):
+    return sp.server_doubt(repo, head, _registry)
+
+
+def _fake_git(_repo, *args, **_kw):
+    out = {"branch": "main", "rev-parse": "1705558abc"}.get(args[0], "")
+    return SimpleNamespace(stdout=out, returncode=0)
+
+
+def _land_stubbed(repo, behind_counts):
+    counts = iter(behind_counts)
+    with mock.patch.dict(os.environ, {"FLEET_PROJECTS_TOML": str(_registry)}), \
+            mock.patch.multiple(wc, _is_primary_checkout_safe=lambda _r: True, _git=_fake_git,
+                                lock_dir_for=lambda _r: _doubt_base / "no-lock",
+                                main_ref=lambda _r: "origin/main",
+                                count_behind=lambda *_a, **_k: next(counts),
+                                guarded_fast_forward=lambda *_a: SimpleNamespace(ok=True, detail=""),
+                                untrack_report_lines=lambda _f: []):
+        return wc.land_primary(repo, "2255", service=(True, "stubbed"))
+
+
+try:
+    with mock.patch.object(sp, "listening_ports", lambda: {_port}):
+        for _head in (_old_head, None):
+            _got = _doubt(_card, _head)
+            check(_got is not None and _got[0] == "unknown" and "no webapp_port" in _got[1],
+                  f"server_doubt: web surface with no declared port is unknown ({_got})")
+        _got = _doubt(_broken)
+        check(_got is not None and _got[0] == "unknown", f"server_doubt: an unparsable card is unknown ({_got})")
+        check(_doubt(_plain) is None, "server_doubt: no web surface, no port -> no doubt")
+        _got = _doubt(_built)
+        check(_got is not None and _got[0] == "stale" and "9af573f" in _got[1],
+              f"server_doubt: level tree, server on an older build is stale ({_got})")
+        check(_doubt(_built, _same_head) is None, "server_doubt: level tree, server on HEAD -> no doubt")
+        check(_doubt(_built, None) is None, "server_doubt: a tree that just moved is not compared")
+        _got = _doubt(_built, lambda: "")
+        check(_got is not None and _got[0] == "unknown", f"server_doubt: unreadable HEAD is unknown ({_got})")
+        _got = _doubt(_mute)
+        check(_got is not None and _got[0] == "unknown" and "could not be read" in _got[1],
+              f"server_doubt: unreadable running build is unknown ({_got})")
+
+        for _label, _counts in (("level", [0]), ("after a fast-forward", [1, 0])):
+            _code, _lines = _land_stubbed(_card, _counts)
+            check(_code == 1 and len(_lines) == 1 and _lines[0].startswith("PRIMARY=unknown reason="),
+                  f"land_primary: undeclared port ({_label}) -> unknown, never live ({_lines})")
+        _code, _lines = _land_stubbed(_built, [0])
+        check(_code == 1 and _lines[0].startswith("PRIMARY=stale") and "9af573f" in _lines[0],
+              f"land_primary: level tree behind the running build -> stale ({_lines})")
+        check(_land_stubbed(_plain, [0]) == (0, ["PRIMARY=live behind=0"]),
+              "land_primary: a repo with no web surface still lands live")
+    with mock.patch.object(sp, "listening_ports", lambda: {1}):
+        check(_doubt(_built) is None, "server_doubt: nothing listening on the declared port -> no doubt")
+    with mock.patch.object(sp, "listening_ports", lambda: None):
+        _got = _doubt(_built)
+        check(_got is not None and _got[0] == "unknown", f"server_doubt: unreadable listener table is unknown ({_got})")
+finally:
+    _server.shutdown()
+    _server.server_close()
+    shutil.rmtree(_doubt_base, ignore_errors=True)
 
 _h.report_and_exit("test_claim_and_landing")
