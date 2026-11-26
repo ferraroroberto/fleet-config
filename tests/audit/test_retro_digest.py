@@ -10,7 +10,6 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/audit/test_retro
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -21,6 +20,9 @@ from retro import digest as rd  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+
+sys.path.insert(0, str(REPO / "tests"))
+from acceptance.hook_cases.inproc import run_in_process  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -106,14 +108,12 @@ check(pout["private_session"] and pout["repeat_reads"] == [], "a private session
 
 # ---- the refusing hook is named on both wirings ----
 def dispatch_refusal(command, *hooks):
-    """A real `hook_dispatch.py` refusal, wrapped the way the transcript records it."""
+    """The real `hook_dispatch.py`'s refusal, wrapped the way the transcript records it."""
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(REPO),
                "tool_input": {"command": command}}
-    res = subprocess.run([sys.executable, str(REPO / "hooks" / "hook_dispatch.py"), *hooks],
-                         input=json.dumps(payload).encode("utf-8"), capture_output=True, timeout=60)
-    check(res.returncode == 2, f"the dispatcher refuses {command!r} (got {res.returncode})")
-    return (f"PreToolUse:Bash hook error: [python hook_dispatch.py {' '.join(hooks)}]: "
-            + res.stderr.decode("utf-8"))
+    code, _out, err = run_in_process("hook_dispatch", payload, args=hooks)
+    check(code == 2, f"the dispatcher refuses {command!r} (got {code})")
+    return (f"PreToolUse:Bash hook error: [python hook_dispatch.py {' '.join(hooks)}]: " + err)
 
 
 def refusals(text):
