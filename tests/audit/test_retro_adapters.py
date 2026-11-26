@@ -185,8 +185,65 @@ check(sig.mask("open 'a b' and \"c\" at E:/x/y.py line 42") == "open <q> and <q>
 check(sig.signature("Edit", "hook_refusal", "x", "hook error", ["branch_guard"]) == "Edit|hook_refusal|branch_guard",
       "a hook refusal's template is the refusing hook")
 
+# ---- a non-zero exit names the program that failed ----
+def exit_signature(tool, args, text="Exit code 1\nboom"):
+    log = [{"type": "assistant", "cwd": CWD, "message": {"role": "assistant", "content": [
+               {"type": "tool_use", "id": "x", "name": tool, "input": args}]}},
+           {"type": "user", "cwd": CWD, "message": {"role": "user", "content": [
+               {"type": "tool_result", "tool_use_id": "x", "content": text, "is_error": True}]}}]
+    return next(iter(rd.build(write(log), [])["error_signatures"]))
+
+
+SHAPES = (
+    ("git status", "git"),
+    ("timeout 600 npm run build", "npm"),
+    ("timeout --signal=KILL -k 5 10m gh pr checks 12", "gh"),
+    ("env -u FOO PYTHONUTF8=1 python -m pytest", "python"),
+    ("PYTHONUTF8=1 E:/x/.venv/Scripts/python.exe tests/run.py", "python"),
+    ("cd /c/a/b && git log -1", "git"),
+    ("cd \"C:/a b\" 2>&1; echo '--- ; npm'; rg -n foo | head", "rg"),
+    ("# look first; then act\nexport A=1\nnohup node server.js &", "node"),
+    ("for f in a b; do grep x \"$f\"; done", "grep"),
+    ("out=$(git rev-parse HEAD)", "git"),
+    ("bash -lc 'cd x && curl -s http://localhost'", "curl"),
+    ("cat <<'EOF' > f.txt\nnpm install\nEOF", "cat"),
+    ("& \"C:\\a b\\.venv\\Scripts\\python.exe\" -m ruff", "python"),
+    ("$env:A = '1'; Set-Location C:\\x; Get-ChildItem -Recurse", "get-childitem"),
+    ("cd nowhere", "cd"),
+    ("sed -n 1p a.txt; grep foo b.txt", "grep"),
+    ("git log --oneline | grep fix", "grep"),
+    ("git status 2>&1 | tail -3", "git"),
+    ("npm test; echo \"exit=$?\"", "npm"),
+    ("python x.py; exit $LASTEXITCODE", "python"),
+    ("Get-ChildItem x | Where-Object { $_.Length -gt 1 } | Select-Object Name", "get-childitem"),
+    ("PY=E:/x/.venv/Scripts/python.exe; L=C:/y; \"$PY\" $L/a.py", "python"),
+    ("O=\"env PYTHONUTF8=1 .venv/Scripts/python.exe ops.py\"; $O sessions", "python"),
+    ("$p = 'E:\\x\\python.exe'; & $p -m ruff", "python"),
+    ("$UNSET_RUNNER resume x", "<other>"),
+    ("cmd.exe /d /c \"setup.bat -WhatIf\"", "<script>"),
+    ("& .\\gate.ps1 2>&1 | Tee-Object -FilePath g.log | Select-Object -Last 5", "<script>"),
+    ("ruff check a.py; (Get-Content a.py).Count", "get-content"),
+    ("gh pr view ${F%.md}; break", "gh"),
+    ("./deploy_the_secret_thing.sh --now", "<script>"),
+    (f"frobnicate-{PROSE.split()[0]} --x", "<other>"),
+)
+for command, program in SHAPES:
+    got = exit_signature("Bash", {"command": command})
+    check(got == f"Bash|exit_nonzero|{program}", f"{command!r} fails as {program} (got {got!r})")
+
+got = exit_signature("shell", {"command": ["bash", "-lc", "git push"]})
+check(got == "shell|exit_nonzero|git", f"codex: the shell's script is read (got {got!r})")
+got = exit_signature("exec_command", {"cmd": "npm test"})
+check(got == "exec_command|exit_nonzero|npm", f"codex: the `cmd` argument is read (got {got!r})")
+got = exit_signature("Bash", {})
+check(got == "Bash|exit_nonzero|Exit code <n>", f"no command recorded keeps the exit line (got {got!r})")
+got = exit_signature("Bash", {"command": "git commit"}, GATE_FAILURE)
+check(got == "Bash|exit_nonzero|conventions_ratchet:no-window", f"a ratchet rule beats the program (got {got!r})")
+got = exit_signature("Bash", {"command": "git commit"}, "Exit code 143\nCommand timed out after 10m")
+check(got.startswith("Bash|timeout|") and "git" not in got, f"only the bare exit class names a program (got {got!r})")
+
 # ---- ratchet rules ----
-gate = "\n".join((
+gate ="\n".join((
     "structure ratchet: 1 finding(s) above the baseline:",
     "  [file length] skills/_lib/y.py has 1200 lines; was 0",
     "docs ratchet: NOT CONFIRMED: README.md unreadable",

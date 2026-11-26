@@ -25,7 +25,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from retro import digest
 
 CACHE_FILENAME = "retro-fleet-cache.json"
-CACHE_VERSION = 1
+#: Bumped when a signature's shape changes, so every log still on disk is read again.
+CACHE_VERSION = 2
 #: A signature counts as recurring once this many sessions hit it inside the window.
 MIN_SESSIONS = 3
 WINDOW_DAYS = 30
@@ -101,16 +102,18 @@ def scan(roots: Iterable[Tuple[str, Path]], cache: Dict[str, Any], workers: int 
     """Bring the cache up to date with the logs on disk; returns it with the run's counts.
 
     A log that disappeared keeps its row (marked gone) so its history still
-    counts toward first-seen and the 30-day window.
+    counts toward first-seen and the 30-day window, also across a version bump:
+    it cannot be read again.
     """
-    files: Dict[str, Any] = dict(cache.get("files") or {}) if cache.get("version") == CACHE_VERSION else {}
+    files: Dict[str, Any] = dict(cache.get("files") or {})
+    current = cache.get("version") == CACHE_VERSION
     on_disk = list_logs(roots)
     result = ScanResult(cache={"version": CACHE_VERSION, "files": files})
     todo: List[str] = []
     for path, (agent, mtime_ns, size, _) in on_disk.items():
         result.logs[agent] += 1
         row = files.get(path)
-        if isinstance(row, dict) and row.get("mtime_ns") == mtime_ns and row.get("size") == size:
+        if current and isinstance(row, dict) and row.get("mtime_ns") == mtime_ns and row.get("size") == size:
             result.unchanged += 1
         else:
             todo.append(path)

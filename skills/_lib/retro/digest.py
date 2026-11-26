@@ -3,7 +3,8 @@
 `/retro` reads this digest instead of quoting the transcript, so nothing a person
 typed and nothing a tool printed can reach a filed issue. Every value is a count, a
 tool name, a skill name, an error class from a fixed list, an error signature built
-only from harness, hook and ratchet text (`signature.py`), or a path made relative
+only from harness, hook and ratchet text and a fixed list of program names
+(`signature.py`), or a path made relative
 to the session's repo (or its sibling repos). A path in a private repo is replaced
 by `<private>`. Claude Code, Codex and Pi logs are read through `adapters.py` into
 the same shape, with `agent` naming which.
@@ -32,10 +33,11 @@ from pathlib import Path, PurePath
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 if __package__:
-    from . import adapters
+    from . import adapters, command_head
     from . import signature as sig
 else:  # run as a script: its own folder is on sys.path
     import adapters
+    import command_head
     import signature as sig
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -187,7 +189,7 @@ class Digest:
         self.reads: Counter[str] = Counter()
         self.interrupts_after: Counter[str] = Counter()
         self.large: List[Tuple[int, str, str]] = []
-        self.pending: Dict[str, Tuple[str, str]] = {}
+        self.pending: Dict[str, Tuple[str, str, Any]] = {}
         self.seen_calls: set = set()
         self.repeated_calls = 0
         self.owner_prompts = 0
@@ -227,7 +229,8 @@ class Digest:
             self.lookups_before_edit += 1
         if name == "Skill" and args.get("skill"):
             self.skills[str(args["skill"])] += 1
-        self.pending[call_id] = (name, shown)
+        # Claude Code and Pi name a shell call's line `command`, Codex also `cmd`.
+        self.pending[call_id] = (name, shown, args.get("command") or args.get("cmd"))
 
     def _interrupt(self) -> None:
         self.interrupts += 1
@@ -243,7 +246,7 @@ class Digest:
             self.owner_prompts += 1
 
     def _tool_result(self, call_id: str, text: str, is_error: bool) -> None:
-        name, shown = self.pending.get(call_id, ("unknown", ""))
+        name, shown, command = self.pending.get(call_id, ("unknown", "", None))
         if len(text) >= LARGE_RESULT_CHARS:
             self.large.append((len(text), name, shown))
         if not is_error:
@@ -258,7 +261,8 @@ class Digest:
             hooks = refusing_hooks(text)
             for hook in hooks:
                 self.hook_refusals[f"{key}:{hook}"] += 1
-        self.signatures[sig.signature(name, cls, text, span, hooks)] += 1
+        program = command_head.program(command) if cls == "exit_nonzero" else ""
+        self.signatures[sig.signature(name, cls, text, span, hooks, program)] += 1
 
     def result(self, source: str, agent: str, repo: str, unparsed: int) -> Dict[str, Any]:
         private = self.mask.private_session()

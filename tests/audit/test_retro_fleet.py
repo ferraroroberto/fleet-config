@@ -90,6 +90,11 @@ fourth = miner.scan(roots, third.cache, workers=1)
 check(fourth.gone == 1 and any(r.get("gone") for r in fourth.cache["files"].values()),
       "a deleted log keeps its history, marked gone")
 
+stale = dict(json.loads(json.dumps(fourth.cache)), version=miner.CACHE_VERSION - 1)
+fifth = miner.scan(roots, stale, workers=1)
+check(fifth.digested == 8 and fifth.unchanged == 0, f"a cache of older signatures is re-read (got {fifth.digested})")
+check(any(r.get("gone") for r in fifth.cache["files"].values()), "a deleted log's row survives the re-read")
+
 rows = {r["signature"]: r for r in miner.aggregate(fourth.cache, NOW, "someone")}
 mismatch = rows.get("Edit|edit_mismatch|<tool_use_error>String to replace not found in file.")
 check(mismatch is not None, f"the edit mismatch has one signature across sessions (got {sorted(rows)})")
@@ -103,7 +108,7 @@ check(miner.repo_label("SOMEONE", "someone") == "<home>" and miner.repo_label("a
 many = dict(mismatch, repos={f"r{i}": 1 for i in range(8)})
 check("r4 1 and 3 more" in proposals.evidence(many) and "r5" not in proposals.evidence(many),
       "evidence names the top repos and counts the rest")
-check(not rows["shell|exit_nonzero|Exit code: <n>"]["flagged"], "one session is not recurring")
+check(not rows["shell|exit_nonzero|ls"]["flagged"], "one session is not recurring")
 
 doc = miner.candidates_doc(list(rows.values()), fourth, NOW, top=10)
 check([c["key"] for c in doc["candidates"]] == [mismatch["key"]], "only recurring candidates reach the classifier")
