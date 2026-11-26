@@ -174,7 +174,8 @@ check(cls(found, 14) == cs.FINISHED,
 live_lane = sweep(session_ids=frozenset({"lane14"}), pid_probe=lambda _p: True)
 check(cls(live_lane, 14) == cs.IN_USE and "live session lane14" in live_lane["work-wt-14"].evidence,
       "in-use: a live chief-managed session for the tree's repo#N holds it without a marker")
-check(cls(sweep(session_ids=frozenset({"lane14"}), managed={"lane14": {"repo": "work", "number": 15}}), 14) == cs.FINISHED,
+check(cs.classify_worktree(wt14, dirs=[], markers={}, session_ids={"lane14"}, processes=[], pr_lookup=pr_lookup,
+                           managed={"lane14": {"repo": "work", "number": 15}}).cls == cs.FINISHED,
       "finished: a live chief-managed session on a different issue does not hold the tree")
 check(cs.classify_worktree(wt13, dirs=[], markers={}, session_ids=set(), processes=[], pr_lookup=pr_lookup,
                          grace_s=0).cls == cs.FINISHED,
@@ -340,34 +341,26 @@ finally:
     co.launcher._request, cs.process_table = saved_request, saved_table
 
 # ---- squash-merged, branch deleted (fleet-config#2278) --------------------------
-# Last, because it moves the fixture's origin/main: the squash commit carries the
-# lane's tree under a new SHA, and the lane is left detached on its own commit.
+# Last, because it moves the fixture's origin/main: the squash commit carries
+# wt12's tree under a new SHA, and each lane is left detached on its own commits.
+# wt12 and wt3 are the survivors of `--apply` above, reused to spare spawns.
 
-
-def detach(wt: Path) -> None:
-    run_git(wt, "checkout", "-q", "--detach", check=check)
-
-
-wt30, wt31, wt32 = add_worktree(30), add_worktree(31), add_worktree(32)
-commit(wt30, "landed.txt")
-commit(wt31, "unlanded.txt")                            # content main never got
-commit(wt32, "landed.txt")                              # same tree as main, plus a dirty file
-(wt32 / "scratch.txt").write_text("x", encoding="utf-8")
-for lane in (wt30, wt31, wt32):
-    detach(lane)
-squash = run_git(wt30, "commit-tree", "HEAD^{tree}", "-p", "origin/main", "-m", "squash", check=check)
+squash = run_git(wt12, "commit-tree", "HEAD^{tree}", "-p", "origin/main", "-m", "squash", check=check)
 run_git(work, "update-ref", "refs/remotes/origin/main", squash, check=check)
+commit(wt3, "unlanded.txt")                             # content main never got
+run_git(wt3, "checkout", "-q", "--detach", check=check)
+run_git(wt12, "checkout", "-q", "--detach", check=check)
 
-landed = judge(wt30, [])
+check(judge(wt3, []).cls == cs.HAS_WORK, "has-work: a detached HEAD with any content difference stays has-work")
+(wt12 / "scratch.txt").write_text("x", encoding="utf-8")
+dirty_12 = judge(wt12, [])
+check(dirty_12.cls == cs.HAS_WORK and "dirty=1" in dirty_12.evidence,
+      "has-work: an identical tree with an uncommitted change stays has-work")
+(wt12 / "scratch.txt").unlink()
+landed = judge(wt12, [])
 check(landed.cls == cs.FINISHED and "ahead=1" in landed.evidence and "tree identical to origin/main" in landed.evidence,
       f"finished: a clean detached HEAD whose tree equals origin/main is finished ({landed.cls}: {landed.evidence})")
-check(judge(wt31, []).cls == cs.HAS_WORK, "has-work: a detached HEAD with any content difference stays has-work")
-dirty_32 = judge(wt32, [])
-check(dirty_32.cls == cs.HAS_WORK and "dirty=1" in dirty_32.evidence,
-      "has-work: an identical tree with an uncommitted change stays has-work")
-lanes = [judge(lane, []) for lane in (wt30, wt31, wt32)]
-cs.apply_findings(lanes, worktree_claim.remove_worktree)
-check(not wt30.exists() and wt31.exists() and wt32.exists(),
-      "apply: only the identical-tree clean worktree is removed")
+cs.apply_findings([landed], worktree_claim.remove_worktree)
+check(not wt12.exists(), "apply: the identical-tree clean worktree is removed")
 
 _h.report_and_exit("test_chief_sweep")

@@ -296,11 +296,12 @@ def classify_worktree(
     try:
         branch = _git(path, "branch", "--show-current")
         dirty = len([line for line in _git(path, "status", "--porcelain").splitlines() if line.strip()])
-        head = _git(path, "rev-parse", "HEAD")
         ref = git_run.resolve_default_branch_ref(path, candidates=DEFAULT_REF_CANDIDATES, final_fallback="")
         ahead = int(_git(path, "rev-list", "--count", f"{ref}..HEAD")) if ref else None
         remote = _git(path, "remote", "get-url", "origin")
-        same_tree = bool(ref) and len(set(_git(path, "rev-parse", "HEAD^{tree}", f"{ref}^{{tree}}").split())) == 1
+        trees = ["HEAD^{tree}", f"{ref}^{{tree}}"] if ref else []
+        head, *trees = _git(path, "rev-parse", "HEAD", *trees).split()
+        same_tree = len(trees) == 2 and trees[0] == trees[1]
     except (git_run.Unreadable, ValueError) as exc:
         return Finding(name, path, UNKNOWN, f"git facts unreadable: {exc}")
 
