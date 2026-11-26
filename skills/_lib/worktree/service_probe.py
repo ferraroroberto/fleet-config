@@ -106,6 +106,9 @@ def live_service_check(
 # ~0.03s on this host).
 SERVICE_PROBE_TIMEOUT = 5.0
 SERVICE_HTTP_TIMEOUT = 1.5
+# netstat spellings of a wildcard or loopback bind. A proxy publishing the same
+# port number on another address (Tailscale serve) is not the app.
+APP_ADDRESSES = ("0.0.0.0", "127.0.0.1", "[::]", "[::1]")
 
 
 def _plain_path(p: object) -> str:
@@ -179,7 +182,7 @@ def declared_service(
 
 
 def listening_ports() -> Optional[set]:
-    """Every TCP port something is listening on, or None if that can't be read.
+    """Every TCP port listened on at `APP_ADDRESSES`, or None if that can't be read.
 
     The OS's own listener table (`netstat -ano -p tcp`), because a connect
     attempt cannot answer the question on this fleet: measured on this host, a
@@ -217,8 +220,8 @@ def listening_ports() -> Optional[set]:
             continue
         if parts[2] not in ("0.0.0.0:0", "[::]:0") and parts[3].upper() != "LISTENING":
             continue
-        tail = parts[1].rsplit(":", 1)[-1]
-        if tail.isdigit():
+        host, _, tail = parts[1].rpartition(":")
+        if host in APP_ADDRESSES and tail.isdigit():
             ports.add(int(tail))
     return ports or None
 

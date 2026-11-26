@@ -1,10 +1,12 @@
 """Project-aware: kill the webapp PID, bring the webapp back, verify the new build.
 
 Looks up the project from the current working directory (matched against
-`projects.toml`), kills only the PID listening on that project's
-`webapp_port` (sister hubs on `never_kill_ports` are never touched), brings
-the webapp back, then polls `<api_version_path>` until `git_sha` matches
-`git rev-parse HEAD`. Reports the new `asset_hash`.
+`projects.toml`), kills only the app's own listener on that project's
+`webapp_port` (a wildcard or loopback bind; a proxy publishing the same port
+number elsewhere is left alone, and `never_kill_ports` are never touched),
+brings the webapp back from the checkout's real path, then polls
+`<api_version_path>` until `git_sha` matches `git rev-parse HEAD`. Reports the
+new `asset_hash`.
 
 Two restart strategies, chosen per project:
 
@@ -66,8 +68,12 @@ POLL_INTERVAL_S      = 0.5
 # the bind race and exit before binding. Settle, and retry the respawn.
 TIME_WAIT_SETTLE_S   = 3
 RESTART_ATTEMPTS     = 3
-RESTART_CMD_TIMEOUT_S = 30
+# A recipe may be a full `tray.bat --restart`: stop the tray, start it, verify.
+RESTART_CMD_TIMEOUT_S = 180
 PER_ATTEMPT_WAIT_S   = 4
+# The app binds a wildcard or loopback address. A proxy publishing the same port
+# number on another address (Tailscale serve) is not the app.
+APP_ADDRESSES        = ("0.0.0.0", "127.0.0.1", "::", "::1")
 
 
 def _run_ps(
@@ -105,17 +111,16 @@ def _first_line(text: Optional[str]) -> str:
 
 
 def _pid_on_port(port: int) -> Optional[int]:
+    """The PID of the app's own listener on `port` (`APP_ADDRESSES`), else None."""
     res = _run_ps(
-        "$c = Get-NetTCPConnection -LocalPort " + str(port) + " -State Listen -ErrorAction SilentlyContinue | "
-        "Select-Object -First 1; if ($c) { $c.OwningProcess }"
+        "Get-NetTCPConnection -LocalPort " + str(port) + " -State Listen -ErrorAction SilentlyContinue | "
+        "ForEach-Object { \"$($_.LocalAddress) $($_.OwningProcess)\" }"
     )
-    out = (res.stdout or "").strip()
-    if not out:
-        return None
-    try:
-        return int(out)
-    except ValueError:
-        return None
+    for line in (res.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in APP_ADDRESSES and parts[1].isdigit():
+            return int(parts[1])
+    return None
 
 
 def _kill_pid(pid: int) -> None:
@@ -204,11 +209,14 @@ def _restart_via_cmd(restart_cmd: str, cwd: Path, port: int) -> bool:
     """Run the project's `restart_cmd` (a WebappManager respawn) until the port
     is listening. The respawn spawns a detached uvicorn that survives this call
     and that the tray adopts. Retried because a just-killed port can linger in
-    TIME_WAIT and make the first bind race-fail. Returns True once listening.
+    TIME_WAIT and make the first bind race-fail; never after a timeout, where a
+    second run of a tray restart would stop what the first one is starting.
+    Returns True once listening.
     """
     # Force UTF-8 so a manager traceback (its messages carry emoji) can't itself
     # die with UnicodeEncodeError under captured stdout (the Windows gotcha).
     env = {**os.environ, "PYTHONUTF8": "1"}
+    timed_out = False
     for attempt in range(1, RESTART_ATTEMPTS + 1):
         print(f"[restart-webapp] respawn attempt {attempt}/{RESTART_ATTEMPTS}: {restart_cmd} (cwd={cwd})")
         try:
@@ -217,10 +225,13 @@ def _restart_via_cmd(restart_cmd: str, cwd: Path, port: int) -> bool:
                 reason = _first_line(res.stderr) or _first_line(res.stdout) or f"exit {res.returncode}"
                 print(f"[restart-webapp]   respawn reported: {reason}")
         except subprocess.TimeoutExpired:
-            print(f"[restart-webapp]   respawn timed out after {RESTART_CMD_TIMEOUT_S}s")
+            timed_out = True
+            print(f"[restart-webapp]   respawn timed out after {RESTART_CMD_TIMEOUT_S}s; not running it again")
 
         if _wait_port_listening(port, time.time() + PER_ATTEMPT_WAIT_S):
             return True
+        if timed_out:
+            break
         if attempt < RESTART_ATTEMPTS:
             print(f"[restart-webapp]   :{port} still down — settling {TIME_WAIT_SETTLE_S}s for TIME_WAIT, then retrying")
             time.sleep(TIME_WAIT_SETTLE_S)
@@ -275,7 +286,9 @@ def main() -> int:
 
     port      = project.webapp_port
     api_path  = project.api_version_path or "/api/version"
-    project_root = project.cwd_prefix
+    # The real checkout, not a junction spelling of it: a tray started from there
+    # is not recognised through the alias, so a restart would leave it running.
+    project_root = Path(os.path.realpath(project.cwd_prefix))
     restart_cmd = project.restart_cmd
 
     print(f"[restart-webapp] project={project.name} port={port} root={project_root}")

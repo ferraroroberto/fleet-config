@@ -857,4 +857,13 @@ finally:
     _server.server_close()
     shutil.rmtree(_doubt_base, ignore_errors=True)
 
+# ---- a proxy on the same port number is not the app (#2257) ----
+
+_netstat = "".join(f"  TCP    {local}    {foreign}    LISTENING    1\n" for local, foreign in (
+    ("0.0.0.0:8465", "0.0.0.0:0"), ("[::1]:8466", "[::]:0"),
+    ("192.0.2.1:8020", "0.0.0.0:0"), ("[2001:db8::1]:8020", "[::]:0")))
+with mock.patch.object(sp.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=_netstat)):
+    _got = sp.listening_ports()
+    check(_got == {8465, 8466}, f"listening_ports: only wildcard and loopback listeners are the app ({_got})")
+
 _h.report_and_exit("test_claim_and_landing")
