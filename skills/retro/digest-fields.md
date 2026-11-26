@@ -9,7 +9,7 @@ What each field of `digest.py`'s JSON measures, and which finding it usually poi
 | `skills` | Skill invocations by name | Which workflow the findings belong to |
 | `tool_calls` | Calls per tool | Navigation friction, expensive calls |
 | `tool_errors` | Failed results per tool, by class | Mistakes a check could catch |
-| `hook_refusals` | Hook refusals by event and tool, plus the hook module when the shim names it | A guard that fired, and a rule the session did not follow |
+| `hook_refusals` | Hook refusals by event, tool and hook module, `unknown` when the text names none; a call two hooks refused counts under each | A guard that fired, and a rule the session did not follow |
 | `interrupts` | Owner interrupts, and the tool called just before each | The strongest single signal |
 | `repeated_identical_calls` | Calls with the same tool and input as an earlier one | Retry loops, wasted calls |
 | `lookups_before_first_edit` | Read, Grep and Glob calls before the first edit; `null` when nothing was edited | Navigation friction |

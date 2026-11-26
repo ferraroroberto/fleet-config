@@ -51,8 +51,10 @@ ERROR_CLASSES: Tuple[Tuple[str, re.Pattern[str]], ...] = (
 _COMMAND = re.compile(r"<command-name>/?([\w:.-]+)</command-name>")
 _INTERRUPT = "[Request interrupted by user"
 _HOOK_EVENT = re.compile(r"\b(PreToolUse|PostToolUse|UserPromptSubmit|Stop|SessionStart):(\w+) hook")
-#: The fleet shim names the refusing hook module; a module name is safe to show.
-_HOOK_NAME = re.compile(r"-Hook\s+([\w.-]+)")
+#: The refusing hook module, in either wiring; a module name is safe to show.
+#: The shim names it in its command line, `hook_dispatch.py` opens each refusal with it.
+_SHIM_HOOK = re.compile(r"-Hook\s+([\w.-]+)")
+_DISPATCH_HOOK = re.compile(r"(?:^|\]: )\[hook:([a-z0-9_]+)\] ", re.M)
 _EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 _SEARCH_TOOLS = {"Grep", "Glob", "Read"}
 
@@ -75,6 +77,18 @@ def _block_text(content: Any) -> str:
     if isinstance(content, list):
         return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
     return ""
+
+
+def refusing_hooks(text: str) -> List[str]:
+    """The hook modules one refusal text names, or `["unknown"]`.
+
+    The shim name is read from the command line only, so a name the reason
+    merely quotes is never taken for the refusing hook.
+    """
+    shim = _SHIM_HOOK.search(text.split("]: ", 1)[0])
+    if shim:
+        return [shim.group(1)]
+    return list(dict.fromkeys(_DISPATCH_HOOK.findall(text))) or ["unknown"]
 
 
 class PathMask:
@@ -215,9 +229,10 @@ class Digest:
         cls = classify_error(text)
         self.errors.setdefault(name, Counter())[cls] += 1
         if cls == "hook_refusal":
-            event, hook = _HOOK_EVENT.search(text), _HOOK_NAME.search(text)
+            event = _HOOK_EVENT.search(text)
             key = f"{event.group(1)}:{event.group(2)}" if event else f"unknown:{name}"
-            self.hook_refusals[f"{key}:{hook.group(1)}" if hook else key] += 1
+            for hook in refusing_hooks(text):
+                self.hook_refusals[f"{key}:{hook}"] += 1
 
     def result(self, source: str) -> Dict[str, Any]:
         private = self.mask.private_session()

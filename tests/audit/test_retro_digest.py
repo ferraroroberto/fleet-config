@@ -21,6 +21,9 @@ from retro import digest as rd  # noqa: E402
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 
+sys.path.insert(0, str(REPO / "tests"))
+from acceptance.hook_cases.inproc import run_in_process  # noqa: E402
+
 _h = CheckHarness()
 check = _h.check
 
@@ -102,6 +105,33 @@ priv_cwd = str(ROOT / "life-os")
 priv = [dict(r, cwd=priv_cwd) for r in records]
 pout = rd.build(write(priv), rd.DEFAULT_PRIVATE)
 check(pout["private_session"] and pout["repeat_reads"] == [], "a private session lists no read paths")
+
+# ---- the refusing hook is named on both wirings ----
+def dispatch_refusal(command, *hooks):
+    """The real `hook_dispatch.py`'s refusal, wrapped the way the transcript records it."""
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(REPO),
+               "tool_input": {"command": command}}
+    code, _out, err = run_in_process("hook_dispatch", payload, args=hooks)
+    check(code == 2, f"the dispatcher refuses {command!r} (got {code})")
+    return (f"PreToolUse:Bash hook error: [python hook_dispatch.py {' '.join(hooks)}]: " + err)
+
+
+def refusals(text):
+    return rd.build(write([call("h", "Bash", command="x"), result("h", text, error=True)]), [])["hook_refusals"]
+
+
+hooks = ("bash_cmdexe_syntax_guard", "safe_kill_guard")
+got = refusals(dispatch_refusal("git push --force origin main", *hooks))
+check(got == {"PreToolUse:Bash:safe_kill_guard": 1}, f"a dispatcher refusal names its hook (got {got})")
+got = refusals(dispatch_refusal("cmd.exe /c dir && git push --force origin main", *hooks))
+check(got == {"PreToolUse:Bash:bash_cmdexe_syntax_guard": 1, "PreToolUse:Bash:safe_kill_guard": 1},
+      f"two hooks refusing one call are each counted (got {got})")
+got = refusals("PreToolUse:Bash hook error: [python hook_dispatch.py a b]: Blocked: no marker")
+check(got == {"PreToolUse:Bash:unknown": 1}, f"an unmarked refusal is unknown (got {got})")
+got = refusals("PreToolUse:Bash hook error: [shim -Hook venv_discipline]: Blocked:\n[hook:quoted] -Hook other")
+check(got == {"PreToolUse:Bash:venv_discipline": 1}, f"the shim's own name wins over quoted text (got {got})")
+got = refusals("PreToolUse:Bash hook error: [command hook 1]: Blocked: run run-hook.ps1 -Hook other")
+check(got == {"PreToolUse:Bash:unknown": 1}, f"a name quoted in the reason is not the refusing hook (got {got})")
 
 # ---- classify_error ----
 check(rd.classify_error("File has not been read yet. Read it first") == "file_state", "file-state class")
