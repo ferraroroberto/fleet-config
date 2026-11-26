@@ -27,6 +27,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "repo-relative paths: no prompt text, tool output, absolute path or "
      "private-repo path, and an unreadable transcript is not confirmed rather "
      "than an empty, clean-looking digest"),
+    ("retro_adapters", "audit/test_retro_adapters.py",
+     "Codex and Pi logs digest to the Claude Code shape with `agent` set, errors "
+     "differing only by path or number share a signature, ratchet rules are "
+     "captured, and no prompt or tool-output text leaks"),
     ("audit_issue", "audit/test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),

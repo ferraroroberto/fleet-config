@@ -19,7 +19,7 @@ disable-model-invocation: true
 E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/retro/digest.py --current
 ```
 
-Pass the transcript path in place of `--current` for a past session. The JSON holds only counts, tool and skill names, error classes and repo-relative paths; [digest fields](digest-fields.md) says what each field measures. `RETRO_DIGEST=NOT_CONFIRMED` prints its reason: for the running session in a harness the helper does not read, review your own context in step 2 and mark the evidence `from context`; for a named path, stop and report the reason.
+Pass the session log path in place of `--current` for a past session, or for a session from another harness. The JSON holds only counts, tool and skill names, error classes and repo-relative paths; [digest fields](digest-fields.md) says what each field measures. `RETRO_DIGEST=NOT_CONFIRMED` prints its reason: for the running session in a harness the helper does not read, review your own context in step 2 and mark the evidence `from context`; for a named path, stop and report the reason.
 
 ## 2. Find
 
