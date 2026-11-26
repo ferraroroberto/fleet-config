@@ -30,6 +30,8 @@ What each field of `digest.py`'s JSON measures, and which finding it usually poi
 
 A signature is `tool|class|template`. The template is taken only from text a harness, hook or ratchet writes itself: the refusing hook for a `hook_refusal`, the first ratchet rule for a gate failure, a harness's own error wording on the result's first line (`<tool_use_error>...`, Pi's `Could not find the exact text in ...`), or a fixed exit line anywhere in it (`Exit code 2`, `Command exited with code 1`). Otherwise it is the span the error class matched, or `-` for `other`. Paths, numbers, ids and quoted strings are masked, so two errors that differ only there share a signature. Free model or user text never enters it.
 
+A bare non-zero exit (`exit_nonzero` with no ratchet rule) takes the program the call ran as its template: `Bash|exit_nonzero|git`. `retro/command_head.py` reads it from the call's command: the last real command of the line, whose status a shell returns, with setup and output commands (`cd`, `echo`, `exit`), output filters after a pipe (`| tail`) and wrappers (`timeout`, `env`) skipped, and a variable set on the same line read through. It is a good reading, not proof of which step failed. The command is model text, so only a name from the helper's fixed program list appears; another script is `<script>`, any other word `<other>`, and a call with no command keeps its exit line.
+
 ## Paths
 
 A path inside the session's repo or a sibling repo under the same parent folder is shown repo-relative (`app-launcher/app/server.py`). A path elsewhere keeps only its file name under `<outside>/`. A path in a private repo, `life-os` by default and more with `--private <repo>`, is `<private>`.

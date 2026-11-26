@@ -6,7 +6,8 @@ line (`Exit code 2`) found anywhere in the result, a harness's own error wording
 the result's first line, or the hook or ratchet the text names. Paths, numbers, ids
 and quoted strings in it are masked, so two errors that differ only there match.
 Anything else falls back to the span the error class matched, which is pattern text.
-stdlib only.
+A bare non-zero exit says nothing by itself, so its template is the program the
+call ran, a name from `command_head`'s fixed list. stdlib only.
 """
 
 from __future__ import annotations
@@ -97,11 +98,13 @@ def template(text: str, class_span: str) -> str:
     return mask(class_span) if class_span else "-"
 
 
-def signature(tool: str, cls: str, text: str, class_span: str, hooks: Sequence[str] = ()) -> str:
-    """`tool|class|template` for one failed tool result."""
+def signature(tool: str, cls: str, text: str, class_span: str, hooks: Sequence[str] = (),
+              program: str = "") -> str:
+    """`tool|class|template` for one failed tool result; `program` names a bare exit's template."""
     if cls == "hook_refusal":
         shown = "+".join(hooks) or "unknown"
     else:
         rules = ratchet_rules(text)
-        shown = rules[0] if rules else template(text, class_span)
+        named = program if cls == "exit_nonzero" else ""
+        shown = rules[0] if rules else named or template(text, class_span)
     return f"{tool}|{cls}|{shown}"
