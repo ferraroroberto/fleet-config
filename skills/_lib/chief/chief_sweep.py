@@ -9,17 +9,19 @@ check, plan-only lanes). The judgment is mechanical, so it lives here rather tha
 
 `classify_worktree` puts each folder in exactly one class:
 
-  finished      clean tree, and either no commits ahead of the default branch
-                or every local commit is in a *merged* PR (a squash merge
-                leaves the local SHAs ahead, so the PR is asked, not the log)
+  finished      clean tree, and either no commits ahead of the default branch,
+                a tree identical to it, or every local commit in a *merged* PR
+                (a squash merge leaves the local SHAs ahead, so the content and
+                the PR are asked, not the log; a deleted branch leaves a
+                detached HEAD with no PR to ask, only the content)
   in-use        a live launcher session's cwd is inside it, a live
                 active-issue marker names it, a live chief-managed session
                 is working that repo#N, a running process's executable or
                 command line names it (under either drive spelling of the
                 junctioned fleet root), or it is younger than the grace
                 period (a lane may not have published its marker yet)
-  has-work      dirty tree, or commits that are not on the default branch
-                and not in a merged PR -- the only class the chief asks about
+  has-work      dirty tree, or content that differs from the default branch in
+                commits no merged PR holds -- the only class the chief asks about
   orphan-empty  an empty folder that is not a git worktree
   unknown       anything the sweep could not establish (unreadable git, a PR
                 lookup that failed, an unreadable board or process list) -- its own state,
@@ -298,6 +300,7 @@ def classify_worktree(
         ref = git_run.resolve_default_branch_ref(path, candidates=DEFAULT_REF_CANDIDATES, final_fallback="")
         ahead = int(_git(path, "rev-list", "--count", f"{ref}..HEAD")) if ref else None
         remote = _git(path, "remote", "get-url", "origin")
+        same_tree = bool(ref) and len(set(_git(path, "rev-parse", "HEAD^{tree}", f"{ref}^{{tree}}").split())) == 1
     except (git_run.Unreadable, ValueError) as exc:
         return Finding(name, path, UNKNOWN, f"git facts unreadable: {exc}")
 
@@ -309,6 +312,8 @@ def classify_worktree(
 
     if ahead == 0:
         verdict, evidence = FINISHED, f"{facts} (nothing beyond {ref})"
+    elif same_tree:
+        verdict, evidence = FINISHED, f"{facts} (tree identical to {ref})"
     elif not branch:
         return Finding(name, path, HAS_WORK, f"{facts} (detached HEAD)")
     else:

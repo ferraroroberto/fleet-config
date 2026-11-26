@@ -339,4 +339,35 @@ try:
 finally:
     co.launcher._request, cs.process_table = saved_request, saved_table
 
+# ---- squash-merged, branch deleted (fleet-config#2278) --------------------------
+# Last, because it moves the fixture's origin/main: the squash commit carries the
+# lane's tree under a new SHA, and the lane is left detached on its own commit.
+
+
+def detach(wt: Path) -> None:
+    run_git(wt, "checkout", "-q", "--detach", check=check)
+
+
+wt30, wt31, wt32 = add_worktree(30), add_worktree(31), add_worktree(32)
+commit(wt30, "landed.txt")
+commit(wt31, "unlanded.txt")                            # content main never got
+commit(wt32, "landed.txt")                              # same tree as main, plus a dirty file
+(wt32 / "scratch.txt").write_text("x", encoding="utf-8")
+for lane in (wt30, wt31, wt32):
+    detach(lane)
+squash = run_git(wt30, "commit-tree", "HEAD^{tree}", "-p", "origin/main", "-m", "squash", check=check)
+run_git(work, "update-ref", "refs/remotes/origin/main", squash, check=check)
+
+landed = judge(wt30, [])
+check(landed.cls == cs.FINISHED and "ahead=1" in landed.evidence and "tree identical to origin/main" in landed.evidence,
+      f"finished: a clean detached HEAD whose tree equals origin/main is finished ({landed.cls}: {landed.evidence})")
+check(judge(wt31, []).cls == cs.HAS_WORK, "has-work: a detached HEAD with any content difference stays has-work")
+dirty_32 = judge(wt32, [])
+check(dirty_32.cls == cs.HAS_WORK and "dirty=1" in dirty_32.evidence,
+      "has-work: an identical tree with an uncommitted change stays has-work")
+lanes = [judge(lane, []) for lane in (wt30, wt31, wt32)]
+cs.apply_findings(lanes, worktree_claim.remove_worktree)
+check(not wt30.exists() and wt31.exists() and wt32.exists(),
+      "apply: only the identical-tree clean worktree is removed")
+
 _h.report_and_exit("test_chief_sweep")

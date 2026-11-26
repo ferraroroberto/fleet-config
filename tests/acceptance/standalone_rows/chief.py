@@ -100,7 +100,7 @@ _CHIEF_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "a temp inbox (fleet-config#1896)"),
     ("chief_sweep", "chief_ops/test_chief_sweep.py",
      "the chief's worktree sweep -- every class (finished incl. a "
-     "squash-merged branch, in-use, has-work incl. a dirty tree, "
+     "squash-merged branch and a detached identical tree, in-use, has-work incl. a dirty tree, "
      "orphan-empty, unknown) against throwaway worktrees, --apply removing "
      "only finished and orphan-empty and reporting a folder that stays, an "
      "unreadable board degrading removable verdicts to unknown, and the "
