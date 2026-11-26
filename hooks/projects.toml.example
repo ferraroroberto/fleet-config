@@ -117,6 +117,25 @@ tray_cmd            = "tray.bat"
 # This repo owns the agent-CLI subprocess wrapper, so hub_bypass_warn stays quiet here.
 is_hub              = true
 
+[app-launcher-lite]
+cwd_prefix          = "E:/automation/app-launcher-lite"
+webapp_port         = 8465
+# Plain HTTP until webapp/certificates/ holds a pair (its serve_over = "auto").
+browser_scheme      = "http"
+# The recipe respawns the webapp only; the session host keeps running.
+session_host_port   = 8466
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
+[local-llm-hub-lite]
+cwd_prefix          = "E:/automation/local-llm-hub-lite"
+webapp_port         = 8020
+browser_scheme      = "http"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\tray.bat --restart'
+api_version_path    = "/admin/api/version"
+
 # ---- Remaining projects --------------------------------------------------------
 
 [accounting-quarterly]
@@ -124,9 +143,6 @@ cwd_prefix = "E:/automation/accounting-quarterly"
 
 [algo-trading]
 cwd_prefix = "E:/automation/algo-trading"
-
-[app-launcher-lite]
-cwd_prefix = "E:/automation/app-launcher-lite"
 
 [arboldelossuenos]
 cwd_prefix = "E:/automation/arboldelossuenos"
@@ -205,9 +221,6 @@ bootstrap_skill    = ["{skill}/description.md", "{skill}/conversations/index.md"
 bootstrap_sections = ["Step 1"]
 # The conversation index loads head-only; the audit reads that cap from the file declaring it.
 bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }
-
-[local-llm-hub-lite]
-cwd_prefix = "E:/automation/local-llm-hub-lite"
 
 [mass-html-to-markdown]
 cwd_prefix = "E:/automation/mass-html-to-markdown"

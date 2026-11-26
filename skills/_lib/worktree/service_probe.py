@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fleet_core import fleet_repo_scan  # noqa: E402
+from fleet_core import fleet_repo_scan, fleet_toml  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 # ---- live-service vocabulary for the fourth land-primary guard -----
@@ -128,6 +128,14 @@ def _find_entry(tables: dict, repo: Path, norm: Callable[[object], str]):
     return None
 
 
+def _entry_for(tables: dict, repo: Path):
+    """`repo`'s registry entry. String match first; on no match, compare real paths
+    so a checkout behind the fleet-root junction (`C:/automation/x`) finds its entry
+    spelled via the alias (`E:/automation/x`), and the reverse."""
+    entry = _find_entry(tables, repo, _plain_path)
+    return entry if entry is not None else _find_entry(tables, repo, _real_path)
+
+
 def declared_service(
     repo: Path, projects_toml: Optional[Path] = None
 ) -> Tuple[bool, Optional[int], Optional[str], str]:
@@ -158,12 +166,7 @@ def declared_service(
         tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
     except (OSError, ValueError) as exc:
         return True, None, None, f"could not read hooks/projects.toml: {exc}"
-    # String match first; on no match, compare real paths so a checkout behind
-    # the fleet-root junction (`C:/automation/x`) finds its entry spelled via
-    # the alias (`E:/automation/x`), and the reverse.
-    entry = _find_entry(tables, repo, _plain_path)
-    if entry is None:
-        entry = _find_entry(tables, repo, _real_path)
+    entry = _entry_for(tables, repo)
     if entry is not None:
         name, tbl = entry
         if not tbl.get("tray_cmd"):
@@ -284,3 +287,63 @@ def service_state(repo: Path, projects_toml: Optional[Path] = None) -> Tuple[boo
     return live_service_check(True, probe, port=port, running_sha=sha,
                               detail=detail or probe_detail)
 
+
+# ---- doubts about a tree that is otherwise current ---------------------------------
+#
+# A level checkout is not a live service: the process serving it may still run an
+# older commit, or the registry may not say where to look. Neither prints `live`.
+
+
+def web_surface(repo: Path) -> Optional[str]:
+    """What in the checkout itself says a web app is served from it, else None.
+
+    The signal is `.fleet.toml`'s `port`. A card that does not parse counts: it
+    cannot show that there is no port.
+    """
+    data, state = fleet_toml.load_state(repo)
+    if state == "invalid":
+        return ".fleet.toml does not parse"
+    port = (data or {}).get("port")
+    return f".fleet.toml port {port}" if port else None
+
+
+def server_doubt(
+    repo: Path, level_head: Optional[Callable[[], Optional[str]]], projects_toml: Optional[Path] = None
+) -> Optional[Tuple[str, str]]:
+    """Why `repo`'s tree may not be what is being served: `(state, reason)`, or None.
+
+    `state` is `unknown` (not established) or `stale` (an older build is running).
+    `level_head` reads the commit of a tree with nothing to fast-forward, and turns
+    on the running-build comparison (called only once a service reports a build);
+    None skips it, for a tree that has just moved, where the fourth guard already
+    answered or the caller restarts next.
+    """
+    try:
+        entry = _entry_for(fleet_repo_scan.fleet_repo_tables(projects_toml), repo)
+    except (OSError, ValueError) as exc:
+        return SERVICE_UNKNOWN, f"could not read hooks/projects.toml: {exc}"
+    tbl = entry[1] if entry else {}
+    port = tbl.get("webapp_port")
+    if not isinstance(port, int):
+        surface = web_surface(repo)
+        if surface:
+            return SERVICE_UNKNOWN, (f"web surface ({surface}) but no webapp_port in "
+                                     "hooks/projects.toml; server state not established")
+        if level_head and tbl.get("tray_cmd"):
+            return SERVICE_UNKNOWN, "tray declared but no webapp_port to probe"
+        return None
+    if not level_head or not tbl.get("tray_cmd"):
+        return None
+    probe, sha, detail = probe_service(port, tbl.get("api_version_path"))
+    if probe == SERVICE_ABSENT:
+        return None
+    if probe == SERVICE_UNKNOWN:
+        return SERVICE_UNKNOWN, detail
+    if not sha:
+        return SERVICE_UNKNOWN, f"the build serving :{port} could not be read"
+    head = level_head()
+    if not head:
+        return SERVICE_UNKNOWN, f"could not read HEAD to compare with the build on :{port}"
+    if sha[:7] != head[:7]:
+        return "stale", f"webapp :{port} still runs {sha}, not {head[:7]}; restart required"
+    return None

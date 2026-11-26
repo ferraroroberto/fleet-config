@@ -356,7 +356,7 @@ above; steps 5-7 run once for the whole repo.
    — and report its `<repo>: PRIMARY=...` line verbatim. It lands through the untrack guard, then runs the repo's declared
    `restart_cmd` only when the service was up and the tree moved. The hub (:8000) and the session host (:8446)
    print `PRIMARY=stale reason=owner-restart`, a service with no `restart_cmd` prints `no-restart-recipe`: report
-   those as stale, never restart them by hand.
+   those as stale, never restart them by hand. `PRIMARY=unknown` (server state not established) is not live either.
    Then delete the refs explicitly: `git push origin --delete <branch>`, and the
    local ref with `-D` **only after** confirming the tip landed in
    `origin/<default>` (`git diff --quiet origin/<default> <branch>`). `-d` fails
@@ -365,7 +365,7 @@ above; steps 5-7 run once for the whole repo.
 Report back, in this exact shape:
   - Repo: <repo>
   - Action: ADOPTED | RE-VENDORED | BOTH   (per component, when there are several; an `add` counts as ADOPTED)
-  - Primary: PRIMARY=live behind=0 [restarted=yes build=<sha>] | PRIMARY=stale reason=<why> | n/a (primary mode)
+  - Primary: PRIMARY=live behind=0 [restarted=yes build=<sha>] | PRIMARY=stale|unknown reason=<why> | n/a (primary mode)
   - Branch: <branch>
   - Gate: PASS | FAIL (<reason>) | NOT CONFIRMED (<reason>)   (+ the `LEDGER=recorded` line)
   - Result: MERGED (<merge-sha>) | PR-OPEN (<url>, gate/CI pending) | BLOCKED (<reason>)

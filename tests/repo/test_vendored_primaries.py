@@ -11,6 +11,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/repo/test_vendor
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,11 @@ from worktree import service_probe as sp  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
+
+# Landing reads the fleet registry to see what serves a tree. None of the clones here is in it.
+_REGISTRY = throwaway_dir("primaries-registry-") / "projects.toml"
+_REGISTRY.write_text("[global]\n", encoding="utf-8")
+os.environ["FLEET_PROJECTS_TOML"] = str(_REGISTRY)
 
 NEVER = pr.never_kill_ports({"global": {"never_kill_ports": [8000, 8090, 8446]}})
 RECIPE = '& .\\.venv\\Scripts\\python.exe -c "start"'
@@ -149,6 +155,18 @@ out = land("app", tbl(work), sp.SERVICE_LIVE, rec, dry_run=True, behind=lambda _
 check(not out.live and out.line.startswith("WOULD=stale"), "dry run: an uncountable distance is stale, not level")
 out = land("app", tbl(work), sp.SERVICE_LIVE, rec, dry_run=True, behind=lambda _r: 0)
 check(out.live and out.line.startswith("WOULD=nothing"), "dry run: a level tree needs nothing")
+
+# ---- a web app with no declared port is never counted live (#2255) ----
+lite = throwaway_dir("primaries-noport-")
+(lite / ".fleet.toml").write_text('port = ":8020"\n', encoding="utf-8")
+undeclared = {"cwd_prefix": str(lite)}
+out = land("lite", undeclared, sp.SERVICE_ABSENT, Recorder(), dry_run=True, behind=lambda _r: 1)
+check(not out.live and out.line.startswith("WOULD=unknown reason="), f"dry run: an undeclared-port web repo would be unknown ({out.line})")
+rec = Recorder()
+out = land("lite", undeclared, sp.SERVICE_ABSENT, rec, head=lambda _r: "abc1234",
+           land=lambda *_a, **_k: (1, ["PRIMARY=unknown reason=no port"]))
+check(not out.live and out.line == "PRIMARY=unknown reason=no port" and not rec.calls, f"an unknown landing is not live and restarts nothing ({out.line})")
+check(pr.stale_line([out]) == "STALE_PRIMARIES=1: lite (unknown: no port)", f"stale_line: an unknown primary is named as unknown ({pr.stale_line([out])})")
 
 # ---- the single stale line ----
 fine = pr.Outcome("a", "PRIMARY=live behind=0", True)

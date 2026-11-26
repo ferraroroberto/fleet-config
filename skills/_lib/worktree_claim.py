@@ -298,7 +298,7 @@ from worktree.gitops import (
 from worktree.gitops import (
     worktree_add_args as worktree_add_args,
 )
-from worktree.service_probe import service_state  # noqa: E402
+from worktree.service_probe import server_doubt, service_state  # noqa: E402
 
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
 # lives in its own module -- including the side-instance preflight's own
@@ -651,11 +651,12 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
 
     Prints exactly one `PRIMARY=` line on stdout in every outcome -- that line
     is what the finish summary quotes. Exit 0 only for `PRIMARY=live behind=0`;
-    1 for any stale state; 2 when the target isn't a primary checkout at all.
+    1 for any stale or unknown state; 2 when the target isn't a primary checkout.
     The distance from the remote is counted (against a fresh fetch) *before*
     the guards, because "there is nothing to pull" answers the whole question:
-    a level tree lands as a no-op, service or no service, and the pull is
-    skipped entirely.
+    a level tree lands as a no-op and the pull is skipped entirely. It is
+    still not `live` when the serving process reports another build, or when a
+    web checkout declares no port (`service_probe.server_doubt`).
 
     Never checks out, stashes, forces, or otherwise "recovers" a tree it was
     refused: reporting stale *is* the correct outcome, and `--ff-only` fails
@@ -694,16 +695,19 @@ def land_primary(repo: Path, issue: str,
         return 1, [format_primary_state(False, reason)]
     if behind == 0:
         # Nothing to fast-forward -- the tree is already what the merge
-        # produced, so there is no pull to run and no service to skew.
-        return 0, [format_primary_state(True, reason, 0)]
+        # produced, so there is no pull to run and no service to skew. Whether
+        # the process serving it runs that commit is a separate question.
+        doubt = server_doubt(repo, lambda: _git(repo, "rev-parse", "HEAD").stdout.strip())
+        return (1 if doubt else 0), [format_primary_state(True, reason, 0, doubt)]
     # A plain `pull --ff-only` deletes every live file the merge untracks,
     # ignored or not -- the guard keeps and reports them.
     ff = guarded_fast_forward(repo, ref)
     if not ff.ok:
         return 1, [format_primary_state(False, f"fast-forward failed: {ff.detail}")]
     behind = count_behind(repo, ref, fetch=False)           # count_behind fetched above
-    lines = [format_primary_state(True, reason, behind), *untrack_report_lines(ff)]
-    return (0 if behind == 0 else 1), lines
+    doubt = server_doubt(repo, None)
+    lines = [format_primary_state(True, reason, behind, doubt), *untrack_report_lines(ff)]
+    return (0 if behind == 0 and not doubt else 1), lines
 
 
 def cmd_mode(args: argparse.Namespace) -> int:

@@ -92,7 +92,7 @@ You are the only agent touching this checkout.
    "'main' is already used by worktree") and do NOT `git checkout main`; instead
    `remove-worktree`, then `worktree_claim.py land-primary <repo> #<N>`, then
    delete the refs explicitly. Report its `PRIMARY=live behind=0` /
-   `PRIMARY=stale reason=<why>` line -- a merged PR is not a live one.
+   `PRIMARY=stale|unknown reason=<why>` line -- a merged PR is not a live one.
 3. Fire /issue-finish's own completion ping (✅ Done #<N> … — PR merged) — KEEP
    it, it carries this branch's PR link. notify_complete.py is the ONLY
    sanctioned way to send it: do NOT use any MCP chat tool (search/send/etc.)
@@ -109,7 +109,7 @@ Report back, in this exact shape:
   - Branch: <branch>
   - Result: MERGED (<merge-sha>) | BLOCKED (<one-line reason — needs human>)
   - PR: <url or n/a>
-  - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
+  - Primary: PRIMARY=live behind=0 | PRIMARY=stale|unknown reason=<why> | n/a (primary mode)
 ```
 
 Substitute every `<…>` with the concrete value from steps 2–3.
