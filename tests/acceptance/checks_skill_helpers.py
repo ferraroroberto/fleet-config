@@ -10,10 +10,14 @@ for why.
 """
 from __future__ import annotations
 
+import _winapi
 import contextlib
 import io
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Tuple
 
@@ -344,8 +348,74 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
           not rw.sha_matches(head, "9999999abc"))
 
     _restart_verify_exit_code_cases(check, rw, head)
+    _restart_listener_and_timeout_cases(check, rw)
+    _restart_real_path_case(check, rw)
 
     return check.failures, check.total
+
+
+def _restart_real_path_case(check: _Checker, rw: Any) -> None:
+    """A registry spelled through a junction restarts from the real checkout: a
+    tray started from there is not recognised through the junction spelling."""
+    saved = (rw._pid_on_port, rw._restart_via_cmd, rw._git_head, rw._fetch_version, sys.argv,
+             os.environ.get("CLAUDE_HOOKS_PROJECTS_TOML"))
+    used: list = []
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(os.path.realpath(tmp))
+        real, alias = base / "real", base / "alias"
+        real.mkdir()
+        _winapi.CreateJunction(str(real), str(alias))
+        registry = base / "projects.toml"
+        registry.write_text(f'[app]\ncwd_prefix = "{alias.as_posix()}"\nwebapp_port = 1\n'
+                            'tray_cmd = "tray.bat"\nrestart_cmd = "x"\n', encoding="utf-8")
+        try:
+            os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(registry)
+            rw._pid_on_port = lambda port: None
+            rw._restart_via_cmd = lambda cmd, cwd, port: used.append(Path(cwd)) or True
+            rw._git_head = lambda cwd: "a1b2c3d4"
+            rw._fetch_version = lambda port, path, timeout=2.0: {"git_sha": "a1b2c3d4"}
+            sys.argv = ["restart_and_verify_webapp", "--cwd", str(alias)]
+            with contextlib.redirect_stdout(io.StringIO()):
+                rw.main()
+        finally:
+            os.rmdir(alias)  # removes the junction itself, never its target
+            (rw._pid_on_port, rw._restart_via_cmd, rw._git_head, rw._fetch_version, sys.argv) = saved[:5]
+            if saved[5] is None:
+                os.environ.pop("CLAUDE_HOOKS_PROJECTS_TOML", None)
+            else:
+                os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = saved[5]
+    check("restart root: a junction-spelled checkout restarts from its real path",
+          used == [real], f"ran in {used}")
+
+
+def _restart_listener_and_timeout_cases(check: _Checker, rw: Any) -> None:
+    """Only the app's own listener is restarted, and a timed-out recipe runs once."""
+    saved = (rw._run_ps, rw._wait_port_listening, rw.TIME_WAIT_SETTLE_S)
+    timeouts: list = []
+
+    def listeners(rows: str):
+        return lambda command, **_kw: subprocess.CompletedProcess(command, 0, rows, "")
+
+    def timed_out(command: str, **kw: Any):
+        timeouts.append(kw.get("timeout"))
+        raise rw.subprocess.TimeoutExpired(command, kw.get("timeout"))
+
+    try:
+        rw._run_ps = listeners("192.0.2.1 111\n2001:db8::1 111\n0.0.0.0 222\n")
+        check("restart listener: a proxy on another address of the port is not the app",
+              rw._pid_on_port(8465) == 222)
+        rw._run_ps = listeners("192.0.2.1 111\n")
+        check("restart listener: only a proxy listening -> no app process to kill",
+              rw._pid_on_port(8465) is None)
+        rw._run_ps, rw._wait_port_listening, rw.TIME_WAIT_SETTLE_S = timed_out, lambda *_a: False, 0
+        with contextlib.redirect_stdout(io.StringIO()):
+            started = rw._restart_via_cmd("& .\\tray.bat --restart", Path("."), 8020)
+        check("restart recipe: a recipe that timed out is not run again",
+              not started and len(timeouts) == 1, f"ran {len(timeouts)} times")
+        check("restart recipe: it gets time enough for a tray restart",
+              bool(timeouts) and timeouts[0] >= 180, f"timeout {timeouts[:1]}")
+    finally:
+        rw._run_ps, rw._wait_port_listening, rw.TIME_WAIT_SETTLE_S = saved
 
 
 def _restart_verify_exit_code_cases(check: _Checker, rw: Any, head: str) -> None:
