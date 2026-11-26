@@ -1,20 +1,22 @@
-"""Reduce one session transcript to the facts a retro needs: counts, tool names and paths.
+"""Reduce one session log to the facts a retro needs: counts, tool names and paths.
 
 `/retro` reads this digest instead of quoting the transcript, so nothing a person
 typed and nothing a tool printed can reach a filed issue. Every value is a count, a
-tool name, a skill name, an error class from a fixed list, or a path made relative
+tool name, a skill name, an error class from a fixed list, an error signature built
+only from harness, hook and ratchet text (`signature.py`), or a path made relative
 to the session's repo (or its sibling repos). A path in a private repo is replaced
-by `<private>`.
+by `<private>`. Claude Code, Codex and Pi logs are read through `adapters.py` into
+the same shape, with `agent` naming which.
 
-  digest.py --current                 the running session (`CLAUDE_CODE_SESSION_ID`)
-  digest.py <transcript.jsonl>        a named transcript
+  digest.py --current                 the running Claude Code session (`CLAUDE_CODE_SESSION_ID`)
+  digest.py <session.jsonl>           a named Claude Code, Codex or Pi session log
   digest.py ... --private <repo>      also redact paths in <repo> (repeatable)
 
-Prints the digest as one JSON object, exit 0. A transcript that cannot be found,
-read or recognised prints `RETRO_DIGEST=NOT_CONFIRMED reason=<text>`, exit 2, and
-never an empty digest: an empty one would read as a clean session. Only the
-Claude Code JSONL shape is recognised; another harness's session is reviewed from
-its own context. stdlib only.
+Prints the digest as one JSON object, exit 0. A log that cannot be found or read,
+or whose shape no adapter recognises, prints `RETRO_DIGEST=NOT_CONFIRMED
+reason=<text>` (`unmeasured: ...` for an unrecognised shape), exit 2, and never an
+empty digest: an empty one would read as a clean session. Lines that are not JSON
+objects are counted in `unparsed_lines`, never dropped unseen. stdlib only.
 """
 
 from __future__ import annotations
@@ -29,6 +31,16 @@ from collections import Counter
 from pathlib import Path, PurePath
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+if __package__:
+    from . import adapters
+    from . import signature as sig
+else:  # run as a script: its own folder is on sys.path
+    import adapters
+    import signature as sig
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from worktree_residue import WT_SEP  # noqa: E402
+
 #: Repos whose file paths never leave the machine, even as paths.
 DEFAULT_PRIVATE = ("life-os",)
 #: A file read this often in one session is navigation friction worth a look.
@@ -41,12 +53,17 @@ TOP_N = 5
 ERROR_CLASSES: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ("user_rejected", re.compile(r"doesn't want to proceed|tool use was rejected", re.I)),
     ("hook_refusal", re.compile(r"hook error|blocked by .*hook|hook .*blocked", re.I)),
-    ("edit_mismatch", re.compile(r"String to replace not found|Found \d+ matches of the string", re.I)),
+    ("edit_mismatch", re.compile(
+        r"String to replace not found|Found \d+ matches of the string|Could not find (?:the exact text|edits\[)"
+        r"|Found \d+ occurrences of|Failed to find expected lines", re.I)),
     ("file_state", re.compile(r"has not been read yet|modified since (?:it was )?read", re.I)),
-    ("timeout", re.compile(r"timed out|Exit code 143\b", re.I)),
-    ("missing_path", re.compile(r"No such file or directory|does not exist|cannot find the path", re.I)),
+    ("timeout", re.compile(r"timed out|Exit code:? 143\b", re.I)),
+    ("missing_path", re.compile(
+        r"No such file or directory|does not exist|cannot find the path|Path not found", re.I)),
     ("permission", re.compile(r"Permission denied|Access is denied", re.I)),
-    ("exit_nonzero", re.compile(r"^\s*Exit code \d+", re.I)),
+    # Claude Code opens a failed command with its exit line; Codex may, Pi closes with it.
+    ("exit_nonzero", re.compile(
+        r"^\s*(?:Exit code:? \d+|(?:Process|Command) exited with code \d+)", re.I | re.M)),
 )
 _COMMAND = re.compile(r"<command-name>/?([\w:.-]+)</command-name>")
 _INTERRUPT = "[Request interrupted by user"
@@ -55,28 +72,31 @@ _HOOK_EVENT = re.compile(r"\b(PreToolUse|PostToolUse|UserPromptSubmit|Stop|Sessi
 #: The shim names it in its command line, `hook_dispatch.py` opens each refusal with it.
 _SHIM_HOOK = re.compile(r"-Hook\s+([\w.-]+)")
 _DISPATCH_HOOK = re.compile(r"(?:^|\]: )\[hook:([a-z0-9_]+)\] ", re.M)
-_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-_SEARCH_TOOLS = {"Grep", "Glob", "Read"}
+#: Tool names across harnesses: Claude Code capitalises, Pi does not, Codex patches.
+_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "edit", "write", "apply_patch"}
+_READ_TOOLS = {"Read", "read"}
+_SEARCH_TOOLS = {"Grep", "Glob", "Read", "grep", "find", "ls", "read"}
+#: Pi runs a skill as a `/skill:<name>` prompt.
+_PI_SKILL = re.compile(r"^/skill:([\w:.-]+)", re.M)
+_WORKTREE_SUFFIX = re.compile(rf"{re.escape(WT_SEP)}[\w.-]+$", re.I)
 
 
 class NotConfirmed(Exception):
     """The transcript could not be found, read or recognised."""
 
 
+def classify(text: str) -> Tuple[str, str]:
+    """The fixed error class of one failed tool result's text, and the span that matched."""
+    for name, pattern in ERROR_CLASSES:
+        found = pattern.search(text)
+        if found:
+            return name, found.group(0)
+    return "other", ""
+
+
 def classify_error(text: str) -> str:
     """The fixed error class of one failed tool result's text."""
-    for name, pattern in ERROR_CLASSES:
-        if pattern.search(text):
-            return name
-    return "other"
-
-
-def _block_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
-    return ""
+    return classify(text)[0]
 
 
 def refusing_hooks(text: str) -> List[str]:
@@ -122,32 +142,46 @@ class PathMask:
             return None
 
 
-def read_records(path: Path) -> List[Dict[str, Any]]:
-    """Every JSON object line of a transcript; an unrecognised file raises NotConfirmed."""
+def read_records(path: Path) -> Tuple[List[Dict[str, Any]], int]:
+    """Every JSON object line of a log, and the count of non-blank lines that were not one."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
         raise NotConfirmed(f"cannot read {path.name}: {exc.strerror or exc}") from exc
-    records = []
+    records: List[Dict[str, Any]] = []
+    unparsed = 0
     for line in lines:
+        if not line.strip():
+            continue
         try:
             row = json.loads(line)
         except ValueError:
-            continue
+            row = None
         if isinstance(row, dict):
             records.append(row)
-    if not any(r.get("type") in ("user", "assistant") and isinstance(r.get("message"), dict) for r in records):
-        raise NotConfirmed(f"{path.name} holds no user/assistant messages in the recognised shape")
-    return records
+        else:
+            unparsed += 1
+    return records, unparsed
+
+
+def repo_of(cwd: str, mask: PathMask) -> str:
+    """The fleet repo a session ran in: its working folder, a `-wt-<N>` worktree folded in."""
+    if not cwd:
+        return "unknown"
+    if mask.private_session():
+        return "<private>"
+    return _WORKTREE_SUFFIX.sub("", PurePath(cwd.replace("\\", "/")).name) or "unknown"
 
 
 class Digest:
-    """Accumulates the counts over a transcript's records, in order."""
+    """Accumulates the counts over a session's events, in order."""
 
     def __init__(self, mask: PathMask) -> None:
         self.mask = mask
         self.tool_calls: Counter[str] = Counter()
         self.errors: Dict[str, Counter[str]] = {}
+        self.signatures: Counter[str] = Counter()
+        self.ratchet_rules: Counter[str] = Counter()
         self.hook_refusals: Counter[str] = Counter()
         self.skills: Counter[str] = Counter()
         self.reads: Counter[str] = Counter()
@@ -161,33 +195,31 @@ class Digest:
         self.lookups_before_edit = 0
         self.edited = False
         self.last_tool = "none"
-        self.turn_ms = 0
+        self.turn_ms: Optional[int] = None
 
-    def add(self, rec: Dict[str, Any]) -> None:
-        kind = rec.get("type")
-        if kind == "system" and rec.get("subtype") == "turn_duration":
-            self.turn_ms += int(rec.get("durationMs") or 0)
-        msg = rec.get("message")
-        if not isinstance(msg, dict):
-            return
-        if kind == "assistant":
-            for block in msg.get("content") or []:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    self._tool_use(block)
-        elif kind == "user":
-            self._user(msg.get("content"), bool(rec.get("isMeta")))
+    def feed(self, event: Tuple[Any, ...]) -> None:
+        """Count one adapter event (see `adapters`)."""
+        kind = event[0]
+        if kind == "call":
+            self._tool_use(*event[1:])
+        elif kind == "result":
+            self._tool_result(*event[1:])
+        elif kind == "prompt":
+            self._prompt_text(*event[1:])
+        elif kind == "interrupt":
+            self._interrupt()
+        elif kind == "turn_ms":
+            self.turn_ms = (self.turn_ms or 0) + int(event[1])
 
-    def _tool_use(self, block: Dict[str, Any]) -> None:
-        name = str(block.get("name") or "unknown")
-        args = block.get("input") if isinstance(block.get("input"), dict) else {}
+    def _tool_use(self, call_id: str, name: str, args: Dict[str, Any]) -> None:
         self.tool_calls[name] += 1
         self.last_tool = name
         key = hashlib.sha256(json.dumps([name, args], sort_keys=True, default=str).encode()).hexdigest()
         self.repeated_calls += key in self.seen_calls
         self.seen_calls.add(key)
-        target = str(args.get("file_path") or args.get("notebook_path") or "")
+        target = str(args.get("file_path") or args.get("notebook_path") or args.get("path") or "")
         shown = self.mask(target) if target else ""
-        if name == "Read" and target:
+        if name in _READ_TOOLS and target:
             self.reads[shown] += 1
         if name in _EDIT_TOOLS:
             self.edited = True
@@ -195,56 +227,55 @@ class Digest:
             self.lookups_before_edit += 1
         if name == "Skill" and args.get("skill"):
             self.skills[str(args["skill"])] += 1
-        self.pending[str(block.get("id") or "")] = (name, shown)
+        self.pending[call_id] = (name, shown)
 
-    def _user(self, content: Any, meta: bool) -> None:
-        if isinstance(content, str):
-            self._prompt_text(content, meta)
-            return
-        for block in content or []:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "text":
-                self._prompt_text(str(block.get("text") or ""), meta)
-            elif block.get("type") == "tool_result":
-                self._tool_result(block)
+    def _interrupt(self) -> None:
+        self.interrupts += 1
+        self.interrupts_after[self.last_tool] += 1
 
     def _prompt_text(self, text: str, meta: bool) -> None:
         if text.startswith(_INTERRUPT):
-            self.interrupts += 1
-            self.interrupts_after[self.last_tool] += 1
+            self._interrupt()
             return
-        for name in _COMMAND.findall(text):
+        for name in _COMMAND.findall(text) + _PI_SKILL.findall(text):
             self.skills[name] += 1
         if not meta and not text.lstrip().startswith("<"):
             self.owner_prompts += 1
 
-    def _tool_result(self, block: Dict[str, Any]) -> None:
-        name, shown = self.pending.get(str(block.get("tool_use_id") or ""), ("unknown", ""))
-        text = _block_text(block.get("content"))
+    def _tool_result(self, call_id: str, text: str, is_error: bool) -> None:
+        name, shown = self.pending.get(call_id, ("unknown", ""))
         if len(text) >= LARGE_RESULT_CHARS:
             self.large.append((len(text), name, shown))
-        if not block.get("is_error"):
+        if not is_error:
             return
-        cls = classify_error(text)
+        cls, span = classify(text)
         self.errors.setdefault(name, Counter())[cls] += 1
+        self.ratchet_rules.update(sig.ratchet_rules(text))
+        hooks: List[str] = []
         if cls == "hook_refusal":
             event = _HOOK_EVENT.search(text)
             key = f"{event.group(1)}:{event.group(2)}" if event else f"unknown:{name}"
-            for hook in refusing_hooks(text):
+            hooks = refusing_hooks(text)
+            for hook in hooks:
                 self.hook_refusals[f"{key}:{hook}"] += 1
+        self.signatures[sig.signature(name, cls, text, span, hooks)] += 1
 
-    def result(self, source: str) -> Dict[str, Any]:
+    def result(self, source: str, agent: str, repo: str, unparsed: int) -> Dict[str, Any]:
         private = self.mask.private_session()
         large = sorted(self.large, reverse=True)[:TOP_N]
         return {
             "source": source,
+            "agent": agent,
+            "repo": repo,
             "private_session": private,
+            "unparsed_lines": unparsed,
             "owner_prompts": self.owner_prompts,
-            "turn_seconds": round(self.turn_ms / 1000),
+            "turn_seconds": None if self.turn_ms is None else round(self.turn_ms / 1000),
             "skills": dict(self.skills.most_common()),
             "tool_calls": dict(self.tool_calls.most_common()),
             "tool_errors": {t: dict(c.most_common()) for t, c in sorted(self.errors.items())},
+            "error_signatures": dict(self.signatures.most_common()),
+            "ratchet_rules": dict(self.ratchet_rules.most_common()),
             "hook_refusals": dict(self.hook_refusals.most_common()),
             "interrupts": {"count": self.interrupts, "after_tool": dict(self.interrupts_after.most_common())},
             "repeated_identical_calls": self.repeated_calls,
@@ -257,13 +288,18 @@ class Digest:
 
 
 def build(path: Path, private: Iterable[str]) -> Dict[str, Any]:
-    """The digest of one transcript file."""
-    records = read_records(path)
-    cwd = next((str(r["cwd"]) for r in records if r.get("cwd")), "")
-    digest = Digest(PathMask(cwd, private))
-    for rec in records:
-        digest.add(rec)
-    return digest.result(path.name)
+    """The digest of one Claude Code, Codex or Pi session log; an unrecognised one raises NotConfirmed."""
+    records, unparsed = read_records(path)
+    try:
+        agent = adapters.detect(records)
+    except adapters.Unmeasured as exc:
+        raise NotConfirmed(f"unmeasured: {path.name}: {exc}") from exc
+    cwd = adapters.session_cwd(agent, records)
+    mask = PathMask(cwd, private)
+    digest = Digest(mask)
+    for event in adapters.events(agent, records):
+        digest.feed(event)
+    return digest.result(path.name, agent, repo_of(cwd, mask), unparsed)
 
 
 def current_transcript(home: Path, session_id: Optional[str]) -> Path:
@@ -280,7 +316,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("transcript", nargs="?", help="a transcript .jsonl path")
+    parser.add_argument("transcript", nargs="?", help="a Claude Code, Codex or Pi session .jsonl path")
     parser.add_argument("--current", action="store_true", help="the running session")
     parser.add_argument("--private", action="append", default=[], help="another repo to redact")
     args = parser.parse_args(argv)
