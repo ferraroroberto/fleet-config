@@ -31,6 +31,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "Codex and Pi logs digest to the Claude Code shape with `agent` set, errors "
      "differing only by path or number share a signature, ratchet rules are "
      "captured, and no prompt or tool-output text leaks"),
+    ("retro_fleet", "audit/test_retro_fleet.py",
+     "the cross-session miner reads only changed logs after the first run, flags a "
+     "signature at three sessions in thirty days, counts an unrecognised log as "
+     "unmeasured, and puts only counts and signatures on the page"),
     ("audit_issue", "audit/test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),

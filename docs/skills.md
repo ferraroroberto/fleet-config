@@ -48,6 +48,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [`/system-map`](skills/system-map.md) — regenerate the fleet architecture map
 - [`/config-map`](skills/config-map.md) — regenerate the fleet config and convention map
 - [`/insights-weekly`](skills/insights-weekly.md) — week-over-week diff of Claude Code's `/insights` report
+- [`/retro-fleet`](skills/retro-fleet.md) — every agent session log mined for repeat errors, one scored check proposal and Board ask each, nothing filed
 - [`/learning-log`](skills/learning-log.md) — weekly journey and productivity lens over the GitHub work stream
 - [`/fleet-health`](skills/fleet-health.md) — weekly hardware checkup of every fleet machine
 - [`/weekly-burst`](skills/weekly-burst.md) — the burn, load and wall-clock acceptance units plus a fresh-clone hermetic re-run, once a week

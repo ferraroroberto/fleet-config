@@ -323,6 +323,7 @@ wrapper_expectations = {
     "learning-log": ('"/learning-log"', "--model claude-sonnet-5"),
     "perf-sweep": ('"/perf-sweep %~1"', "--model claude-sonnet-5"),
     "prompt-audit": ('"/prompt-audit %~1"', "--delivery-check"),
+    "retro-fleet": ('"/retro-fleet"', "--model claude-sonnet-5"),
     "sota-watch": ('"/sota-watch"',),
     "system-map": ('"/system-map"',),
 }
@@ -345,8 +346,8 @@ slot_claim = re.compile(
 )
 
 wrappers = sorted((ROOT / ".claude" / "skills").glob("*/run-weekly.bat"))
-check(len(wrappers) == len(wrapper_expectations) + len(no_model_wrappers) == 15,
-      "the wiring test covers all fifteen scheduled wrappers")
+check(len(wrappers) == len(wrapper_expectations) + len(no_model_wrappers) == 16,
+      "the wiring test covers all sixteen scheduled wrappers")
 for wrapper in wrappers:
     text = wrapper.read_text(encoding="utf-8")
     if wrapper.parent.name in no_model_wrappers:
