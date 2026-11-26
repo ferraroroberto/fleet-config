@@ -65,6 +65,7 @@ The trio and `/handoff-commit` are specified by their own `SKILL.md`, whose alwa
 - [UX-conformance gate (diff-keyed design check)](skills/ux-conformance-gate.md) — `ux_surface.py`: does a diff touch a design-gated surface; `ui_proof`: the visual-proof merge gate, `ui_proof merge` (the one scripted `gh pr merge`) and the per-repo `.proof/<PR>` before/after page
 - [Deploy-coverage gate (merged is not shipped)](skills/deploy-coverage-gate.md) — `deploy_coverage.py`: a merged change is not a shipped change
 - [Owner checks (work that needs Roberto, marked by code)](owner-check.md) — `owner_check/`: the rule, the `needs-validation` / `needs-owner` labels and comment block, the `/issue-add` · `/issue-start` · `/issue-finish` call points, back-fill
+- [Proposal reports (scored page + one Board ask per suggestion)](proposal-reports.md) — `proposal_report/`: impact/effort quadrant page, filters, one `plan ask` per item with a link, no repeats
 - [Gate evidence (a green bound to the tree it ran against)](skills/gate-evidence.md) — `gate_evidence.py`: a pass bound to a content hash
 - [Instruction delta (prose growth as a reported fact)](skills/instruction-delta.md) — `instruction_delta/delta.py`: net instruction-line change of a branch, in the gate and the PR body
 - [PR-body check (closing refs, images, attribution, ticked boxes, merge danger)](skills/pr-body-check.md) — `pr_body/check.py`: `/issue-finish` refuses a PR body that breaks a rule, naming the fix

@@ -727,6 +727,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "block round-trip, the back-fill list parser and every CLI leg -- "
      "finish/gate/clear/mark/list with unknown as its own exit code -- are "
      "testable on their own, with gh replaced by a fake"),
+    ("proposal_report", "proposal_report/test_proposal_report.py",
+     "the proposal report's quadrant placement, the page's chart dots and filter attributes matching the "
+     "list, escaping, and the Board-ask helper's dry run, posting, link and no-repeat rule -- against a "
+     "temp plan file and ledger, never the live Board (fleet-config#2261)"),
     ("fleet_password", "fleet_password/test_fleet_password.py",
      "the one-password fleet script finds the vendored-password apps, sets each "
      "through its own setter on stdin, checks it back, backs up and restores the "
