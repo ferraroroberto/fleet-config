@@ -166,6 +166,11 @@ window.CONFIG = {
       "scope": "fleet"
     },
     {
+      "nm": "issue-grill",
+      "ds": "Interview the owner in rounds of numbered decisions, each with a recommended answer, until every decision for a large or fuzzy id…",
+      "scope": "repo"
+    },
+    {
       "nm": "issue-start",
       "ds": "Start work on a GitHub issue — pick it, sync main, cut a feature branch, load project context, then present a plan (enhancements)…",
       "scope": "repo"
@@ -285,6 +290,11 @@ window.CONFIG = {
     {
       "nm": "prompt-audit",
       "ds": "Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first…",
+      "sched": true
+    },
+    {
+      "nm": "retro-fleet",
+      "ds": "Mine every Claude Code, Codex and Pi session log on this machine for errors that keep coming back, propose a check for each recur…",
       "sched": true
     },
     {
