@@ -75,6 +75,8 @@ SHELL_WRITES = ("git ", "curl", "Invoke-WebRequest", "Invoke-RestMethod", "Remov
 # Twelve hours, then the run stops its monitor and exits; `start` again to resume.
 BACKGROUND_WAIT_S = 43200
 POLL_INTERVAL_S = 5
+# getUpdates asks for no long poll, so this only bounds a stalled connection; not measured.
+TELEGRAM_TIMEOUT_S = 30
 
 BRIEF = """# Grok assistant brief
 
@@ -262,7 +264,7 @@ def telegram_transport(token: str) -> Transport:
     def call(method: str, params: Dict[str, object]) -> dict:
         data = urllib.parse.urlencode(params).encode("utf-8")
         request = urllib.request.Request(TELEGRAM_API.format(token=token, method=method), data=data)
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=TELEGRAM_TIMEOUT_S) as response:
             return json.loads(response.read().decode("utf-8"))
     return call
 

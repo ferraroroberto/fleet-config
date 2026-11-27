@@ -53,6 +53,10 @@ class ProposalAnswer(enum.StrEnum):
 LEDGER_FILENAME = "chief-proposals-ledger.json"
 SWITCH_KEY = "chief_weekly_proposals"
 
+# The repo and issue lists page through hundreds of rows, so the bound is wide; it keeps a
+# stalled `gh` from hanging the weekly run and is not measured.
+GH_TIMEOUT_S = 60
+
 # The Board's answer sheet takes 0-4 options (docs/chief-plan.md), so one question holds four.
 MAX_CANDIDATES = 4
 TYPE_LABELS = ("bug", "enhancement", "refactor", "docs", "chore", "test", "perf")
@@ -236,7 +240,7 @@ def ledger_rows(event: Dict[str, Any]) -> List[Dict[str, Any]]:
 def fetch_public_repos() -> Tuple[Optional[List[str]], str]:
     res = git_run.run_gh(["repo", "list", launcher.DEFAULT_OWNER, "--no-archived", "--source",
                           "--visibility", "public", "--limit", str(_REPO_LIMIT), "--json", "name"],
-                         timeout=60, stdin=subprocess.DEVNULL)
+                         timeout=GH_TIMEOUT_S, stdin=subprocess.DEVNULL)
     try:
         data = json.loads(res.stdout) if res.returncode == 0 else None
     except ValueError:
@@ -248,7 +252,7 @@ def fetch_public_repos() -> Tuple[Optional[List[str]], str]:
 
 def fetch_open_titles(repo: str) -> Tuple[Optional[List[str]], str]:
     res = git_run.run_gh(["issue", "list", "--repo", f"{launcher.DEFAULT_OWNER}/{repo}", "--state", "open",
-                          "--limit", str(_OPEN_ISSUE_LIMIT), "--json", "title"], timeout=60, stdin=subprocess.DEVNULL)
+                          "--limit", str(_OPEN_ISSUE_LIMIT), "--json", "title"], timeout=GH_TIMEOUT_S, stdin=subprocess.DEVNULL)
     try:
         data = json.loads(res.stdout) if res.returncode == 0 else None
     except ValueError:

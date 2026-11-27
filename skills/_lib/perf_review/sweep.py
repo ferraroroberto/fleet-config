@@ -42,7 +42,6 @@ from no_window import NO_WINDOW  # noqa: E402
 
 from . import cli, idle_sample, report  # noqa: E402
 
-DEFAULT_LOCK_WAIT_MIN = 20.0
 LOCK_REPO = "perf-sweep"
 
 

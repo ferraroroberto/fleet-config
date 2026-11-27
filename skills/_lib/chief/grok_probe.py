@@ -44,6 +44,8 @@ logger = logging.getLogger("fleet_chief")
 
 REPO = Path(__file__).resolve().parents[3]
 CODEWORD = "PELICAN-41"
+# Bounds a CLI that hangs on start-up while only printing its version; not measured.
+VERSION_TIMEOUT_S = 30
 
 HOOK_SOURCE = r'''
 import io, json, os, sys, time
@@ -216,7 +218,7 @@ def probe(timeout: int) -> Dict[str, str]:
 
 def _grok_version() -> Optional[str]:
     try:
-        out = subprocess.run(["grok", "--version"], capture_output=True, text=True, timeout=30,
+        out = subprocess.run(["grok", "--version"], capture_output=True, text=True, timeout=VERSION_TIMEOUT_S,
                              creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("⚠️ grok --version failed: %s", exc)

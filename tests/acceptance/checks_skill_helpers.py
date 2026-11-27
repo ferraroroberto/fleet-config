@@ -455,20 +455,28 @@ def _restart_verify_exit_code_cases(check: _Checker, rw: Any, head: str) -> None
 
 
 def _scheduled_skill_timeouts_named_check() -> Tuple[int, int]:
-    """The unattended weekly skills' `gh`/`git`/hub timeouts are named, not bare (fleet-config#1306).
+    """The unattended code paths' timeouts are named, not bare (fleet-config#1306).
 
     A timeout is the only thing between a hung call and a stalled `claude -p`
     run, and a bare `timeout=120` does not say whether it is measured, an API
     limit or a guess - so nobody dares tune it. Each is a named constant
-    carrying a one-clause reason; this pins the four files that regressed.
+    carrying a one-clause reason; this pins the weekly-skill files by path and
+    every module of the chief and perf-review packages.
     """
     check = _Checker()
     bare = re.compile(r"\btimeout\s*=\s*\d")
+    packages = [
+        p.relative_to(REPO).as_posix()
+        for name in ("chief", "perf_review")
+        for p in sorted((REPO / "skills" / "_lib" / name).glob("*.py"))
+    ]
+    check("timeouts: the chief and perf_review packages were found", len(packages) > 2, str(packages))
     for rel in (
         ".claude/skills/learning-log/gather.py",
         ".claude/skills/context-purge/digest.py",
         ".claude/skills/context-purge/gate.py",
         ".claude/skills/insights-weekly/report.py",
+        *packages,
     ):
         text = (REPO / rel).read_text(encoding="utf-8")
         hits = [ln.strip() for ln in text.splitlines() if bare.search(ln) and not ln.lstrip().startswith("#")]
