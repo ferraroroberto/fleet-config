@@ -1,36 +1,41 @@
 """The fleet chief's worktree sweep.
 
-Every `<repo>-wt-<N>` folder beside the fleet repos is a leftover of a
-chief-dispatched lane: the owner does not use worktrees himself, and has
-authorised the chief to remove finished ones on its own judgment, including
-those whose issue is still open (umbrella issues, issues waiting on a live
-check, plan-only lanes). The judgment is mechanical, so it lives here rather than being re-typed as
+Every `<repo>-wt-<N>` folder beside the fleet repos, and every other worktree a
+primary there registers under any name or path, is a leftover of a lane: the
+owner does not use worktrees himself, and has authorised the chief to remove
+finished ones on its own judgment, including those whose issue is still open
+(umbrella issues, issues waiting on a live check, plan-only lanes). The judgment
+is mechanical, so it lives here rather than being re-typed as
 `git status` / `git log` / `gh pr list` by hand on every lane close.
 
 `classify_worktree` puts each folder in exactly one class:
 
   finished      clean tree, and either no commits ahead of the default branch,
-                a tree identical to it, or every local commit in a *merged* PR
-                (a squash merge leaves the local SHAs ahead, so the content and
-                the PR are asked, not the log; a deleted branch leaves a
-                detached HEAD with no PR to ask, only the content)
+                a tree identical to it, every local commit already upstream by
+                patch-id, or every local commit in a *merged* PR (a squash merge
+                leaves the local SHAs ahead, so the content, the patches and the
+                PR are asked, not the log; a deleted branch leaves a detached
+                HEAD with no PR to ask, only content and patches)
   in-use        a live launcher session's cwd is inside it, a live
                 active-issue marker names it, a live chief-managed session
                 is working that repo#N, a running process's executable or
                 command line names it (under either drive spelling of the
-                junctioned fleet root), or it is younger than the grace
-                period (a lane may not have published its marker yet)
-  has-work      dirty tree, or content that differs from the default branch in
-                commits no merged PR holds -- the only class the chief asks about
+                junctioned fleet root), `git worktree lock` holds it, or it is
+                younger than the grace period (a lane may not have published its
+                marker yet)
+  has-work      dirty tree, or commits whose content is neither upstream nor in
+                a merged PR -- the only class the chief asks about
   orphan-empty  an empty folder that is not a git worktree
-  unknown       anything the sweep could not establish (unreadable git, a PR
-                lookup that failed, an unreadable board or process list) -- its own state,
-                never folded into `finished`
+  unknown       anything the sweep could not establish (unreadable git or
+                worktree list, a PR lookup that failed, an unreadable board or
+                process list) -- its own state, never folded into `finished`
 
 `--apply` removes only `finished` (through `worktree_claim.remove_worktree`,
 the junction-safe teardown) and `orphan-empty` (`rmdir`, which refuses a
-non-empty or held folder). A folder that will not go stays and is reported.
-It never kills a process and never touches the other three classes.
+non-empty or held folder). A folder that will not go stays and is reported. A
+`finished` worktree not named `<repo>-wt-*` is reported and kept: nothing says
+the fleet made it. It never kills a process and never touches the other three
+classes.
 
 `stale_sessions` is the companion read: chief-managed sessions that are
 `idle-finished` after their issue closed, listed so the chief can `stop` them
@@ -54,7 +59,17 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import active_issue  # noqa: E402
@@ -200,6 +215,61 @@ def _merged_pr_covers_head(path: Path, head: str, prs: List[Dict[str, Any]]) -> 
     return None
 
 
+def _locked(path: Path) -> bool:
+    """True when `git worktree lock` holds this tree. Read from its admin folder:
+    the remover deletes a locked tree that git itself refuses to remove."""
+    try:
+        pointer = (path / ".git").read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return False
+    return pointer.startswith("gitdir:") and (path / pointer[len("gitdir:"):].strip() / "locked").is_file()
+
+
+def _git_verdict(path: Path, pr_lookup: PrLookup) -> Finding:
+    """What git (and, last, the PR list) says about the tree's content, before
+    any liveness gate: `finished`, `has-work` or `unknown`."""
+    name = path.name
+    try:
+        branch = _git(path, "branch", "--show-current")
+        dirty = len([line for line in _git(path, "status", "--porcelain").splitlines() if line.strip()])
+        ref = git_run.resolve_default_branch_ref(path, candidates=DEFAULT_REF_CANDIDATES, final_fallback="")
+        # One line per commit beyond `ref`, `=` when its patch is already there.
+        # A merge or empty commit is never marked `=`, so neither reads as landed.
+        marks = _git(path, "rev-list", "--right-only", "--cherry-mark", f"{ref}...HEAD").split() if ref else None
+        trees = ["HEAD^{tree}", f"{ref}^{{tree}}"] if ref else []
+        head, *trees = _git(path, "rev-parse", "HEAD", *trees).split()
+        same_tree = len(trees) == 2 and trees[0] == trees[1]
+    except git_run.Unreadable as exc:
+        return Finding(name, path, UNKNOWN, f"git facts unreadable: {exc}")
+
+    facts = f"branch={branch or '(detached)'} ahead={'?' if marks is None else len(marks)} dirty={dirty}"
+    if dirty:
+        return Finding(name, path, HAS_WORK, facts)
+    if marks is None:
+        return Finding(name, path, UNKNOWN, f"{facts} (no default-branch ref)")
+    if not marks:
+        return Finding(name, path, FINISHED, f"{facts} (nothing beyond {ref})")
+    if same_tree:
+        return Finding(name, path, FINISHED, f"{facts} (tree identical to {ref})")
+    if all(mark.startswith("=") for mark in marks):
+        return Finding(name, path, FINISHED, f"{facts} (every commit already in {ref} by patch)")
+    if not branch:
+        return Finding(name, path, HAS_WORK, f"{facts} (detached HEAD)")
+
+    try:
+        remote = _git(path, "remote", "get-url", "origin")
+    except git_run.Unreadable as exc:
+        return Finding(name, path, UNKNOWN, f"git facts unreadable: {exc}")
+    prs = pr_lookup(remote, branch)
+    if prs is None:
+        return Finding(name, path, UNKNOWN, f"{facts} (PR state not established)")
+    merged = _merged_pr_covers_head(path, head, prs)
+    if merged is not None:
+        return Finding(name, path, FINISHED, f"{facts} pr=#{merged} merged")
+    states = ",".join(f"#{p.get('number')} {str(p.get('state')).lower()}" for p in prs) or "none"
+    return Finding(name, path, HAS_WORK, f"{facts} pr={states}")
+
+
 # ---- classification ----------------------------------------------------------
 
 
@@ -257,7 +327,7 @@ def classify_worktree(
     now: Callable[[], float] = time.time,
     spellings: Callable[[str], Sequence[str]] = dir_holders.equivalent_spellings,
 ) -> Finding:
-    """Class + evidence for one `<repo>-wt-<N>` folder. See the module docstring.
+    """Class + evidence for one worktree folder. See the module docstring.
 
     `dirs` / `markers` / `session_ids` / `processes` are None when the board, the
     marker file or the process list could not be read: a removable verdict then cannot be established and
@@ -293,40 +363,12 @@ def classify_worktree(
             return Finding(name, path, UNKNOWN, f"empty folder, {not_established}")
         return Finding(name, path, ORPHAN_EMPTY, "empty folder, not a git worktree")
 
-    try:
-        branch = _git(path, "branch", "--show-current")
-        dirty = len([line for line in _git(path, "status", "--porcelain").splitlines() if line.strip()])
-        ref = git_run.resolve_default_branch_ref(path, candidates=DEFAULT_REF_CANDIDATES, final_fallback="")
-        ahead = int(_git(path, "rev-list", "--count", f"{ref}..HEAD")) if ref else None
-        remote = _git(path, "remote", "get-url", "origin")
-        trees = ["HEAD^{tree}", f"{ref}^{{tree}}"] if ref else []
-        head, *trees = _git(path, "rev-parse", "HEAD", *trees).split()
-        same_tree = len(trees) == 2 and trees[0] == trees[1]
-    except (git_run.Unreadable, ValueError) as exc:
-        return Finding(name, path, UNKNOWN, f"git facts unreadable: {exc}")
-
-    facts = f"branch={branch or '(detached)'} ahead={'?' if ahead is None else ahead} dirty={dirty}"
-    if dirty:
-        return Finding(name, path, HAS_WORK, facts)
-    if ahead is None:
-        return Finding(name, path, UNKNOWN, f"{facts} (no default-branch ref)")
-
-    if ahead == 0:
-        verdict, evidence = FINISHED, f"{facts} (nothing beyond {ref})"
-    elif same_tree:
-        verdict, evidence = FINISHED, f"{facts} (tree identical to {ref})"
-    elif not branch:
-        return Finding(name, path, HAS_WORK, f"{facts} (detached HEAD)")
-    else:
-        prs = pr_lookup(remote, branch)
-        if prs is None:
-            return Finding(name, path, UNKNOWN, f"{facts} (PR state not established)")
-        merged = _merged_pr_covers_head(path, head, prs)
-        if merged is not None:
-            verdict, evidence = FINISHED, f"{facts} pr=#{merged} merged"
-        else:
-            states = ",".join(f"#{p.get('number')} {str(p.get('state')).lower()}" for p in prs) or "none"
-            return Finding(name, path, HAS_WORK, f"{facts} pr={states}")
+    if _locked(path):
+        return Finding(name, path, IN_USE, "locked with git worktree lock")
+    found = _git_verdict(path, pr_lookup)
+    if found.cls != FINISHED:
+        return found
+    evidence = found.evidence
 
     if not live_known:
         return Finding(name, path, UNKNOWN, f"{evidence}; {not_established}")
@@ -336,16 +378,53 @@ def classify_worktree(
         return Finding(name, path, UNKNOWN, f"{evidence}; tree age unreadable: {exc}")
     if age_s < grace_s:
         return Finding(name, path, IN_USE, f"younger than {grace_s / 60:g} min ({age_s / 60:.1f} min old)")
-    return Finding(name, path, verdict, evidence)
+    return found
+
+
+def _identity(path: Path) -> Tuple[int, int]:
+    """The folder itself, whichever drive spelling or junction names it."""
+    stat = os.stat(path)
+    return stat.st_dev, stat.st_ino
+
+
+def _registered(root: Path, primary: Path) -> List[Path]:
+    """Folders of every worktree `primary` registers, spelled under `root` when
+    that is the same folder: live cwds are compared by spelling. A registration
+    whose folder is gone leaves nothing to sweep. Raises `git_run.Unreadable`."""
+    paths: List[Path] = []
+    for entry in worktree_residue.parse_worktree_porcelain(_git(primary, "worktree", "list", "--porcelain")):
+        path = Path(entry.path)
+        if not path.is_dir():
+            continue
+        local = root / path.name
+        paths.append(local if local.is_dir() and os.path.samefile(local, path) else path)
+    return paths
 
 
 def scan(root: Path, **lookups: Any) -> List[Finding]:
-    """Classify every `<repo>-wt-<N>` directory directly under `root`."""
+    """Classify every `<repo>-wt-<N>` directory directly under `root`, and every
+    other worktree registered by a primary there, whatever its name or path."""
+    root = Path(root)
+    entries = sorted(root.iterdir(), key=lambda p: p.name.lower())
+    targets = {_identity(e): e for e in entries if e.is_dir() and WORKTREE_RE.match(e.name)}
+    unread: List[Finding] = []
+    for primary in entries:
+        # Only a repo with linked worktrees costs a `git` spawn.
+        if not (primary / ".git" / "worktrees").is_dir():
+            continue
+        try:
+            for path in _registered(root, primary):
+                targets.setdefault(_identity(path), path)
+        except git_run.Unreadable as exc:
+            unread.append(Finding(primary.name, primary, UNKNOWN, f"registered worktrees unreadable: {exc}"))
+
     found: List[Finding] = []
-    for entry in sorted(Path(root).iterdir(), key=lambda p: p.name.lower()):
-        if entry.is_dir() and WORKTREE_RE.match(entry.name):
-            found.append(classify_worktree(entry, **lookups))
-    return found
+    for path in sorted(targets.values(), key=lambda p: p.name.lower()):
+        finding = classify_worktree(path, **lookups)
+        if path.parent != root:
+            finding.name = path.as_posix()
+        found.append(finding)
+    return found + unread
 
 
 # ---- apply -------------------------------------------------------------------
@@ -357,10 +436,15 @@ def apply_findings(
     rmdir: Callable[[Path], None] = lambda p: p.rmdir(),
 ) -> int:
     """Remove `finished` and `orphan-empty`; record each outcome. Returns the
-    number of folders that were attempted and survived (busy / refused)."""
+    number of folders that were attempted and survived (busy / refused); one
+    kept for its name was never attempted."""
     stuck = 0
     for f in findings:
         if f.cls not in REMOVABLE:
+            continue
+        repo, _, tail = f.path.name.rpartition(WT_SEP)
+        if f.cls == FINISHED and not (repo and tail):
+            f.outcome = f"KEPT (not named <repo>{WT_SEP}*; remove by hand)"
             continue
         if f.cls == FINISHED:
             code = remover(f.path)
@@ -417,7 +501,7 @@ def format_report(findings: Sequence[Finding], sessions: Sequence[str], applied:
     lines = [f"{f.cls:<12} {f.name}  {f.evidence}" + (f"  -> {f.outcome}" if f.outcome else "")
              for f in findings]
     if not findings:
-        lines.append("(no <repo>-wt-<N> folders)")
+        lines.append("(no worktrees found)")
     counts = {c: sum(1 for f in findings if f.cls == c) for c in CLASSES}
     lines.append("SUMMARY " + " ".join(f"{c}={n}" for c, n in counts.items())
                  + ("" if applied else "  (read-only; --apply removes finished + orphan-empty)"))
@@ -434,4 +518,4 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     """Mount the sweep flags on `chief_ops.py sweep`."""
     parser.add_argument("--apply", action="store_true",
                         help="remove finished (remove-worktree) and orphan-empty (rmdir) folders")
-    parser.add_argument("--root", default=None, help="folder holding the <repo>-wt-<N> dirs (default: beside this repo)")
+    parser.add_argument("--root", default=None, help="folder holding the repos and their <repo>-wt-<N> dirs (default: beside this repo)")

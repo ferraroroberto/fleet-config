@@ -38,5 +38,10 @@
     "pattern": "iterdir_git",
     "files": ["hooks/backup/select.py"],
     "reason": "the daily backup never skips a repo for being idle"
+  },
+  {
+    "pattern": "iterdir_git",
+    "files": ["skills/_lib/chief/chief_sweep.py"],
+    "reason": "worktree housekeeping: a leftover worktree in a dormant repo is still a leftover"
   }
 ]

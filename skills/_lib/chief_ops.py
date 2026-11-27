@@ -260,16 +260,18 @@ Subcommands
 
   sweep [--apply] [--root DIR]
       The chief's worktree sweep: one line per
-      `<repo>-wt-<N>` folder with its class and evidence -- `finished`
-      (clean, nothing beyond the default branch, a tree identical to it, or all
-      of it in a merged PR),
+      `<repo>-wt-<N>` folder and per other registered worktree, with its class
+      and evidence -- `finished` (clean, nothing beyond the default branch, a
+      tree identical to it, every patch already in it, or all of it in a merged
+      PR),
       `in-use` (a live session's cwd or a live active-issue marker),
       `has-work` (dirty or unmerged -- the only class the chief asks about),
       `orphan-empty` (empty non-git folder) or `unknown` (not established) --
       then a SUMMARY line and one `SESSION` line per chief-managed
       `idle-finished` session with its issue state (`stoppable` when CLOSED,
       for `stop`). Read-only by default; `--apply` removes `finished` via
-      `worktree_claim.remove_worktree` and `orphan-empty` via `rmdir`, and a
+      `worktree_claim.remove_worktree` (one not named `<repo>-wt-*` is kept)
+      and `orphan-empty` via `rmdir`, and a
       folder that will not go stays and is reported (exit 1). Never kills a
       process. The logic lives in `skills/_lib/chief/chief_sweep.py`.
       Without `--root` it also lists every fleet primary behind
