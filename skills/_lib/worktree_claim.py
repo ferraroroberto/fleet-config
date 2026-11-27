@@ -1,109 +1,16 @@
 """Concurrency primitive for the issue-* skills: claim-or-worktree.
 
-Two top-level agent sessions working the **same** repo used to collide because
-they shared one working directory — a `git checkout` in session B rewrote the
-tree under session A mid-build. The collision window is not
-branch-cut time; it is the minutes-long *study* phase before an agent writes
-anything. By the time the second agent cuts its branch, the damage is done.
+The first session to `acquire` a repo works in its primary checkout; every later
+one builds in a sibling worktree (`<repo>-wt-<N>`) on its own branch, so two
+sessions never switch HEAD under each other. The claim is taken at the very
+first action, because the collision window opens during the study phase, long
+before a branch is cut.
 
-The fix is first-come-first-served, claimed at the **very first action**:
-
-  - The first session to `acquire` a repo wins its **primary checkout** and works
-    on `main` in place, exactly as before.
-  - Every session after that gets `MODE=worktree` and builds in an isolated
-    sibling worktree (`<repo>-wt-<N>`) on its own branch, sharing the repo's
-    object store. Separate HEAD + separate files ⇒ no checkout/HEAD race.
-  - `release` (on finish, from the primary) frees the claim for the next session.
-
-The claim is a directory published **atomically, fully populated** (meta.json
-included) via a temp-dir-then-`rename` under the repo's *common* git dir
-(`git rev-parse --git-common-dir`), which every worktree of the repo shares —
-so the claim is visible from the primary checkout and from every linked
-worktree (see `_publish_claim`; a bare `mkdir`-then-write-`meta.json` let two
-racers both win). Exactly one racer wins the rename; the
-rest fall through to worktree mode. A crashed session's claim is reclaimed
-once it ages past the TTL (no fragile PID-liveness check on Windows).
-
-Windows-specific by design (the fleet is Windows): worktree `.venv` is a
-**junction** to the primary's `.venv` (`mklink /J`) — worktrees don't share
-untracked files, and a 24-repo fleet can't recreate heavy venvs per worktree.
-The teardown order is load-bearing: a junction MUST be stripped with
-`rmdir` (reparse-safe, no `/s`) BEFORE `git worktree remove`, or git's recursive
-delete follows the junction and wipes the *real* venv (proven the hard way; same
-junction footgun as uninstall.ps1).
-
-`.venv` isn't always the only gitignored path a repo's own gate needs — a
-vendored install (`local-llm-hub`'s `vendor/comfyui/`), a model cache, and
-similar never make it into a fresh worktree either, so that repo's own test
-suite can never pass there even though the build itself succeeds.
-A repo declares extra ones in its own `.fleet.toml`:
-
-    [worktree]
-    extra_junctions = ["vendor/comfyui"]
-
-`worktree_junction_targets` reads this declaratively; `.venv` is always
-junctioned first and remains the *only* target when no `.fleet.toml` /
-`[worktree]` table is present, so an undeclared repo behaves exactly as
-before. Every target — `.venv` and each declared extra — goes through the
-same junction-then-reparse-safe-teardown path in `setup_worktree` /
-`remove_worktree`; a declared path that doesn't exist in the primary is
-simply skipped, never a setup failure.
-
-`git worktree add` populates tracked files only, so a repo's own gitignored
-runtime config (`config/webapp_config.json`, `config/apps.json`, ... whatever
-each repo's own `config.json`-pattern requires) never makes it into the new
-worktree. Left unfixed, an e2e suite that boots a disposable webapp+session-host
-hits its own missing-config guard for nearly every test and mass-skips silently
--- the pre-ship gate still reports green. `setup_worktree`
-copies the primary's `config/*.json` (excluding `*.sample.json` templates) into
-the worktree right after the checkout is created. The primary's gitignored
-`.env` is mirrored the same way, right after `config/*.json`: a repo whose
-startup path reads a secret or setting from `.env` (e.g. `local-llm-hub`'s
-`LOCAL_LLM_HUB_SSH_KEY`) otherwise stalls on the missing value until an
-unrelated timeout trips the e2e stage red.
-
-Some repos keep their runtime config at the repo **root** instead of under
-`config/` (`accounting-quarterly`'s `config.json` and
-`classification_rules.json`, `home-automation`'s `devices.json`). Neither
-`copy_runtime_config` nor `copy_env_file` covers that shape, so a worktree for
-one of these repos would crash on startup with no config at all.
-`copy_root_config` closes it right after `.env`: rather than hardcode which
-root filenames matter, it asks `git check-ignore` which of the repo's own
-root-level `*.json` files are gitignored, so a repo that adds a new one is
-covered with no code change here. Same rules as `copy_runtime_config` --
-`*.sample.json` excluded, an existing destination left alone, a top-level
-`port` repointed via `_repoint_config_port`, machine-bound values blanked via
-`blank_machine_bound_config` -- reused rather than reinvented.
-
-A byte-verbatim copy is not safe by itself: a repo's config can point at a
-real, machine-bound sink outside the worktree -- a synced mirror/backup
-folder, an index path, another repo's database -- and a worktree instance
-booted for a "ready to validate" handoff then reads and writes the owner's
-**real** data. `copy_runtime_config` blanks
-those values right after the port rewrite, the same way and in the same
-per-file loop. A repo declares exactly which dotted keys are machine-bound in
-its own `.fleet.toml`:
-
-    [worktree]
-    blank_config_keys = ["mirror.dir", "mirror.backup_dir", "search.folder_roots"]
-
-`worktree_blank_config_keys` reads this the same way `worktree_junction_targets`
-reads `extra_junctions`. A repo that declares nothing (no `.fleet.toml`, no
-`[worktree]` table, or the table without a `blank_config_keys` key) falls back
-to a conservative built-in default: any string value, anywhere in the config,
-that looks machine-bound -- an `{onedrive}`-style placeholder, or an absolute
-Windows path -- is blanked, list entries filtered the same way. An empty
-string is what the app already treats as "feature off" (task-os's mirror does
-today); a repo whose own gate needs to keep a value opts out per key by
-declaring `blank_config_keys` explicitly (an empty list disables the default
-heuristic entirely). Independently of either mode, keys declared in
-`[worktree] secret_config_keys` are removed from the copy outright
- -- see `worktree_config.py`'s docstring.
-
-The port-allocation and config-blanking machinery behind the three `copy_*`
-functions above lives in `worktree_config.py`, imported
-and re-exported here so every existing caller keeps addressing it as
-`worktree_claim.<name>`.
+This file is the CLI and re-exports the `worktree/` package. The rules live with
+the code that applies them: claim publishing and staleness in
+`worktree/claim.py`, junctions (`[worktree] extra_junctions`, reparse-safe
+teardown) in `worktree/gitops.py`, and runtime-config provisioning (ports,
+blanking, secret and read-safe keys) in `worktree/worktree_config.py`.
 
 Subcommands:
 
@@ -137,14 +44,10 @@ Subcommands:
   setup-worktree <repo-root> <issue-N> <branch>
       `git worktree add <repo>-wt-<N> <branch>` — created off the default
       branch, or off `origin/<branch>` when the branch is already pushed, or
-      checked out in place when it already exists locally —
-      + junction `.venv` and any repo-declared `[worktree] extra_junctions`
-      into it, then copy the primary's gitignored `config/*.json` runtime
-      config (excluding `*.sample.json` templates, which are already tracked)
-      into the worktree, blanking machine-bound path values along the way
-      (repo-declared `[worktree] blank_config_keys`, or a conservative
-      default heuristic) and removing any repo-declared
-      `[worktree] secret_config_keys` on top. Prints
+      checked out in place when it already exists locally. Junctions `.venv`
+      and any declared extras into it, then copies the primary's gitignored
+      runtime config (`config/*.json`, `.env`, root-level `*.json`) under the
+      provisioning rules in `worktree/worktree_config.py`. Prints
       `WORKTREE=<path>`.
 
   release <repo-root>
@@ -213,6 +116,15 @@ Subcommands:
       with every sibling subcommand's `repo_root` arg would have the
       primary checkout `rmtree`'d, destroying a repo's gitignored personal
       data that exists nowhere else.
+
+  mode <repo-root>
+      Print `primary` or `worktree` for the checkout the caller is standing in
+      (`repo_root` only identifies the repo); an `UNKNOWN reason=...` answer
+      exits 2.
+
+  side-instance-preflight [checkout]
+      Refuse-or-report before booting an app instance out of a checkout
+      (0 ok / 1 refused / 2 unknown). Reserves each provisioned config's port.
 
   status <repo-root>
       Print the current claim holder (if any) and `git worktree list`.
