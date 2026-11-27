@@ -27,7 +27,7 @@ import dirty_tree_check
 import gate_evidence
 import owner_check
 import worktree_claim
-from fleet_core import hooks_state
+from fleet_core import hooks_state, state_rows
 from grokbot import status as grokbot_status
 from no_window import NO_WINDOW
 from vendored_wave import primaries
@@ -425,27 +425,9 @@ def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
     return refusal
 
 
-def _state_mapping(path: Path) -> Tuple[Optional[Dict[str, Any]], str]:
-    """`(rows, error)` from a state file: a missing file is no rows (nothing written yet), an
-    unreadable one is `None` with the reason, never empty."""
-    try:
-        text = path.read_text(encoding="utf-8-sig")
-    except FileNotFoundError:
-        return {}, ""
-    except OSError as exc:
-        return None, f"{path.name} unreadable: {exc}"
-    try:
-        rows = json.loads(text)
-    except ValueError as exc:
-        return None, f"{path.name} is not JSON: {exc}"
-    if not isinstance(rows, dict):
-        return None, f"{path.name} is not a mapping"
-    return rows, ""
-
-
 def _chief_managed_rows() -> Tuple[Optional[Dict[str, Any]], str]:
-    """The chief-managed marks (`session_id -> {"repo", ...}`), with `_state_mapping`'s semantics."""
-    return _state_mapping(chief_managed.state_file())
+    """The chief-managed marks (`session_id -> {"repo", ...}`), as `state_rows.read_rows_checked`."""
+    return state_rows.read_rows_checked(chief_managed.state_file())
 
 
 def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
@@ -875,7 +857,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         # An unreadable board is an unestablished fact, not an empty one: every
         # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
-    markers, markers_error = _state_mapping(active_issue.state_file())
+    markers, markers_error = state_rows.read_rows_checked(active_issue.state_file())
     managed, managed_error = _chief_managed_rows()
     for error in filter(None, (markers_error, managed_error)):
         print(f"NOTE: {error}; removable verdicts are unknown", file=sys.stderr)
