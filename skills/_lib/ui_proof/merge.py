@@ -7,8 +7,10 @@ script spawns never reaches it. Every merge a skill or helper runs goes through
 without merging, exactly as the hook does. The acceptance run's `merge_wrapper`
 check fails on any `pr merge` argv outside this file.
 
-The merge always names the repo the gate judged (`-R <owner/name>`), so the PR
-that merges is the PR that was checked, whatever directory the caller is in.
+The merge always names its repo (`-R <owner/name>`), the one the gate judged,
+so the PR that merges is the PR that was checked, whatever directory the caller
+is in. A bypassed merge has no judged repo: it takes `slug`, a PR URL's repo or
+`cwd`'s origin, and is not run when none of those names one.
 
 The owner's escape is the hook's: `FLEET_UI_PROOF_BYPASS=<reason>` in the
 environment skips the gate, and the merge is appended to the same
@@ -70,12 +72,16 @@ def merge(cwd: Path, selector: str, slug: Optional[str], gh_args: Sequence[str],
         return 2, ["MERGE=not_run", "REASON=pass the repo as --repo-slug, not -R/--repo among the gh args"]
     reason = os.environ.get(BYPASS_ENV, "").strip()
     if reason:
+        target = merge_gate.target_slug(selector, slug)
+        if not target:
+            _, target, why = merge_gate.resolve_checkout(cwd, None)
+            if not target:
+                return 2, ["GATE=bypassed", "MERGE=not_run", f"REASON={why}; pass --repo-slug"]
         try:
-            log = str(_log_bypass(reason, cwd, selector, slug))
+            log = str(_log_bypass(reason, cwd, selector, target))
         except OSError as exc:
             log = f"(not logged: {exc})"
         lines = ["GATE=bypassed", f"BYPASS_REASON={reason}", f"BYPASS_LOG={log}"]
-        target = slug
     else:
         code, lines = gate(cwd, selector, slug)
         fields = _fields(lines)

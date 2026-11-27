@@ -243,11 +243,17 @@ def equivalent_spellings(path: str, letters: Optional[Iterable[str]] = None,
 
 
 def probe(path: str) -> Probe:
-    """Classify `path`: LIVE (nameable holders), CLEAR (none), UNKNOWN (couldn't ask)."""
+    """Classify `path`: LIVE (nameable holders), CLEAR (none), UNKNOWN (couldn't ask).
+
+    Every drive spelling of `path` is matched: a process started from one names
+    the directory in a way a match on another misses.
+    """
     processes, err = snapshot()
     if err is not None or processes is None:
         return Probe("UNKNOWN", [], err)
-    holders = holders_for(path, processes)
+    by_pid = {h["pid"]: h for spelling in equivalent_spellings(path)
+              for h in holders_for(spelling, processes)}
+    holders = [by_pid[pid] for pid in sorted(by_pid)]
     return Probe("LIVE" if holders else "CLEAR", holders, None)
 
 

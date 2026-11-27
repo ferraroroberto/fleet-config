@@ -113,6 +113,32 @@ finally:
     os.environ.pop(merge.BYPASS_ENV, None)
     shutil.rmtree(state, ignore_errors=True)
 
+# A bypass with no --repo-slug merges in the caller's checkout, never gh's own cwd.
+state = Path(tempfile.mkdtemp())
+named, bare = Path("named-checkout"), Path("no-checkout")
+saved_resolve = merge_gate.resolve_checkout
+merge_gate.resolve_checkout = lambda cwd, slug: (
+    (cwd, SLUG, "") if cwd == named else (None, None, f"{cwd} has no GitHub origin"))
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(state)
+os.environ[merge.BYPASS_ENV] = "gate broken"
+try:
+    gh = FakeGh()
+    code, lines = merge.merge(named, "7", None, ["--squash"], gate=fixed_gate(1, []), run_gh=gh)
+    check(code == 0 and gh.calls == [["pr", "merge", "7", "-R", SLUG, "--squash"]],
+          f"the bypass takes the repo from cwd's origin — got {code} {lines} calls={gh.calls}")
+    gh = FakeGh()
+    merge.merge(bare, "https://github.com/other/repo/pull/7", None, [], gate=fixed_gate(1, []), run_gh=gh)
+    check(gh.calls == [["pr", "merge", "https://github.com/other/repo/pull/7", "-R", "other/repo"]],
+          f"the bypass takes the repo a PR URL names — got {gh.calls}")
+    gh = FakeGh()
+    code, lines = merge.merge(bare, "7", None, [], gate=fixed_gate(1, []), run_gh=gh)
+    check(code == 2 and fields(lines)["MERGE"] == "not_run" and not gh.calls,
+          f"a bypass that cannot name the repo is refused — got {code} {lines} calls={gh.calls}")
+finally:
+    merge_gate.resolve_checkout = saved_resolve
+    os.environ.pop(merge.BYPASS_ENV, None)
+    shutil.rmtree(state, ignore_errors=True)
+
 # The real gate over a temp UX repo: a UI file with no page is refused, no merge.
 ux = init_repo(empty_commit=False)
 try:

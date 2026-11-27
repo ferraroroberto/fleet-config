@@ -65,6 +65,12 @@ def _toplevel(path: Path) -> Optional[Path]:
     return Path(res.stdout.strip()) if res.returncode == 0 and res.stdout.strip() else None
 
 
+def target_slug(selector: Optional[str], slug: Optional[str]) -> Optional[str]:
+    """The owner/name the caller named: `slug`, else the one in a PR URL, else None."""
+    url = _PR_URL_RE.search(selector or "")
+    return slug or (url.group(1) if url else None)
+
+
 def resolve_checkout(cwd: Path, slug: Optional[str]) -> Tuple[Optional[Path], Optional[str], str]:
     """`(checkout, owner/name, why-not)` for the repo the merge targets."""
     here = _toplevel(cwd) if cwd.is_dir() else None
@@ -103,10 +109,7 @@ def _unknown(reason: str) -> Tuple[int, List[str]]:
 def run(cwd: Path, selector: Optional[str], slug: Optional[str],
         get_pr: FetchPr = fetch_pr, get_files: FetchFiles = fetch_files) -> Tuple[int, List[str]]:
     """`(exit code, KEY=value lines)`: 0 merge may go ahead, 1 refused, 3 unknown."""
-    url = _PR_URL_RE.search(selector or "")
-    if url and not slug:
-        slug = url.group(1)
-    repo, slug, why = resolve_checkout(cwd, slug)
+    repo, slug, why = resolve_checkout(cwd, target_slug(selector, slug))
     if repo is None or slug is None:
         return _unknown(why)
     if not ux_surface.trigger(repo, diff=False).applies:

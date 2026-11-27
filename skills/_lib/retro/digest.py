@@ -126,12 +126,16 @@ class PathMask:
         rel = self._relative(path)
         if rel is None:
             return f"<outside>/{path.name}"
-        if rel.parts and rel.parts[0].lower() in self.private:
+        if rel.parts and self._is_private(rel.parts[0]):
             return "<private>"
         return rel.as_posix()
 
     def private_session(self) -> bool:
-        return bool(self.cwd) and self.cwd.name.lower() in self.private
+        return bool(self.cwd) and self._is_private(self.cwd.name)
+
+    def _is_private(self, folder: str) -> bool:
+        """A private repo's checkout, or one of its `-wt-<N>` worktrees."""
+        return bool({folder.lower(), _WORKTREE_SUFFIX.sub("", folder).lower()} & self.private)
 
     def _relative(self, path: PurePath) -> Optional[PurePath]:
         if self.cwd is None or self.root is None:
