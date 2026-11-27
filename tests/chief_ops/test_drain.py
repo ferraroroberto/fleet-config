@@ -13,13 +13,14 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
 import urllib.error
 from pathlib import Path
 
-from _suite import _h, _session_card, check, co  # noqa: E402
+from _suite import REPO, _h, _session_card, check, co  # noqa: E402
 
 # isort: split
 import chief_plan  # noqa: E402
@@ -712,6 +713,21 @@ rc, out, _plan_path, _ = _run(_BoardDown({"auto_drain": True}), [], plan=plan)
 check(rc == 1 and "PLAN_LANE_STALE=unknown reason=board-unreadable" in out and "DRAIN=unknown" in out
       and "PLAN_LANE_STALE=app" not in out,
       f"drain: an unreadable board is unknown, never a clean lane list (got {out!r})")
+
+# The drain brief's follow-through rule is the standard dispatch brief's, word for word (fleet-config#2299).
+def _rule(text, pattern):
+    found = re.findall(pattern, text, flags=re.M | re.S)
+    return " ".join(found[0].split()) if len(found) == 1 else None
+
+
+_standard = _rule((REPO / ".claude" / "skills" / "chief" / "dispatch-brief.md").read_text(encoding="utf-8"),
+                  r"^\d+\. (\*\*Finish the mechanical follow-through.*?)(?=^\d+\. )")
+_drained = _rule(drain.BRIEF_TEMPLATE.read_text(encoding="utf-8"), r"^7\. ([^\r\n]*)")
+check(_standard is not None and "session-host on :8446" in _standard,
+      f"the standard dispatch brief's follow-through rule is readable (got {_standard!r})")
+check(_drained == _standard,
+      f"drain brief rule 7 says what the standard dispatch brief says (got {_drained!r})")
+
 
 # The subcommands are wired into chief_ops.
 check(co.cli.build_parser("x").parse_args(["drain", "--dry-run"]).func is drain.cmd_drain,
