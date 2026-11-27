@@ -27,6 +27,10 @@ _ALIASES = {"plain terminal": TERMINAL, "elevated shell": ELEVATED}
 USAGE = (f'--run "<where>: <literal command, URL or screen>" (repeat, in order; where: {", ".join(WHERE)}) '
          'and --expect "<what success looks like>"')
 
+# The one placeholder a note may hold: this machine's fleet root, which public text never spells out.
+ROOT = "<root>"
+# `X:\` or `X:/`; the lookbehind keeps a URL scheme (`https://`) out.
+_DRIVE_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]")
 # Text that sends the owner somewhere else to find the actual step.
 _REFERENCE = re.compile(
     r"\b(documented|as described|described (above|below|in)|(see|read|follow|check) (the )?"
@@ -55,11 +59,24 @@ def refers_elsewhere(text: str) -> Optional[str]:
     return None
 
 
+def machine_path(text: str) -> Optional[str]:
+    """Why `text` cannot go in a public note, or None when it names no drive-letter path."""
+    if _DRIVE_PATH.search(text or ""):
+        return (f"holds a drive-letter path, and a note is public; write the fleet root as {ROOT} "
+                "and the user profile as %USERPROFILE%")
+    return None
+
+
+def try_problem(text: str) -> Optional[str]:
+    """Why a `try` text cannot be posted, or None."""
+    return refers_elsewhere(text) or machine_path(text)
+
+
 def _run_problem(where: str, text: str) -> Optional[str]:
-    problem = block.vague_text(text) or refers_elsewhere(text)
+    problem = block.vague_text(text) or refers_elsewhere(text) or machine_path(text)
     if problem:
         return problem
-    hole = _PLACEHOLDER.search(text)
+    hole = _PLACEHOLDER.search(text.replace(ROOT, ""))
     if hole:
         return f"holds the placeholder {hole.group(0)!r}, so it cannot be copied and run"
     if _SECRET.search(text):
@@ -97,7 +114,7 @@ def parse_run(text: str) -> Dict[str, str]:
 def expect_problem(text: str) -> Optional[str]:
     """Why `expect` does not say what success looks like, or None."""
     text = " ".join(str(text or "").split())
-    problem = block.vague_text(text) or refers_elsewhere(text)
+    problem = block.vague_text(text) or refers_elsewhere(text) or machine_path(text)
     if problem:
         return problem
     if _EMPTY_EXPECT.match(text) or len(text.split()) < _MIN_EXPECT_WORDS:
@@ -110,7 +127,7 @@ def parse_step(runs: Sequence[str], expect: str, try_text: str = "") -> List[Dic
     missing = [flag for flag, value in (("--run", runs), ("--expect", (expect or "").strip())) if not value]
     if missing:
         raise ValueError(f"{' and '.join(missing)} missing: every owner step carries {USAGE}")
-    problem = refers_elsewhere(try_text)
+    problem = try_problem(try_text)
     if problem:
         raise ValueError(f"--try {problem}")
     parsed = [parse_run(text) for text in runs]
