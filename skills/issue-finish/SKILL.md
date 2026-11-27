@@ -107,6 +107,15 @@ the gate once through the helper; a last line `EVIDENCE=not_recorded` means
 the gate itself changed the tree (the paths are named) — watch CI rather than
 loop.
 
+**Mac nightly (its own state, never part of the gate result).** After the gate:
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gate_evidence.py mac-nightly --label gate`.
+`MAC_NIGHTLY=unverified` → its `**Mac nightly:** unverified (<paths>)` line goes,
+verbatim and on its own line next to the gate result, into the step-4 PR body and
+the step-7 summary. `none` → add nothing; never write "verified". `unknown`
+(exit 2) → re-run the gate through the helper; still unknown → stop and report its
+reason. Ask again after any later gate re-run, update the PR body if the answer
+changed, and keep it for step 7: the record goes with a removed worktree.
+
 **Bug issues (`bug` label) need red-first evidence** (fleet-config#1915): the new
 regression test must be seen failing on the pre-fix tree, and the helper records
 that failure bound to the tree it ran on. If the branch has no such record yet,
@@ -191,7 +200,7 @@ upkeep) on this branch. Integration rules:
 
 - `git push -u origin <branch>`.
 - `gh pr create` with a body containing: a short **Summary**, a **Validation**
-  line (what gate ran and its result), and `Closes #<N>` so the issue
+  line (what gate ran and its result), step 3's `**Mac nightly:**` line when it printed one, and `Closes #<N>` so the issue
   auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan
   boxes, one per unverifiable criterion, naming its verifier.
   If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`, a `.gitignore` line over a tracked path), say so in the Summary, naming each path: every checkout that pulls it loses its live copy unless its fast-forward goes through `untrack_guard.py` (fleet-config#1086).
@@ -348,7 +357,7 @@ After step 6, **read [`deploy-coverage.md`](E:/automation/fleet-config/skills/is
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
 the step-5 `BEHIND=` line (`BEHIND=0` or `BEHIND=<n> merged`), gate result
 with its evidence state at merge time (`gate: FRESH` / re-run /
-`STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion
+`STALE → CI watched`), step 3's `**Mac nightly:**` line on its own line when there is one, the step-1 `ACCEPTANCE=` state with each unverifiable criterion
 listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed, the `VISUAL_PROOF=` line and the proof page `SENT=` line — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not

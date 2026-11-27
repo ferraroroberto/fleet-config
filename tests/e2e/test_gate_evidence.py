@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
@@ -37,6 +38,10 @@ check = _h.check
 
 PY = sys.executable
 OK_CMD = [PY, "-c", "pass"]
+MAC_LINE = ("MAC_NIGHTLY: unverified (this diff changes probe module(s) src/ports.py, src/proc/ps.py; "
+            "per-platform fakes stand in until the next Mac nightly is green)")
+MAC_PATHS = ["src/ports.py", "src/proc/ps.py"]
+MAC_REPORT = "**Mac nightly:** unverified (src/ports.py, src/proc/ps.py)"
 
 
 def git(repo: Path, *args: str) -> str:
@@ -149,11 +154,14 @@ try:
     # child spawned without explicit handles printed nothing at all.
     cli = subprocess.run(
         [PY, str(REPO / "skills" / "_lib" / "gate_evidence.py"), "run", "--label", "cli",
-         "--repo", str(repo), "--", PY, "-c", "import sys; print('GATE-OUT'); print('GATE-ERR', file=sys.stderr)"],
+         "--repo", str(repo), "--", PY, "-c",
+         f"import sys; print('GATE-OUT'); print({MAC_LINE!r}); print('GATE-ERR', file=sys.stderr)"],
         capture_output=True, text=True, timeout=120, creationflags=NO_WINDOW,
     )
     check(cli.returncode == 0 and "GATE-OUT" in cli.stdout and "GATE-ERR" in cli.stderr,
           f"run CLI: the command's stdout/stderr reach the caller (out={cli.stdout!r} err={cli.stderr!r})")
+    check(MAC_LINE in cli.stdout and MAC_REPORT in cli.stderr,
+          f"run CLI: the Mac nightly line passes through and is read from a real child (err={cli.stderr!r})")
     check(cli.stdout.strip().splitlines()[-1].startswith("EVIDENCE=recorded label=cli"),
           "run CLI: the EVIDENCE line comes last, after the command's output")
 
@@ -191,6 +199,63 @@ try:
         check(code == 2 and out.getvalue().strip() == "UNKNOWN", "check-red CLI: UNKNOWN exits 2")
     finally:
         shutil.rmtree(red_repo, ignore_errors=True)
+
+    # fleet-config#2296: the state machine behind the MAC_NIGHTLY line. Git and the gate child are stubbed so these
+    # cases add no process spawn; the real child's output passing through the reader is the `run CLI` case above.
+    check(ge.mac_nightly_paths(f"[ratchet]\r\n{MAC_LINE}\r\nGATE-RESULT: PASS\r\n") == MAC_PATHS,
+          "mac: the line yields its probe paths")
+    check(ge.mac_nightly_paths("GATE-RESULT: PASS\ndocs mention `MAC_NIGHTLY: unverified (...)` mid-line\n") == [],
+          "mac: a log without the line yields nothing, and a mid-line mention is not the line")
+    check(ge.mac_nightly_paths("MAC_NIGHTLY: unverified (reworded upstream)") == ["reworded upstream"],
+          "mac: a reworded detail is kept whole, never read as silence")
+
+    mac_dir = tmp / "mac"
+    mac_dir.mkdir()
+    toml = mac_dir / ".fleet.toml"
+    toml.write_text("[probe_fake_ratchet]\nenabled = true\n", encoding="utf-8")
+    now = {"tree": "t1"}
+    toplevel = subprocess.CompletedProcess(["git"], 0, stdout=f"{mac_dir}\n", stderr="")
+
+    def gate_saying(output: str, code: int = 0, complete: bool = True, moves_tree: bool = False) -> None:
+        def child(*_args):
+            if moves_tree:
+                now["tree"] = "moved"
+            return code, ge.mac_nightly_paths(output), complete
+        with mock.patch.object(ge, "_run_gate", child):
+            quiet_run(mac_dir, "gate", OK_CMD)
+
+    def state() -> str:
+        return ge.mac_nightly_state(mac_dir)[0]
+
+    with mock.patch.object(ge, "git_path", lambda _repo, name: mac_dir / name), \
+         mock.patch.object(ge, "tree_hash", lambda _repo: (now["tree"], "")), \
+         mock.patch.object(ge, "run_git", return_value=toplevel):
+        got = ge.mac_nightly_state(mac_dir)
+        check(got[:2] == ("unknown", []) and "gate" in got[2], f"mac: an adopting repo with no run read is unknown ({got})")
+        gate_saying(MAC_LINE)
+        check(ge.mac_nightly_state(mac_dir) == ("unverified", MAC_PATHS, ""),
+              "mac: a gate that printed the line leaves unverified with its paths")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = ge.main(["mac-nightly", "--repo", str(mac_dir)])
+        check(code == 0 and out.getvalue().split("\n")[:2] == ["MAC_NIGHTLY=unverified", MAC_REPORT],
+              f"mac-nightly CLI: the state then the report line ({out.getvalue()!r})")
+        gate_saying("GATE-RESULT: PASS\n")
+        check(ge.mac_nightly_state(mac_dir) == ("none", [], ""), "mac: a passing gate without the line yields no state")
+        now["tree"] = "t2"
+        check(state() == "unknown", "mac: silence about another tree is unknown")
+        gate_saying("", code=3)
+        check(state() == "unknown", "mac: silence from a failed run is unknown")
+        gate_saying("", complete=False)
+        check(state() == "unknown", "mac: silence from output not read to its end is unknown")
+        gate_saying(MAC_LINE, moves_tree=True)
+        check(state() == "unverified" and "gate" not in ge._load(mac_dir / ge.EVIDENCE_NAME),
+              "mac: the line survives a run whose pass is not recorded")
+        toml.write_text("not = [toml", encoding="utf-8")
+        check(ge.mac_nightly_state(mac_dir, "never-run")[0] == "unknown", "mac: an unreadable .fleet.toml is unknown, not none")
+        toml.unlink()
+        check(ge.mac_nightly_state(mac_dir, "never-run") == ("none", [], ""),
+              "mac: a repo that does not enable the ratchet claims nothing")
 
     plain = tmp / "not-a-repo"
     plain.mkdir()
