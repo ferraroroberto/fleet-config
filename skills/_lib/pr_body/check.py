@@ -57,9 +57,14 @@ _IMAGE_RES = (
     re.compile(r"user-attachments/", re.IGNORECASE),
     re.compile(r"user-images\.\w+usercontent\.\w+", re.IGNORECASE),
 )
+# A session id's token mixes digits with both letter cases and ends where it stops; file and symbol
+# names (`session_transcript.py`) do not. A following extension is no excuse: a file named by an id leaks it.
+_SESSION_ID_RE = re.compile(
+    r"\bsession_(?=[0-9A-Za-z]*[0-9])(?=[0-9A-Za-z]*[a-z])(?=[0-9A-Za-z]*[A-Z])[0-9A-Za-z]{10,}(?![0-9A-Za-z_])"
+)
 _ATTRIBUTION_RES = (
     (re.compile(r"\bclaude\.ai/(?:code|chat|share)/\S*", re.IGNORECASE), "a claude.ai session link"),
-    (re.compile(r"\bsession_[0-9A-Za-z]{10,}"), "a session id"),
+    (_SESSION_ID_RE, "a session id"),
     (re.compile(r"generated with\s+\[?claude", re.IGNORECASE), "a `Generated with Claude Code` line"),
     (re.compile(r"^\s*co-authored-by:.*(?:claude|anthropic|codex|openai|copilot|gpt|gemini|grok)",
                 re.IGNORECASE | re.MULTILINE), "a `Co-Authored-By` trailer naming an AI"),
