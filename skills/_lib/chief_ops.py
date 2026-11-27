@@ -154,8 +154,9 @@ Subcommands
   owner-checks [--repo R ...]
       Every open owner-check item fleet-wide, read from the
       `needs-validation` / `needs-owner` labels (`skills/_lib/owner_check/`):
-      one `<kind> <repo>#<N> since=… reason=…` line each, `UNKNOWN=<repo>`
-      for a repo that could not be read (exit 1), then `OWNER_ITEMS=`.
+      one `<kind> <repo>#<N> since=… note=… reason=…` line each, `UNKNOWN=<repo>`
+      for a repo that could not be read (exit 1), then `OWNER_ITEMS=`. Reads
+      only; `owner_check list` is what writes a missing note.
 
   dispatch <repo> <number> [--mode start|yolo] [--model M] [--effort E]
            [--brief-file PATH] [--yolo-confirmed] [--allow-during-fleet-job]

@@ -2,9 +2,9 @@
 
 Each command prints `KEY=value` lines. `classify`/`finish` exit 0 for none, 1 for
 required, 3 for unknown (an input could not be read, or a write did not land),
-2 for a refused call. `gate` exits 0 clear, 1 blocked, 3 unknown. `mark`, `clear`,
-`ensure-labels` and `backfill` exit 0 when every write landed, 3 otherwise;
-`mark` exits 2 for a before-start step with no concrete owner action.
+2 for a refused call. `gate` exits 0 clear, 1 blocked, 3 unknown. `mark`, `amend`,
+`clear`, `ensure-labels` and `backfill` exit 0 when every write landed, 3 otherwise;
+`mark` and `amend` exit 2 for a note with no exact step (`step.py`).
 Contract: `docs/owner-check.md`.
 """
 
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +22,7 @@ if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 from fleet_core.utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from owner_check import backfill, block, github, reclassify, repair, rule  # noqa: E402
+from owner_check import backfill, block, github, reclassify, repair, rule, step  # noqa: E402
 
 EXIT_NONE, EXIT_REQUIRED, EXIT_REFUSED, EXIT_UNKNOWN = 0, 1, 2, 3
 
@@ -61,9 +60,33 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"OWNER_CHECK=unknown reason=cannot read {args.body_file}: {exc}")
         return EXIT_UNKNOWN
     decision = rule.decide(args.label, args.title, body)
+    draft = step.draft_step(body)
+    try:
+        _check_draft(draft)
+    except ValueError as exc:
+        print(f"OWNER_CHECK=refused reason={exc}")
+        return EXIT_REFUSED
     print(f"OWNER_CHECK={decision.verdict}")
     _print_reasons(decision.reasons)
-    return EXIT_REQUIRED if decision.verdict == rule.REQUIRED else EXIT_NONE
+    if decision.verdict != rule.REQUIRED:
+        return EXIT_NONE
+    if not (draft["run"] and draft["expect"]):
+        print("ASK=add under the Owner validation line, one per line: '- run: <where>: <literal command, URL or "
+              f"screen>' (where: {', '.join(step.WHERE)}) and '- expect: <what success looks like>'")
+    return EXIT_REQUIRED
+
+
+def _check_draft(draft: dict) -> None:
+    """Refuse whatever the draft already says of the owner step if it is vague."""
+    problem = step.refers_elsewhere(str(draft["try"]))
+    if problem:
+        raise ValueError(f"the draft's try {problem}")
+    for text in draft["run"]:
+        step.parse_run(text)
+    if draft["expect"]:
+        problem = step.expect_problem(str(draft["expect"]))
+        if problem:
+            raise ValueError(f"the draft's expect {problem}")
 
 
 def _finish_refusal(args: argparse.Namespace) -> Optional[str]:
@@ -117,9 +140,14 @@ def cmd_finish(args: argparse.Namespace) -> int:
     if not args.try_text:
         print("OWNER_CHECK=required APPLIED=no reason=--try is required when the rule says required; re-run with it")
         return EXIT_REFUSED
+    try:
+        run = step.parse_step(args.run, args.expect, args.try_text)
+    except ValueError as exc:
+        print(f"OWNER_CHECK=required APPLIED=no reason={exc}")
+        return EXIT_REFUSED
     proof = [github.pr_url(repo, args.pr), *args.proof]
     body = block.format_block(block.VALIDATE_AFTER, "; ".join(decision.reasons), args.try_text,
-                              proof, _today())
+                              proof, _today(), run=run, expect=args.expect)
     try:
         github.mark(repo, number, block.VALIDATE_AFTER, body)
     except github.GhError as exc:
@@ -166,8 +194,13 @@ def cmd_gate(args: argparse.Namespace) -> int:
     found = latest.get("kind") == block.BEFORE_START
     reason = latest.get("reason") if found else "labelled needs-owner with no owner-check block"
     print(f"OWNER_GATE=blocked reason={reason}")
-    if found and latest.get("try"):
-        print(f"TRY={latest['try']}")
+    if found:
+        if latest.get("try"):
+            print(f"TRY={latest['try']}")
+        for line in latest.get("run", []):
+            print(f"RUN={line['where']}: {line['text']}")
+        if latest.get("expect"):
+            print(f"EXPECT={latest['expect']}")
     return EXIT_REQUIRED
 
 
@@ -184,14 +217,46 @@ def cmd_mark(args: argparse.Namespace) -> int:
             print(f"MARKED=refused reason=--try {problem}; name what the owner does, where, "
                   "and which answer unblocks the work (an agent's own decision goes to the chief)")
             return EXIT_REFUSED
+    try:
+        run = step.parse_step(args.run, args.expect, args.try_text)
+    except ValueError as exc:
+        print(f"MARKED=refused reason={exc}")
+        return EXIT_REFUSED
     body = block.format_block(args.kind, args.reason, args.try_text, args.proof, _today(),
-                              related=args.related)
+                              related=args.related, run=run, expect=args.expect)
     try:
         label = github.mark(repo, number, args.kind, body)
     except github.GhError as exc:
         print(f"MARKED=unknown reason={exc}")
         return EXIT_UNKNOWN
     print(f"MARKED={repo}#{number} label={label}")
+    return EXIT_NONE
+
+
+def cmd_amend(args: argparse.Namespace) -> int:
+    """Add the exact step to an open item's note; its reason, proof and date stay."""
+    repo, number = args.ref
+    try:
+        run = step.parse_step(args.run, args.expect, args.try_text)
+    except ValueError as exc:
+        print(f"AMENDED=refused reason={exc}")
+        return EXIT_REFUSED
+    try:
+        issue = github.fetch_issue(repo, number)
+        latest = block.latest_block(issue["comments"]) or {}
+        kind = latest.get("kind")
+        if kind not in block.LABELS or block.LABELS[kind] not in issue["labels"]:
+            print(f"AMENDED=refused reason={repo}#{number} has no open owner-check note; "
+                  "write one with mark, or run repair first")
+            return EXIT_REFUSED
+        body = block.format_block(kind, str(latest.get("reason", "")), args.try_text or str(latest.get("try", "")),
+                                  latest.get("proof", []), str(latest.get("since", "")),
+                                  related=latest.get("related", []), run=run, expect=args.expect)
+        github.note(repo, number, body)
+    except github.GhError as exc:
+        print(f"AMENDED=unknown reason={exc}")
+        return EXIT_UNKNOWN
+    print(f"AMENDED={repo}#{number}")
     return EXIT_NONE
 
 
@@ -216,7 +281,7 @@ def _clear_siblings(repo: str, number: int, issue: dict, answer: str) -> int:
     if kind not in block.LABELS or block.LABELS[kind] not in issue["labels"]:
         return EXIT_NONE
     try:
-        siblings = github.same_try_siblings(repo, number, kind, str(latest.get("try") or ""))
+        siblings = github.same_try_siblings(repo, number, kind, latest)
         for sibling in siblings:
             body = block.format_block(block.CLEARED, f"answered on the Board with {repo}#{number} (same try)",
                                       "", (), _today(), answer=answer)
@@ -230,17 +295,22 @@ def _clear_siblings(repo: str, number: int, issue: dict, answer: str) -> int:
 
 def cmd_list(args: argparse.Namespace) -> int:
     result = github.list_items(args.repo or None)
+    repaired = [] if args.no_repair else repair.heal(result["items"], _today())
     result["items"] = github.merge_same_try(result["items"])
     if args.json:
         print(json.dumps(result, indent=1))
     else:
+        for line in repaired:
+            print(line)
         for it in result["items"]:
-            print(f"OWNER_ITEM {it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}"
+            print(f"OWNER_ITEM {it['kind']} {it['ref']} since={it['since'] or '?'} note={it['note']} "
+                  f"reason={it['reason'] or '(no block)'}"
                   + (f" merged={','.join(it['merged'])}" if it.get('merged') else ""))
         for miss in result["unknown"]:
             print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
         print(f"ITEMS={len(result['items'])} UNKNOWN={len(result['unknown'])}")
-    return EXIT_UNKNOWN if result["unknown"] else EXIT_NONE
+    failed = result["unknown"] or any(it["note"] == github.NOTE_UNKNOWN for it in result["items"])
+    return EXIT_UNKNOWN if failed else EXIT_NONE
 
 
 def cmd_ensure_labels(args: argparse.Namespace) -> int:
@@ -334,38 +404,13 @@ def cmd_reclassify(args: argparse.Namespace) -> int:
     return EXIT_UNKNOWN if counts["unknown"] else EXIT_NONE
 
 
-_PR_URL = re.compile(r"/pull/(\d+)$")
-
-
-def _repair_one(item: dict, apply: bool) -> str:
-    """One unreadable item's outcome line: planned, repaired, unbuildable or skipped."""
-    repo, number, kind = item["repo"], item["number"], item["kind"]
-    issue = github.fetch_issue(repo, number)
-    latest = block.latest_block(issue["comments"]) or {}
-    if block.LABELS[kind] not in issue["labels"] or latest.get("kind") == kind:
-        return f"REPAIR skipped {item['ref']} reason=already readable or no longer labelled"
-    bodies = [("issue", issue["body"])]
-    for url in issue["prs"]:
-        m = _PR_URL.search(url)
-        if m:
-            bodies.append(("pr", github.pr_body(repo, int(m.group(1)))))
-    built = repair.build_try(kind, bodies)
-    if built is None:
-        return f"REPAIR unbuildable {item['ref']} reason=a {kind} note needs a concrete owner action and none is on the issue"
-    try_text, source = built
-    if apply:
-        body = block.format_block(kind, repair.REPAIR_REASON, try_text, issue["prs"], _today())
-        github.note(repo, number, body)
-    return f"REPAIR {'repaired' if apply else 'planned'} {item['ref']} source={source}"
-
-
 def cmd_repair(args: argparse.Namespace) -> int:
     result = github.list_items(args.repo or None)
     todo = [it for it in result["items"] if not it["block"]]
     counts = {"planned": 0, "repaired": 0, "unbuildable": 0, "skipped": 0, "unknown": len(result["unknown"])}
     for item in todo:
         try:
-            line = _repair_one(item, args.apply)
+            line = repair.repair_one(item, args.apply, _today())
         except github.GhError as exc:
             line = f"REPAIR unknown {item['ref']} reason={exc}"
         print(line)
@@ -401,6 +446,12 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return EXIT_UNKNOWN if unknown else EXIT_NONE
 
 
+def _step_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--run", action="append", default=[],
+                        help=f"<where>: <literal command, URL or screen>; where one of {', '.join(step.WHERE)}; repeat")
+    parser.add_argument("--expect", default="", help="what success looks like")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="owner_check", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -422,6 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--gap", action="append", default=[],
                    help=f"<class>:<criterion>, class one of {', '.join(rule.OWNER_CLASSES)} (with --verified no)")
     f.add_argument("--try", dest="try_text", default="")
+    _step_args(f)
     f.add_argument("--proof", action="append", default=[])
     f.set_defaults(func=cmd_finish)
 
@@ -434,9 +486,16 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--kind", required=True, choices=(block.VALIDATE_AFTER, block.BEFORE_START))
     m.add_argument("--reason", required=True)
     m.add_argument("--try", dest="try_text", required=True)
+    _step_args(m)
     m.add_argument("--proof", action="append", default=[])
     m.add_argument("--related", action="append", default=[])
     m.set_defaults(func=cmd_mark)
+
+    am = sub.add_parser("amend", help="add the exact step to an open note, keeping its reason and date")
+    am.add_argument("ref", type=_ref)
+    am.add_argument("--try", dest="try_text", default="", help="replace the try text too")
+    _step_args(am)
+    am.set_defaults(func=cmd_amend)
 
     cl = sub.add_parser("clear", help="Roberto answered on the Board: drop the label, post the cleared block")
     cl.add_argument("ref", type=_ref)
@@ -446,6 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("list", help="every open owner item across the fleet")
     ls.add_argument("--repo", action="append", default=[])
     ls.add_argument("--json", action="store_true")
+    ls.add_argument("--no-repair", action="store_true", help="read only: write no missing note")
     ls.set_defaults(func=cmd_list)
 
     el = sub.add_parser("ensure-labels", help="create both labels in every fleet repo (idempotent)")

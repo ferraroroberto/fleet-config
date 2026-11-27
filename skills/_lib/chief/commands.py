@@ -409,7 +409,8 @@ def cmd_owner_checks(args: argparse.Namespace) -> int:
     """Every open owner item, read from the issues' labels: the chief's only list of them."""
     result = owner_check.list_items(args.repo or None)
     for it in result["items"]:
-        print(f"{it['kind']} {it['ref']} since={it['since'] or '?'} reason={it['reason'] or '(no block)'}")
+        print(f"{it['kind']} {it['ref']} since={it['since'] or '?'} note={it['note']} "
+              f"reason={it['reason'] or '(no block)'}")
     for miss in result["unknown"]:
         print(f"UNKNOWN={miss['repo']} reason={miss['reason']}")
     print(f"OWNER_ITEMS={len(result['items'])} UNKNOWN={len(result['unknown'])}")

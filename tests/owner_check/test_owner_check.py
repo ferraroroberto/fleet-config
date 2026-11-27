@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-from owner_check import backfill, block, cli, github, reclassify, repair, rule  # noqa: E402
+from owner_check import backfill, block, cli, github, reclassify, repair, rule, step  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -24,6 +24,8 @@ from check_harness import CheckHarness  # noqa: E402
 _h = CheckHarness()
 check = _h.check
 ENH = ["enhancement"]
+# A complete owner step, as every mark/finish/amend now needs one.
+STEP = ["--run", "terminal: tray.bat --restart", "--expect", "the tray icon comes back"]
 
 
 # ---- rule ----
@@ -409,7 +411,7 @@ for argv, what in (([], "no --verified"), (["--verified", "no"], "no with no gap
 
 fake = FakeGh(issue(), "modified\tsrc/app.py\n")
 code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "device:the mic level moves",
-                 "--try", "open it", "--proof", "https://a"], fake)
+                 "--try", "open it", *STEP, "--proof", "https://a"], fake)
 check(code == 1 and "APPLIED=yes label=needs-validation" in out, f"required + try: marked ({code}, {out})")
 check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "comment"], ["issue", "edit"]],
       f"label ensured, the block posted, then the label applied: {fake.writes()}")
@@ -447,7 +449,7 @@ code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "yes"], fake)
 check(code == 3 and out.startswith("OWNER_CHECK=unknown"), f"an unreadable PR is unknown, never none ({code}, {out})")
 
 fake = FakeGh(issue(), "", fail=("issue comment",))
-code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "physical:x", "--try", "x"], fake)
+code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "physical:x", "--try", "x", *STEP], fake)
 check(code == 3 and "did not land" in out, f"a write that fails is unknown, not marked ({code}, {out})")
 
 gate_block = block.format_block(block.BEFORE_START, "needs the tower mic plugged in", "plug it in, answer yes")
@@ -469,15 +471,15 @@ check(block.parse_block(fake.comments[0])["answer"] == "done, plugged in", "clea
 
 fake = FakeGh()
 code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try",
-                 "plug the tower mic in, then answer yes on the Board", "--related", "#8"], fake)
+                 "plug the tower mic in, then answer yes on the Board", *STEP, "--related", "#8"], fake)
 check(code == 0 and "MARKED=demo#7 label=needs-owner" in out, f"mark applies the kind's label ({out})")
 for vague in ("t", "TBD", "see the issue", "decide which way"):
     fake = FakeGh()
-    code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", vague], fake)
+    code, out = run(["mark", "demo#7", "--kind", "before-start", "--reason", "r", "--try", vague, *STEP], fake)
     check(code == 2 and out.startswith("MARKED=refused") and not fake.calls,
           f"a before-start mark with no concrete owner action ({vague!r}) is refused ({code}, {out})")
 fake = FakeGh()
-code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "t"], fake)
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "t", *STEP], fake)
 check(code == 0, "the concrete-action bar is for before-start marks only")
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -601,11 +603,11 @@ check(code == 0 and "RECLASSIFY=applied before=2 clear=1 keep=1" in out and clea
 # ---- a label never lands without a readable note ----
 
 fake = FakeGh(issue(), "", fail=("issue comment",))
-code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it"], fake)
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it", *STEP], fake)
 check(code == 3 and not any(c[:2] == ["issue", "edit"] for c in fake.calls),
       f"a note that does not land leaves no label behind ({code}, {fake.calls})")
 fake = FakeGh(issue())
-code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it"], fake)
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it", *STEP], fake)
 check([c[:2] for c in fake.writes()] == [["label", "create"], ["issue", "comment"], ["issue", "edit"]],
       f"the note is posted before the label is applied: {fake.writes()}")
 for field, argv in (("reason", ["--reason", "  ", "--try", "open it on the tower"]),
@@ -680,7 +682,7 @@ check(repair.unticked("- [ ] a\n  * [ ] b\n- [x] c\n- [ ]\nno list") == ["a", "b
 
 # ---- ref parsing: bare and owner-qualified ----
 
-for sub, extra in (("gate", []), ("mark", ["--kind", "validate-after", "--reason", "r", "--try", "open it on the tower"]),
+for sub, extra in (("gate", []), ("mark", ["--kind", "validate-after", "--reason", "r", "--try", "open it on the tower", *STEP]),
                    ("clear", ["--answer", "ok"])):
     for ref in ("demo#7", f"{github.OWNER}/demo#7"):
         fake = FakeGh(issue(labels=("enhancement",)))
@@ -712,5 +714,141 @@ else:
     check(False, "a foreign owner must be rejected, not silently re-owned")
 check(cli._ref(f"{github.OWNER}/demo#7") == ("demo", 7) and cli._ref("demo#7") == ("demo", 7),
       "both forms parse to the same bare (repo, number)")
+
+# ---- the exact step: run lines and expect (fleet-config#2291) ----
+
+_RUN = [{"where": "terminal", "text": 'python -m x --name "two  spaces"  C:\\a_b\\*c*'},
+        {"where": "phone", "text": "https://host/app#devices"},
+        {"where": "elevated", "text": "Write-Output `date`"}]
+text = block.format_block(block.BEFORE_START, "r", "t", (), "2026-11-01", run=_RUN, expect="the panel shows green")
+parsed = block.parse_block(text)
+check(parsed["run"] == _RUN and parsed["expect"] == "the panel shows green",
+      f"run lines round-trip with their own spacing and backticks, one line each, got {parsed}")
+check(sum(line.startswith("- run: ") for line in text.splitlines()) == 3, f"one '- run:' line per command: {text}")
+old = block.parse_block(f"{block.MARKER}\n**Owner check: validate after**\n\n- kind: validate-after\n- try: use it\n")
+check(old["run"] == [] and old["expect"] == "" and old["try"] == "use it", f"the old note shape still reads, got {old}")
+
+check(step.parse_run("plain terminal: .\\setup.bat -InPlace -WhatIf")
+      == {"where": "terminal", "text": ".\\setup.bat -InPlace -WhatIf"}, "the long where names are accepted")
+for good in ("terminal: start tray.bat", "terminal: python scripts/fleet_password.py --dry-run", "elevated: sc.exe query w32time", "browser: https://localhost:8445/board",
+             "browser: localhost:8445", "phone: Home Automation > Devices > Blinds", "screen: Overmark tray menu"):
+    try:
+        step.parse_run(good)
+    except ValueError as exc:
+        check(False, f"a concrete run {good!r} is accepted, got {exc}")
+for bad in ("tray.bat --restart", "cmd: tray.bat", "terminal:", "terminal: tbd",
+            "terminal: run the documented elevated command", "elevated: the usual restart command",
+            "terminal: see the issue", "screen: follow docs/room-polls.md", "terminal: setup.bat -MigrateFrom <old folder>",
+            "terminal: Get-Item …", "terminal: Open the app and look", "terminal: tray.bat\nsetup.bat",
+            "browser: the settings page", "phone: Settings", "terminal: set BOT_TOKEN=123456:abcdef"):
+    try:
+        step.parse_run(bad)
+        check(False, f"vague run {bad!r} must be refused")
+    except ValueError:
+        pass
+for bad in ("", "works", "it works as expected", "see the docs for the result"):
+    check(step.expect_problem(bad) is not None, f"vague expect {bad!r} must be refused")
+for fine in ("a toast shows the message id", "the pill is at the same screen position",
+             "the issues page lists the new row"):
+    check(step.expect_problem(fine) is None, f"a concrete expect {fine!r} passes")
+
+_BAD_STEPS = (
+    (["--expect", "the tray icon comes back"], "--run"),
+    (["--run", "terminal: tray.bat --restart"], "--expect"),
+    (["--run", "terminal: run the documented command", "--expect", "the tray icon comes back"], "documented"),
+    (["--run", "terminal: tray.bat --restart", "--expect", "it works"], "--expect"),
+)
+for argv, named in _BAD_STEPS:
+    fake = FakeGh(issue())
+    code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it", *argv], fake)
+    check(code == 2 and out.startswith("MARKED=refused") and named in out and not fake.calls,
+          f"mark without an exact step is refused before any write ({argv}, {code}, {out})")
+    fake = FakeGh(issue(), "modified\tsrc/app.py\n")
+    code, out = run(["finish", "demo#7", "--pr", "9", "--verified", "no", "--gap", "device:the mic level moves",
+                     "--try", "open it", *argv], fake)
+    check(code == 2 and "OWNER_CHECK=required APPLIED=no" in out and named in out and not fake.writes(),
+          f"finish without an exact step writes nothing ({argv}, {code}, {out})")
+    fake = FakeGh(issue())
+    code, out = run(["amend", "demo#7", *argv], fake)
+    check(code == 2 and out.startswith("AMENDED=refused") and not fake.calls, f"amend is refused too ({code}, {out})")
+fake = FakeGh(issue())
+code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r",
+                 "--try", "follow the documented command", *STEP], fake)
+check(code == 2 and "--try" in out and not fake.calls, f"a try that sends him elsewhere is refused ({code}, {out})")
+
+_OLD = block.format_block(block.BEFORE_START, "why", "sign up", ["https://p"], "2026-10-01", related=["demo#2"])
+fake = FakeGh(issue(labels=("needs-owner",), comments=(_OLD,)))
+code, out = run(["amend", "demo#7", "--run", "browser: https://example.com/signup",
+                 "--expect", "the account page opens"], fake)
+posted = block.parse_block(fake.comments[0]) if fake.comments else {}
+check(code == 0 and "AMENDED=demo#7" in out and posted["run"] == [{"where": "browser", "text": "https://example.com/signup"}]
+      and (posted["kind"], posted["reason"], posted["try"], posted["since"], posted["proof"], posted["related"])
+      == (block.BEFORE_START, "why", "sign up", "2026-10-01", ["https://p"], ["demo#2"])
+      and [c[:2] for c in fake.writes()] == [["issue", "comment"]],
+      f"amend adds the step and keeps the note's own fields and labels ({code}, {out}, {posted})")
+fake = FakeGh(issue(labels=("needs-owner",), comments=(posted and fake.comments[0],)))
+code, out = run(["gate", "demo#7"], fake)
+check(code == 1 and "RUN=browser: https://example.com/signup" in out and "EXPECT=the account page opens" in out,
+      f"gate prints the step ({code}, {out})")
+for stale in (issue(labels=("bug",), comments=(_OLD,)), issue(labels=("needs-owner",))):
+    fake = FakeGh(stale)
+    code, out = run(["amend", "demo#7", *STEP], fake)
+    check(code == 2 and "AMENDED=refused" in out and not fake.writes(), f"amend needs an open note ({code}, {out})")
+
+# classify asks for the step and refuses a vague one.
+with tempfile.TemporaryDirectory() as tmp:
+    draft = Path(tmp) / "body.md"
+
+    def classify(text):
+        draft.write_text(text, encoding="utf-8")
+        return run(["classify", "--body-file", str(draft), "--title", "Mic: needs two taps", "--label", "bug"], FakeGh())
+
+    head = "**Owner validation:** required — mic; try: tap the mic once\n"
+    code, out = classify(head)
+    check(code == 1 and "ASK=" in out, f"a required draft with no step is asked for it ({code}, {out})")
+    code, out = classify(head + "- run: phone: https://host/app\n- expect: `the level meter moves`\n")
+    check(code == 1 and "ASK=" not in out, f"a draft with a concrete step is not asked ({code}, {out})")
+    for bad in ("**Owner validation:** required — mic; try: run the documented command\n",
+                head + "- run: terminal: see the issue\n- expect: the level meter moves\n",
+                head + "- run: phone: https://host/app\n- expect: works\n"):
+        code, out = classify(bad)
+        check(code == 2 and "OWNER_CHECK=refused" in out, f"a vague draft step is refused ({bad!r}, {code}, {out})")
+    code, out = classify("Steps:\nrun: see the issue\n")
+    check(code != 2, f"a run: line outside the owner block is not the owner's ({code}, {out})")
+
+
+# ---- list repairs what it reads, and names what it cannot ----
+
+fake = RepairFake()
+code, out = run(["list", "--repo", "demo", "--json"], fake)
+by_number = {it["number"]: it for it in json.loads(out)["items"]}
+check(code == 0 and sorted(int(c[2]) for c in fake.calls if c[:2] == ["issue", "comment"]) == [5, 9]
+      and not any(c[:2] == ["issue", "edit"] for c in fake.calls), f"list writes the missing notes itself ({code})")
+check(by_number[5]["block"] and by_number[5]["note"] == github.NOTE_NO_RUN and by_number[5]["run"] == []
+      and by_number[5]["try"] == "open the export page; check the totals column",
+      f"a repaired item shows at once, still without a run, got {by_number[5]}")
+check(by_number[8]["note"] == github.NOTE_UNREPAIRABLE and "concrete owner action" in by_number[8]["note_problem"]
+      and not by_number[8]["block"], f"an unrepairable item is its own state with why, got {by_number[8]}")
+fake = RepairFake()
+code, out = run(["list", "--repo", "demo", "--no-repair"], fake)
+check(code == 0 and not fake.writes() and "note=missing" in out, f"--no-repair only reads ({code}, {out})")
+
+
+class HealDown(RepairFake):
+    def __call__(self, args):
+        if list(args[:2]) == ["issue", "view"]:
+            raise github.GhError("boom")
+        return super().__call__(args)
+
+
+code, out = run(["list", "--repo", "demo", "--json"], HealDown())
+check(code == 3 and {it["note"] for it in json.loads(out)["items"] if not it["block"]} == {github.NOTE_UNKNOWN},
+      f"a repair GitHub did not answer is unknown, never unrepairable ({out})")
+
+_same = [{"repo": "a", "ref": f"a#{n}", "kind": "validate-after", "try": "x", "expect": "y",
+          "run": [{"where": "terminal", "text": text}]} for n, text in ((1, "one"), (2, "two"), (3, "one"))]
+merged_steps = github.merge_same_try(_same)
+check([it["ref"] for it in merged_steps] == ["a#1", "a#2"] and merged_steps[0]["merged"] == ["a#3"],
+      f"items with a different command never merge into one line, got {merged_steps}")
 
 _h.report_and_exit("test_owner_check")

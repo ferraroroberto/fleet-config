@@ -69,6 +69,9 @@ Each state change posts one comment. The newest valid block on the issue wins.
 - kind: validate-after
 - reason: needs a real device or live input (mic), which a session cannot drive
 - try: on the PC, join a real online call and watch the overlay for hints
+- run: terminal: `cd /d <repo folder> && tray.bat --restart`
+- run: screen: `the overlay window during a real call`
+- expect: a hint appears within a few seconds of the first question
 - proof: https://github.com/<owner>/<repo>/pull/<N>, <private artifact URL>
 - related: #<M>, #<K>
 - since: 2026-11-01
@@ -78,13 +81,39 @@ Each state change posts one comment. The newest valid block on the issue wins.
 | --- | --- |
 | `kind` | `validate-after`, `before-start` or `cleared`. Required. |
 | `reason` | Why it needs Roberto: the rule's reasons, joined with `; `. |
-| `try` | What exactly to do: where to go, what to press, what should happen. |
+| `try` | What to do and why, in a sentence: where to go, what to press. |
+| `run` | The exact step, one line per command, in order, as `<where>: <text>`. See [The exact step](#the-exact-step). |
+| `expect` | What success looks like: what appears, or what changes. |
 | `proof` | Comma-separated links: the PR first, then any private artifact or proof page. |
 | `related` | Other issues of the same piece of work (back-fill only). |
 | `since` | UTC date the state began. |
 | `answer` | Roberto's Board answer (`cleared` blocks only). |
 
-Every value is one line. Empty fields are left out. Repos are public, so a block never carries a screenshot, a real path or personal content. Proof links point to private artifacts or the PR, and a private repo's block uses generic wording.
+Every value is one line; only `run` repeats. Empty fields are left out. A block without `run` and `expect` is still read, with both empty. Repos are public, so a block never carries a screenshot, a personal path (a user profile, a data folder, a hostname) or personal content; the fleet checkout path under `E:utomation` is the one path a `run` command may use. Proof links point to private artifacts or the PR, and a private repo's block uses generic wording.
+
+## The exact step
+
+The owner copies, runs and answers, without opening the issue. Each `--run` is `<where>: <text>`:
+
+| Where | Text |
+| --- | --- |
+| `terminal` (also `plain terminal`) | a literal command for a plain terminal |
+| `elevated` (also `elevated shell`) | a literal command for an elevated shell |
+| `browser` | a URL to open on the PC |
+| `phone` | a URL, or the app and screen on the phone |
+| `screen` | the screen or control of a desktop app or device |
+
+A step with no command (a signup, a device check) states the exact URL or screen. A command that needs a folder carries its own `cd` line or a full path. Never a value from config or a secret: name the setting. A command that does not exist is never invented; the item stays without one and is reported.
+
+`skills/_lib/owner_check/step.py` refuses (exit 2), before any write:
+
+- no `--run` or no `--expect`
+- a `where` outside the table, or a line break inside a `--run`
+- text that sends him elsewhere ("the documented command", "see the issue", "follow the .md file", "as described"), in `--run`, `--expect` or `--try`
+- a `<placeholder>` or an ellipsis in a `--run`
+- a sentence where a command belongs, a `browser` step with no URL, a one-word screen
+- what looks like a secret value
+- an `--expect` that only says it works
 
 ## The rule
 
@@ -108,14 +137,15 @@ Every `<repo>#<N>` argument (`gate`, `finish`, `mark`, `clear`) also takes the o
 
 | Point | Command | Effect |
 | --- | --- | --- |
-| `/issue-add` step 6 | `owner_check classify --body-file <draft> --title "<title>" --label <type>` | The verdict for the template's `Owner validation:` line. The model writes only the why and the "try" text. |
-| `/issue-start` step 2 | `owner_check gate <repo>#<N>` | `OWNER_GATE=blocked` stops with the reason and the try text. `unknown` also stops. |
-| `/issue-finish` step 5, after merge | `owner_check finish <repo>#<N> --pr <PR> --verified yes\|scheduled\|no [--gap <class>:<criterion> …] --try "…" [--proof URL …]` | When required, it labels the issue `needs-validation` and posts the block. It writes nothing and exits 2 without `--verified`, for `no` without a valid `--gap` (a lane-provable criterion is not valid, see [Owner-only gaps](#owner-only-gaps)), for a `--gap` beside `yes`/`scheduled`, or without `--try` on a required verdict. An enhancement that adds a page (`.html`) or a view module (`views/*.js`, `*-view.js`) outside `_vendored/`, `tests/`, `docs/` and `fixtures/` is refused too until the PR body carries `VISUAL_PROOF=fresh`: a browser proves it, never the owner. A `none` re-run for the same PR removes the `needs-validation` label an earlier `finish` for that PR added and posts a `cleared` block (`RETRACTED=yes`); a hand mark or another PR's block is left alone. |
+| `/issue-add` step 6 | `owner_check classify --body-file <draft> --title "<title>" --label <type>` | The verdict for the template's `Owner validation:` line. The model writes the why, the "try" text and the `- run:` / `- expect:` lines under it; a `required` draft without them gets `ASK=`, and a vague `try`, `run` or `expect` is refused (exit 2). |
+| `/issue-start` step 2 | `owner_check gate <repo>#<N>` | `OWNER_GATE=blocked` stops with the reason, the try text and any `RUN=` / `EXPECT=` lines. `unknown` also stops. |
+| `/issue-finish` step 5, after merge | `owner_check finish <repo>#<N> --pr <PR> --verified yes\|scheduled\|no [--gap <class>:<criterion> …] --try "…" --run "…" [--run "…"] --expect "…" [--proof URL …]` | When required, it labels the issue `needs-validation` and posts the block. It writes nothing and exits 2 without `--verified`, for `no` without a valid `--gap` (a lane-provable criterion is not valid, see [Owner-only gaps](#owner-only-gaps)), for a `--gap` beside `yes`/`scheduled`, or without `--try` and a complete [exact step](#the-exact-step) on a required verdict. An enhancement that adds a page (`.html`) or a view module (`views/*.js`, `*-view.js`) outside `_vendored/`, `tests/`, `docs/` and `fixtures/` is refused too until the PR body carries `VISUAL_PROOF=fresh`: a browser proves it, never the owner. A `none` re-run for the same PR removes the `needs-validation` label an earlier `finish` for that PR added and posts a `cleared` block (`RETRACTED=yes`); a hand mark or another PR's block is left alone. |
 | Chief, before dispatch | `chief_ops.py dispatch` | Refuses a `needs-owner` issue. An unreadable issue only warns, because `/issue-start`'s gate is the hard stop. |
 | Chief, reading | `chief_ops.py owner-checks` | Every open owner item fleet-wide, from the labels. |
-| Chief, parking | `owner_check mark <repo>#<N> --kind before-start --reason "…" --try "…"` | Owner-blocked work gets the label first; `plan set --status parked --kind owner` then records it and is refused without the label. The `--try` text must name the exact owner action, where to do it and which answer unblocks the work, so the Board question answers cold; an empty, placeholder or under-six-word action is refused (exit 2). A block that is really an agent's decision goes to the chief, never the owner. |
-| Any write of a label | `github.mark`, behind `finish` and `mark` | The block is posted first and the label applied second, so a failure between the two never leaves a label with no note. `mark` refuses (exit 2) an empty `--reason` or `--try`. A label put on by hand has no write path to guard; `owner_check repair` finds it (see [Repairing a label with no note](#repairing-a-label-with-no-note)). |
-| Board answer | `owner_check clear <repo>#<N> --answer "…"` | Removes the label and posts a `cleared` block with the answer. Every other issue in the same repo labelled for the same kind whose block carries the identical `try` text is cleared with it (`MERGED_CLEARED with=… also=…`), since `list` showed them as one line. |
+| Chief, parking | `owner_check mark <repo>#<N> --kind before-start --reason "…" --try "…" --run "…" --expect "…"` | Owner-blocked work gets the label first; `plan set --status parked --kind owner` then records it and is refused without the label. The `--try` text must name the exact owner action, where to do it and which answer unblocks the work, so the Board question answers cold; an empty, placeholder or under-six-word action is refused (exit 2). A block that is really an agent's decision goes to the chief, never the owner. |
+| Adding the step to an open note | `owner_check amend <repo>#<N> --run "…" --expect "…" [--try "…"]` | Posts the note again with the step; `reason`, `proof`, `related` and `since` stay, so the item keeps its place. Refused when the issue has no open note. |
+| Any write of a label | `github.mark`, behind `finish` and `mark` | The block is posted first and the label applied second, so a failure between the two never leaves a label with no note. `mark` refuses (exit 2) an empty `--reason` or `--try`, or no [exact step](#the-exact-step). A label put on by hand has no write path to guard; `owner_check repair` finds it (see [Repairing a label with no note](#repairing-a-label-with-no-note)). |
+| Board answer | `owner_check clear <repo>#<N> --answer "…"` | Removes the label and posts a `cleared` block with the answer. Every other issue in the same repo labelled for the same kind whose block carries the identical `try`, `run` and `expect` is cleared with it (`MERGED_CLEARED with=… also=…`), since `list` showed them as one line. |
 
 `--verified yes` means the original repro or acceptance re-ran and passed in this session. Pass `scheduled` when everything did except a criterion that only a later scheduled run can show: it adds no reason and prints `SCHEDULED_READ=chief`, the chief reading that run. Pass `no` only for a criterion the deterministic proofs cannot show, with one `--gap <class>:<criterion>` per such criterion; each becomes its own reason. A generic "could not verify" names nothing Roberto can act on, so `no` without a gap, and a missing `--verified`, are refused.
 
@@ -127,13 +157,23 @@ Run every command as `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Use
 | --- | --- | --- | --- | --- |
 | `classify`, `finish` | none | required (`APPLIED=yes` or `already`) | refused (`finish`): no `--verified`, `no` without a valid `--gap`, an unproven new page or view, or required with no `--try` | unknown |
 | `gate` | clear | blocked | | unknown |
-| `mark`, `clear`, `ensure-labels`, `backfill`, `reclassify`, `repair`, `list` | every write or read landed | | refused (`mark`): an empty `--reason` or `--try`, or a before-start step with no concrete owner action | something did not land, or (`repair`) a note could not be built; named on its own line |
+| `mark`, `amend`, `clear`, `ensure-labels`, `backfill`, `reclassify`, `repair`, `list` | every write or read landed | | refused (`mark`, `amend`): a vague or missing field, or (`amend`) no open note | something did not land (`list`: a repo unread, or a repair GitHub did not answer), or (`repair`) a note could not be built; named on its own line |
 
-Each command prints `KEY=value` lines (`OWNER_CHECK=`, `OWNER_GATE=`, `REASON=`, `TRY=`, `MARKED=`, `CLEARED=`, `UNKNOWN=`).
+Each command prints `KEY=value` lines (`OWNER_CHECK=`, `OWNER_GATE=`, `REASON=`, `TRY=`, `RUN=`, `EXPECT=`, `ASK=`, `MARKED=`, `AMENDED=`, `CLEARED=`, `UNKNOWN=`).
 
 ## Readers
 
-`owner_check.list_items(repos=None)` returns `{"items": [...], "unknown": [{"repo", "reason"}]}`, one item per labelled issue (open or closed). Each item has `repo`, `number`, `ref`, `title`, `url`, `state`, `kind` and `block`, plus the block's `reason`, `try`, `proof` and `since`. A labelled issue with no matching block is still an item, with `block: false` and empty fields; a reader never invents them. A repo that could not be read lands in `unknown`, never in an empty list. A repo with GitHub Issues switched off holds no items and is not `unknown`. `owner_check list --json` prints the same shape, with one line per flow: items of one repo and kind whose `try` text is identical merge into the first one, which lists the others' refs under `merged`. The match is exact text, never fuzzy, and an empty `try` never merges. `list_items` itself does not merge. Items come newest `since` first, undated last, so the Board's "Waiting for start" and `chief_ops.py owner-checks` both put the most recent step on top and show its date.
+`owner_check.list_items(repos=None)` returns `{"items": [...], "unknown": [{"repo", "reason"}]}`, one item per labelled issue (open or closed). Each item has `repo`, `number`, `ref`, `title`, `url`, `state`, `kind` and `block`, plus the block's `reason`, `try`, `run` (a list of `{"where", "text"}`), `expect`, `proof` and `since`, and a `note` state:
+
+| `note` | The item |
+| --- | --- |
+| `complete` | has `run` and `expect`: show the `run` lines to copy, and `expect` under them |
+| `no-run` | has a readable note without the exact step |
+| `missing` | has no note, and none was tried (`--no-repair`, or `list_items` itself) |
+| `unrepairable` | has no note and `list` could not build one; `note_problem` says why |
+| `unknown` | has no note and the repair did not get an answer from GitHub; `note_problem` says why |
+
+A labelled issue with no matching block is still an item, with `block: false` and empty fields; a reader never invents them. A repo that could not be read lands in `unknown`, never in an empty list. A repo with GitHub Issues switched off holds no items and is not `unknown`. `owner_check list --json` prints the same shape, with one line per flow: items of one repo and kind whose `try`, `run` and `expect` are identical merge into the first one, which lists the others' refs under `merged`. The match is exact text, never fuzzy, and an empty `try` never merges. `owner_check list` first writes every missing note it can ([repair](#repairing-a-label-with-no-note)), so a gap heals the next time the Board reads; `--no-repair` reads only. `list_items` itself does not merge. Items come newest `since` first, undated last, so the Board's "Waiting for start" and `chief_ops.py owner-checks` both put the most recent step on top and show its date.
 
 GitHub's issue-list index trails a label write by a few seconds, so an item marked moments ago can be missing from `list` while the issue itself already carries the label. Read the issue (`gate`) when it has to be current to the second.
 
@@ -147,7 +187,7 @@ A recorded block joins its reasons with `; `, and a gap's criterion may hold one
 
 A label with no block of its own kind shows on the Board as "Details unknown": the owner cannot tell what to try. It arrives by hand, from an older flow, or after a block that was cleared and the label re-added.
 
-`owner_check repair [--repo R] [--apply]` lists every labelled issue whose latest block is missing or of another kind (open or closed, as `list` reads them) and, with `--apply`, posts the missing block. It never adds, removes or changes a label and never closes an issue. The note's `reason` is "Labelled for an owner check with no note on record"; its `try` is built from the first source that has unticked `- [ ]` items: the issue body, then each closing PR's body (up to three, one line each). With none, a validate-after note falls back to the generic "use what shipped once" line, and a before-start item gets no note, because an owner step must name a concrete action (`vague_action`). That item prints `REPAIR unbuildable <ref>`, the run exits 3, and the label stays until someone writes the step with `mark`. A dry run prints `REPAIR planned|unbuildable|unknown <ref>` per item and a `REPAIR=` count line, and writes nothing.
+`owner_check list` runs this repair itself, over the items it has just read. `owner_check repair [--repo R] [--apply]` lists every labelled issue whose latest block is missing or of another kind (open or closed, as `list` reads them) and, with `--apply`, posts the missing block. It never adds, removes or changes a label, never closes an issue and never writes a `run` or `expect`: a command nobody recorded is not invented, so a repaired item is `no-run` until `amend`. The note's `reason` is "Labelled for an owner check with no note on record"; its `try` is built from the first source that has unticked `- [ ]` items: the issue body, then each closing PR's body (up to three, one line each). With none, a validate-after note falls back to the generic "use what shipped once" line, and a before-start item gets no note, because an owner step must name a concrete action (`vague_action`). That item prints `REPAIR unbuildable <ref>`, the run exits 3, and the label stays until someone writes the step with `mark`. A dry run prints `REPAIR planned|unbuildable|unknown <ref>` per item and a `REPAIR=` count line, and writes nothing.
 
 ## Back-fill
 
@@ -156,4 +196,4 @@ A label with no block of its own kind shows on the Board as "Details unknown": t
 - **An audit list.** Each `|`- or `;`-separated segment is one item: `repo#N`, ranges (`#10-12`) and `,#M` continuations, with the short names `fs`, `cm`, `al`, `hub`, `lite` and `grocery`.
 - **The rule's dry run.** It covers issues closed as completed in the window, using the title clauses only, since history has neither a diff nor a verification statement.
 
-An item spanning several issues is one Board entry. Its lowest-numbered issue carries the label and the block, with leading PR numbers skipped; the rest are listed in `related`. An issue that already has an owner-check label or block is skipped. The block's reason and try text are generic, so a private repo's content never reaches a comment. Without `--apply` it prints the plan and writes nothing.
+An item spanning several issues is one Board entry. Its lowest-numbered issue carries the label and the block, with leading PR numbers skipped; the rest are listed in `related`. An issue that already has an owner-check label or block is skipped. The block's reason and try text are generic, so a private repo's content never reaches a comment. Without `--apply` it prints the plan and writes nothing. Its notes carry no `run` or `expect`, so they are `no-run` until `amend`.

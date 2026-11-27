@@ -99,6 +99,10 @@ no padding.
     any prose; added instruction text states why no mechanism can do it.
   - **Owner validation** — every issue, one line:
     `**Owner validation:** required|none — <why>; try: <what Roberto does>`.
+    When `required`, add directly under it `- run: <where>: <exact command, URL or screen>`
+    (one per step) and `- expect: <what success looks like>`; `classify` prints `ASK=` while
+    they are missing and refuses (exit 2) a vague one. A command that does not exist yet is
+    left for `/issue-finish`, never invented.
     The verdict is the helper's, never yours: write the draft to a temp file and run
     `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py classify --body-file <draft> --title "<title>" --label <type>`;
     copy its `OWNER_CHECK=` verdict and `REASON=` lines into the why, and write
