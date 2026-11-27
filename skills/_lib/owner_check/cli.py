@@ -78,7 +78,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 def _check_draft(draft: dict) -> None:
     """Refuse whatever the draft already says of the owner step if it is vague."""
-    problem = step.refers_elsewhere(str(draft["try"]))
+    problem = step.try_problem(str(draft["try"]))
     if problem:
         raise ValueError(f"the draft's try {problem}")
     for text in draft["run"]:

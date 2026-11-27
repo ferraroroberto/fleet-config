@@ -851,4 +851,25 @@ merged_steps = github.merge_same_try(_same)
 check([it["ref"] for it in merged_steps] == ["a#1", "a#2"] and merged_steps[0]["merged"] == ["a#3"],
       f"items with a different command never merge into one line, got {merged_steps}")
 
+# ---- a note never spells out a machine path (fleet-config#2294) ----
+
+for good in ("terminal: <root>\\demo\\tray.bat --restart", "terminal: notepad %USERPROFILE%\\notes.txt",
+             "browser: https://localhost:8445/board"):
+    try:
+        step.parse_run(good)
+    except ValueError as exc:
+        check(False, f"a placeholder path or URL {good!r} is accepted, got {exc}")
+_PATH_STEPS = (
+    ["--run", "terminal: Q:\\fleet\\demo\\tray.bat --restart", "--expect", "the tray icon comes back"],
+    ["--run", "terminal: pushd q:/fleet/demo", "--expect", "the tray icon comes back"],
+    ["--run", "screen: open file:///Q:/fleet/page.html", "--expect", "the tray icon comes back"],
+    [*STEP, "--try", "open Q:\\fleet\\demo and look"],
+    ["--run", "terminal: tray.bat --restart", "--expect", "a file appears under Q:\\fleet\\demo"],
+)
+for argv in _PATH_STEPS:
+    fake = FakeGh(issue())
+    code, out = run(["mark", "demo#7", "--kind", "validate-after", "--reason", "r", "--try", "open it", *argv], fake)
+    check(code == 2 and out.startswith("MARKED=refused") and "<root>" in out and "%USERPROFILE%" in out
+          and not fake.calls, f"mark refuses a drive-letter path and names the placeholders ({argv}, {code}, {out})")
+
 _h.report_and_exit("test_owner_check")

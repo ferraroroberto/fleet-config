@@ -69,7 +69,7 @@ Each state change posts one comment. The newest valid block on the issue wins.
 - kind: validate-after
 - reason: needs a real device or live input (mic), which a session cannot drive
 - try: on the PC, join a real online call and watch the overlay for hints
-- run: terminal: `cd /d <repo folder> && tray.bat --restart`
+- run: terminal: `cd /d <root>\overmark && tray.bat --restart`
 - run: screen: `the overlay window during a real call`
 - expect: a hint appears within a few seconds of the first question
 - proof: https://github.com/<owner>/<repo>/pull/<N>, <private artifact URL>
@@ -89,7 +89,7 @@ Each state change posts one comment. The newest valid block on the issue wins.
 | `since` | UTC date the state began. |
 | `answer` | Roberto's Board answer (`cleared` blocks only). |
 
-Every value is one line; only `run` repeats. Empty fields are left out. A block without `run` and `expect` is still read, with both empty. Repos are public, so a block never carries a screenshot, a personal path (a user profile, a data folder, a hostname) or personal content; the fleet checkout path under `E:utomation` is the one path a `run` command may use. Proof links point to private artifacts or the PR, and a private repo's block uses generic wording.
+Every value is one line; only `run` repeats. Empty fields are left out. A block without `run` and `expect` is still read, with both empty. Repos are public, so a block never carries a screenshot, a real path or personal content. A command names the fleet root as `<root>` (`<root>\app-launcher\tray.bat`) and the user profile as `%USERPROFILE%`, never a literal machine path. Proof links point to private artifacts or the PR, and a private repo's block uses generic wording.
 
 ## The exact step
 
@@ -110,7 +110,8 @@ A step with no command (a signup, a device check) states the exact URL or screen
 - no `--run` or no `--expect`
 - a `where` outside the table, or a line break inside a `--run`
 - text that sends him elsewhere ("the documented command", "see the issue", "follow the .md file", "as described"), in `--run`, `--expect` or `--try`
-- a `<placeholder>` or an ellipsis in a `--run`
+- a `<placeholder>` other than `<root>`, or an ellipsis, in a `--run`
+- a drive-letter path (`X:\` or `X:/`) in `--run`, `--expect` or `--try`
 - a sentence where a command belongs, a `browser` step with no URL, a one-word screen
 - what looks like a secret value
 - an `--expect` that only says it works
