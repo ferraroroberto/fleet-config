@@ -8,6 +8,8 @@ count, and the rule registries of the vendored conventions and instruction
 scripts. The skills index is compared with every skill directory under
 `skills/` and `.claude/skills/`. Each comparison is a pure function over
 collected facts, so the self-tests below prove a drifted input is reported.
+The conventions rule list has the one owner `docs/ratchets.md`: a rule table or
+an off-by-default list in another doc is reported, because a copy goes stale.
 """
 from __future__ import annotations
 
@@ -152,6 +154,34 @@ def ratchet_index_problems(doc: str, facts: Dict[str, Any]) -> List[str]:
     return out + _conventions_problems(doc, facts) + _instruction_problems(doc, facts)
 
 
+def collect_docs(repo: Path = REPO) -> Dict[str, str]:
+    """Every doc that could restate the index: README, the instruction files and `docs/`, but not the owner."""
+    paths = [repo / "README.md", repo / "CLAUDE.md", repo / "global-CLAUDE.md", *(repo / "docs").rglob("*.md")]
+    return {p.relative_to(repo).as_posix(): p.read_text(encoding="utf-8")
+            for p in paths if p != repo / "docs" / "ratchets.md"}
+
+
+def conventions_copy_problems(docs: Dict[str, str], facts: Dict[str, Any]) -> List[str]:
+    """A second copy of the conventions rule list: a table keyed by two or more rules, or a line naming
+    three or more of the rules left off. A doc may still name the rules its own subject is about."""
+    known = facts["conventions_known"]
+    off = known - set(facts["tables"].get("conventions_ratchet", {}).get("rules", []))
+    out = []
+    for name, text in sorted(docs.items()):
+        keyed: Set[str] = set()
+        for number, line in enumerate([*text.splitlines(), ""], 1):
+            if line.startswith("|"):
+                keyed |= _ticked(line.split("|")[1]) & known
+            else:
+                if len(keyed) > 1:
+                    out.append(f"{name}: a table before line {number} lists conventions rules {sorted(keyed)}; "
+                               "point to docs/ratchets.md instead")
+                keyed = set()
+            if len(_ticked(line) & off) > 2:
+                out.append(f"{name}:{number}: lists the conventions rules left off; point to docs/ratchets.md instead")
+    return out
+
+
 def collect_skill_names(repo: Path = REPO) -> Set[str]:
     return {p.parent.name for tier in _SKILL_TIERS for p in (repo / tier).glob("*/SKILL.md")
             if not p.parent.name.startswith("_")}
@@ -192,6 +222,16 @@ def _self_tests(check: _Checker, doc: str, facts: Dict[str, Any], skills_doc: st
           bool(skills_index_problems(skills_doc + "\n- [`/gone`](skills/gone.md)", names, lambda t: True)))
 
 
+def _copy_self_tests(check: _Checker, facts: Dict[str, Any]) -> None:
+    known = facts["conventions_known"]
+    off = sorted(known - set(facts["tables"]["conventions_ratchet"]["rules"]))
+    table = "\n".join(f"| `{r}` | a hit |" for r in sorted(known)[:2])
+    for label, text in (("a copied rule table", table),
+                        ("a copied off-rule list", "Off: " + ", ".join(f"`{r}`" for r in off[:3]))):
+        check(f"docs_index: {label} in another doc is reported",
+              bool(conventions_copy_problems({"docs/other.md": text}, facts)))
+
+
 def _docs_index_check() -> Tuple[int, int]:
     """The ratchet and skills index pages agree with the tree; returns (failures, total)."""
     check = _Checker()
@@ -208,5 +248,8 @@ def _docs_index_check() -> Tuple[int, int]:
             ratchet_index_problems(doc, facts))
     _report(check, "docs_index: docs/skills.md lists every skill under skills/ and .claude/skills/",
             skills_index_problems(skills_doc, names, lambda t: (docs_dir / t).is_file()))
+    _report(check, "docs_index: no other doc restates the conventions rule list",
+            conventions_copy_problems(collect_docs(), facts))
     _self_tests(check, doc, facts, skills_doc, names)
+    _copy_self_tests(check, facts)
     return check.failures, check.total

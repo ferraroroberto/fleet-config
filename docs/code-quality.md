@@ -147,18 +147,7 @@ Reference: [dead code ratchet](https://github.com/ferraroroberto/project-scaffol
 
 ### Conventions
 
-A set of small `ast` and line rules, each opted into by name, each counted per file against the baseline. The available rules:
-
-| Rule | A hit is |
-| --- | --- |
-| `no-window` | a subprocess spawn on Windows with no `creationflags=` (opens a console window) |
-| `logging-not-print` | a `print` call in library code instead of the logging facility |
-| `no-drive-path` | a string literal starting with a drive letter and separator |
-| `git-wrapper` | a raw `git` spawn outside the repo's one wrapper that pins safe environment settings |
-| `subprocess-timeout` | a blocking `subprocess` call with no `timeout=` |
-| `must-use` | a call to a primitive (an atomic write, a pooled HTTP session, one database connection dependency) made outside its declared single-home helper; declared as data in the config, so a new helper needs an entry and no new code |
-| `secret-compare`, `password-input-vendored`, `login-lockout` | an authentication-code convention, for repos that serve a sign-in page |
-| `no-pwsh-stub` | a command that runs a placeholder executable that does nothing |
+A set of small `ast` and line rules, each opted into by name, each counted per file against the baseline. They cover how a process is spawned, where logging and paths come from, which primitives must go through one helper, who may write a state flag, and authentication code in repos that serve a sign-in page. The one list of rules, with the state of each in this repository and the reason, is the rule table in [`ratchets.md`](ratchets.md#conventions-rules); what each rule counts is in the [conventions ratchet](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/conventions-ratchet.md) page.
 
 Why: each convention used to be guarded by a one-off test in whichever repo last hit the bug; this stage is the single vendored copy. A single legitimate call carries the exempt marker with its reason.
 
@@ -219,7 +208,7 @@ The acceptance run also holds checks that are not baselines because they have no
 - **Spawn scanner** (`tests/acceptance/spawn_scanner.py`): a static scan that every subprocess spawn passes the no-window flag with the right value and that every `git` call goes through the wrapper.
 - **Tree boundary** (`tests/acceptance/tree_boundary.py`): the hooks tree and the skills tree are linked into the agent homes independently, so a hook must import nothing from the skills tree.
 - **Fleet-scope guard** (`tests/acceptance/fleet_scope_guard.py`): every route that enumerates repos fleet-wide honours the switch that excludes dormant ones, or is recorded as deliberately unfiltered with a reason.
-- **Index drift** (`tests/acceptance/docs_index/`): [`ratchets.md`](ratchets.md) and the skills index must agree with the configuration, the gates and the baselines; adding a ratchet, option, rule or baseline entry without updating the index fails by name.
+- **Index drift** (`tests/acceptance/docs_index/`): [`ratchets.md`](ratchets.md) and the skills index must agree with the configuration, the gates and the baselines; adding a ratchet, option, rule or baseline entry without updating the index fails by name. A second copy of the conventions rule list in another doc fails too.
 - **Foreign tool-id leak scanner**: a harness's tool names must not leak into another harness's instructions.
 - **Vendored drift** (`skills/_lib/vendored_drift.py`): reports a copied component that differs from the bytes it claims, one that is behind its source, and a repo that carries a component without declaring it (which a re-vendoring wave would otherwise skip silently).
 - **Decision-register sync** (in the source repository): every open architecture-decision issue must be listed in the register exactly once, offline, from a committed snapshot.
@@ -304,7 +293,7 @@ The manual steps below are what those scripts automate.
 Not everything described here is switched on everywhere. State as of the current main branch:
 
 - **On in this repository's gate:** all eleven ratchets; the hook matrix, spawn scanner, tree boundary, fleet-scope guard, index drift and tool-id leak checks; the debug-tag scan, instruction delta, gate evidence, red-first evidence and PR-body checker in the finish flow.
-- **Off until a repository opts in:** the comment ratchet's docstring and history-phrase rules; the conventions ratchet's `secret-compare`, `password-input-vendored`, `login-lockout` and `no-pwsh-stub` rules (this repository leaves them off, see [`ratchets.md`](ratchets.md) for each reason); the instruction ratchet's file-shape and repeated-text rules, which a repository enables per table; every ratchet in a repository that has not declared its table.
+- **Off until a repository opts in:** the comment ratchet's docstring and history-phrase rules; the conventions ratchet's rules marked off in [`ratchets.md`](ratchets.md#conventions-rules), which gives the reason for each; the instruction ratchet's file-shape and repeated-text rules, which a repository enables per table; every ratchet in a repository that has not declared its table.
 - **Awaiting adoption in other repositories:** the newest rules, such as the docstring and history-phrase counts, the import-order rule and the instruction-file shape rules, have landed in the source repository as opt-in. Each repository records its existing debt with `--init` or `--update-baseline --allow-additions` in its own pull request, and the per-repository burn-down follows from those baselines.
 - **Live but harness-limited:** the default-branch commit guard is wired in the settings template and in the live agent settings, so it blocks `git commit` on the default branch in Claude Code. The other harnesses do not support the event (see [`cross-agent-parity.md`](cross-agent-parity.md)). A new machine takes effect once its live settings are refreshed from the template, and the acceptance run's settings-sync check fails by name until they are.
 - **Available to any repository:** the public adoption kit described under [Porting this elsewhere](#porting-this-elsewhere).
