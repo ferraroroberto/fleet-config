@@ -161,7 +161,8 @@ for label, raw in (("not json", "oops"), ("no closing key", json.dumps({"body": 
         check(True, label)
 
 
-def run_main(pr_stdout: str, returncode: int = 0, extra=(), gate=("FRESH", "ok"), labels=("enhancement",), red=("RED", "ok")):
+def run_main(pr_stdout: str, returncode: int = 0, extra=(), gate=("FRESH", "ok"), labels=("enhancement",), red=("RED", "ok"),
+             mac=("none", [], "")):
     done = subprocess.CompletedProcess(["gh"], returncode, stdout=pr_stdout, stderr="HTTP 502 from the API\n")
     out: list = []
     labels_patch = (mock.patch.object(pb, "_read_issue_labels", side_effect=labels) if isinstance(labels, Exception)
@@ -169,6 +170,7 @@ def run_main(pr_stdout: str, returncode: int = 0, extra=(), gate=("FRESH", "ok")
     with mock.patch.object(pb, "run_gh", return_value=done), \
          mock.patch.object(pb.gate_evidence, "check", return_value=gate), \
          mock.patch.object(pb.gate_evidence, "check_red", return_value=red) as red_mock, \
+         mock.patch.object(pb.gate_evidence, "mac_nightly_state", return_value=mac), \
          labels_patch, \
          mock.patch("builtins.print", side_effect=lambda *a, **k: out.append(" ".join(map(str, a)))):
         code = pb.main(["--pr", "5", "--issue", "7", *extra])
@@ -213,5 +215,32 @@ code, out = run_main(bug_pr, labels=ValueError("HTTP 502"))
 check(code == 3 and "PR_BODY=not_confirmed" in out and "labels" in out, "main exits 3 when the issue's labels cannot be read")
 code, out = run_main(bug_pr, labels=("bug",), red=("SAME_TREE", "x"), extra=["--red-label", "red-2"])
 check(code == 1 and "REFUSED red-first:" in out, "main refuses a same-tree red record")
+
+# --- mac-nightly (fleet-config#2296): the line follows what the gate printed, and nothing else
+PROBES = ["src/ports.py", "src/proc/ps.py"]
+MAC = "**Mac nightly:** unverified (src/ports.py, src/proc/ps.py)"
+UNVERIFIED = ("unverified", PROBES, "")
+
+
+def mac_rules(body: str, state=UNVERIFIED):
+    refused, unconfirmed = pb.evaluate(body, closing=[7], issue=7, verdicts=[], gate_state="FRESH",
+                                       allow_images=False, mac=state)
+    return [r.split(":", 1)[0] for r in refused], unconfirmed
+
+
+check(mac_rules(CLEAN + "\n" + MAC + "\n") == ([], []), "an unverified diff with the line passes")
+check(mac_rules(CLEAN + "\n**Mac nightly:** unverified (`src/ports.py`, `src/proc/ps.py`)\n") == ([], []), "paths may be shown as code")
+for label, body in (("no line", CLEAN), ("a path left out", CLEAN + "\n**Mac nightly:** unverified (src/ports.py)\n"),
+                    ("folded into the gate line", CLEAN + "\nValidation: gate PASS. " + MAC + "\n"),
+                    ("claimed verified", CLEAN + "\n**Mac nightly:** verified\n"),
+                    ("a second, contrary line", CLEAN + "\n" + MAC + "\n**Mac nightly:** verified\n"),
+                    ("only inside a code fence", CLEAN + "\n```\n" + MAC + "\n```\n")):
+    check(mac_rules(body)[0] == ["mac-nightly"], f"unverified diff, {label}: refused")
+check(mac_rules(CLEAN, ("none", [], "")) == ([], []), "no print, no line: passes")
+check(mac_rules(CLEAN + "\n" + MAC + "\n", ("none", [], ""))[0] == ["mac-nightly"], "no print: a Mac nightly claim is refused")
+refused, unconfirmed = mac_rules(CLEAN, ("unknown", [], "output not read"))
+check(refused == [] and len(unconfirmed) == 1 and "output not read" in unconfirmed[0], "an unknown state is NOT CONFIRMED, not none")
+code, out = run_main(good, mac=UNVERIFIED)
+check(code == 1 and "REFUSED mac-nightly:" in out and MAC in out, "main wires the gate record in and names the line to add")
 
 _h.report_and_exit("test_pr_body")

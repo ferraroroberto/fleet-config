@@ -10,11 +10,13 @@ Rules, each refused with its own message naming the fix:
   merge-danger  a well-formed `**Merge danger:**` line (docs/skills/merge-danger.md)
   red-first     a PR whose issue is labelled `bug` needs a `gate_evidence.py check-red` record (the new test
                 failed on a tree other than the fix tree) or a `**Red-first:** exempt · <reason>` line
+  mac-nightly   a gate run that printed `MAC_NIGHTLY: unverified` needs the one
+                `**Mac nightly:** unverified (<paths>)` line; with no such print the body carries no such line
   ticked-box    a ticked test-plan box needs a `DONE` acceptance verdict (`--verdicts`, the file
                 `acceptance_audit.py` tallied) or, for a gate box, a `FRESH` gate_evidence record
 
 Exit 0 pass, 1 refused, 3 NOT CONFIRMED -- the PR, the issue's labels, the verdicts or a gate or red record
-could not be read, which is never a pass. Forward-only: it reads one PR, there is no baseline. stdlib only.
+could not be read, or the Mac nightly state is unknown; neither is a pass. Forward-only: it reads one PR, there is no baseline. stdlib only.
 """
 
 from __future__ import annotations
@@ -103,6 +105,23 @@ def _red_findings(red_state: str) -> Tuple[List[str], List[str]]:
     return [f"red-first: this bug PR has no red-first evidence: {why}; {_red_how()}"], []
 
 
+def _mac_findings(body: str, state: str, paths: List[str], reason: str) -> Tuple[List[str], List[str]]:
+    if state == "unknown":
+        return [], [f"mac-nightly: whether the Mac nightly is unverified for this diff is unknown: {reason}"]
+    claims = [line.replace("`", "").strip() for line in prose(body, inline_code=False).splitlines()
+              if line.startswith("**Mac nightly:**")]
+    if state == "unverified":
+        want = gate_evidence.mac_nightly_line(paths)
+        if claims == [want]:
+            return [], []
+        return [f"mac-nightly: the gate reported a probe change; the body needs exactly one line `{want}`, "
+                f"on its own line next to the gate result"], []
+    if claims:
+        return ["mac-nightly: the gate reported no probe change; delete the `**Mac nightly:**` line "
+                "(no print means no claim, never `verified`)"], []
+    return [], []
+
+
 def prose(body: str, *, inline_code: bool = True) -> str:
     """The body without fenced blocks (and inline code unless kept), so a rule quoted as code is not a violation."""
     kept: List[str] = []
@@ -172,7 +191,7 @@ def _box_findings(boxes: List[str], verdicts: List[Dict[str, Any]], gate_state: 
 
 def evaluate(
     body: str, *, closing: List[int], issue: int, verdicts: List[Dict[str, Any]], gate_state: str, allow_images: bool,
-    is_bug: bool = False, red_state: str = "MISSING",
+    is_bug: bool = False, red_state: str = "MISSING", mac: Tuple[str, List[str], str] = ("none", [], ""),
 ) -> Tuple[List[str], List[str]]:
     """``(refused, unconfirmed)``: one ``<rule>: <fix>`` line per violation, one line per unestablished fact."""
     refused = _closing_findings(closing, issue, body)
@@ -190,7 +209,8 @@ def evaluate(
     if is_bug and find_exempt_line(body) is None:
         red_refused, red_unconfirmed = _red_findings(red_state)
         refused, unconfirmed = refused + red_refused, unconfirmed + red_unconfirmed
-    return refused + box_refused, unconfirmed
+    mac_refused, mac_unconfirmed = _mac_findings(body, *mac)
+    return refused + mac_refused + box_refused, unconfirmed + mac_unconfirmed
 
 
 def parse_pr(raw: str) -> Tuple[str, List[int]]:
@@ -291,7 +311,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         red_state, _ = gate_evidence.check_red(args.gate_repo.resolve(), args.red_label)
 
     refused, unconfirmed = evaluate(body, closing=closing, issue=args.issue, verdicts=verdicts, gate_state=gate_state,
-                                    allow_images=args.allow_images, is_bug=is_bug, red_state=red_state)
+                                    allow_images=args.allow_images, is_bug=is_bug, red_state=red_state,
+                                    mac=gate_evidence.mac_nightly_state(args.gate_repo.resolve(), args.gate_label))
     if refused:
         print("PR_BODY=refused")
         for line in refused:

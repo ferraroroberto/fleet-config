@@ -19,12 +19,20 @@ Subcommands
         not be computed, drops any earlier record for ``L`` -- never leaves a
         stale pass behind. Exits with the command's own exit code; the last
         stdout line is ``EVIDENCE=recorded ...`` or ``EVIDENCE=not_recorded
-        reason=...``.
+        reason=...``. The command's stdout passes through unchanged and is read
+        for the probe fake ratchet's ``MAC_NIGHTLY: unverified (...)`` line.
 
         With ``--units`` (implied when the command runs ``run_acceptance.py``) the
         gate also reports each unit's outcome and seconds, and every process spawn
         is counted; one ledger row per unit per run is appended to
         ``<hooks state>/gate-unit-ledger.jsonl`` (see ``unit_history/ledger.py``).
+
+  mac-nightly [--label <L>] [--repo <path>]
+        What the recorded run of ``L`` says about the Mac nightly, never folded
+        into the gate's result: ``MAC_NIGHTLY=unverified`` then the line a
+        finish report and PR body carry (exit 0), ``MAC_NIGHTLY=none`` (claim
+        nothing, exit 0) or ``MAC_NIGHTLY=unknown`` (exit 2). There is no
+        "verified": only a Mac run could say that.
 
   check --label <L> [--repo <path>] [--expect-cmd "<command>"]
         Prints exactly one of:
@@ -60,10 +68,12 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +81,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core import (
+    fleet_toml,  # noqa: E402
     hooks_state,  # noqa: E402
     runtime_files,  # noqa: E402
 )
@@ -89,6 +100,15 @@ GATE_INFLIGHT_DIRNAME = "gate-inflight"
 # `git add -A` over a huge untracked tree must not hang a finish: past this it
 # reports UNKNOWN, which consumers treat like STALE (re-run / watch CI).
 HASH_TIMEOUT_SECONDS = 120
+
+# Evidence key beside a label's record: what the run's output said about the Mac nightly.
+MAC_SUFFIX = ".mac_nightly"
+# The gate's stdout closes with the gate; past this a process it left behind is holding the pipe open.
+DRAIN_TIMEOUT_SECONDS = 10
+# A gate that prints without newlines must not grow the scan buffer without bound.
+SCAN_BUFFER_BYTES = 65536
+_MAC_LINE_RE = re.compile(r"^\s*MAC_NIGHTLY:\s*unverified\s*\((?P<detail>.*)\)\s*$")
+_MAC_PATHS_RE = re.compile(r"probe module\(s\)\s+(?P<paths>[^;]+)")
 
 
 def _cmd_text(argv: List[str]) -> str:
@@ -237,6 +257,88 @@ def gate_in_flight(cwd: Path) -> Optional[bool]:
     return False
 
 
+def mac_nightly_paths(text: str) -> List[str]:
+    """Probe modules named by the ``MAC_NIGHTLY: unverified (...)`` lines in ``text``; empty when there is none.
+
+    A line worded some other way keeps its whole parenthetical, so a reworded ratchet is never read as silence.
+    """
+    found: List[str] = []
+    for line in text.splitlines():
+        match = _MAC_LINE_RE.match(line)
+        if not match:
+            continue
+        named = _MAC_PATHS_RE.search(match["detail"])
+        for part in named["paths"].split(",") if named else [match["detail"]]:
+            if part.strip() and part.strip() not in found:
+                found.append(part.strip())
+    return found
+
+
+def mac_nightly_line(paths: List[str]) -> str:
+    """The one line a finish report and PR body carry for an unverified Mac nightly."""
+    return f"**Mac nightly:** unverified ({', '.join(paths)})"
+
+
+def _forward(chunk: bytes) -> None:
+    """Pass the gate's output on; a closed or full parent stream never stops the draining."""
+    with contextlib.suppress(OSError, ValueError):
+        raw = getattr(sys.stdout, "buffer", None)
+        if raw is not None:
+            raw.write(chunk)
+        else:
+            sys.stdout.write(chunk.decode("utf-8", errors="replace"))
+        sys.stdout.flush()
+
+
+def _collect(raw: bytes, found: List[str]) -> None:
+    found.extend(p for p in mac_nightly_paths(raw.decode("utf-8", errors="replace")) if p not in found)
+
+
+def _pump(stream, found: List[str], abandoned: threading.Event) -> None:
+    """Forward ``stream`` as it arrives, collecting probe paths from each whole line."""
+    pending = b""
+    while True:
+        try:
+            chunk = stream.read1(SCAN_BUFFER_BYTES)
+        except (OSError, ValueError):
+            break
+        if not chunk or abandoned.is_set():
+            break
+        _forward(chunk)
+        whole, newline, pending = (pending + chunk).rpartition(b"\n")
+        pending = pending[-SCAN_BUFFER_BYTES:]
+        if newline:
+            _collect(whole, found)
+    _collect(pending, found)
+
+
+def _run_gate(argv: List[str], repo: Path, env: Optional[Dict[str, str]]) -> Tuple[int, List[str], bool]:
+    """Run the gate: ``(exit code, probe paths its stdout named, whether that stdout was read to its end)``."""
+    found: List[str] = []
+    # Explicit handles: with CREATE_NO_WINDOW and none passed, a console
+    # child loses the inherited stderr and the gate's own FAIL lines vanish
+    # while its exit code still arrives.
+    # subprocess-timeout-exempt: foreground runner for the caller's gate, whose length is the caller's to set
+    proc = subprocess.Popen(argv, cwd=str(repo), creationflags=NO_WINDOW,
+                            stdout=subprocess.PIPE, stderr=_handle(sys.stderr), env=env)
+    abandoned = threading.Event()
+    pump = threading.Thread(target=_pump, args=(proc.stdout, found, abandoned), daemon=True)
+    pump.start()
+    try:
+        code = proc.wait()
+    except BaseException:
+        proc.kill()
+        raise
+    pump.join(DRAIN_TIMEOUT_SECONDS)
+    complete = not pump.is_alive()
+    if complete:
+        proc.stdout.close()
+    else:
+        # Closing a pipe the thread is blocked reading would block too: leave it to the daemon thread.
+        abandoned.set()
+    return code, list(found), complete
+
+
 def _wants_units(argv: List[str]) -> bool:
     return any(Path(part).name == "run_acceptance.py" for part in argv)
 
@@ -248,16 +350,12 @@ def run(repo: Path, label: str, argv: List[str], units: bool = False) -> Tuple[i
     sys.stderr.flush()
     run_dir = Path(tempfile.mkdtemp(prefix="gate_units_")) if units or _wants_units(argv) else None
     started = time.monotonic()
+    probes: List[str] = []
+    scanned = False
     try:
-        # Explicit handles: with CREATE_NO_WINDOW and none passed, a console
-        # child loses the inherited stdout/stderr and the gate's own FAIL
-        # lines vanish while its exit code still arrives.
         with inflight_marker(repo, label):
-            # subprocess-timeout-exempt: foreground runner for the caller's gate, whose length is the caller's to set
-            proc = subprocess.run(argv, cwd=str(repo), creationflags=NO_WINDOW,
-                                  stdout=_handle(sys.stdout), stderr=_handle(sys.stderr),
-                                  env=unit_ledger.unit_env(run_dir, before) if run_dir else None)
-        code = proc.returncode
+            env = unit_ledger.unit_env(run_dir, before) if run_dir else None
+            code, probes, scanned = _run_gate(argv, repo, env)
     except OSError as exc:
         print(f"gate_evidence: could not start {argv[0]!r}: {exc}", file=sys.stderr)
         code = 127
@@ -270,6 +368,11 @@ def run(repo: Path, label: str, argv: List[str], units: bool = False) -> Tuple[i
     if evidence_path is None:
         return code, "EVIDENCE=not_recorded reason=not a git working tree"
     data = _load(evidence_path)
+    # Kept even when the pass itself is not recorded: a probe change the gate reported stays reported.
+    data[label + MAC_SUFFIX] = {"paths": probes, "complete": scanned, "exit": code,
+                                "wtree": after if before == after else None}
+    if probes:
+        print(f"gate_evidence: {mac_nightly_line(probes)}", file=sys.stderr)
     if before is None or after is None:
         why = reason or after_reason
     elif before != after:
@@ -337,6 +440,39 @@ def check_red(repo: Path, label: str = "red") -> Tuple[str, str]:
     return "RED", f"recorded {record.get('utc')}: exit {code} on {str(record['wtree'])[:12]}, fix tree {current[:12]}"
 
 
+def _probe_ratchet_adopted(repo: Path) -> Optional[bool]:
+    """Does this tree enable the probe fake ratchet, the only printer of the line? ``None`` when that can't be told."""
+    try:
+        res = run_git(["-C", str(repo), "rev-parse", "--show-toplevel"], timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    data, error = fleet_toml.load_checked(Path(res.stdout.strip()))
+    if error:
+        return None
+    return (fleet_toml.table(data, "probe_fake_ratchet") or {}).get("enabled") is True
+
+
+def mac_nightly_state(repo: Path, label: str = "gate") -> Tuple[str, List[str], str]:
+    """``(unverified|none|unknown, probe paths, reason)`` from what the recorded run of ``label`` printed."""
+    evidence_path = git_path(repo, EVIDENCE_NAME)
+    seen = _load(evidence_path).get(label + MAC_SUFFIX) if evidence_path else None
+    seen = seen if isinstance(seen, dict) else None
+    if seen and seen.get("paths"):
+        return "unverified", [str(p) for p in seen["paths"]], ""
+    if _probe_ratchet_adopted(repo) is False:
+        return "none", [], ""
+    if seen is None:
+        return "unknown", [], f"no run of {label} has had its output read; run it through `run --label {label}`"
+    if not seen.get("complete") or seen.get("exit") != 0:
+        return "unknown", [], f"the last run of {label} failed or its output was not read to the end"
+    current, reason = tree_hash(repo)
+    if current is None or seen.get("wtree") != current:
+        return "unknown", [], reason or f"the output read is from another tree; re-run {label}"
+    return "none", [], ""
+
+
 _CHECK_EXIT = {"FRESH": 0, "STALE": 1, "MISSING": 1, "UNKNOWN": 2}
 _CHECK_RED_EXIT = {"RED": 0, "NOT_RED": 1, "SAME_TREE": 1, "MISSING": 1, "UNKNOWN": 2}
 
@@ -361,6 +497,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     red = sub.add_parser("check-red")
     red.add_argument("--label", default="red")
     red.add_argument("--repo", type=Path, default=Path.cwd())
+    mac = sub.add_parser("mac-nightly")
+    mac.add_argument("--label", default="gate")
+    mac.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args(raw)
     repo = args.repo.resolve()
 
@@ -371,6 +510,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         sys.stdout.flush()
         print(line, flush=True)
         return code
+    if args.cmd == "mac-nightly":
+        state, paths, detail = mac_nightly_state(repo, args.label)
+        print(f"MAC_NIGHTLY={state}")
+        if paths:
+            print(mac_nightly_line(paths))
+        if detail:
+            print(detail, file=sys.stderr)
+        return 2 if state == "unknown" else 0
     if args.cmd == "check-red":
         state, detail = check_red(repo, args.label)
         print(state)
