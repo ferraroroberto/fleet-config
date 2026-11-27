@@ -106,6 +106,12 @@ priv = [dict(r, cwd=priv_cwd) for r in records]
 pout = rd.build(write(priv), rd.DEFAULT_PRIVATE)
 check(pout["private_session"] and pout["repeat_reads"] == [], "a private session lists no read paths")
 
+wt_priv = [dict(r, cwd=str(ROOT / "life-os-wt-12")) for r in records]
+wout = rd.build(write(wt_priv), rd.DEFAULT_PRIVATE)
+check(wout["private_session"] and wout["repeat_reads"] == [] and wout["repo"] == "<private>",
+      "a session in a private repo's worktree is private")
+check(mask(str(ROOT / "life-os-wt-12" / "a.md")) == "<private>", "a private repo's worktree path is private")
+
 # ---- the refusing hook is named on both wirings ----
 def dispatch_refusal(command, *hooks):
     """The real `hook_dispatch.py`'s refusal, wrapped the way the transcript records it."""

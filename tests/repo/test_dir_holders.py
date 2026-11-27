@@ -125,6 +125,21 @@ check(any(dh.names_path("python E:/automation/app-wt-1/run.py", dh.normalize(s))
       "equivalent_spellings: a command line in either spelling matches one of them")
 
 
+_saved_snapshot, _saved_spellings = dh.snapshot, dh.equivalent_spellings
+dh.snapshot = lambda: (_other_drive, None)
+dh.equivalent_spellings = lambda p: ["E:/automation/app-wt-1", "C:/automation/app-wt-1"]
+_other_drive = [
+    {"ProcessId": 100, "Name": "tool.exe", "CommandLine": "tool.exe C:/automation/app-wt-1/run.py"},
+    {"ProcessId": 50, "Name": "tool.exe", "CommandLine": "tool.exe E:/automation/app-wt-1 C:/automation/app-wt-1"},
+]
+try:
+    _r = dh.probe("E:/automation/app-wt-1")
+finally:
+    dh.snapshot, dh.equivalent_spellings = _saved_snapshot, _saved_spellings
+check(_r.status == "LIVE" and [h["pid"] for h in _r.holders] == [50, 100],
+      f"probe: a holder under another drive spelling is LIVE, each pid once [{_r!r}]")
+
+
 # ---- parse_table: the query's JSON, control characters included (fleet-config#991) ----
 # PowerShell 5.1's ConvertTo-Json emits a raw control character in a command
 # line unescaped; one such process anywhere on the machine made the whole probe
