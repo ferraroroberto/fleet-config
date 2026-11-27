@@ -1,28 +1,13 @@
 """Deterministic operations helper for the fleet chief.
 
-The chief's ~18h sweep (2026-07-25/26) re-hand-wrote the same handful of
-board/session/issue operations in inline shell + inline Python on every
-poll: ~15 board reads (each a freshly typed inline JSON parser), ~12
-dispatches, ~10 session-input sends (each re-declaring the same `ssl` +
-`urllib` boilerplate), ~8 exchange reads, ~6 multi-repo issue-state loops,
-4 session stops. Retyping meant re-breaking: a `curl`-eats-stdin bug, a
-`gh`-emoji `UnicodeEncodeError`, a bare `python` blocked by
-`venv_discipline`, two recursive greps that hit the 120s timeout, and two
-near-misses dispatching into an already-occupied repo.
-
-That last class matters most: chief's safety rails were memory (prose in
-`.claude/skills/chief/SKILL.md`), not mechanism. This module makes the
-mechanical half real: `refuse_dispatch` is a pure, unit-tested function
-that refuses an occupied-repo dispatch, an at/over-cap dispatch, or an
-unconfirmed `yolo` — the CLI's `dispatch` subcommand calls it before ever
-issuing the POST that would launch a session. The same principle backs
-`verify`: during the same sweep a sub-agent overstepped a read-only brief
-and shipped a PR on its own initiative, discovered only because the parent
-worker happened to raise the alarm. `skills/_lib/dirty_tree_check.py`
-already existed for exactly this and was already wired
-into four fan-out skills, but not chief — `verify` closes that gap by
-wrapping it, so chief re-checks a worker's self-reported state instead of
-trusting it.
+The chief's board reads, dispatches, steering, issue lookups and teardown
+checks run through this one CLI rather than inline shell and Python. Its
+safety rails are mechanism, not prose: `refuse_dispatch` is a pure,
+unit-tested function that refuses an occupied-repo dispatch, an at/over-cap
+dispatch or an unconfirmed `yolo` before `dispatch` issues the POST that
+would launch a session, and `verify` wraps
+`skills/_lib/dirty_tree_check.py` so a worker's self-reported state is
+re-checked instead of trusted.
 
 Talks to the app-launcher webapp (port 8445, over HTTPS or plain HTTP,
 whichever that port serves — `chief/launcher_scheme.py`; loopback bypasses all
@@ -181,9 +166,8 @@ Subcommands
       Neither refusal counts the *calling* session, identified by the
       launcher's own `APP_LAUNCHER_SESSION_ID` stamp.
       The standing chief runs as an ordinary PTY in `fleet-config`, so
-      counting its card made that one repo — the repo the fleet's hooks,
-      skills and runners live in — permanently undispatchable, and the only
-      way through was to route around the guard entirely. Every *other* live
+      counting its card would make that one repo — the repo the fleet's hooks,
+      skills and runners live in — permanently undispatchable. Every *other* live
       session still occupies its repo: a second worker is refused exactly as
       before.
 
@@ -303,8 +287,7 @@ Subcommands
 parser, the precedence rules, the output-age measurement they rest on and the
 verdict/reason rendering are one self-contained subsystem, and they live in
 `skills/_lib/chief/steer_delivery.py`. This module fetches the
-facts and prints the line; that one decides. Its names are re-exported here so
-every existing caller and test keeps reaching them through `chief_ops`.
+facts and prints the line; that one decides.
 
 stdlib only, plus the `gh` CLI for `issues`.
 """

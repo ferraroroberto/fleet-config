@@ -27,8 +27,9 @@ is mechanical, so it lives here rather than being re-typed as
                 a merged PR -- the only class the chief asks about
   orphan-empty  an empty folder that is not a git worktree
   unknown       anything the sweep could not establish (unreadable git or
-                worktree list, a PR lookup that failed, an unreadable board or
-                process list) -- its own state, never folded into `finished`
+                worktree list, a PR lookup that failed, an unreadable board,
+                state file or process list) -- its own state, never folded into
+                `finished`
 
 `--apply` removes only `finished` (through `worktree_claim.remove_worktree`,
 the junction-safe teardown) and `orphan-empty` (`rmdir`, which refuses a
@@ -59,6 +60,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import (
     Any,
     Callable,
@@ -322,15 +324,15 @@ def classify_worktree(
     pr_lookup: PrLookup,
     host: Optional[str] = None,
     pid_probe: Callable[[int], Optional[bool]] = state_rows.pid_state,
-    managed: Optional[Mapping[str, Any]] = None,
+    managed: Optional[Mapping[str, Any]] = MappingProxyType({}),
     grace_s: float = GRACE_S,
     now: Callable[[], float] = time.time,
     spellings: Callable[[str], Sequence[str]] = dir_holders.equivalent_spellings,
 ) -> Finding:
     """Class + evidence for one worktree folder. See the module docstring.
 
-    `dirs` / `markers` / `session_ids` / `processes` are None when the board, the
-    marker file or the process list could not be read: a removable verdict then cannot be established and
+    `dirs` / `markers` / `session_ids` / `processes` / `managed` are None when the board, a
+    state file or the process list could not be read: a removable verdict then cannot be established and
     degrades to `unknown`, while `has-work` (git evidence alone) still stands.
     `managed` is the chief-managed session map (session id -> {repo, number}):
     a live session in it for this folder's repo#N holds the tree whether or not
@@ -348,9 +350,9 @@ def classify_worktree(
     if live:
         return live
 
-    live_known = dirs is not None and markers is not None and processes is not None
-    not_established = ("live sessions not established" if dirs is None or markers is None
-                       else "process list not established")
+    sessions_known = dirs is not None and markers is not None and managed is not None
+    live_known = sessions_known and processes is not None
+    not_established = "process list not established" if sessions_known else "live sessions not established"
 
     if (path / ".git").is_dir():
         return Finding(name, path, UNKNOWN, "a real repository named like a worktree")
@@ -468,15 +470,18 @@ def apply_findings(
 
 def stale_sessions(
     cards: Iterable[Mapping[str, Any]],
-    managed: Mapping[str, Any],
+    managed: Optional[Mapping[str, Any]],
     fetch_issue: Callable[[str, int], Dict[str, Any]],
 ) -> List[str]:
     """One line per chief-managed `idle-finished` session, with its issue state.
 
     `stoppable` only when the issue is established CLOSED; an open issue is the
     chief's call (a lane can idle on a live check) and a failed lookup is
-    `unknown`. Never stops anything.
+    `unknown`, as is the whole list when `managed` is None (marks unreadable).
+    Never stops anything.
     """
+    if managed is None:
+        return ["SESSION ? chief-managed marks not established -> unknown"]
     lines: List[str] = []
     for card in cards:
         sid = str(card.get("session_id") or "")

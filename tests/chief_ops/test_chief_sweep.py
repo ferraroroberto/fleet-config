@@ -344,6 +344,22 @@ try:
     check(code == 0 and (solo / "work-wt-22").exists() and "unknown      work-wt-22" in out.getvalue()
           and "process list not established" in out.getvalue(),
           "CLI: with the process list unreadable --apply removes nothing and says unknown")
+
+    cs.process_table = lambda: []
+    for state_path in (co.commands.active_issue.state_file(), co.commands.chief_managed.state_file()):
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        before = state_path.read_bytes() if state_path.exists() else None
+        state_path.write_text("{truncated", encoding="utf-8")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = co.main(["sweep", "--root", str(solo), "--apply"])
+        check(code == 0 and (solo / "work-wt-22").exists() and "unknown      work-wt-22" in out.getvalue()
+              and f"{state_path.name} is not JSON" in err.getvalue(),
+              f"CLI: with {state_path.name} corrupt --apply removes nothing, says unknown and names the file")
+        if before is None:
+            state_path.unlink()
+        else:
+            state_path.write_bytes(before)
 finally:
     co.launcher._request, cs.process_table = saved_request, saved_table
 

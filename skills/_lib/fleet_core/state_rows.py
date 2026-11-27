@@ -8,7 +8,8 @@ first:
 
 * a lock directory that serializes a whole read-modify-write cycle
   (`state_lock`), whose stale-reclaim needs a tri-state pid probe (`pid_state`);
-* tolerant reads and atomic writes of the mapping (`read_rows`, `write_rows`);
+* tolerant or checked reads and atomic writes of the mapping (`read_rows`,
+  `read_rows_checked`, `write_rows`);
 * a TTL prune keyed on a row's own timestamp field (`prune_rows`);
 * UTC clock helpers (`utc_now`, `iso_z`) so every row stamps time the same way.
 
@@ -27,7 +28,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 from fleet_core import runtime_files
 from fleet_core.hooks_state import atomic_write_text, state_dir
@@ -153,6 +154,24 @@ def read_rows(path: Path) -> Dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def read_rows_checked(path: Path) -> Tuple[Optional[Dict[str, Any]], str]:
+    """`(rows, error)` for a caller that must not act on an unread file: a missing file is no rows
+    (nothing written yet), an unreadable one is `None` with the reason, never empty."""
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return {}, ""
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"{path.name} unreadable: {exc}"
+    try:
+        rows = json.loads(text)
+    except ValueError as exc:
+        return None, f"{path.name} is not JSON: {exc}"
+    if not isinstance(rows, dict):
+        return None, f"{path.name} is not a mapping"
+    return rows, ""
 
 
 def prune_rows(

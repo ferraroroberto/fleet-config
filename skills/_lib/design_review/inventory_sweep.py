@@ -92,7 +92,7 @@ def app_row(row: dict, doc: dict, app_inv: Optional[dict]) -> dict:
         "surfaces": int(smap.get("entries") or 0) if readable else None,
         "never_walked": len(never) if isinstance(never, list) else None,
         "not_walked": cov.get("not_walked_count") if cov.get("status") == "measured" else None,
-        "screens": len(app_inv["screens"]) if app_inv else 0,
+        "screens": len(app_inv["screens"]) if app_inv else None,
         "inventory_hash": inventory_hash(app_inv), "commit": row.get("commit"),
         "repeat": "unmeasured", "previous_hash": None, "unclassified": 0, "classified": 0,
     }
@@ -127,7 +127,7 @@ def render_section(sweep: dict) -> str:
         state = a.get("unmeasured") or "measured"
         rows.append(f'<tr><th scope="row">{report._esc(a["target"])}</th><td>{report._esc(state)}</td><td>{report._esc(a.get("e2e"))} · tree {report._esc(a.get("e2e_tree") or "unchecked")}</td>'
                     f'<td>{_n(a.get("surfaces"))}</td><td>{_n(a.get("never_walked"))}</td><td>{_n(a.get("not_walked"))}</td>'
-                    f'<td>{a.get("screens", 0)}</td><td>{report._esc(a.get("repeat"))}</td>'
+                    f'<td>{_n(a.get("screens"))}</td><td>{report._esc(a.get("repeat"))}</td>'
                     f'<td>{a.get("classified", 0)} / {a.get("unclassified", 0)}</td></tr>')
     table = ('<div class="tbl"><table><thead><tr><th>App</th><th>Run</th><th>E2E</th><th>Map surfaces</th><th>Never walked</th>'
              '<th>NOT_WALKED overlays</th><th>Inventory screens</th><th>Repeat</th><th>Classified / left</th></tr></thead><tbody>'

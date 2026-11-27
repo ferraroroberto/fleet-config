@@ -426,22 +426,8 @@ def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
 
 
 def _chief_managed_rows() -> Tuple[Optional[Dict[str, Any]], str]:
-    """`(rows, error)` from the chief-managed marks (`session_id -> {"repo", ...}`): a missing file
-    is no rows (nothing dispatched yet), an unreadable one is `None` with the reason, never empty."""
-    path = chief_managed.state_file()
-    try:
-        text = path.read_text(encoding="utf-8-sig")
-    except FileNotFoundError:
-        return {}, ""
-    except OSError as exc:
-        return None, f"{path.name} unreadable: {exc}"
-    try:
-        rows = json.loads(text)
-    except ValueError as exc:
-        return None, f"{path.name} is not JSON: {exc}"
-    if not isinstance(rows, dict):
-        return None, f"{path.name} is not a mapping"
-    return rows, ""
+    """The chief-managed marks (`session_id -> {"repo", ...}`), as `state_rows.read_rows_checked`."""
+    return state_rows.read_rows_checked(chief_managed.state_file())
 
 
 def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
@@ -871,8 +857,10 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         # An unreadable board is an unestablished fact, not an empty one: every
         # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
-    markers = state_rows.read_rows(active_issue.state_file())
-    managed = state_rows.read_rows(chief_managed.state_file())
+    markers, markers_error = state_rows.read_rows_checked(active_issue.state_file())
+    managed, managed_error = _chief_managed_rows()
+    for error in filter(None, (markers_error, managed_error)):
+        print(f"NOTE: {error}; removable verdicts are unknown", file=sys.stderr)
     findings = chief_sweep.scan(
         root,
         dirs=None if cards is None else chief_sweep.live_dirs(cards),
