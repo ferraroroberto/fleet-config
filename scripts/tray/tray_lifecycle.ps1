@@ -49,8 +49,12 @@
                  the serving process changed (the reported `pid`, else the port
                  owner's pid and creation time) and `git_sha` matches HEAD. A
                  process whose identity cannot be read is "not confirmed"
-                 (non-zero exit), never a pass. It cannot see a restart that
-                 never entered this script:
+                 (non-zero exit), never a pass. The serving process must also
+                 run from this checkout. Before stopping anything, a restart
+                 refuses when another checkout's process listens on an owned
+                 port on a loopback or wildcard address; a listener bound only
+                 to another specific address (Tailscale serving the tailnet) is
+                 ignored. It cannot see a restart that never entered this script:
         powershell.exe -NoProfile -NonInteractive -File tray_lifecycle.ps1 `
           launch -AppName "my-app" -ScriptDir "<repo>" -VenvDir "<repo>\.venv" `
           -TrayMatch "launcher\.py\s+tray" -Ports "8445" `
@@ -182,6 +186,65 @@ function Wait-ProcessGone {
     return -not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
 }
 
+# A loopback or wildcard listener is the one a 127.0.0.1 probe reaches and the one that keeps the
+# webapp from binding. A listener bound to one other specific address (Tailscale serving the same
+# port number on the tailnet addresses) coexists with the webapp, so it never counts as a holder.
+function Test-ProbeAddress {
+    param([string] $Address)
+    return @('0.0.0.0', '::', '127.0.0.1', '::1') -contains $Address
+}
+
+function Get-ProbeListenerPids {
+    param([int] $Port)
+    return @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { Test-ProbeAddress ([string] $_.LocalAddress) } |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+}
+
+# The checkout root a command line was started from: the folder holding its (scripts\)launcher.py,
+# else the one holding its .venv. $null when it names neither (a tool that is not a checkout of any
+# app). A path with a space is not read.
+function Get-CommandLineRoot {
+    param([string] $CommandLine)
+    if (-not $CommandLine) { return $null }
+    $m = [regex]::Match($CommandLine, '([A-Za-z]:[\\/][^"\s]*?)[\\/]+(scripts[\\/]+)?launcher\.py', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+    $m = [regex]::Match($CommandLine, '([A-Za-z]:[\\/][^"\s]*?)[\\/]+\.venv[\\/]', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+    return $null
+}
+
+# Which checkout a process runs from, judged by its command line like every other match here:
+#   this     it is this repo's process
+#   other    it runs from another checkout (Root names it)
+#   foreign  its command line names no checkout at all
+#   unknown  its command line could not be read
+function Get-ProcessCheckout {
+    param([int] $ProcessId)
+    $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) -ErrorAction SilentlyContinue
+    if (-not $cim -or -not $cim.CommandLine) { return @{ Kind = 'unknown'; Root = $null } }
+    if (Test-OwnsProcess $cim.CommandLine) { return @{ Kind = 'this'; Root = (Get-RepoRoot) } }
+    $root = Get-CommandLineRoot $cim.CommandLine
+    if (-not $root) { return @{ Kind = 'foreign'; Root = $null } }
+    $mine = Get-PathPattern (Get-RepoRoot)
+    if ($mine -and (Test-PathPattern ('"' + $root) ($mine + '[\\/]*$'))) { return @{ Kind = 'this'; Root = $root } }
+    return @{ Kind = 'other'; Root = $root }
+}
+
+# Runs before anything is stopped: with another checkout serving an owned port, this restart could
+# only stop its own tray and then find the other copy still serving, so it refuses and names it.
+function Assert-NoOtherCheckout {
+    foreach ($port in (Get-OwnedPorts)) {
+        foreach ($holderPid in (Get-ProbeListenerPids $port)) {
+            $checkout = Get-ProcessCheckout -ProcessId $holderPid
+            if ($checkout.Kind -eq 'other') {
+                throw ("restart refused: owned port :{0} is held by PID {1} from another checkout {2}, not this checkout {3}. Nothing was stopped; stop that copy first." -f `
+                    $port, $holderPid, $checkout.Root, (Get-RepoRoot))
+            }
+        }
+    }
+}
+
 # Returns how many owned holders were still alive after the stop. A stop that was
 # acknowledged but did not end the process is a failed reclaim, never a quiet success.
 function Invoke-ReclaimPorts {
@@ -242,7 +305,7 @@ function Get-GitHead {
 
 function Resolve-VersionUrls {
     # Returns the ordered candidate URLs to probe. An explicit -VersionUrl is
-    # taken verbatim (the app knows its scheme + path — e.g. a non-standard
+    # taken verbatim (the app knows its scheme + path -- e.g. a non-standard
     # /admin/api/version). With none given, the app didn't declare a scheme, so
     # probe HTTPS *then* HTTP on the first owned port: fleet PWAs serve HTTPS
     # (Service Workers + Web Push are HTTPS-only), so http-first would fail every
@@ -262,7 +325,7 @@ function Resolve-VersionUrls {
 
 function Install-LoopbackCertBypass {
     # A fleet PWA serves HTTPS under a leaf issued for its public name (a
-    # Tailscale .ts.net host, or a self-signed CA), never for 127.0.0.1 — so a
+    # Tailscale .ts.net host, or a self-signed CA), never for 127.0.0.1 -- so a
     # loopback verify probe fails certificate validation on name mismatch. We
     # must skip validation, but ONLY for loopback, and Windows PowerShell 5.1
     # has no -SkipCertificateCheck. A PowerShell *scriptblock* callback throws
@@ -316,20 +379,19 @@ function Get-PortOwnerIdentity {
     # pid. Creation time rides along because a pid alone can be reused. $null
     # when nothing listens or the owner cannot be read.
     param([int] $Port)
-    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if (-not $listener) { return $null }
-    $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $listener.OwningProcess) -ErrorAction SilentlyContinue
+    $ownerPid = @(Get-ProbeListenerPids $Port) | Select-Object -First 1
+    if ($null -eq $ownerPid) { return $null }
+    $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ownerPid) -ErrorAction SilentlyContinue
     $started = $null
     if ($cim -and $cim.CreationDate) { $started = [string] $cim.CreationDate.ToUniversalTime().Ticks }
-    return @{ Pid = [int] $listener.OwningProcess; Started = $started }
+    return @{ Pid = [int] $ownerPid; Started = $started }
 }
 
 function Get-ServedState {
     # One look at what answers the version endpoint: the git_sha it serves, the
-    # pid it reports (if any), and the port owner's identity. Answered is false
-    # when no candidate URL answered.
-    $state = @{ Answered = $false; Url = $null; Sha = ''; ReportedPid = $null; OwnerPid = $null; OwnerStarted = $null; AssetHash = $null; Error = $null }
+    # pid it reports (if any), the port owner's identity, and which checkout the
+    # serving process runs from. Answered is false when no candidate URL answered.
+    $state = @{ Answered = $false; Url = $null; Sha = ''; ReportedPid = $null; OwnerPid = $null; OwnerStarted = $null; ServingPid = $null; Checkout = $null; AssetHash = $null; Error = $null }
     foreach ($url in @(Resolve-VersionUrls)) {
         try {
             $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 3
@@ -353,9 +415,30 @@ function Get-ServedState {
             $state.OwnerPid = $owner.Pid
             $state.OwnerStarted = $owner.Started
         }
+        $state.ServingPid = if ($null -ne $state.ReportedPid) { $state.ReportedPid } else { $state.OwnerPid }
+        if ($null -ne $state.ServingPid) {
+            $state.Checkout = Get-ProcessCheckout -ProcessId $state.ServingPid
+        } else {
+            $state.Checkout = @{ Kind = 'unknown'; Root = $null }
+        }
         return $state
     }
     return $state
+}
+
+# A new process serving HEAD is a pass only when it is this checkout's: a second clone at the same
+# commit gives the same answer. A state with no Checkout (the pure-table callers) skips the check;
+# Get-ServedState always sets one.
+function Confirm-ServingCheckout {
+    param($After, [string] $Reason)
+    if ($After.Checkout -and $After.Checkout.Kind -eq 'other') {
+        return @{ Status = 'other-checkout'; Reason = ("{0} is served by PID {1} from another checkout {2}, not this one" -f $After.Url, $After.ServingPid, $After.Checkout.Root) }
+    }
+    if ($After.Checkout -and $After.Checkout.Kind -ne 'this') {
+        $why = if ($After.Checkout.Kind -eq 'foreign') { 'names no checkout' } else { 'could not be read' }
+        return @{ Status = 'not-confirmed'; Reason = ("{0} is served by PID {1}, whose command line {2}, so it is not confirmed as this checkout's process" -f $After.Url, $After.ServingPid, $why) }
+    }
+    return @{ Status = 'confirmed'; Reason = $Reason }
 }
 
 function Get-RestartVerdict {
@@ -366,7 +449,9 @@ function Get-RestartVerdict {
     #   confirmed      new process, serving HEAD
     #   stale          nothing answering, or serving another sha: keep polling
     #   unchanged      the same process is still serving: keep polling
-    #   not-confirmed  the identity (or the baseline) could not be read: never a pass
+    #   other-checkout another checkout's process serves HEAD: keep polling, then fail
+    #   not-confirmed  the identity (or the baseline, or the serving checkout)
+    #                  could not be read: never a pass
     param($Before, $After, [string] $Head)
     if (-not $Before.Known) {
         return @{ Status = 'not-confirmed'; Reason = 'the version endpoint could not be read before the restart, so no baseline process exists to compare' }
@@ -380,19 +465,19 @@ function Get-RestartVerdict {
         return @{ Status = 'stale'; Reason = ("{0} served git_sha '{1}', expected HEAD '{2}'" -f $After.Url, $After.Sha, $Head) }
     }
     if (-not $Before.Answered) {
-        return @{ Status = 'confirmed'; Reason = 'no process was serving before the restart' }
+        return (Confirm-ServingCheckout -After $After -Reason 'no process was serving before the restart')
     }
     if ($null -ne $Before.ReportedPid -and $null -ne $After.ReportedPid) {
         if ($Before.ReportedPid -eq $After.ReportedPid) {
             return @{ Status = 'unchanged'; Reason = ("the same process (pid {0}) is still serving: the restart did not replace it" -f $After.ReportedPid) }
         }
-        return @{ Status = 'confirmed'; Reason = ("pid {0} -> {1}" -f $Before.ReportedPid, $After.ReportedPid) }
+        return (Confirm-ServingCheckout -After $After -Reason ("pid {0} -> {1}" -f $Before.ReportedPid, $After.ReportedPid))
     }
     if ($null -ne $Before.OwnerPid -and $null -ne $After.OwnerPid) {
         if ($Before.OwnerPid -eq $After.OwnerPid -and $Before.OwnerStarted -eq $After.OwnerStarted) {
             return @{ Status = 'unchanged'; Reason = ("the same process (port owner pid {0}) is still serving: the restart did not replace it" -f $After.OwnerPid) }
         }
-        return @{ Status = 'confirmed'; Reason = ("port owner pid {0} -> {1}" -f $Before.OwnerPid, $After.OwnerPid) }
+        return (Confirm-ServingCheckout -After $After -Reason ("port owner pid {0} -> {1}" -f $Before.OwnerPid, $After.OwnerPid))
     }
     return @{ Status = 'not-confirmed'; Reason = 'the serving process has no readable identity (no pid in the version answer, no port owner), so a restart cannot be confirmed' }
 }
@@ -463,6 +548,7 @@ switch ($Action) {
 
         $before = $null
         if ($Restart) {
+            Assert-NoOtherCheckout
             $before = Get-RestartBaseline
             if ($trayPids.Count -gt 0) {
                 Write-Host ("Stopping previous {0} tray (PID: {1})..." -f $AppName, ($trayPids -join " "))

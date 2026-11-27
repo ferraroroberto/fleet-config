@@ -17,29 +17,35 @@ from __future__ import annotations
 
 import json
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
-import textwrap
-import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from tray_fixture import (  # noqa: E402
+    NW,
+    POWERSHELL,
+    SCRIPT,
+    STUB,
+    free_port,
+    init_repo,
+    kill_under,
+    run_ps,
+    wait_answering,
+)
 
 _h = CheckHarness()
 check = _h.check
 
-SCRIPT = ROOT / "scripts" / "tray" / "tray_lifecycle.ps1"
-POWERSHELL = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+BASE_PYTHON = Path(getattr(sys, "_base_executable", sys.executable))
 HEAD = "abc1234def5678abc1234def5678abc1234def56"
 
 VERDICT_HARNESS = r'''
 param([string] $Script, [string] $Cases)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref] $null, [ref] $null)
-foreach ($name in 'Test-GitShaMatches', 'Get-RestartVerdict') {
+foreach ($name in 'Test-GitShaMatches', 'Confirm-ServingCheckout', 'Get-RestartVerdict') {
     $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     Invoke-Expression $fn.Extent.Text
 }
@@ -72,76 +78,18 @@ VERDICTS = [
     ("no baseline was read", {"Known": False}, {"ReportedPid": 6}, "not-confirmed"),
     ("another sha is served", {"ReportedPid": 5}, {"ReportedPid": 6, "Sha": "ffff000"}, "stale"),
     ("nothing answers after", {"ReportedPid": 5}, {"Answered": False, "Error": "refused"}, "stale"),
+    ("new process from this checkout", {"ReportedPid": 5}, {"ReportedPid": 6, "Checkout": {"Kind": "this"}}, "confirmed"),
+    ("new process from another checkout", {"ReportedPid": 5}, {"ReportedPid": 6, "Checkout": {"Kind": "other"}},
+     "other-checkout"),
+    ("fresh start served by another checkout", {"Answered": False}, {"ReportedPid": 6, "Checkout": {"Kind": "other"}},
+     "other-checkout"),
+    ("new process whose command line names no checkout", {"ReportedPid": 5},
+     {"ReportedPid": 6, "Checkout": {"Kind": "foreign"}}, "not-confirmed"),
+    ("new process whose command line is unreadable", {"ReportedPid": 5},
+     {"ReportedPid": 6, "Checkout": {"Kind": "unknown"}}, "not-confirmed"),
+    ("old process survives, from no checkout", {"ReportedPid": 5}, {"ReportedPid": 5, "Checkout": {"Kind": "foreign"}},
+     "unchanged"),
 ]
-
-
-def run_ps(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [POWERSHELL, "-NoProfile", "-NonInteractive", *args],
-        capture_output=True, text=True, timeout=timeout,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-
-
-STUB = textwrap.dedent('''
-    import json, os, sys
-    from http.server import BaseHTTPRequestHandler, HTTPServer
-
-    port, head, with_pid = int(sys.argv[1]), sys.argv[2], sys.argv[3] == "pid"
-
-    class H(BaseHTTPRequestHandler):
-        def do_GET(self):
-            body = {"git_sha": head}
-            if with_pid:
-                body["pid"] = os.getpid()
-            data = json.dumps(body).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def log_message(self, *a):
-            pass
-
-    class Exclusive(HTTPServer):
-        # Windows lets a second process share a SO_REUSEADDR port; a real app that
-        # cannot bind fails instead, which is the case this stub stands in for.
-        allow_reuse_address = False
-
-    Exclusive(("127.0.0.1", port), H).serve_forever()
-''')
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def answers(port: int) -> bool:
-    import urllib.request
-    try:
-        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/version", timeout=2).read()
-        return True
-    except OSError:
-        return False
-
-
-def wait_answering(port: int, want: bool, seconds: float = 20) -> bool:
-    end = time.time() + seconds
-    while time.time() < end:
-        if answers(port) == want:
-            return True
-        time.sleep(0.3)
-    return False
-
-
-def kill_under(base: Path) -> None:
-    run_ps(["-Command",
-            f"Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf('{base}', "
-            "[System.StringComparison]::OrdinalIgnoreCase) -ge 0 } | "
-            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"])
 
 
 def launch(base: Path, port: int, with_pid: bool, verify_seconds: int) -> subprocess.CompletedProcess:
@@ -183,14 +131,8 @@ try:
 
     # ---- launch -Restart end to end against stub version servers --------------
     base = tmp / "app"
-    (base / "repo").mkdir(parents=True)
-    git = ["git", "-C", str(base / "repo")]
-    nw = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    subprocess.run([*git, "init", "-q"], check=True, creationflags=nw)
-    subprocess.run([*git, "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"],
-                   check=True, creationflags=nw)
-    real_head = subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
-                               creationflags=nw).stdout.strip()
+    real_head = init_repo(base / "repo")
+    nw = NW
     HEAD = real_head
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(base / ".venv")], check=True, creationflags=nw)
     venv_python = base / ".venv" / "Scripts" / "python.exe"
@@ -213,12 +155,13 @@ try:
         old.wait(timeout=10)
         check(wait_answering(port, False), f"stub ({label}): cleaned up")
 
-    # a restart that did not replace the process: the old server is outside the venv,
-    # so the helper neither stops nor reclaims it; the new one cannot bind.
+    # a restart that did not replace the process: the old server is outside any venv (the
+    # base interpreter, so it is no checkout either), so the helper neither stops nor reclaims
+    # it nor refuses over it; the new one cannot bind.
     for with_pid in (False, True):
         label = "reports a pid" if with_pid else "reports no pid"
         port = free_port()
-        old = start_old(outside, outside_dir, port, with_pid, None)
+        old = start_old(outside, outside_dir, port, with_pid, BASE_PYTHON)
         check(wait_answering(port, True), f"stub ({label}): the surviving process answers")
         res = launch(base, port, with_pid, 6)
         check(res.returncode != 0 and "still serving" in (res.stderr + res.stdout),

@@ -271,6 +271,7 @@
     "test_value_ratchet": 37,
     "throwaway_dir": 8,
     "transcript_capture": 1,
+    "tray_lifecycle_checkouts": 24,
     "tray_lifecycle_restart": 21,
     "tray_lifecycle_spelling": 29,
     "ui_proof": 96,
