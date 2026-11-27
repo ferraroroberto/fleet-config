@@ -473,7 +473,7 @@ r_unm = isw.app_row({"target": "app-x", "unmeasured": "SYNTHETIC_UNDECLARED", "c
 check((r_ok["surfaces"], r_ok["never_walked"], r_ok["not_walked"], r_ok["e2e"], r_ok["e2e_surfaces"], r_ok["screens"], r_ok["e2e_tree"])
       == (12, 1, 0, "ok", 2, 2, "restore_failed"),
       f"an adopted app's row: map entries, never walked, NOT_WALKED overlays, e2e outcome, screens: {r_ok}")
-check((r_unm["surfaces"], r_unm["never_walked"], r_unm["not_walked"], r_unm["e2e"], r_unm["screens"]) == (None, None, None, "not run", 0),
+check((r_unm["surfaces"], r_unm["never_walked"], r_unm["not_walked"], r_unm["e2e"], r_unm["screens"]) == (None, None, None, "not run", None),
       "an unmeasured app's counts are unknown (None), never 0")
 summ = isw.summary(sec)
 check([i["id"] for i in summ["by_role"]] == ["INV-01-caption", "INV-01-heading-4", "INV-01-secondary"]

@@ -601,7 +601,7 @@ def _print_sweep(sweep: dict) -> None:
         return "unknown" if v is None else str(v)
     for a in sweep["apps"]:
         print(f"SWEEP_APP={a['target']} unmeasured={a.get('unmeasured') or 'none'} e2e={a['e2e']} tree={a.get('e2e_tree') or 'none'} surfaces={n(a['surfaces'])} "
-              f"never_walked={n(a['never_walked'])} not_walked={n(a['not_walked'])} screens={a['screens']} "
+              f"never_walked={n(a['never_walked'])} not_walked={n(a['not_walked'])} screens={n(a['screens'])} "
               f"classified={a['classified']} unclassified={a['unclassified']} repeat={a['repeat']}")
     for a in sweep["apps"]:
         if a.get("e2e_tree") == "restore_failed":
