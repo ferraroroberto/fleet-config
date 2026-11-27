@@ -109,7 +109,7 @@ def apply_plan(path: Path, plan: List[Dict[str, Any]]) -> Tuple[int, List[str]]:
             left.append(f"UNCLASSIFIED {item['ref']}: pass --set {item['ref']}=<kind>")
         elif item["label"] == "missing":
             left.append(f"NEEDS_MARK {item['ref']}: owner_check mark {item['ref']} --kind before-start "
-                        '--reason "..." --try "..."')
+                        '--reason "..." --try "..." --run "..." --expect "..."')
         elif item["label"] == "unknown":
             left.append(f"UNKNOWN {item['ref']}: could not read the needs-owner label; rerun")
         else:

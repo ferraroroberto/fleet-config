@@ -345,7 +345,7 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
 - **Owner-blocked work is the `needs-owner` label, and a parked plan row names why** (`plan set … --status parked --kind owner|umbrella|"blocked-by <repo>#<N>"`; `owner` is refused without the label, so "Waiting for start" matches the owner rows one to one)
   ([owner-check](E:/automation/fleet-config/docs/owner-check.md)). Work that waits on a step of
   Roberto's (a device probe, a signup, a decision) gets
-  `owner_check/cli.py mark <repo>#<N> --kind before-start --reason "…" --try "…"`;
+  `owner_check/cli.py mark <repo>#<N> --kind before-start --reason "…" --try "…" --run "<where>: <exact command, URL or screen>" --expect "…"`;
   `chief_ops.py dispatch` then refuses it by code. Shipped work he still has to
   try on a device carries `needs-validation`, set by `/issue-finish`. **A mechanical step (ff, restart, `install.ps1`, satellite SSH, job repoint, cleanup) is never an owner check or a plan ask**: the lane does it (dispatch-brief rule 6); only the :8446 session-host restart goes to him. `chief_ops.py
   owner-checks` is your only list of both, read from the labels. Keep no parallel

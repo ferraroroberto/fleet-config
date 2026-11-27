@@ -271,7 +271,8 @@ Decision below is driven by the project's `## CI expectations` block
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
 - **Owner check** ([owner-check](E:/automation/fleet-config/docs/owner-check.md)), after the close:
-  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|scheduled|no [--gap <class>:<criterion> …] --try "<what Roberto does>" [--proof <URL> …]`.
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/owner_check/cli.py finish <repo>#<N> --pr <PR> --verified yes|scheduled|no [--gap <class>:<criterion> …] --try "<what Roberto does>" --run "<where>: <exact command, URL or screen>" [--run …] --expect "<what success looks like>" [--proof <URL> …]`.
+  `--run` (where: `terminal`, `elevated`, `browser`, `phone`, `screen`) is what he copies: never a secret or config value, never an invented command.
   Prove first: before `no` for anything visual or behavioural, run the gate, the original repro, a screenshot
   baseline or visual proof, rendered geometry and an API probe; a criterion they show is ticked with the
   evidence. `yes` when the repro or acceptance re-ran and passed in this run; `scheduled` when all of it did
@@ -280,7 +281,7 @@ Decision below is driven by the project's `## CI expectations` block
   gap, use the proof tools in docs/owner-check.md's "Owner-only gaps" (Playwright Chromium + WebKit phone
   profiles, the Mac runner, screenshots + /design-review, the launcher API, satellite SSH, the restart recipe,
   the hub's TTS, pywinauto/UIA); `finish` refuses a lane-provable criterion and names the tool.
-  Exit 2 → fix the refused flag (`--verified`, `--gap` or `--try`) and re-run. Step 7 carries its `OWNER_CHECK=` line
+  Exit 2 → fix the refused flag its `reason=` names and re-run. Step 7 carries its `OWNER_CHECK=` line
   verbatim; `unknown` is its own state, never reported as none.
 - Clear the issue's Fleet Board marker now that the merge is authoritative:
   ```

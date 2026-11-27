@@ -509,7 +509,7 @@ def _apply_kind(row: Dict[str, Any], status: str, kind: Optional[str]) -> None:
         if not state:
             raise ValueError(f"{ref} has no needs-owner label, so it would not reach Waiting for "
                              f'start: run `owner_check mark {ref} --kind before-start --reason "..." '
-                             '--try "..."` first')
+                             '--try "..." --run "<where>: <command|URL|screen>" --expect "..."` first')
     row["kind"] = parsed
     if blocker:
         row["blocked_by"] = blocker
