@@ -357,11 +357,11 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   words: "If that work is finished, yes, you have to delete it… I trust your
   judgment"). After each lane closes and at quiet ticks run
   `chief_ops.py sweep --apply`: it removes only `finished` (clean, nothing
-  beyond `origin/main`, the same tree as it, or all of it in a merged PR, so an open umbrella issue or
-  a plan lane's empty tree no longer needs a question) via `worktree_claim.py
-  remove-worktree`, never `rm -rf`, and `orphan-empty` folders via `rmdir`.
-  Ask only for `has-work` (dirty or unmerged). Report `in-use`, `unknown` and
-  any folder that stays busy; never kill the holder. Its `SESSION … stoppable`
+  beyond `origin/main`, the same tree as it, every patch already in it, or all
+  of it in a merged PR) via `worktree_claim.py remove-worktree`, never `rm -rf`,
+  and `orphan-empty` folders via `rmdir`. Ask only for `has-work` (dirty or
+  unmerged). Report `in-use`, `unknown`, a `KEPT` worktree (not named
+  `<repo>-wt-*`) and any folder that stays busy; never kill the holder. Its `SESSION … stoppable`
   lines are idle-finished lanes of closed issues: `chief_ops.py stop <sid>`,
   then sweep again. Bare `sweep` is the read-only look.
 

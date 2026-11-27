@@ -13,6 +13,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/chief_ops/test_c
 
 from __future__ import annotations
 
+import _winapi
 import contextlib
 import io
 import os
@@ -127,7 +128,11 @@ def sweep(dirs=(), markers=None, session_ids=frozenset(), pid_probe=lambda _p: F
         session_ids=session_ids, pr_lookup=pr_lookup, host="box", pid_probe=pid_probe, managed=managed,
         processes=None if processes is None else list(processes), spellings=spellings,
     )
+    LISTED.append(len(found))
     return {f.name: f for f in found}
+
+
+LISTED = []
 
 
 def cls(found, n):
@@ -138,7 +143,9 @@ def cls(found, n):
 
 found = sweep(dirs=[wt7 / "sub"], pid_probe=lambda _p: True)
 check("not-a-worktree" not in found and "work" not in found and "upstream" not in found,
-      "scan: only <repo>-wt-<N> folders are classified")
+      "scan: neither a primary nor an unregistered other folder is classified")
+check(LISTED[-1] == len(found) == 14,
+      f"scan: a worktree found both by folder name and by registration is listed once ({sorted(found)})")
 check(cls(found, 1) == cs.FINISHED and "nothing beyond origin/main" in found["work-wt-1"].evidence,
       "finished: a clean worktree with no commits beyond origin/main")
 check(cls(found, 2) == cs.FINISHED and "pr=#52 merged" in found["work-wt-2"].evidence
@@ -342,25 +349,76 @@ finally:
 
 # ---- squash-merged, branch deleted (fleet-config#2278) --------------------------
 # Last, because it moves the fixture's origin/main: the squash commit carries
-# wt12's tree under a new SHA, and each lane is left detached on its own commits.
-# wt12 and wt3 are the survivors of `--apply` above, reused to spare spawns.
+# wt12's tree under a new SHA, and each lane is left on its own commits. wt12,
+# wt3 and wt5 are the survivors of `--apply` above, reused to spare spawns.
 
 squash = run_git(wt12, "commit-tree", "HEAD^{tree}", "-p", "origin/main", "-m", "squash", check=check)
 run_git(work, "update-ref", "refs/remotes/origin/main", squash, check=check)
-commit(wt3, "unlanded.txt")                             # content main never got
+commit(wt3, "unlanded.txt")                             # a patch main never got
 run_git(wt3, "checkout", "-q", "--detach", check=check)
 run_git(wt12, "checkout", "-q", "--detach", check=check)
 
-check(judge(wt3, []).cls == cs.HAS_WORK, "has-work: a detached HEAD with any content difference stays has-work")
+identical = judge(wt12, [])
+check(identical.cls == cs.FINISHED and "ahead=1" in identical.evidence
+      and "tree identical to origin/main" in identical.evidence,
+      f"finished: a clean detached HEAD whose tree equals origin/main is finished ({identical.cls}: {identical.evidence})")
+
+run_git(work, "reset", "-q", "--hard", squash, check=check)
+commit(work, "later.txt")                               # main moves on: no tree equals it any more
+run_git(work, "update-ref", "refs/remotes/origin/main", "HEAD", check=check)
+
+mixed = judge(wt3, [])
+check(mixed.cls == cs.HAS_WORK and "ahead=2" in mixed.evidence,
+      f"has-work: one commit upstream and one not stays has-work ({mixed.cls}: {mixed.evidence})")
 (wt12 / "scratch.txt").write_text("x", encoding="utf-8")
 dirty_12 = judge(wt12, [])
 check(dirty_12.cls == cs.HAS_WORK and "dirty=1" in dirty_12.evidence,
-      "has-work: an identical tree with an uncommitted change stays has-work")
+      "has-work: an upstream commit with an uncommitted change stays has-work")
 (wt12 / "scratch.txt").unlink()
+branched = judge(wt5, [])
+check(branched.cls == cs.FINISHED and "branch=feat/5" in branched.evidence,
+      f"finished: a branch whose commits are all upstream needs no PR ({branched.cls}: {branched.evidence})")
+(work / ".git" / "worktrees" / "work-wt-5" / "locked").write_text("pinned", encoding="utf-8")
+locked = judge(wt5, [])
+check(locked.cls == cs.IN_USE and "locked" in locked.evidence,
+      f"in-use: a `git worktree lock` holds an otherwise finished tree ({locked.cls}: {locked.evidence})")
 landed = judge(wt12, [])
-check(landed.cls == cs.FINISHED and "ahead=1" in landed.evidence and "tree identical to origin/main" in landed.evidence,
-      f"finished: a clean detached HEAD whose tree equals origin/main is finished ({landed.cls}: {landed.evidence})")
+check(landed.cls == cs.FINISHED and "(detached)" in landed.evidence and "by patch" in landed.evidence,
+      f"finished: a clean detached HEAD squash-merged before main moved on is finished ({landed.cls}: {landed.evidence})")
 cs.apply_findings([landed], worktree_claim.remove_worktree)
-check(not wt12.exists(), "apply: the identical-tree clean worktree is removed")
+check(not wt12.exists(), "apply: the upstream-patch clean worktree is removed")
+
+# ---- registered worktrees under any name ----------------------------------------
+# A second root holding one clone, scanned through a junction to it: git records
+# the worktrees under the real spelling, the sweep is asked about the other one.
+
+real_root, alias_root = TMP / "odd", TMP / "odd-alias"
+real_root.mkdir()
+run_git(TMP, "clone", "-q", str(upstream), str(real_root / "repo"), check=check)
+revendor, pinned = real_root / "repo-wt-revendor-48d2354", TMP / "elsewhere" / "known-good"
+for wt in (revendor, pinned):
+    run_git(real_root / "repo", "worktree", "add", "-q", "--detach", str(wt), check=check)
+    os.utime(wt / ".git", (time.time() - 3600,) * 2)
+_winapi.CreateJunction(str(real_root), str(alias_root))
+try:
+    odd = {f.name: f for f in cs.scan(alias_root, dirs=[], markers={}, session_ids=set(), processes=[],
+                                      pr_lookup=pr_lookup, spellings=own)}
+    pinned_name = next((n for n in odd if n.endswith("elsewhere/known-good")), "")
+    listed = odd.get(revendor.name)
+    check(listed is not None and listed.cls == cs.FINISHED and listed.path == alias_root / revendor.name,
+          f"scan: a registered <repo>-wt-revendor-<sha> worktree appears, under the root's spelling ({sorted(odd)})")
+    check(len(odd) == 2 and pinned_name != "" and odd[pinned_name].cls == cs.FINISHED,
+          f"scan: a registered worktree outside the root is listed by its full path ({sorted(odd)})")
+    stuck = cs.apply_findings(list(odd.values()), worktree_claim.remove_worktree)
+    check(stuck == 0 and not revendor.exists(), "apply: a finished <repo>-wt-<anything> worktree is removed")
+    check(pinned.exists() and pinned_name != "" and odd[pinned_name].outcome.startswith("KEPT"),
+          "apply: a worktree not named <repo>-wt-* is reported and kept, never counted as stuck")
+finally:
+    os.rmdir(alias_root)
+
+(TMP / "broken-root" / "repo" / ".git" / "worktrees").mkdir(parents=True)
+broken = cs.scan(TMP / "broken-root", dirs=[], markers={}, session_ids=set(), processes=[], pr_lookup=pr_lookup)
+check([f.cls for f in broken] == [cs.UNKNOWN] and "registered worktrees unreadable" in broken[0].evidence,
+      "unknown: a primary whose worktree list cannot be read is reported, never silently skipped")
 
 _h.report_and_exit("test_chief_sweep")
