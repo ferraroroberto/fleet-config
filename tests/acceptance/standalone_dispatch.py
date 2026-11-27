@@ -111,11 +111,15 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the automation#144 config loss reproduced through land-primary against "
      "a fixture repo, plus the refusal and unknown-ignore paths that must "
      "never lose a file (fleet-config#1086)"),
-    ("tray_lifecycle_restart", "repo/test_tray_lifecycle_restart.py",
+    ("tray_lifecycle_restart", "repo/tray/test_tray_lifecycle_restart.py",
      "a tray restart passes only when a new process serves HEAD -- the verdict table and `launch -Restart` "
      "against stub version servers, so a surviving old process and an unreadable identity never read as a "
      "pass (fleet-config#1975)"),
-    ("tray_lifecycle_spelling", "repo/test_tray_lifecycle_spelling.py",
+    ("tray_lifecycle_checkouts", "repo/tray/test_tray_lifecycle_checkouts.py",
+     "a restart from one checkout never passes while another checkout of the same app serves: it refuses "
+     "before stopping anything, fails when the other copy comes up serving HEAD, and ignores a listener "
+     "bound only to another specific address (fleet-config#2288)"),
+    ("tray_lifecycle_spelling", "repo/tray/test_tray_lifecycle_spelling.py",
      "detect and reclaim own a process under either drive spelling and slash style but never a sibling "
      "checkout or another repo, a surviving holder fails the reclaim, and a restart that leaves the "
      "session-host's port out never touches it (fleet-config#2187)"),

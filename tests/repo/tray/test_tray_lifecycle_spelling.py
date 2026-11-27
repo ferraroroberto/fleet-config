@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -32,16 +31,21 @@ import textwrap
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from tray_fixture import (  # noqa: E402
+    NW,
+    POWERSHELL,
+    SCRIPT,
+    STUB,
+    free_port,
+    init_repo,
+    kill_under,
+    run_ps,
+)
 
 _h = CheckHarness()
 check = _h.check
-
-SCRIPT = ROOT / "scripts" / "tray" / "tray_lifecycle.ps1"
-POWERSHELL = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-NW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # Defines every function of the real script (not its param block or action switch),
 # then runs one scenario chosen by the environment. ASCII only: PowerShell 5.1 runs it.
@@ -123,48 +127,6 @@ SESSION_HOST = textwrap.dedent('''
     print(os.getpid(), flush=True)
     time.sleep(180)
 ''')
-
-STUB = textwrap.dedent('''
-    import json, os, sys
-    from http.server import BaseHTTPRequestHandler, HTTPServer
-
-    port, head = int(sys.argv[1]), sys.argv[2]
-
-    class H(BaseHTTPRequestHandler):
-        def do_GET(self):
-            data = json.dumps({"git_sha": head, "pid": os.getpid()}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def log_message(self, *a):
-            pass
-
-    class Exclusive(HTTPServer):
-        allow_reuse_address = False
-
-    Exclusive(("127.0.0.1", port), H).serve_forever()
-''')
-
-
-def run_ps(args: list[str], env: dict | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
-    full = None
-    if env is not None:
-        full = {k: v for k, v in os.environ.items() if k.upper() != "PSEXECUTIONPOLICYPREFERENCE"}
-        full.update(env)
-    return subprocess.run(
-        [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", *args],
-        capture_output=True, text=True, timeout=timeout, env=full, creationflags=NW,
-    )
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
 
 def other_drive(path: Path) -> str:
     """``path`` spelled under another drive letter, forward slashes: the junction spelling."""
@@ -282,12 +244,7 @@ try:
 
     # ---- session-host guard: the webapp restart never reaches it ---------------
     # A real repo + venv so `launch -Restart` can start a tray and verify HEAD.
-    git = ["git", "-C", str(repo)]
-    subprocess.run([*git, "init", "-q"], check=True, creationflags=NW)
-    subprocess.run([*git, "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t",
-                    "commit", "-q", "--allow-empty", "-m", "x"], check=True, creationflags=NW)
-    head = subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
-                          creationflags=NW).stdout.strip()
+    head = init_repo(repo)
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True, creationflags=NW)
     (venv / "stub_server.py").write_text(STUB, encoding="ascii")
     (outside / "stub_server.py").write_text(STUB, encoding="ascii")
@@ -338,10 +295,7 @@ try:
 finally:
     for p in spawned:
         p.kill()
-    run_ps(["-Command",
-            f"Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and "
-            f"$_.CommandLine.IndexOf('{tmp}', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }} | "
-            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"])
+    kill_under(tmp)
     shutil.rmtree(tmp, ignore_errors=True)
 
 _h.report_and_exit("test_tray_lifecycle_spelling")
