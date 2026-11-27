@@ -67,6 +67,13 @@ for label, snippet in (("session link", "https://claude.ai/code/session_01ABCdef
                        ("codex co-author", "co-authored-by: Codex <x@openai.com>"),
                        ("session trailer", "Claude-Session: abc")):
     check(rules(CLEAN + "\n" + snippet)[0] == ["attribution"], f"{label} is refused")
+FAKE_ID = "session_00FakePlaceholder0000Abc"
+for name in ("session_transcript.py", "session_transcript", "session_identifier", "session_TranscriptReader",
+             "session_sha256_digest.py"):
+    check(rules(CLEAN + f"\nTest plan covers {name} here.\n") == ([], []), f"the name {name} is not a session id")
+for label, snippet in (("an id ending a sentence", f"Resumed from {FAKE_ID}."),
+                       ("an id used as a file name", f"See {FAKE_ID}.jsonl")):
+    check(rules(CLEAN + "\n" + snippet)[0] == ["attribution"], f"{label} is refused")
 check(rules(CLEAN + "\nCo-Authored-By: Roberto <r@example.com>\n") == ([], []), "a human co-author passes")
 check(rules(CLEAN + "\nThe hook blocks a `Co-Authored-By: Claude` trailer.\n") == ([], []), "an attribution quoted as code passes")
 
