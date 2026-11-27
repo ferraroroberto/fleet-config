@@ -305,7 +305,7 @@ def main(argv=None) -> int:
     ap.add_argument("--rtt-ms", type=float, default=80)
     ap.add_argument("--down-mbps", type=float, default=10)
     ap.add_argument("--up-mbps", type=float, default=5)
-    ap.add_argument("--settle-s", type=int, default=40)
+    ap.add_argument("--settle-s", type=int, required=True)
     ap.add_argument("--boot-window-ms", type=int, default=8000)
     ap.add_argument("--cold-samples", type=int, default=3)
     ap.add_argument("--skip-webkit", action="store_true")

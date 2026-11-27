@@ -557,6 +557,8 @@ switch ($Action) {
             if ((Invoke-ReclaimPorts) -gt 0) {
                 throw "restart failed: an old process still holds an owned port"
             }
+            # Reclaimed port holders are confirmed gone, but the old tray's taskkill is not waited
+            # on: margin for it to exit and release what it held before the new tray starts. Not measured.
             Start-Sleep -Seconds 2
         }
 

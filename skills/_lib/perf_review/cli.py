@@ -40,12 +40,18 @@ from fleet_core import (
 from no_window import NO_WINDOW  # noqa: E402
 from worktree import service_probe  # noqa: E402
 
-from . import http_probe, report, stamping  # noqa: E402
+from . import http_probe, idle_sample, report, stamping  # noqa: E402
 
 LOAD_PY = Path(__file__).resolve().parent / "load.py"
 DEFAULT_SPACING_S = 30.0
 MIN_SPACING_S = 5.0
 LOAD_TIMEOUT_S = 600.0
+# A loopback handshake to a port already seen listening, only to read its certificate; not measured.
+TLS_CONNECT_TIMEOUT_S = 5
+# Shared by `measure` and `sweep`, so the unattended weekly run measures like a single review.
+DEFAULT_DURATION_S = 300.0  # about ten samples of a path polled every 30 s; not measured
+DEFAULT_SETTLE_S = 40  # a 30 s poll fires a second time, which is what gives it an interval
+DEFAULT_LOCK_WAIT_MIN = 20.0  # per app, for the box to be free of gates; not measured
 EXIT = {"pass": 0, "over-budget": 1, "unmeasured": 3}
 
 
@@ -69,7 +75,7 @@ def tls_name(base_url: str) -> str:
     try:
         ctx = ssl.create_default_context()
         ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-        with socket.create_connection((parts.hostname, parts.port), timeout=5) as raw, \
+        with socket.create_connection((parts.hostname, parts.port), timeout=TLS_CONNECT_TIMEOUT_S) as raw, \
                 ctx.wrap_socket(raw) as tls:
             der = tls.getpeercert(binary_form=True)
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,9 +273,9 @@ def main(argv: Optional[list] = None) -> int:
     m.add_argument("repo")
     m.add_argument("--url", help="base URL override (tests, a non-fleet target)")
     m.add_argument("--python", help="interpreter with Playwright (default: the target's .venv)")
-    m.add_argument("--duration", type=float, default=300.0, help="seconds of endpoint timing (default 300)")
+    m.add_argument("--duration", type=float, default=DEFAULT_DURATION_S, help="seconds of endpoint timing (default %(default)g)")
     m.add_argument("--min-spacing", type=float, default=MIN_SPACING_S, help="floor between two GETs of one path")
-    m.add_argument("--settle", type=int, default=40, help="seconds the cold page is watched to learn poll intervals")
+    m.add_argument("--settle", type=int, default=DEFAULT_SETTLE_S, help="seconds the cold page is watched to learn poll intervals")
     m.add_argument("--no-load", action="store_true", help="skip the browser leg (endpoint timing of / only)")
     f = sub.add_parser("file", help="open, update or close the managed perf-review issue from the latest run (dry run unless --apply)")
     f.add_argument("repo")
@@ -279,10 +285,10 @@ def main(argv: Optional[list] = None) -> int:
     f.add_argument("--apply", action="store_true")
     w = sub.add_parser("sweep", help="measure and file every fleet web app, one at a time, and print one digest")
     w.add_argument("--only", help="one repo name instead of the fleet")
-    w.add_argument("--duration", type=float, default=300.0, help="seconds of endpoint timing per app (default 300)")
-    w.add_argument("--settle", type=int, default=40, help="seconds each cold page is watched to learn poll intervals")
-    w.add_argument("--idle-window", type=float, default=60.0, help="seconds each app's own process tree is sampled idle for CPU and process starts (0 = skip)")
-    w.add_argument("--lock-wait", type=float, default=20.0, help="minutes to wait per app for the box to be free of gates")
+    w.add_argument("--duration", type=float, default=DEFAULT_DURATION_S, help="seconds of endpoint timing per app (default %(default)g)")
+    w.add_argument("--settle", type=int, default=DEFAULT_SETTLE_S, help="seconds each cold page is watched to learn poll intervals")
+    w.add_argument("--idle-window", type=float, default=idle_sample.DEFAULT_WINDOW_S, help="seconds each app's own process tree is sampled idle for CPU and process starts (0 = skip)")
+    w.add_argument("--lock-wait", type=float, default=DEFAULT_LOCK_WAIT_MIN, help="minutes to wait per app for the box to be free of gates")
     w.add_argument("--no-file", action="store_true", help="measure only; touch no issue")
     w.add_argument("--detach", action="store_true",
                     help="run the sweep in a detached background process and return immediately "

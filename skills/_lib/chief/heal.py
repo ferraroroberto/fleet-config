@@ -56,6 +56,11 @@ REPEAT_THRESHOLD = 2
 # one allowed re-run: the launcher may have started it.
 RERUN_IN_FLIGHT = "in-flight"
 
+# One PR lookup and one local ancestry test: bounds so a stalled call cannot hang an
+# unattended heal. Neither is measured.
+GH_TIMEOUT_S = 30
+GIT_TIMEOUT_S = 30
+
 _REF = re.compile(r"^([A-Za-z0-9_.-]+)#([0-9]+)$")
 _RUN_OUTCOMES = {"success": "success", "failed": "failed"}
 _PENDING_STATUSES = frozenset({"running", "pending", "queued"})
@@ -142,7 +147,7 @@ def fetch_pr_merge(repo: str, number: int) -> Tuple[Optional[str], str]:
     res = git_run.run_gh(
         ["pr", "view", str(number), "--repo", f"{launcher.DEFAULT_OWNER}/{repo}",
          "--json", "state,mergeCommit"],
-        timeout=30, stdin=subprocess.DEVNULL,
+        timeout=GH_TIMEOUT_S, stdin=subprocess.DEVNULL,
     )
     if res.returncode != 0:
         return None, f"unknown: gh exit {res.returncode}"
@@ -166,7 +171,7 @@ def primary_checkout(repo: str) -> Optional[Path]:
 
 def fix_is_live(checkout: Path, sha: str) -> Tuple[Optional[bool], str]:
     """Is `sha` an ancestor of (or equal to) the checkout's `HEAD`? `(None, why)` when git cannot say."""
-    res = git_run.run_git(["-C", str(checkout), "merge-base", "--is-ancestor", sha, "HEAD"], timeout=30)
+    res = git_run.run_git(["-C", str(checkout), "merge-base", "--is-ancestor", sha, "HEAD"], timeout=GIT_TIMEOUT_S)
     if res.returncode == 0:
         return True, ""
     if res.returncode == 1:
