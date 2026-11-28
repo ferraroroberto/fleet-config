@@ -78,6 +78,7 @@
     "_runtime_write_snapshot_check": 2,
     "_safe_kill_force_push_unit_checks": 13,
     "_safe_kill_git_bypass_unit_checks": 0,
+    "_safe_kill_template_port_checks": 0,
     "_scheduled_skill_timeouts_named_check": 0,
     "_secret_read_unit_checks": 91,
     "_secret_scan_gh_unit_checks": 1,

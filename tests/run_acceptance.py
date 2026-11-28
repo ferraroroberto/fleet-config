@@ -145,6 +145,7 @@ from acceptance.guard_checks.restart_cmd_checks import (  # noqa: E402
 from acceptance.guard_checks.safe_kill_checks import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _safe_kill_git_bypass_unit_checks,
+    _safe_kill_template_port_checks,
 )
 from acceptance.guard_checks.secret_read_checks import _secret_read_unit_checks  # noqa: E402
 from acceptance.guard_checks.venv_guard_checks import (  # noqa: E402
@@ -309,6 +310,7 @@ def _run_guard_checks(tally: Tally) -> None:
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     tally.run_unit(_safe_kill_force_push_unit_checks)
     tally.run_unit(_safe_kill_git_bypass_unit_checks)  # #1303
+    tally.run_unit(_safe_kill_template_port_checks)  # #2281
     tally.run_unit(_attribution_scan_unit_checks)  # #1914
     tally.run_unit(_venv_junction_guard_unit_checks)
 

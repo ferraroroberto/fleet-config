@@ -1,8 +1,9 @@
-"""Acceptance checks for `safe_kill_guard.py`'s git refusals.
+"""Acceptance checks for `safe_kill_guard.py`'s git and protected-port refusals.
 
 The force-push guard decides on the ref being pushed, and the bypass-flag
-check reads real `git` arguments rather than words on the line. Both are
-driven through the hook module's own predicates.
+check reads real `git` arguments rather than words on the line; both are
+driven through the hook module's own predicates. The protected-port check
+runs the whole hook against the tracked registry template.
 """
 from __future__ import annotations
 
@@ -13,7 +14,25 @@ import tempfile
 from pathlib import Path
 from typing import Any, Tuple
 
+from acceptance.hook_cases.inproc import run_in_process
 from acceptance.shared import HOOKS, REPO, _Checker
+
+
+def _safe_kill_template_port_checks() -> Tuple[int, int]:
+    """A fresh install, which has only the tracked template, protects both session hosts.
+
+    The hook matrix reads this machine's `projects.toml` when one exists, so it
+    cannot see a port the template is missing.
+    """
+    check = _Checker()
+    env = {"CLAUDE_HOOKS_PROJECTS_TOML": str(REPO / "hooks" / "projects.toml.example")}
+    for port, host in ((8446, "app-launcher"), (8466, "app-launcher-lite")):
+        cmd = f"Get-NetTCPConnection -LocalPort {port} | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}"
+        code, _out, err = run_in_process(
+            "safe_kill_guard", {"tool_name": "PowerShell", "tool_input": {"command": cmd}}, extra_env=env)
+        check(f"template ports: kill on :{port} ({host} session host) -> blocked",
+              code == 2 and f"protected port {port}" in err, f"exit={code} stderr={err!r}")
+    return check.failures, check.total
 
 
 def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
