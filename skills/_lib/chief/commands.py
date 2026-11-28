@@ -355,7 +355,7 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     self_sid = rails.caller_session_id()
     columns = board.get("columns") or {}
     chief_sid = rails.find_chief_session(columns)
-    managed, managed_error = _chief_managed_rows()
+    managed, managed_error = chief_managed.read_marks()
     occupancy = rails.repo_occupancy(columns, exclude_sid=self_sid, hide_chief=True, managed=managed)
     if args.json:
         print(json.dumps(occupancy, indent=2))
@@ -425,14 +425,9 @@ def _owner_check_refusal(repo: str, number: int) -> Optional[str]:
     return refusal
 
 
-def _chief_managed_rows() -> Tuple[Optional[Dict[str, Any]], str]:
-    """The chief-managed marks (`session_id -> {"repo", ...}`), as `state_rows.read_rows_checked`."""
-    return state_rows.read_rows_checked(chief_managed.state_file())
-
-
 def _chief_managed_sids() -> Tuple[Optional[Set[str]], str]:
-    """`(sids, error)` from the chief-managed marks, with `_chief_managed_rows`' error semantics."""
-    rows, error = _chief_managed_rows()
+    """`(sids, error)` from the chief-managed marks, with `chief_managed.read_marks`' error semantics."""
+    rows, error = chief_managed.read_marks()
     return (None if rows is None else set(rows)), error
 
 
@@ -499,7 +494,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     # A lane can leave its repo's folder, so occupancy needs the repo recorded at dispatch; an
     # unreadable record cannot be read as "the repo is free".
-    managed_rows, managed_error = _chief_managed_rows()
+    managed_rows, managed_error = chief_managed.read_marks()
     if managed_rows is None:
         print(f"REFUSED=chief-managed state not confirmed: {managed_error}")
         return 1
@@ -753,7 +748,7 @@ def _retire_plan_lane(args: argparse.Namespace, sid: str) -> None:
     """Print the `PLAN_LANE=` line for the stopped session. The stop already happened, so a plan
     that cannot be read or written is reported as `unknown` and never changes the exit code."""
     plan_path = Path(args.plan_file) if getattr(args, "plan_file", None) else chief_plan.plan_file()
-    managed, _ = _chief_managed_rows()
+    managed, _ = chief_managed.read_marks()
 
     def read_columns() -> Optional[Dict[str, Any]]:
         try:
@@ -858,7 +853,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
         # removable verdict degrades to `unknown`.
         print(f"NOTE: board unreadable ({exc}); removable verdicts are unknown", file=sys.stderr)
     markers, markers_error = state_rows.read_rows_checked(active_issue.state_file())
-    managed, managed_error = _chief_managed_rows()
+    managed, managed_error = chief_managed.read_marks()
     for error in filter(None, (markers_error, managed_error)):
         print(f"NOTE: {error}; removable verdicts are unknown", file=sys.stderr)
     findings = chief_sweep.scan(

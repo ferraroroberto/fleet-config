@@ -68,6 +68,7 @@ import urllib.error
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
+import chief_managed
 import chief_plan
 import gh_issue_fetch
 from audit_ledger.records import marker_kind
@@ -449,7 +450,7 @@ def _dispatch_one(args: argparse.Namespace, row: Dict[str, Any], brief_file: str
 def _busy_repos(columns: Dict[str, Any]) -> Set[str]:
     """Repos a live lane holds, counting a managed lane against its dispatched repo. An unreadable
     managed-state file degrades to folder-only here; `dispatch` refuses on it with its own reason."""
-    managed, _ = commands._chief_managed_rows()
+    managed, _ = chief_managed.read_marks()
     return set(rails.repo_occupancy(columns, exclude_sid=rails.caller_session_id(), managed=managed))
 
 
@@ -513,7 +514,7 @@ def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int
             print(line)
         print(f"DRAIN=unknown reason=board-unreadable ({exc})")
         return 1
-    managed, _ = commands._chief_managed_rows()
+    managed, _ = chief_managed.read_marks()
     for line in lane_rows.stale_lines(doc, columns, managed):
         print(line)
     busy = _busy_repos(columns)

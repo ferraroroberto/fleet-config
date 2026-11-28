@@ -1,30 +1,25 @@
 """Chief-managed session marker.
 
 `chief_ops.py dispatch` writes a marker here immediately after spawning a
-worker session, so `hooks/notify_on_idle.py` can tell a chief-dispatched
-worker apart from a human-started one and route its "blocked on input"
-notification to chief instead of the human ping. A different concern from
-`active_issue.py`'s issue-branch lifecycle (this is session identity for
-notification routing, keyed by session id, not by repo#issue), so a
-separate state file rather than overloading that schema — but the same
-I/O idiom (24h TTL prune, atomic temp-file replace, a lock dir serializing
-the read-modify-write) is reused directly from `fleet_core.state_rows`
-(`state_file`, `utc_now`, `iso_z`, `prune_rows`), not re-derived, since
-concurrent dispatches are exactly the race that module's locking already
-solves.
+worker session, so the hooks can tell a chief-dispatched worker apart from a
+human-started one, and the chief's commands can count it against the repo it
+was dispatched for. A different concern from `active_issue.py`'s
+issue-branch lifecycle (this is session identity, keyed by session id, not
+by repo#issue), so a separate state file rather than overloading that schema
+— but the same I/O idiom (24h TTL prune, atomic temp-file replace, a lock dir
+serializing the read-modify-write) is reused directly from
+`fleet_core.state_rows`, since concurrent dispatches are exactly the race
+that module's locking already solves.
 
-The file is advisory and self-healing, same as `active-issues.json`: a
-missing/corrupt read is empty, not fatal, and a marker that outlives its
-session is harmless — `notify_on_idle` only ever *reads* it to decide
-routing, it never trusts it as proof a session is alive.
+The file self-heals on write (`mark` prunes old rows and replaces a corrupt
+file). A marker that outlives its session is harmless: no reader trusts it as
+proof a session is alive.
 
-This module is the **writer only**. The one reader is
-`hooks/notify_on_idle.chief_managed_state()` (used by it and by
-`block_askuserquestion_chief`), which keeps its own read logic per the
-hooks/skills_lib tree-independence convention and returns a reason alongside
-the verdict so "not managed" and "could not tell" stay distinct. A second
-reader here was removed as dead — query the marker through
-that function, not by adding one back.
+Skills code reads it through `read_marks` only, which reports an unreadable
+file as `None` with the reason, never as empty. Hooks keep their own read
+logic per the hooks/skills_lib tree-independence convention
+(`hooks/notify_on_idle.chief_managed_row()` and `hooks/chief_waiter_stop.py`),
+so a change to the file's shape has to reach those too.
 """
 
 from __future__ import annotations
@@ -32,7 +27,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fleet_core import state_rows  # noqa: E402
@@ -43,6 +38,15 @@ STAMP_FIELD = "dispatched_at"
 
 def state_file() -> Path:
     return state_rows.state_file(STATE_FILENAME)
+
+
+def read_marks(path: Optional[Path] = None) -> Tuple[Optional[Dict[str, Any]], str]:
+    """The marks (`session_id -> {"repo", "number", ...}`) and why they could not be read.
+
+    A missing file is no marks (nothing dispatched yet); an unreadable or
+    malformed one is `(None, reason)`.
+    """
+    return state_rows.read_rows_checked(path or state_file())
 
 
 def mark(

@@ -3,10 +3,13 @@
 Looks up the project from the current working directory (matched against
 `projects.toml`), kills only the app's own listener on that project's
 `webapp_port` (a wildcard or loopback bind; a proxy publishing the same port
-number elsewhere is left alone, and `never_kill_ports` are never touched),
-brings the webapp back from the checkout's real path, then polls
-`<api_version_path>` until `git_sha` matches `git rev-parse HEAD`. Reports the
-new `asset_hash`.
+number elsewhere is left alone), brings the webapp back from the checkout's
+real path, then polls `<api_version_path>` until `git_sha` matches
+`git rev-parse HEAD`. Reports the new `asset_hash`.
+
+`never_kill_ports` is not consulted: it guards against another session's
+port-scoped kill, so a project whose own `webapp_port` is listed there
+(local-llm-hub, :8000) is still restarted.
 
 Two restart strategies, chosen per project:
 

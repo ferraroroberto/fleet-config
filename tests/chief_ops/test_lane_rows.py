@@ -56,15 +56,15 @@ def _stop(sid, *, columns, post_exc=None, managed=None):
             raise post_exc
         return {}
 
-    prior = (co.launcher._request, co.commands._chief_managed_rows)
+    prior = (co.launcher._request, co.chief_managed.read_marks)
     co.launcher._request = fake
-    co.commands._chief_managed_rows = lambda: (managed or {}, "")
+    co.chief_managed.read_marks = lambda: (managed or {}, "")
     try:
         args = argparse.Namespace(sid=sid, kill=False, plan_file=str(_PLAN), base_url=co.DEFAULT_BASE_URL)
         with contextlib.redirect_stdout(io.StringIO()) as out:
             rc = co.cmd_stop(args)
     finally:
-        co.launcher._request, co.commands._chief_managed_rows = prior
+        co.launcher._request, co.chief_managed.read_marks = prior
     return rc, out.getvalue()
 
 
