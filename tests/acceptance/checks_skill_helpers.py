@@ -74,15 +74,7 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
     check("learning_log: dated_discovery_bullets dates + drops non-bullets",
           bullets == ["- 2026-06-15: learned X (repo#1)", "- 2026-06-15: learned Y (repo#2)"])
 
-    # ---- work-type bucketing: PR title prefix, issue label ----
-    check("learning_log: pr_bucket maps feat -> Features, fix -> Bug fixes, unknown -> Other",
-          ll.pr_bucket("feat(api)!: x") == "Features & enhancements"
-          and ll.pr_bucket("fix: y") == "Bug fixes"
-          and ll.pr_bucket("random title") == "Other")
-    check("learning_log: issue_bucket maps by label, none -> Other",
-          ll.issue_bucket(["bug"]) == "Bug fixes"
-          and ll.issue_bucket(["enhancement"]) == "Features & enhancements"
-          and ll.issue_bucket([]) == "Other")
+    _learning_log_bucket_cases(check, ll)
 
     # ---- exact stats: per-repo + per-bucket + grand total ----
     prs = [
@@ -125,6 +117,43 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
     _learning_log_ledger_read_failure_cases(check, ll)
 
     return check.failures, check.total
+
+
+def _learning_log_bucket_cases(check: _Checker, ll: Any) -> None:
+    """Work-type bucketing, driven through `gather_repo` so it covers what the
+    weekly run actually does with a closed issue's labels and title."""
+    check("learning_log: pr_bucket maps feat -> Features, fix -> Bug fixes, unknown -> Other",
+          ll.pr_bucket("feat(api)!: x") == "Features & enhancements"
+          and ll.pr_bucket("fix: y") == "Bug fixes"
+          and ll.pr_bucket("random title") == "Other")
+    cases = [
+        # (name, labels, title, expected bucket)
+        ("perf label beats an unknown title prefix", ["perf"], "board: x", "Tooling, CI & perf"),
+        ("test label", ["test"], "board: x", "Tooling, CI & perf"),
+        ("refactor label", ["refactor"], "board: x", "Refactors"),
+        ("docs label", ["docs"], "board: x", "Documentation"),
+        ("security label", ["security"], "board: x", "Bug fixes"),
+        ("type label beats a title prefix", ["bug"], "feat: x", "Bug fixes"),
+        ("type label beats an audit category label", ["duplication", "perf"], "board: x",
+         "Tooling, CI & perf"),
+        ("audit category label alone", ["duplication"], "board: x", "Refactors"),
+        ("no label falls back to the title prefix", [], "fix(board): x", "Bug fixes"),
+        ("no type label falls back to the title prefix", ["needs-owner"], "perf: x",
+         "Tooling, CI & perf"),
+        ("neither label nor known prefix", [], "board: x", "Other"),
+    ]
+    issues = [{"number": n, "title": title, "closedAt": "2026-06-12T00:00:00Z",
+               "labels": [{"name": lb} for lb in labels]}
+              for n, (_, labels, title, _) in enumerate(cases)]
+    real_gh_json = ll._gh_json
+    ll._gh_json = lambda args: issues if args[0] == "issue" else []
+    try:
+        _, gathered = ll.gather_repo("o", "r", "2026-06-01")
+    finally:
+        ll._gh_json = real_gh_json
+    for (name, _, _, expected), got in zip(cases, gathered):
+        check(f"learning_log: issue bucket - {name}", got["bucket"] == expected,
+              f"got {got['bucket']!r}")
 
 
 def _learning_log_archive_cases(check: _Checker, ll: Any) -> None:

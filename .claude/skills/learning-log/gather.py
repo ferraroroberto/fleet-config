@@ -74,8 +74,9 @@ REPO_LIST_LIMIT = 200
 FLEET_MAP_URL = "https://github.com/ferraroroberto/fleet-config/blob/main/architecture/system-map.png"
 
 # Canonical work-type buckets, in display order. PR titles are conventional-
-# commit prefixed; issues carry type labels. Both map onto the same set so a
-# bucket shows PRs and issues together.
+# commit prefixed; issues carry type labels, and an issue title is often prefixed
+# by area instead. Both map onto the same set so a bucket shows PRs and issues
+# together.
 BUCKETS = [
     "Features & enhancements",
     "Bug fixes",
@@ -94,9 +95,17 @@ _PREFIX_BUCKET = {
     "perf": "Tooling, CI & perf", "test": "Tooling, CI & perf",
     "ci": "Tooling, CI & perf", "style": "Tooling, CI & perf",
 }
-_LABEL_BUCKET = {
-    "bug": "Bug fixes", "enhancement": "Features & enhancements",
-    "chore": "Chores & maintenance", "documentation": "Documentation",
+_TYPE_LABEL_BUCKET = {
+    "bug": "Bug fixes", "security": "Bug fixes",
+    "enhancement": "Features & enhancements",
+    "chore": "Chores & maintenance",
+    "documentation": "Documentation", "docs": "Documentation",
+    "refactor": "Refactors",
+    "perf": "Tooling, CI & perf", "test": "Tooling, CI & perf",
+}
+# Audit category labels say what was found, not the type of work, so they only
+# decide when an issue carries no type label.
+_CATEGORY_LABEL_BUCKET = {
     "claude-md-drift": "Chores & maintenance", "stale": "Chores & maintenance",
     "maintainability": "Refactors", "duplication": "Refactors",
 }
@@ -201,11 +210,13 @@ def pr_bucket(title: str) -> str:
     return _PREFIX_BUCKET.get(_type_prefix(title), "Other")
 
 
-def issue_bucket(labels: list[str]) -> str:
-    for lb in labels:
-        if lb in _LABEL_BUCKET:
-            return _LABEL_BUCKET[lb]
-    return "Other"
+def issue_bucket(labels: list[str], title: str) -> str:
+    """Type label, else audit category label, else the title prefix."""
+    for table in (_TYPE_LABEL_BUCKET, _CATEGORY_LABEL_BUCKET):
+        for lb in labels:
+            if lb in table:
+                return table[lb]
+    return pr_bucket(title)
 
 
 def _slug(bucket: str) -> str:
@@ -333,7 +344,8 @@ def gather_repo(owner: str, repo: str, since: str) -> tuple[list[dict], list[dic
             continue
         labels = [l.get("name", "") for l in (i.get("labels") or [])]
         issues.append({"repo": repo, "number": i["number"], "title": i.get("title", ""),
-                       "labels": labels, "url": i.get("url"), "bucket": issue_bucket(labels)})
+                       "labels": labels, "url": i.get("url"),
+                       "bucket": issue_bucket(labels, i.get("title", ""))})
     return prs, issues
 
 
