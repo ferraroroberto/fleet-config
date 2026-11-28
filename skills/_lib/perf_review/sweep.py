@@ -23,7 +23,6 @@ import datetime as _dt
 import io
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -34,11 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import box_lock  # noqa: E402
 from design_review import fleet  # noqa: E402
 from design_review.plan import PlanError, resolve_target  # noqa: E402
-from fleet_core import (
-    hooks_state,  # noqa: E402
-    runtime_files,  # noqa: E402
-)
-from no_window import NO_WINDOW  # noqa: E402
+from fleet_core import hooks_state  # noqa: E402
+from scheduled.sentinel import launch_detached, write_result  # noqa: E402
 
 from . import cli, idle_sample, report  # noqa: E402
 
@@ -242,22 +238,11 @@ def cmd_sweep(a: argparse.Namespace) -> int:
 
 def default_out_path() -> Path:
     """A fresh, unique sentinel path per invocation — two overlapping sweeps (a manual retry alongside a still-live
-    scheduled one) must never collide on a fixed name and silently read each other's stale result. Same shape as
-    `fleet_audit_scan.default_out_path`.
+    scheduled one) must never collide on a fixed name and silently read each other's stale result.
     """
     base = hooks_state.state_dir() / "perf-review"
     base.mkdir(parents=True, exist_ok=True)
     return base / f"sweep-result-{os.getpid()}-{time.time_ns()}.json"
-
-
-def write_result(out_path: Path, payload: dict) -> None:
-    """Atomically publish `payload` as JSON to `out_path` — the same temp-then-rename discipline
-    `fleet_audit_scan.write_result` uses, so a poller can never observe a partially written file.
-    """
-    runtime_files.make_dirs(out_path.parent, parents=True, exist_ok=True)
-    tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
-    runtime_files.save_text(tmp, json.dumps(payload), encoding="utf-8")
-    tmp.replace(out_path)
 
 
 def run_and_publish(a: argparse.Namespace, out_path: Path) -> int:
@@ -275,25 +260,6 @@ def run_and_publish(a: argparse.Namespace, out_path: Path) -> int:
         raise
     write_result(out_path, {"rc": rc, "digest_file": _tail(tee.text(), "DIGEST_FILE=")})
     return rc
-
-
-def launch_detached(child_argv: List[str], log_path: Path) -> int:
-    """Spawn this package's directory (the same directory-execution shape `__main__.py` documents) as an
-    independent, console-less process that outlives this call — the `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` pattern
-    `fleet_audit_scan.launch_detached` already uses for the same reason. Does not wait for the child; returns its pid.
-    """
-    runtime_files.make_dirs(log_path.parent, parents=True, exist_ok=True)
-    pkg_dir = Path(__file__).resolve().parent
-    with runtime_files.open_for_write(log_path, "wb") as log_file:
-        proc = subprocess.Popen(
-            [sys.executable, str(pkg_dir), *child_argv],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | NO_WINDOW,
-            close_fds=True,
-        )
-    return proc.pid
 
 
 def dispatch_sweep(a: argparse.Namespace) -> int:
@@ -315,7 +281,8 @@ def dispatch_sweep(a: argparse.Namespace) -> int:
             child_argv += ["--only", a.only]
         if a.no_file:
             child_argv.append("--no-file")
-        pid = launch_detached(child_argv, log_path)
+        # The entry is this package directory, the directory-execution shape `__main__.py` documents.
+        pid = launch_detached(Path(__file__).resolve().parent, child_argv, log_path)
         print(f"LAUNCHED pid={pid} out={out_path} log={log_path}")
         return 0
     if getattr(a, "out", None):

@@ -200,17 +200,6 @@ check(rc_empty == 2, "no app in scope is refused (exit 2), not an empty pass")
 
 # ---- detached launch + sentinel publish (fleet-config#1558) ----------------
 
-# write_result: atomic publish, no leftover temp files.
-sent = Path(tempfile.mkdtemp(prefix="perf-sweep-sentinel-")) / "result.json"
-sweep.write_result(sent, {"hello": "world"})
-check(sent.exists(), "write_result: sentinel file exists after publish")
-check(json.loads(sent.read_text(encoding="utf-8")) == {"hello": "world"},
-      "write_result: sentinel content round-trips as JSON")
-check(list(sent.parent.glob("*.tmp-*")) == [], "write_result: no temp file left behind")
-sweep.write_result(sent, {"hello": "again"})
-check(json.loads(sent.read_text(encoding="utf-8")) == {"hello": "again"},
-      "write_result: atomic overwrite replaces a stale sentinel")
-
 check(sweep.default_out_path() != sweep.default_out_path(),
       "default_out_path: two calls never collide on the same path")
 check(str(sweep.default_out_path()).endswith(".json"), "default_out_path: sentinel path is a .json file")
@@ -258,7 +247,8 @@ check(rc_direct == 0 and out_direct.is_file(), "dispatch_sweep: --out alone stil
 launched = {}
 
 
-def _fake_launch(argv, log_path):
+def _fake_launch(entry, argv, log_path):
+    launched["entry"] = entry
     launched["argv"] = argv
     launched["log_path"] = log_path
     return 4242
@@ -272,6 +262,8 @@ with redirect_stdout(io.StringIO()) as buf_detach:
 text_detach = buf_detach.getvalue()
 check(rc_detach == 0 and f"LAUNCHED pid=4242 out={out_detach}" in text_detach,
       f"dispatch_sweep: --detach returns immediately and prints the sentinel path: {text_detach!r}")
+check((launched["entry"] / "__main__.py").is_file() and launched["entry"].name == "perf_review",
+      f"dispatch_sweep: --detach runs this package directory: {launched['entry']}")
 check("--only" in launched["argv"] and "alpha" in launched["argv"] and "--out" in launched["argv"],
       f"dispatch_sweep: --detach forwards the run's own flags to the child: {launched['argv']}")
 

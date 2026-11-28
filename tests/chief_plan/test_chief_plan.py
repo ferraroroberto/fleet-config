@@ -236,7 +236,11 @@ cp.set_item(mdoc, "life-os#171", model="opus")
 check(mdoc["queue"][-1]["model"] == "opus", "set_item changes the model")
 cp.set_item(mdoc, "life-os#171", model="")
 check("model" not in mdoc["queue"][-1], 'set_item --model "" clears it')
-check("must be one of" in _raises(cp.set_item, mdoc, "life-os#171", model="fable"), "set_item refuses an unknown model")
+for _name in ("fable", "luna", "grok"):  # every name `dispatch --model` accepts can be recorded
+    cp.set_item(mdoc, "life-os#171", model=_name)
+    check(mdoc["queue"][-1]["model"] == _name and cp.validate(mdoc) == [], f"set_item records the dispatch model {_name}")
+cp.set_item(mdoc, "life-os#171", model="")
+check("must be one of" in _raises(cp.set_item, mdoc, "life-os#171", model="haiku"), "set_item refuses an unknown model")
 check("must be one of" in _raises(cp.add_item, mdoc, "life-os#172", "t", model="gpt"), "add_item refuses an unknown model")
 cp.set_lane(mdoc, "app-launcher", "building", item="#1274", model="opus")
 check(mdoc["lanes"][0]["model"] == "opus", "set_lane writes the lane's model")
@@ -422,7 +426,7 @@ try:
     check(r.returncode == 0 and json.loads(plan("show").stdout)["lanes"][0].get("model") == "opus",
           "CLI lane --model writes the lane's model")
     before = (cli_dir / "chief-plan.json").read_bytes()
-    r = plan("add", "app-launcher#1274", "x", "--model", "fable")
+    r = plan("add", "app-launcher#1274", "x", "--model", "haiku")
     check(r.returncode == 2 and "ERROR:" in r.stderr and "--model must be one of" in r.stderr
           and (cli_dir / "chief-plan.json").read_bytes() == before,
           f"CLI add --model with an unknown value exits 2 and writes nothing ({r.stderr.strip()[:120]})")

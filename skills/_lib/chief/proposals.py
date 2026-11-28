@@ -28,7 +28,6 @@ import json
 import re
 import subprocess
 import time
-import urllib.error
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -38,8 +37,8 @@ import git_run
 from fleet_core.hooks_state import state_dir
 from fleet_core.state_rows import iso_z, utc_now, write_rows
 
-from . import launcher, mailbox
-from .heal import load_ledger, update_ledger
+from . import launcher, mailbox, switches
+from .heal import load_ledger, parse_ref, update_ledger
 
 
 class ProposalAnswer(enum.StrEnum):
@@ -70,7 +69,6 @@ UNANSWERED_AFTER = timedelta(days=14)
 # The newest declined titles shown to the drafter; older ones stay in the ledger and still screen.
 DECLINED_SHOWN = 40
 
-_REF = re.compile(r"^([A-Za-z0-9_.-]+)#([0-9]+)$")
 _WORD = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "into", "that", "this", "when", "than",
                         "are", "not", "its", "per", "via", "all", "any", "add", "use"})
@@ -79,26 +77,6 @@ _REPO_LIMIT = 500
 
 
 # ---- pure decisions -----------------------------------------------------------
-
-def proposals_switch(reply: Any) -> Optional[str]:
-    """None when weekly proposals are on, else the `PROPOSALS=off` line. Unknown is never on."""
-    settings = reply.get("settings") if isinstance(reply, dict) else None
-    if not isinstance(settings, dict):
-        return "PROPOSALS=off reason=settings-unreadable"
-    if SWITCH_KEY not in settings:
-        return "PROPOSALS=off reason=setting-missing"
-    value = settings[SWITCH_KEY]
-    if value is True:
-        return None
-    if value is False:
-        return "PROPOSALS=off reason=switch-off"
-    return f"PROPOSALS=off reason=setting-not-boolean value={json.dumps(value)}"
-
-
-def parse_ref(ref: str) -> Optional[Tuple[str, int]]:
-    match = _REF.match(ref or "")
-    return (match.group(1), int(match.group(2))) if match else None
-
 
 def week_id(moment: datetime) -> str:
     year, week, _ = moment.isocalendar()
@@ -288,11 +266,7 @@ def _entry_line(entry: Dict[str, Any], now: datetime) -> str:
 # ---- the commands -------------------------------------------------------------------
 
 def _switch_off(args: argparse.Namespace) -> Optional[str]:
-    try:
-        reply = launcher._request(args.base_url, "/api/board/chief/settings")
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        return f"PROPOSALS=off reason=settings-unreadable ({exc})"
-    return proposals_switch(reply)
+    return switches.read_switch(args.base_url, SWITCH_KEY, "PROPOSALS")[1]
 
 
 def cmd_context(args: argparse.Namespace) -> int:

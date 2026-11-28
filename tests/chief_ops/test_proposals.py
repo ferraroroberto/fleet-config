@@ -21,7 +21,7 @@ from pathlib import Path
 
 from _mailbox_support import run_cli  # noqa: E402
 from _suite import _h, check, co  # noqa: E402
-from chief import proposals  # noqa: E402
+from chief import proposals, switches  # noqa: E402
 from fleet_core.state_rows import iso_z, utc_now  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_proposals_"))
@@ -40,14 +40,18 @@ def cand(title="Retry flaky gh reads in the gather step", repo="app-a", type_="e
 
 # ---- the switch: only a literal true is on ---------------------------------------------
 
-check(proposals.proposals_switch({"settings": {"chief_weekly_proposals": True}}) is None, "true is on")
-check(proposals.proposals_switch({"settings": {"chief_weekly_proposals": False}})
+def _switch(reply):
+    return switches.settings_switch(reply, proposals.SWITCH_KEY, "PROPOSALS")
+
+
+check(_switch({"settings": {"chief_weekly_proposals": True}}) is None, "true is on")
+check(_switch({"settings": {"chief_weekly_proposals": False}})
       == "PROPOSALS=off reason=switch-off", "false is off")
-check(proposals.proposals_switch({"settings": {"auto_drain": True}}) == "PROPOSALS=off reason=setting-missing",
+check(_switch({"settings": {"auto_drain": True}}) == "PROPOSALS=off reason=setting-missing",
       "a launcher without the key (before app-launcher ships it) reads as off")
-check((proposals.proposals_switch({"settings": {"chief_weekly_proposals": "true"}}) or "").startswith(
+check((_switch({"settings": {"chief_weekly_proposals": "true"}}) or "").startswith(
       "PROPOSALS=off reason=setting-not-boolean"), "a non-boolean switch is never on")
-check(proposals.proposals_switch(None) == "PROPOSALS=off reason=settings-unreadable", "an unreadable reply is off")
+check(_switch(None) == "PROPOSALS=off reason=settings-unreadable", "an unreadable reply is off")
 
 
 # ---- title overlap and candidate screening -----------------------------------------------

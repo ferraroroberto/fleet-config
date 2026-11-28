@@ -40,7 +40,7 @@ from fleet_core import fleet_repo_scan
 from fleet_core.hooks_state import state_dir
 from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows
 
-from . import launcher
+from . import launcher, switches
 
 LEDGER_FILENAME = "chief-job-heal.json"
 SWITCH_KEY = "chief_job_self_heal"
@@ -67,21 +67,6 @@ _PENDING_STATUSES = frozenset({"running", "pending", "queued"})
 
 
 # ---- pure decisions -----------------------------------------------------------
-
-def heal_switch(reply: Any) -> Optional[str]:
-    """None when self-heal is on, else the `HEAL=off` line. Unknown is never on."""
-    settings = reply.get("settings") if isinstance(reply, dict) else None
-    if not isinstance(settings, dict):
-        return "HEAL=off reason=settings-unreadable"
-    if SWITCH_KEY not in settings:
-        return "HEAL=off reason=setting-missing"
-    value = settings[SWITCH_KEY]
-    if value is True:
-        return None
-    if value is False:
-        return "HEAL=off reason=switch-off"
-    return f"HEAL=off reason=setting-not-boolean value={json.dumps(value)}"
-
 
 def parse_ref(ref: str) -> Optional[Tuple[str, int]]:
     match = _REF.match(ref or "")
@@ -219,11 +204,7 @@ def _entry_line(entry: Dict[str, Any]) -> str:
 
 def _switch_off(args: argparse.Namespace) -> Optional[str]:
     """The `HEAL=off` line, or None when the switch reads on right now."""
-    try:
-        reply = launcher._request(args.base_url, "/api/board/chief/settings")
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        return f"HEAL=off reason=settings-unreadable ({exc})"
-    return heal_switch(reply)
+    return switches.read_switch(args.base_url, SWITCH_KEY, "HEAL")[1]
 
 
 def _record(args: argparse.Namespace, entries: List[Dict[str, Any]]) -> List[str]:

@@ -38,7 +38,7 @@ def _git_globals_unit_checks() -> Tuple[int, int]:
     wt = "git --work-tree=/r push --force"
     check("push guard: --work-tree=<dir> before push is read like -C", skg._parse_forced_push(wt) == ([], "/r"))
     check("push guard: the --work-tree directory is carried to the branch lookup",
-          skg._push_args("git --work-tree=/r push -f")[1] == "/r")
+          skg._push_args(["git", "--work-tree=/r", "push", "-f"])[1] == "/r")
     check("bypass guard: a -c bypass behind --work-tree= is still found",
           skg.git_bypass_flag("git --work-tree=/r -c " + "commit.gpg" + "sign=false commit -m x") is not None)
     check("commit guard: --work-tree=<dir> does not hide the commit", _lib.runs_git_commit("git --work-tree=/r commit -m x"))

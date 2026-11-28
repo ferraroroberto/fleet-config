@@ -13,18 +13,17 @@ import contextlib
 import io
 import json
 import os
-import re
 import shutil
 import tempfile
 import time
 import urllib.error
 from pathlib import Path
 
-from _suite import REPO, _h, _session_card, check, co  # noqa: E402
+from _suite import _h, _session_card, check, co  # noqa: E402
 
 # isort: split
 import chief_plan  # noqa: E402
-from chief import drain  # noqa: E402
+from chief import brief_rules, drain, switches  # noqa: E402
 
 _TMP = Path(tempfile.mkdtemp(prefix="chief_drain_"))
 _TOML = _TMP / "projects.toml"
@@ -53,14 +52,18 @@ def _issue(repo, number, kind="design-drift", labels=(), title="findings", findi
 
 # ---- the switch ----------------------------------------------------------------
 
-check(drain.drain_switch({"settings": {"auto_drain": True}}) is None, "auto_drain true is on")
-check(drain.drain_switch({"settings": {"auto_drain": False}}) == "DRAIN=off reason=switch-off",
+def _switch(reply):
+    return switches.settings_switch(reply, drain.SWITCH_KEY, "DRAIN")
+
+
+check(_switch({"settings": {"auto_drain": True}}) is None, "auto_drain true is on")
+check(_switch({"settings": {"auto_drain": False}}) == "DRAIN=off reason=switch-off",
       "auto_drain false is off")
-check(drain.drain_switch({"settings": {"worker_cap": 3}}) == "DRAIN=off reason=setting-missing",
+check(_switch({"settings": {"worker_cap": 3}}) == "DRAIN=off reason=setting-missing",
       "a missing auto_drain key reads as off with its own reason")
-check((drain.drain_switch({"settings": {"auto_drain": "yes"}}) or "").startswith(
+check((_switch({"settings": {"auto_drain": "yes"}}) or "").startswith(
       "DRAIN=off reason=setting-not-boolean"), "a non-boolean auto_drain is never on")
-check(drain.drain_switch(["not", "a", "dict"]) == "DRAIN=off reason=settings-unreadable",
+check(_switch(["not", "a", "dict"]) == "DRAIN=off reason=settings-unreadable",
       "an unreadable settings reply is off")
 
 
@@ -714,19 +717,25 @@ check(rc == 1 and "PLAN_LANE_STALE=unknown reason=board-unreadable" in out and "
       and "PLAN_LANE_STALE=app" not in out,
       f"drain: an unreadable board is unknown, never a clean lane list (got {out!r})")
 
-# The drain brief's follow-through rule is the standard dispatch brief's, word for word (fleet-config#2299).
-def _rule(text, pattern):
-    found = re.findall(pattern, text, flags=re.M | re.S)
-    return " ".join(found[0].split()) if len(found) == 1 else None
+# A drained lane's brief is built from the standard dispatch brief, never a second copy (fleet-config#2266).
+_standard = brief_rules.DISPATCH_BRIEF.read_text(encoding="utf-8")
+_rules = brief_rules.worker_rules(_standard)
+_built = drain.write_brief("app-a#1", "design-drift").read_text(encoding="utf-8")
+check(len(_rules) == 6 and not any("occupancy" in r or "For the chief" in r for r in _rules),
+      f"the standard brief yields its six worker rules, the chief-only ones left out (got {_rules!r})")
+check(all(f"\n{n}. {rule}\n" in _built for n, rule in enumerate(_rules, start=1))
+      and brief_rules.channel_declaration(_standard) in _built and "__" not in _built.split("## This run")[0],
+      "the drain brief carries every standard rule and the channel declaration verbatim")
 
 
-_standard = _rule((REPO / ".claude" / "skills" / "chief" / "dispatch-brief.md").read_text(encoding="utf-8"),
-                  r"^\d+\. (\*\*Finish the mechanical follow-through.*?)(?=^\d+\. )")
-_drained = _rule(drain.BRIEF_TEMPLATE.read_text(encoding="utf-8"), r"^7\. ([^\r\n]*)")
-check(_standard is not None and "session-host on :8446" in _standard,
-      f"the standard dispatch brief's follow-through rule is readable (got {_standard!r})")
-check(_drained == _standard,
-      f"drain brief rule 7 says what the standard dispatch brief says (got {_drained!r})")
+def _copied(template, standard):
+    """Standard-rule openings a template holds as its own text."""
+    flat = " ".join(template.split())
+    return [r[:40] for r in brief_rules.worker_rules(standard) if r.strip("*")[:30] in flat]
+
+
+check(_copied(drain.BRIEF_TEMPLATE.read_text(encoding="utf-8"), _standard) == [],
+      "drain_brief.md holds no copy of its own of any standard rule")
 
 
 # The subcommands are wired into chief_ops.

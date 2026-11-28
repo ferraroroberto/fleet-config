@@ -15,7 +15,6 @@ falling back to the old root name `.<name>-ratchet-baseline.json` on a ref from 
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -24,10 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import git_run  # noqa: E402
 from fleet_core import fleet_toml  # noqa: E402
 from structure_debt.baseline import (  # noqa: E402
-    BASELINE_FOLDER,
-    BASELINE_VERSION,
     Unknown,
     configured_baseline,
+    default_baseline,
+    load_baseline_entries,
     read_baseline,
     read_ref_file,
 )
@@ -44,11 +43,6 @@ RATCHETS: dict[str, Optional[str]] = {
     "dead_code_ratchet": "names",
     "conventions_ratchet": "counts",
 }
-
-
-def default_baseline(table: str) -> str:
-    """The ratchet's own default baseline path: `dead_code_ratchet` -> `.ratchets/dead-code.json`."""
-    return f"{BASELINE_FOLDER}/{table.removesuffix('_ratchet').replace('_', '-')}.json"
 
 
 def read_config(toml_text: Optional[str]) -> dict:
@@ -100,21 +94,7 @@ def _entry_hits(entry: dict, field: Optional[str]) -> int:
 
 def count_hits(text: str, field: Optional[str]) -> int:
     """The baselined hit count in a ratchet baseline's text. Raises `Unknown` when it is malformed."""
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise Unknown(f"baseline is not valid JSON: {exc}") from exc
-    if not isinstance(data, dict) or data.get("version") != BASELINE_VERSION:
-        raise Unknown(f"baseline is not an object with version {BASELINE_VERSION}")
-    entries = data.get("entries")
-    if not isinstance(entries, list):
-        raise Unknown("baseline has no entries list")
-    total = 0
-    for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("key"), str):
-            raise Unknown("baseline has an entry without a string key")
-        total += _entry_hits(entry, field)
-    return total
+    return sum(_entry_hits(entry, field) for entry in load_baseline_entries(text))
 
 
 def read_repo(repo_path: str) -> dict:

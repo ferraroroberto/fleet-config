@@ -46,7 +46,7 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | `queue[].after` | Conditions `drain` waits for before starting the row, single-space separated, all must hold: `<repo>#<N>` (that issue is `merged` in the plan, or closed on GitHub) and `no-lane:<repo>` (no live worker session in that repo). The writer normalizes commas to spaces and refuses anything else. |
 | `queue[].kind` | Why a `parked` row is parked: `owner` (Roberto's step; the issue carries `needs-owner`, which is what lists it in the Board's "Waiting for start"), `umbrella` (kept open on purpose) or `blocked-by`. Optional so older files load; the writer sets it and drops it when the row leaves `parked`. |
 | `queue[].blocked_by` | `repo#N` the row waits on; present exactly when `kind` is `blocked-by`. |
-| `lanes[].model` / `queue[].model` | The model the lane or build item runs on: `opus` \| `sonnet`, picked per task by `docs/model-tiers.md`. Optional, so older files stay valid. |
+| `lanes[].model` / `queue[].model` | The model the lane or build item runs on: any name `dispatch --model` accepts (`skills/_lib/chief/models.py`), picked per task by `docs/model-tiers.md`. Optional, so older files stay valid. |
 | `waiting_on_roberto[]` | `text` required: the short card line. `ref` optional and qualified (`repo#N`). Everything below is optional too. |
 | `waiting_on_roberto[].id` | Stable, unique within the list: a lowercase letter, then up to 31 letters, digits or hyphens. The writer assigns the next `q<N>` when none is given. Older files may have items without one. |
 | `waiting_on_roberto[].asked_at` | `YYYY-MM-DD` (UTC) the question was asked, stamped by the writer; the Board shows it beside the question. Older items have none. |

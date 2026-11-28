@@ -61,8 +61,9 @@ def read_ref_file(repo: Path, ref: str, path: str) -> str | None:
 
 
 def default_baseline(name: str) -> str:
-    """The ratchet's baseline path: `dead-code` -> `.ratchets/dead-code.json`."""
-    return f"{BASELINE_FOLDER}/{name}.json"
+    """The ratchet's baseline path, from its file stem or `.fleet.toml` table name:
+    `dead-code` or `dead_code_ratchet` -> `.ratchets/dead-code.json`."""
+    return f"{BASELINE_FOLDER}/{name.removesuffix('_ratchet').replace('_', '-')}.json"
 
 
 def legacy_baseline(default: str) -> str:
@@ -101,12 +102,8 @@ def _structure_config(repo: Path, ref: str) -> tuple[str, int, int]:
     return path, max_file, max_fn
 
 
-def count_entries(text: str, max_file: int, max_fn: int) -> dict:
-    """`{files, fns, dirs, excess}` for a baseline's text. Raises `Unknown` when it is malformed.
-
-    `excess` is the sum of lines over the limit across the `size:` and `fn:` entries, the
-    real measure of debt; a `layer:`/`unmeasured:` entry is not part of any of the three counts.
-    """
+def load_baseline_entries(text: str) -> list[dict]:
+    """The entries of a ratchet baseline's text, each with a string `key`. Raises `Unknown` when it is malformed."""
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -116,12 +113,24 @@ def count_entries(text: str, max_file: int, max_fn: int) -> dict:
     entries = data.get("entries")
     if not isinstance(entries, list):
         raise Unknown("baseline has no entries list")
+    if not all(isinstance(e, dict) and isinstance(e.get("key"), str) for e in entries):
+        raise Unknown("baseline has an entry without a string key")
+    return entries
+
+
+def count_entries(text: str, max_file: int, max_fn: int) -> dict:
+    """`{files, fns, dirs, excess}` for a baseline's text. Raises `Unknown` when it is malformed.
+
+    `excess` is the sum of lines over the limit across the `size:` and `fn:` entries, the
+    real measure of debt; a `layer:`/`unmeasured:` entry is not part of any of the three counts.
+    """
+    entries = load_baseline_entries(text)
     counts = {"files": 0, "fns": 0, "dirs": 0}
     excess = 0
     limits = {"size": max_file, "fn": max_fn}
     for entry in entries:
-        key = entry.get("key") if isinstance(entry, dict) else None
-        if not isinstance(key, str) or ":" not in key:
+        key = entry["key"]
+        if ":" not in key:
             raise Unknown("baseline has an entry without a string key")
         kind = key.split(":", 1)[0]
         if kind not in KIND_FIELDS:
