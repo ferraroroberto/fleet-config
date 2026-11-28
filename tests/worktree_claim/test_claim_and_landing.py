@@ -450,7 +450,12 @@ try:
     check(sp.declared_service(Path("E:\\automation\\app-launcher"), declaring)[0] is True,
           "declared_service: a backslash path matches a forward-slash cwd_prefix (same tree)")
     check(sp.declared_service(Path("E:/automation/fleet-config"), declaring)[0] is False,
-          "declared_service: no tray_cmd -> no service, whatever else the table says (#647 intact)")
+          "declared_service: no tray_cmd and no port -> no service (#647 intact)")
+    ported = _toml_base / "ported.toml"
+    ported.write_text('[app-launcher]\ncwd_prefix = "E:/automation/app-launcher"\nwebapp_port = 8445\n',
+                      encoding="utf-8")
+    check(sp.declared_service(Path("E:/automation/app-launcher"), ported) == (True, 8445, None, ""),
+          "declared_service: a port with no tray_cmd is still a declared service")
 
     # fleet-config#686: a repo *absent from the table entirely* is not the
     # same fact as one that is registered and declares no tray_cmd -- the

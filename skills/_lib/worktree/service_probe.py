@@ -76,9 +76,9 @@ def live_service_check(
     Both need the same restart, so refusing costs nothing the restart won't
     fix, and there is deliberately no "landed anyway" success variant.
 
-    `declared` is the repo's `hooks/projects.toml` `tray_cmd` declaration --
-    the fleet already distinguishes exactly the right set, and `fleet-config`
-    declaring none is correct: nothing runs out of it and landing it is what
+    `declared` is the repo's `hooks/projects.toml` `tray_cmd` or `webapp_port`
+    declaration -- the fleet already distinguishes exactly the right set, and
+    `fleet-config` declaring neither is correct: nothing runs out of it and landing it is what
     makes a merge live through the `~/.claude` junctions. `probe` is what the
     live check established (`SERVICE_LIVE` / `SERVICE_ABSENT` /
     `SERVICE_UNKNOWN`); a probe that could not be completed is **not** proof of
@@ -146,16 +146,16 @@ def declared_service(
 
     Returns `(declares_tray, webapp_port, api_version_path, detail)`. The
     fleet's existing membership table already separates exactly the right set:
-    a `tray_cmd` is the declaration that a long-running
+    a `tray_cmd` or a `webapp_port` is the declaration that a long-running
     process serves that tree, so no new configuration file is introduced --
     adding one would be the wrong move.
 
     Three states, not two (one `False` for the last two would treat a repo
     that was never entered in the table like one that declares no tray on purpose):
 
-    - **registered, with a `tray_cmd`**: `True`, with the port/api path to
-      probe.
-    - **registered, no `tray_cmd`**: a *known* absence -- `fleet-config`
+    - **registered, with a `tray_cmd` or a `webapp_port`**: `True`, with the
+      port/api path to probe.
+    - **registered, with neither**: a *known* absence -- `fleet-config`
       itself is this case, and it must keep landing or every merge here
       stops deploying through the `~/.claude` junctions. Returns `False`;
       `detail` names the repo.
@@ -172,8 +172,8 @@ def declared_service(
     entry = _entry_for(tables, repo)
     if entry is not None:
         name, tbl = entry
-        if not tbl.get("tray_cmd"):
-            return False, None, None, f"{name} declares no tray_cmd"
+        if not (tbl.get("tray_cmd") or tbl.get("webapp_port")):
+            return False, None, None, f"{name} declares no tray_cmd or webapp_port"
         port = tbl.get("webapp_port")
         return True, int(port) if isinstance(port, int) else None, tbl.get("api_version_path"), ""
     return (True, None, None,
@@ -335,7 +335,7 @@ def server_doubt(
         if level_head and tbl.get("tray_cmd"):
             return SERVICE_UNKNOWN, "tray declared but no webapp_port to probe"
         return None
-    if not level_head or not tbl.get("tray_cmd"):
+    if not level_head:
         return None
     probe, sha, detail = probe_service(port, tbl.get("api_version_path"))
     if probe == SERVICE_ABSENT:

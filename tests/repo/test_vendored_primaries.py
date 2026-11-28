@@ -213,4 +213,52 @@ with mock.patch.object(pr.fleet_repo_scan, "fleet_repo_tables", side_effect=OSEr
         _rc = pr.main(["stale"])
     check(_rc == 0 and _buf.getvalue().startswith("STALE_PRIMARIES=unknown"), f"the `stale` CLI prints unknown instead of raising ({_buf.getvalue()!r})")
 
+# ---- a declared port with no recipe is a running service, never live on faith ----
+# The real probe and the landing guard run here; only the listener table and the served build are fakes.
+
+
+def port_only(path: Path) -> dict:
+    """A registry table naming a port and nothing else, written where the landing guard reads it."""
+    _REGISTRY.write_text(f'[portonly]\ncwd_prefix = "{path.as_posix()}"\nwebapp_port = 8449\n'
+                         'api_version_path = "/api/version"\n', encoding="utf-8")
+    return {"cwd_prefix": str(path), "webapp_port": 8449, "api_version_path": "/api/version"}
+
+
+def served(sha, ports=frozenset({8449})):
+    return mock.patch.multiple(sp, listening_ports=lambda: set(ports), running_sha=lambda _p, _a: sha)
+
+
+check(pr.recipe_kind({"webapp_port": 8447}, NEVER) == pr.NO_RECIPE, "recipe_kind: a port with no tray_cmd is a service with no recipe")
+
+work = behind_clone("primaries-portonly-moved-")
+rec = Recorder()
+with served("0ld0000"):
+    out = pr.land_one("portonly", port_only(work), NEVER, "wave-1", restart=rec)
+check(not out.live and out.line == "PRIMARY=stale reason=no-restart-recipe" and not rec.calls and not (work / "new.txt").exists(),
+      f"port only, listening, tree behind: stale, not landed ({out.line})")
+
+work = behind_clone("primaries-portonly-level-")
+run_git(work, "pull", "-q", "--ff-only", check=check)
+level_head = run_git(work, "rev-parse", "HEAD", check=check).strip()
+for sha, want, label in (("0ld0000", "PRIMARY=stale reason=", "an older served build is stale"),
+                         (None, "PRIMARY=unknown reason=", "an unreadable served build is unknown"),
+                         (level_head[:7], "PRIMARY=live behind=0", "a served build at HEAD is live")):
+    with served(sha):
+        out = pr.land_one("portonly", port_only(work), NEVER, "wave-1", restart=Recorder())
+    check(out.line.startswith(want) and out.live == want.startswith("PRIMARY=live"),
+          f"port only, level tree: {label} ({out.line})")
+
+work = behind_clone("primaries-portonly-down-")
+with served(None, ports={1}):
+    out = pr.land_one("portonly", port_only(work), NEVER, "wave-1", restart=Recorder())
+check(out.live and (work / "new.txt").exists(), f"port only, nothing listening: landed and live ({out.line})")
+_REGISTRY.write_text("[global]\n", encoding="utf-8")
+
+# ---- an unreadable HEAD cannot show that nothing moved ----
+rec = Recorder()
+out = land("app", tbl(work), sp.SERVICE_LIVE, rec, head=lambda _r: None,
+           land=lambda *_a, **_k: (0, ["PRIMARY=live behind=0"]))
+check(not out.live and out.line.startswith("PRIMARY=unknown reason=") and not rec.calls,
+      f"unreadable HEAD with a live service: unknown, never live ({out.line})")
+
 _h.report_and_exit("test_vendored_primaries")

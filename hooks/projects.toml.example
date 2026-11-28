@@ -176,13 +176,23 @@ cwd_prefix = "E:/automation/externalrisk"
 cwd_prefix = "E:/automation/facilitation-shuffle"
 
 [facilitation-suite]
-cwd_prefix = "E:/automation/facilitation-suite"
+cwd_prefix          = "E:/automation/facilitation-suite"
+webapp_port         = 8449
+browser_scheme      = "https"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\tray.bat --restart'
+api_version_path    = "/api/version"
 
 [family-accounting]
 cwd_prefix = "E:/automation/family-accounting"
 
 [github-copilot-usage]
-cwd_prefix = "E:/automation/github-copilot-usage"
+cwd_prefix          = "E:/automation/github-copilot-usage"
+webapp_port         = 8377
+browser_scheme      = "http"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\tray.bat --restart'
+api_version_path    = "/api/version"
 
 [gitlab-to-github-migrator]
 cwd_prefix = "E:/automation/gitlab-to-github-migrator"
