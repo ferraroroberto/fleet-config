@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 
 from chief import chief_sweep
+from chief.models import DISPATCH_MODELS
 from chief.steer_delivery import DEFAULT_VERIFY_POLL_INTERVAL
 
 from . import (
@@ -75,7 +76,8 @@ def _add_read_commands(sub: argparse._SubParsersAction) -> None:
     d.add_argument("number", type=int)
     d.add_argument("--mode", choices=("start", "yolo"), default="start")
     d.add_argument("--model", default=None,
-                   help="sonnet|opus|fable|luna|grok (luna = Codex, resolved from the launcher's catalog; grok = Grok Build, easy-tier lanes only)")
+                   help=f"{'|'.join(DISPATCH_MODELS)} (luna = Codex, resolved from the launcher's catalog; "
+                        "grok = Grok Build, easy-tier lanes only)")
     d.add_argument("--effort", default=None, choices=("low", "medium", "high", "xhigh"),
                    help="lane effort per docs/model-tiers.md; reported applied only when the launcher echoes it")
     d.add_argument("--brief-file", default=None,

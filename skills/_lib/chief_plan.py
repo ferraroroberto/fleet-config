@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from chief.models import DISPATCH_MODELS as MODELS  # noqa: E402
 from fleet_core.hooks_state import state_dir  # noqa: E402
 from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows  # noqa: E402
 
@@ -58,8 +59,6 @@ QUEUE_STATUSES = tuple(status.value for status in QueueStatus)
 # Why a row is `parked`. Only `owner` rows are Roberto's to act on, and they
 # ride the `needs-owner` label into the Board's "Waiting for start".
 PARKED_KINDS = ("owner", "umbrella", "blocked-by")
-# The model a lane or build item runs on, picked per task by docs/model-tiers.md.
-MODELS = ("opus", "sonnet")
 
 # "One short line" -- long enough for a real title, short enough for a phone chip row.
 MAX_TEXT = 200

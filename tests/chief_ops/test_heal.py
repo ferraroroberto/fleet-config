@@ -21,7 +21,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from _suite import _h, check, co  # noqa: E402
-from chief import heal  # noqa: E402
+from chief import heal, switches  # noqa: E402
 from fleet_core.state_rows import iso_z, utc_now  # noqa: E402
 from git_fixtures import init_repo  # noqa: E402
 
@@ -51,14 +51,18 @@ _PRIVATE = "PRIVATE-OUTPUT-LINE"
 
 # ---- the switch: only a literal true is on -----------------------------------------
 
-check(heal.heal_switch({"settings": {"chief_job_self_heal": True}}) is None, "chief_job_self_heal true is on")
-check(heal.heal_switch({"settings": {"chief_job_self_heal": False}}) == "HEAL=off reason=switch-off",
+def _switch(reply):
+    return switches.settings_switch(reply, heal.SWITCH_KEY, "HEAL")
+
+
+check(_switch({"settings": {"chief_job_self_heal": True}}) is None, "chief_job_self_heal true is on")
+check(_switch({"settings": {"chief_job_self_heal": False}}) == "HEAL=off reason=switch-off",
       "chief_job_self_heal false is off")
-check(heal.heal_switch({"settings": {"auto_drain": True}}) == "HEAL=off reason=setting-missing",
+check(_switch({"settings": {"auto_drain": True}}) == "HEAL=off reason=setting-missing",
       "a missing switch reads as off with its own reason")
-check((heal.heal_switch({"settings": {"chief_job_self_heal": "true"}}) or "").startswith(
+check((_switch({"settings": {"chief_job_self_heal": "true"}}) or "").startswith(
       "HEAL=off reason=setting-not-boolean"), "a non-boolean switch is never on")
-check(heal.heal_switch(None) == "HEAL=off reason=settings-unreadable", "an unreadable reply is off")
+check(_switch(None) == "HEAL=off reason=settings-unreadable", "an unreadable reply is off")
 
 
 # ---- rerun_safe: only a literal true on the launcher's job is safe ------------------------

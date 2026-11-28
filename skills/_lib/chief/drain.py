@@ -76,7 +76,7 @@ from fleet_core import fleet_repo_scan
 from fleet_core.hooks_state import state_dir
 from fleet_core.state_rows import iso_z, state_lock, utc_now, write_rows
 
-from . import commands, lane_rows, launcher, rails
+from . import brief_rules, commands, lane_rows, launcher, rails, switches
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,8 @@ KIND_MODELS = {
 }
 DEFAULT_MODEL = "sonnet"
 
+SWITCH_KEY = "auto_drain"
+
 # A deferral record, not a findings list: nothing in it is for a lane to fix.
 EXCLUDED_KINDS = frozenset({"cleanup-deferred"})
 # Owner-gated work, and the /codebase-audit ledger, which is not actionable.
@@ -119,21 +121,6 @@ _OPEN_FINDING = re.compile(r"^[ \t]*[-*][ \t]+\[ \][ \t]", re.MULTILINE)
 
 
 # ---- pure decisions -----------------------------------------------------------
-
-def drain_switch(reply: Any) -> Optional[str]:
-    """None when `auto_drain` is on, else the `DRAIN=off` line. Unknown is never on."""
-    settings = reply.get("settings") if isinstance(reply, dict) else None
-    if not isinstance(settings, dict):
-        return "DRAIN=off reason=settings-unreadable"
-    if "auto_drain" not in settings:
-        return "DRAIN=off reason=setting-missing"
-    value = settings["auto_drain"]
-    if value is True:
-        return None
-    if value is False:
-        return "DRAIN=off reason=switch-off"
-    return f"DRAIN=off reason=setting-not-boolean value={json.dumps(value)}"
-
 
 def no_ship_repos(tables: Dict[str, dict]) -> Set[str]:
     """Repos whose merge publishes (`auto_ship = false`), lowercased."""
@@ -411,7 +398,8 @@ def remember(path: Path, adds: List[Dict[str, str]]) -> None:
 
 def write_brief(ref: str, kind: str) -> Path:
     run = RUN_TEMPLATES.get(kind, RUN_TEMPLATE_DEFAULT).read_text(encoding="utf-8")
-    text = BRIEF_TEMPLATE.read_text(encoding="utf-8").replace("__RUN__", run).replace("__REF__", ref).replace("__KIND__", kind)
+    template = brief_rules.render(BRIEF_TEMPLATE.read_text(encoding="utf-8"))
+    text = template.replace("__RUN__", run).replace("__REF__", ref).replace("__KIND__", kind)
     path = state_dir() / BRIEF_DIRNAME / (ref.replace("#", "-") + ".md")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -489,12 +477,7 @@ def _intake(args: argparse.Namespace, plan_path: Path, ledger_path: Path,
 
 
 def cmd_drain(args: argparse.Namespace, fetch: Optional[Callable] = None) -> int:
-    try:
-        reply = launcher._request(args.base_url, "/api/board/chief/settings")
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        print(f"DRAIN=off reason=settings-unreadable ({exc})")
-        return 0
-    off = drain_switch(reply)
+    reply, off = switches.read_switch(args.base_url, SWITCH_KEY, "DRAIN")
     if off is not None:
         print(off)
         return 0
@@ -591,11 +574,7 @@ def _switch_off_line(off: str) -> str:
 def live_idle_line(args: argparse.Namespace, plan_path: Path) -> str:
     """Count the idle slots now, dispatching and writing nothing. A row drain has not started yet
     counts as idle (`dispatchable-rows`): the chief ended its turn without draining."""
-    try:
-        reply = launcher._request(args.base_url, "/api/board/chief/settings")
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        return "SLOTS_IDLE=unknown reason=settings-unreadable"
-    off = drain_switch(reply)
+    reply, off = switches.read_switch(args.base_url, SWITCH_KEY, "DRAIN")
     if off is not None:
         return _switch_off_line(off)
     try:

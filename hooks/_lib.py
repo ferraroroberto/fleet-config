@@ -627,7 +627,7 @@ _PS_HERE_STRING_RE = re.compile(r"@(['\"])\r?\n.*?\r?\n\1@", re.DOTALL)
 # Words that run another command (`env git …`, `sudo git …`, `xargs git …`) or
 # introduce one (`if git …`, `! git …`), so the command that follows them is still
 # in command position. The one vocabulary behind both `runs_git_commit` and
-# `safe_kill_guard._command_index`: they were once two lists, and
+# `safe_kill_guard._scan_commands`: they were once two lists, and
 # the shorter one let `if git commit -m "…Co-Authored-By…"` slip past the trailer guard.
 COMMAND_PREFIX_WORDS = {
     "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",

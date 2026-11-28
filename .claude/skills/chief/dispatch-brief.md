@@ -41,36 +41,49 @@ string an attacker can type. Adapt the wording, never the substance:
 
 These seven points belong in every brief by default, never re-typed ad-hoc
 (which drifted). Include them in the `--brief-file` you dispatch a worker
-with, adapted to its wording but never dropped:
+with, adapted to its wording but never dropped.
+
+Each point's first paragraph is the worker's wording; a paragraph starting
+*For the chief:* is yours and stays out of the brief. `chief_ops.py drain`
+builds every drained lane's brief from the channel quote above and those first
+paragraphs (`skills/_lib/chief/brief_rules.py`), so a rule changes here only.
+A drained lane differs from a hand-briefed one only by what
+`skills/_lib/chief/drain_brief.md` adds: no person composed its brief.
 
 1. **Poll background work to completion inside your own turn; never end a
-   turn waiting to be resumed.** Nothing wakes a top-level worker session.
-   This is already in the global `CLAUDE.md` for sub-agents, but a
-   chief-dispatched top-level worker needs it stated explicitly too. It is a
-   worker rule, not yours — your own wake follows the inverse ("Waking" in
-   `SKILL.md`), for the same underlying reason.
+   turn waiting to be resumed.** Nothing wakes you.
+
+   *For the chief:* nothing wakes a top-level worker session. This is already
+   in the global `CLAUDE.md` for sub-agents, but a chief-dispatched top-level
+   worker needs it stated explicitly too. It is a worker rule, not yours: your
+   own wake follows the inverse ("Waking" in `SKILL.md`), for the same
+   underlying reason.
 2. **Suspect buffering before a hang.** "Zero output for 20 minutes" is
-   usually stdout block-buffered under capture, not a stuck process — re-run
+   usually stdout block-buffered under capture, not a stuck process: re-run
    in the foreground with `PYTHONUTF8=1`/`PYTHONUNBUFFERED=1` before
    concluding something is actually stuck.
-3. **Restate any read-only sub-agent restriction, every time.** A
-   fleet-config sub-agent once built/committed/pushed/merged on its own
-   initiative despite a read-only brief — honored by convention, not
-   enforced, so it must be re-stated in the brief itself each dispatch, not
-   assumed carried over from a prior one.
-4. **Check repo occupancy before dispatching, and reuse an idle session
-   already in that repo rather than opening a second.** `chief_ops.py
-   dispatch` refuses a mechanically-occupied repo (see the safety rails),
-   but the judgment of "there's already a session here, should I nudge it
-   instead of starting a new one" is yours — check
+3. **Sub-agents you spawn are read-only unless their own brief says
+   otherwise, every time.**
+
+   *For the chief:* restate any read-only sub-agent restriction in each
+   dispatch, never assumed carried over from a prior one. A fleet-config
+   sub-agent once built/committed/pushed/merged on its own initiative despite
+   a read-only brief: it is honored by convention, not enforced.
+4. *For the chief:* **check repo occupancy before dispatching, and reuse an
+   idle session already in that repo rather than opening a second.**
+   `chief_ops.py dispatch` refuses a mechanically-occupied repo (see the
+   safety rails), but the judgment of "there's already a session here, should
+   I nudge it instead of starting a new one" is yours: check
    `chief_ops.py sessions` first.
-5. **`AskUserQuestion` is hard-blocked, not just discouraged, in a
-   chief-managed session (fleet-config#463).** A `PreToolUse` hook refuses
-   the tool outright — it renders only in the worker's own PTY, so you can
-   never see the question or attribute an answer to it. Tell the worker
-   plainly: state any question and its options as ordinary output text
-   instead (that reaches `chief_ops.py exchange`), then proceed on its own
-   best judgment or wait — you relay a decision via `chief_ops.py say` if one
+5. **`AskUserQuestion` is blocked in this session.** State any question and its
+   options as ordinary output text instead, then proceed on your own best
+   judgment or wait.
+
+   *For the chief:* the tool is hard-blocked, not just discouraged, in a
+   chief-managed session (fleet-config#463). A `PreToolUse` hook refuses it
+   outright, because it renders only in the worker's own PTY, where you can
+   never see the question or attribute an answer to it. Text output reaches
+   `chief_ops.py exchange`; you relay a decision via `chief_ops.py say` if one
    is needed.
 6. **Finish the mechanical follow-through without asking
    (fleet-config#2039).** Roberto expects every obvious next step done, not

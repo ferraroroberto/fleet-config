@@ -52,6 +52,7 @@ from chief.steer_delivery import (
 )
 
 from . import compact, digest, lane_rows, launcher, mailbox, rails, say_recovery
+from .models import CODEX_FAMILIES, DISPATCH_MODEL_ALIASES
 
 DEFAULT_TAIL = 2000
 
@@ -66,16 +67,6 @@ ESCALATE_TIMEOUT_S = 60.0
 # 41.2 s under load. A client that gives up at the 10 s
 # default leaves the server spawning anyway, and a blind retry then double-spawns.
 DISPATCH_TIMEOUT = 120.0
-
-# Short names the chief types, mapped to the launcher's provider-qualified
-# model; anything else is sent as typed. Grok Build ships one model, so the
-# alias carries no tier.
-DISPATCH_MODEL_ALIASES = {"grok": "grok:grok-4.5"}
-
-# Codex families the chief may name, version-free: the launcher's catalog
-# label (case-insensitive) picks the slug, so a new Luna release needs no edit
-# here. Only Luna: Codex on a ChatGPT account rejects the other families.
-CODEX_FAMILIES = ("luna",)
 
 # Retired names, refused rather than guessed at: the Board reads an unprefixed
 # value as a Claude tier and would 400 with an opaque `unknown model`.

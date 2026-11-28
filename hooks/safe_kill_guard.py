@@ -49,10 +49,123 @@ from typing import Callable, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
+# ----- commands in command position -----
+# A line continuation, Bash `\` or PowerShell backtick before the newline: the
+# next line's words still belong to the same command.
+_LINE_CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
+_EVAL_SHELLS = {"eval", "iex", "invoke-expression"}
+# After one of these, a nested shell's remaining words are the command it runs.
+_NESTED_COMMAND_FLAGS = {"-c", "/c", "//c", "/k", "//k", "-command", "-commandwithargs"}
+# Two levels covers `powershell -Command "cmd /c '…'"`, and stops a crafted
+# command from recursing without end.
+_NESTED_DEPTH = 2
+# Wrappers that run the command after them, beyond `_lib.COMMAND_PREFIX_WORDS`.
+_WRAPPER_WORDS = {"timeout"}
+# A wrapper's own value argument (`timeout 60 …`, `nice -n 10 …`): never a command.
+_DURATION_RE = re.compile(r"\d+(?:\.\d+)?[smhd]?")
+# `$out = git …`: PowerShell runs the command on the right. Only a bare word or `&`
+# is one; a quoted string or variable after `=` is a value and stays data.
+_PS_ASSIGN_RE = re.compile(r"((?:^|[;&|({\n])[ \t]*)\$[A-Za-z_][\w:]*[ \t]*\+?=[ \t]*(?=[A-Za-z&])")
+
+
+def command_stem(word: str) -> str:
+    """The lowercased program name a command word runs: `C:/Windows/System32/shutdown.exe` → `shutdown`."""
+    name = re.split(r"[\\/]", word)[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _unquote_word(token: str) -> str:
+    token = token.strip("`")
+    return _lib._QUOTED_RUN_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), token)
+
+
+# Statement boundaries; `|`, parentheses and braces only split commands, so a
+# pipeline and its script blocks stay one statement.
+_STATEMENT_SEPARATORS = {"&&", "||", ";", "&", "\n"}
+
+
+def _scan_commands(cmd: str, _depth: int = 0) -> tuple[list[list[str]], list[list[list[str]]]]:
+    """Every command `cmd` runs as `(commands, statements)`: the commands in reading
+    order (each its unquoted words, command word first) and the same commands
+    grouped by statement.
+
+    The same reading as `_lib.runs_git_commit`, on its tokenizer: heredoc and here-string bodies are
+    data, a quoted string is one word, and leading `VAR=value` / `$var =`
+    assignments and `_lib.COMMAND_PREFIX_WORDS` or `timeout` (with their options
+    and durations) are skipped so the command after them leads. Braces split
+    commands too, so a PowerShell script block's first word is in command
+    position. A nested shell's command line (`bash -c "…"`, `cmd //c …`,
+    `iex '…'`) is read as well, as statements of its own.
+    """
+    text = _LINE_CONTINUATION_RE.sub(" ", _lib._PS_HERE_STRING_RE.sub("''", _lib.strip_heredoc_bodies(cmd)))
+    text = _PS_ASSIGN_RE.sub(r"\1", text)
+    found: list[list[str]] = []
+    statements: list[list[list[str]]] = []
+    current: list[list[str]] = []
+    raw: list[str] = []
+    after_prefix = False
+    for token in [*_lib._COMMIT_TOKEN_RE.findall(text), "\n"]:
+        if token in _lib._COMMIT_SEPARATORS:
+            if raw:
+                words = [_unquote_word(t) for t in raw]
+                found.append(words)
+                current.append(words)
+                if _depth < _NESTED_DEPTH:
+                    for line in _nested_command_lines(raw, words):
+                        nested_found, nested_statements = _scan_commands(line, _depth + 1)
+                        found.extend(nested_found)
+                        statements.extend(nested_statements)
+            raw, after_prefix = [], False
+            if token in _STATEMENT_SEPARATORS and current:
+                statements.append(current)
+                current = []
+            continue
+        if not raw:
+            if _lib._COMMIT_ENV_ASSIGN_RE.match(token):
+                continue
+            if token.lower() in _lib.COMMAND_PREFIX_WORDS | _WRAPPER_WORDS:
+                after_prefix = True
+                continue
+            if after_prefix and (token.startswith("-") or _DURATION_RE.fullmatch(token)):
+                continue
+        raw.append(token)
+    return found, statements
+
+
+def command_invocations(cmd: str) -> list[list[str]]:
+    """Every command `cmd` runs, each as its unquoted words, command word first."""
+    return _scan_commands(cmd)[0]
+
+
+def command_statements(cmd: str) -> list[list[list[str]]]:
+    """The commands `cmd` runs, grouped by statement."""
+    return _scan_commands(cmd)[1]
+
+
+def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
+    """The command lines a nested shell invocation runs: its quoted arguments,
+    and everything after its command flag (`cmd //c shutdown …` is unquoted)."""
+    stem = command_stem(words[0])
+    if stem not in _lib.NESTED_SHELLS:
+        return []
+    lines = [word for token, word in zip(raw[1:], words[1:]) if token[:1] in "\"'"]
+    rest: list[str] = []
+    if stem in _EVAL_SHELLS:
+        rest = raw[1:]
+    else:
+        for i, word in enumerate(words[1:], start=1):
+            if word.lower() in _NESTED_COMMAND_FLAGS:
+                rest = raw[i + 1:]
+                break
+    # One quoted word is already in `lines`; joined, it would read as one word.
+    if rest and not (len(rest) == 1 and rest[0][:1] in "\"'"):
+        lines.append(" ".join(rest))
+    return lines
+
+
 # ----- git safety bypasses -----
 # Flagged only as arguments of a real `git` invocation at command position, so a
 # read-only search that merely *mentions* a flag is not refused.
-# The old check was a line regex that matched `git` and the flag anywhere on the line.
 GIT_BYPASS_FLAGS = ("--no-verify", "--no-gpg-sign")
 GIT_BYPASS_CONFIG = "commit.gpgsign=false"
 
@@ -67,7 +180,8 @@ GIT_BYPASS_CONFIG = "commit.gpgsign=false"
 # Git's global options may sit between `git` and the subcommand
 # (`git -C <dir> push …`), so a push is found by walking those
 # options token by token (`_lib.GIT_GLOBAL_OPTS_WITH_VALUE`), not by a
-# `git\s+push` adjacency regex.
+# `git\s+push` adjacency regex. Only a `git` in command position counts, read by
+# the same scanner as the bypass, kill and power rules.
 # `--force`, `--force-with-lease[=ref]`, and short-flag clusters carrying `f`
 # (`-f`, `-fu`, `-uf`). Anchored to a token start so `--foo` can't match.
 FORCE_FLAG_RE = re.compile(
@@ -76,89 +190,26 @@ FORCE_FLAG_RE = re.compile(
 )
 PROTECTED_BRANCHES = {"main", "master"}
 
-_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-
-
-def _split_segments(cmd: str) -> list[str]:
-    """Split on `; | & newline` outside quotes, so a quoted `;` stays in its string."""
-    segments: list[str] = []
-    buf: list[str] = []
-    quote = ""
-    for ch in cmd:
-        if quote:
-            buf.append(ch)
-            if ch == quote:
-                quote = ""
-        elif ch in "\"'":
-            quote = ch
-            buf.append(ch)
-        elif ch in ";|&\n":
-            segments.append("".join(buf))
-            buf = []
-        else:
-            buf.append(ch)
-    segments.append("".join(buf))
-    return [seg for seg in segments if seg.strip()]
-
-
-def _command_index(tokens: list[str]) -> Optional[int]:
-    """Index of the token that is the command word of a segment, skipping leading
-    `VAR=value` assignments, subshell/`$(` punctuation and `_lib.COMMAND_PREFIX_WORDS`."""
-    skipping_options = False
-    for i, raw in enumerate(tokens):
-        token = raw.lstrip("({`$").strip("\"'")
-        if not token:
-            continue
-        if _ENV_ASSIGN_RE.match(token):
-            continue
-        if skipping_options and token.startswith("-"):
-            continue
-        if token.lower() in _lib.COMMAND_PREFIX_WORDS:
-            skipping_options = True
-            continue
-        return i
-    return None
-
-
-def _git_bypass_in_tokens(tokens: list[str], start: int) -> Optional[str]:
-    """The bypass flag among the arguments of the `git` at `tokens[start]`, if any."""
-    parsed = _lib.git_globals(tokens, start + 1)
+def _git_bypass_in_words(words: list[str]) -> Optional[str]:
+    """The bypass flag among the arguments of the git invocation `words`, if any."""
+    parsed = _lib.git_globals(words, 1)
     if any(value.lower() == GIT_BYPASS_CONFIG for value in parsed.config):
         return "-c " + GIT_BYPASS_CONFIG
-    for j in range(parsed.subcommand + 1, len(tokens)):
-        low = tokens[j].lower()
+    for j in range(parsed.subcommand + 1, len(words)):
+        low = words[j].lower()
         if low in GIT_BYPASS_FLAGS:
             return low
-        if low == "-c" and j + 1 < len(tokens) and tokens[j + 1].lower() == GIT_BYPASS_CONFIG:
+        if low == "-c" and j + 1 < len(words) and words[j + 1].lower() == GIT_BYPASS_CONFIG:
             return "-c " + GIT_BYPASS_CONFIG
     return None
 
 
-def git_bypass_flag(cmd: str, _nested: bool = False) -> Optional[str]:
-    """The git safety-bypass flag `cmd` passes to a real `git` invocation, or ``None``.
-
-    Walks each shell segment like `_push_args` does — global options before the
-    subcommand don't hide it — but only a `git` in command position counts.
-    The one place a quoted string *is* a command is a nested shell
-    (`bash -c "git …"`), so those arguments are re-checked once.
-    """
-    for segment in _split_segments(cmd):
-        raw = _lib.shell_tokens(segment)
-        tokens = [t.strip("\"'") for t in raw]
-        at = _command_index(raw)
-        if at is None:
-            continue
-        word = tokens[at].lstrip("({`$")
-        if _lib.GIT_TOKEN_RE.search(word):
-            hit = _git_bypass_in_tokens(tokens, at)
-            if hit:
-                return hit
-        elif not _nested and Path(word).stem.lower() in _lib.NESTED_SHELLS:
-            for r, t in zip(raw[at + 1:], tokens[at + 1:]):
-                if r[:1] in "\"'" and (hit := git_bypass_flag(t, _nested=True)):
-                    return hit
+def git_bypass_flag(cmd: str) -> Optional[str]:
+    """The git safety-bypass flag `cmd` passes to a real `git` invocation, or ``None``."""
+    for words in command_invocations(cmd):
+        if _lib.GIT_TOKEN_RE.search(words[0]) and (hit := _git_bypass_in_words(words)):
+            return hit
     return None
-
 
 
 def destination_branch(refspec: str) -> str:
@@ -171,18 +222,16 @@ def destination_branch(refspec: str) -> str:
     return dest[len(prefix):] if dest.startswith(prefix) else dest
 
 
-def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
-    """For a `git [global options] push …` segment: the tokens after `push` and
+def _push_args(words: list[str]) -> Optional[tuple[list[str], Optional[str]]]:
+    """For a `git [global options] push …` invocation: the words after `push` and
     the directory its global options name (``None`` when absent; several `-C`s
-    compose, as in git). ``None`` when the segment isn't a push."""
-    tokens = [t.strip("\"'") for t in _lib.shell_tokens(segment)]
-    for start, token in enumerate(tokens):
-        if not _lib.GIT_TOKEN_RE.search(token):
-            continue
-        parsed = _lib.git_globals(tokens, start + 1)
-        i = parsed.subcommand
-        if i < len(tokens) and tokens[i].lower() == "push":
-            return tokens[i + 1:], parsed.workdir or None
+    compose, as in git). ``None`` when `words` isn't a push."""
+    if not _lib.GIT_TOKEN_RE.search(words[0]):
+        return None
+    parsed = _lib.git_globals(words, 1)
+    i = parsed.subcommand
+    if i < len(words) and words[i].lower() == "push":
+        return words[i + 1:], parsed.workdir or None
     return None
 
 
@@ -198,8 +247,8 @@ def _parse_forced_push(cmd: str) -> Optional[tuple[list[str], Optional[str]]]:
     returned. Git's global options before `push` (`-C <dir>`, `-c k=v`,
     `--git-dir`, `--work-tree`) don't hide it.
     """
-    for segment in re.split(r"[\n;|&]+", cmd):
-        parsed = _push_args(segment)
+    for words in command_invocations(cmd):
+        parsed = _push_args(words)
         if parsed is None:
             continue
         args, git_dir = parsed
@@ -274,111 +323,6 @@ def _scan_port_kills(cmd: str) -> list[int]:
             ports.extend(int(p) for p in NETSTAT_PORT_RE.findall(segment))
 
     return ports
-
-
-# ----- commands in command position -----
-# A line continuation, Bash `\` or PowerShell backtick before the newline: the
-# next line's words still belong to the same command.
-_LINE_CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
-_EVAL_SHELLS = {"eval", "iex", "invoke-expression"}
-# After one of these, a nested shell's remaining words are the command it runs.
-_NESTED_COMMAND_FLAGS = {"-c", "/c", "//c", "/k", "//k", "-command", "-commandwithargs"}
-# Two levels covers `powershell -Command "cmd /c '…'"`, and stops a crafted
-# command from recursing without end.
-_NESTED_DEPTH = 2
-
-
-def command_stem(word: str) -> str:
-    """The lowercased program name a command word runs: `C:/Windows/System32/shutdown.exe` → `shutdown`."""
-    name = re.split(r"[\\/]", word)[-1].lower()
-    return name[:-4] if name.endswith(".exe") else name
-
-
-def _unquote_word(token: str) -> str:
-    token = token.strip("`")
-    return _lib._QUOTED_RUN_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), token)
-
-
-# Statement boundaries; `|`, parentheses and braces only split commands, so a
-# pipeline and its script blocks stay one statement.
-_STATEMENT_SEPARATORS = {"&&", "||", ";", "&", "\n"}
-
-
-def _scan_commands(cmd: str, _depth: int = 0) -> tuple[list[list[str]], list[list[list[str]]]]:
-    """Every command `cmd` runs as `(commands, statements)`: the commands in reading
-    order (each its unquoted words, command word first) and the same commands
-    grouped by statement.
-
-    The same reading as `_lib.runs_git_commit`, on its tokenizer: heredoc and here-string bodies are
-    data, a quoted string is one word, and leading `VAR=value` assignments and
-    `_lib.COMMAND_PREFIX_WORDS` (with their options) are skipped so the command after
-    them leads. Braces split commands too, so a PowerShell script block's first
-    word is in command position. A nested shell's command line (`bash -c "…"`,
-    `cmd //c …`, `iex '…'`) is read as well, as statements of its own.
-    """
-    text = _LINE_CONTINUATION_RE.sub(" ", _lib._PS_HERE_STRING_RE.sub("''", _lib.strip_heredoc_bodies(cmd)))
-    found: list[list[str]] = []
-    statements: list[list[list[str]]] = []
-    current: list[list[str]] = []
-    raw: list[str] = []
-    after_prefix = False
-    for token in [*_lib._COMMIT_TOKEN_RE.findall(text), "\n"]:
-        if token in _lib._COMMIT_SEPARATORS:
-            if raw:
-                words = [_unquote_word(t) for t in raw]
-                found.append(words)
-                current.append(words)
-                if _depth < _NESTED_DEPTH:
-                    for line in _nested_command_lines(raw, words):
-                        nested_found, nested_statements = _scan_commands(line, _depth + 1)
-                        found.extend(nested_found)
-                        statements.extend(nested_statements)
-            raw, after_prefix = [], False
-            if token in _STATEMENT_SEPARATORS and current:
-                statements.append(current)
-                current = []
-            continue
-        if not raw:
-            if _lib._COMMIT_ENV_ASSIGN_RE.match(token):
-                continue
-            if token in _lib.COMMAND_PREFIX_WORDS:
-                after_prefix = True
-                continue
-            if after_prefix and token.startswith("-"):
-                continue
-        raw.append(token)
-    return found, statements
-
-
-def command_invocations(cmd: str) -> list[list[str]]:
-    """Every command `cmd` runs, each as its unquoted words, command word first."""
-    return _scan_commands(cmd)[0]
-
-
-def command_statements(cmd: str) -> list[list[list[str]]]:
-    """The commands `cmd` runs, grouped by statement."""
-    return _scan_commands(cmd)[1]
-
-
-def _nested_command_lines(raw: list[str], words: list[str]) -> list[str]:
-    """The command lines a nested shell invocation runs: its quoted arguments,
-    and everything after its command flag (`cmd //c shutdown …` is unquoted)."""
-    stem = command_stem(words[0])
-    if stem not in _lib.NESTED_SHELLS:
-        return []
-    lines = [word for token, word in zip(raw[1:], words[1:]) if token[:1] in "\"'"]
-    rest: list[str] = []
-    if stem in _EVAL_SHELLS:
-        rest = raw[1:]
-    else:
-        for i, word in enumerate(words[1:], start=1):
-            if word.lower() in _NESTED_COMMAND_FLAGS:
-                rest = raw[i + 1:]
-                break
-    # One quoted word is already in `lines`; joined, it would read as one word.
-    if rest and not (len(rest) == 1 and rest[0][:1] in "\"'"):
-        lines.append(" ".join(rest))
-    return lines
 
 
 # ----- kills selected by process name or command line -----

@@ -65,7 +65,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
@@ -76,13 +75,10 @@ import audit_issue  # noqa: E402
 import git_run  # noqa: E402
 import index_lock  # noqa: E402
 import untrack_guard  # noqa: E402
-from fleet_core import (
-    fleet_repo_scan,  # noqa: E402
-    runtime_files,  # noqa: E402
-)
+from fleet_core import fleet_repo_scan  # noqa: E402
 from gate_coverage import reader as gate_reader  # noqa: E402
 from gate_coverage import section as gate_section  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from scheduled.sentinel import launch_detached, write_result  # noqa: E402
 from structure_census import near_limit  # noqa: E402
 from structure_debt import baseline as structure_baseline  # noqa: E402
 from structure_debt import section as structure_section  # noqa: E402
@@ -306,22 +302,6 @@ def default_out_path() -> Path:
     return _default_out_dir() / f"fleet-audit-scan-{os.getpid()}-{time.time_ns()}.json"
 
 
-def write_result(out_path: Path, payload: dict) -> None:
-    """Atomically publish `payload` as JSON to `out_path`.
-
-    Same temp-then-rename discipline `worktree_claim.py`'s `_publish_claim`
-    uses for its lock dir: a poller must never be able to observe a partially
-    written file. `Path.replace` (== `os.replace`) is an atomic *overwrite* on
-    Windows too — unlike `Path.rename`, which raises if the destination
-    already exists — so this is safe even against a stale sentinel left by a
-    prior crashed run at the same path.
-    """
-    runtime_files.make_dirs(out_path.parent, parents=True, exist_ok=True)
-    tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}-{time.time_ns()}")
-    runtime_files.save_text(tmp, json.dumps(payload), encoding="utf-8")
-    tmp.replace(out_path)
-
-
 def run_and_publish(root: str, only: str | None, dry_run: bool, out_path: Path) -> dict:
     """Run the sweep and always leave a sentinel at `out_path` — success or
     error — so a poller waiting on that path never waits past a scan that
@@ -338,26 +318,6 @@ def run_and_publish(root: str, only: str | None, dry_run: bool, out_path: Path) 
     print(json.dumps(results))
     write_result(out_path, results)
     return results
-
-
-def launch_detached(child_argv: list[str], log_path: Path) -> int:
-    """Spawn this module (re-invoked without `--detach`) as an independent,
-    console-less process that outlives this call — the same
-    `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` pattern already used to survive a
-    hook's own exit (`hooks/restart_and_verify_webapp.py`'s `_start_tray`).
-    Does not wait for the child; returns its pid.
-    """
-    runtime_files.make_dirs(log_path.parent, parents=True, exist_ok=True)
-    with runtime_files.open_for_write(log_path, "wb") as log_file:
-        proc = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), *child_argv],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | NO_WINDOW,
-            close_fds=True,
-        )
-    return proc.pid
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -386,7 +346,7 @@ def main(argv: list[str] | None = None) -> None:
             child_argv += ["--only", args.only]
         if args.dry_run:
             child_argv.append("--dry-run")
-        pid = launch_detached(child_argv, log_path)
+        pid = launch_detached(Path(__file__).resolve(), child_argv, log_path)
         print(f"LAUNCHED pid={pid} out={out_path} log={log_path}")
         return
 

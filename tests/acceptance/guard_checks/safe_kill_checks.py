@@ -77,6 +77,15 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: a force flag on another git subcommand is not a push",
           skg._parse_forced_push("git -C /r checkout -f main") is None)
 
+    # Only a `git` in command position counts, the reading the other rules use (fleet-config#2266).
+    check("force-push: naming the push in an echo or a search -> allowed",
+          not blocked(f"echo {push} --force origin main")
+          and not blocked(f'rg "{push} -f origin main" docs/'))
+    check("force-push: nested shell string -> blocked", blocked(f'bash -c "{push} -f origin main"'))
+    for prefix in ("timeout 60 ", "nice -n 10 ", "$out = ", "$out=", "If ($true) { "):
+        check(f"force-push: behind {prefix.strip()!r} -> still blocked",
+              blocked(f"{prefix}{push} --force origin main"))
+
     check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
     check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
           not blocked(f"{push} --force origin chore/rename-main-config-loader"))
@@ -172,6 +181,11 @@ def _safe_kill_git_bypass_unit_checks() -> Tuple[int, int]:
     check("bypass: nested shell with a quoted separator -> blocked", flagged(f'bash -c "git add .; git commit {nv}"'))
     check("bypass: xargs prefix -> blocked", flagged(f"echo x | xargs git commit {nv}"))
     check("bypass: flag in a nested shell string via env prefix -> blocked", flagged(f"env FOO=1 git commit {nv}"))
+
+    check("bypass: a PowerShell string assigned to a variable stays data",
+          not flagged(f'$m = "git commit {nv}"'))
+    for prefix in ("timeout 60 ", "$r = "):
+        check(f"bypass: behind {prefix.strip()!r} -> blocked", flagged(f"{prefix}git commit {nv}"))
 
     check("bypass: rg for the phrase over docs/ -> allowed (the #1303 false positive)",
           not flagged(f'rg "git commit {nv}" docs/'))
