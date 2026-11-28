@@ -13,12 +13,13 @@ Per repo, one line:
   PRIMARY=live behind=0 restarted=yes build=<h>  landed, restarted, live build equals HEAD
   PRIMARY=stale reason=owner-restart             the hub (:8000) and the session host (:8446)
                                                  are never restarted here; the owner does it
-  PRIMARY=stale reason=no-restart-recipe         a service is declared but neither `restart_cmd` nor `api_version_path`
+  PRIMARY=stale reason=no-restart-recipe         a port or `tray_cmd` is declared with no recipe to restart it
   PRIMARY=stale reason=<guard or restart detail> dirty tree, off main, claim held, restart
                                                  failed or its build identity not confirmed,
                                                  or a level tree behind an older running build
   PRIMARY=unknown reason=<why>                   server state not established: a web checkout
-                                                 with no declared port, or an unreadable build
+                                                 with no declared port, an unreadable build,
+                                                 or an unreadable HEAD
 
 Only `live` counts as live: `stale` and `unknown` both exit 1 and are listed as stale primaries.
 
@@ -81,7 +82,8 @@ def recipe_kind(tbl: Mapping[str, object], never_kill: frozenset) -> str:
     if {tbl.get("webapp_port"), tbl.get("session_host_port")} & never_kill:
         return OWNER
     if not tbl.get("tray_cmd"):
-        return NO_SERVICE
+        # A declared port is a served app even when nothing here says how to restart it.
+        return NO_RECIPE if tbl.get("webapp_port") else NO_SERVICE
     # restart_and_verify_webapp.py relaunches `tray_cmd` when there is no `restart_cmd`, and
     # confirms the build through `api_version_path`; both together are a recipe it can run.
     return RESTART if tbl.get("restart_cmd") or tbl.get("api_version_path") else NO_RECIPE
@@ -140,7 +142,9 @@ def land_one(name: str, tbl: Mapping[str, object], never_kill: frozenset, issue:
     if code != 0 or not first.startswith("PRIMARY=live"):
         return Outcome(name, " | ".join([first, *extra]), False)
     after = head(repo)
-    if kind != RESTART or state != sp.SERVICE_LIVE or not before or before == after:
+    if kind == RESTART and state == sp.SERVICE_LIVE and not (before and after):
+        return Outcome(name, "PRIMARY=unknown reason=could not read HEAD to tell whether a restart is due", False)
+    if kind != RESTART or state != sp.SERVICE_LIVE or before == after:
         return Outcome(name, " | ".join([first, *extra]), True)
     rc, last = restart(repo)
     if rc == 0:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
@@ -212,5 +213,60 @@ with mock.patch.object(pr.fleet_repo_scan, "fleet_repo_tables", side_effect=OSEr
     with contextlib.redirect_stdout(_buf):
         _rc = pr.main(["stale"])
     check(_rc == 0 and _buf.getvalue().startswith("STALE_PRIMARIES=unknown"), f"the `stale` CLI prints unknown instead of raising ({_buf.getvalue()!r})")
+
+# ---- a declared port with no recipe is a running service, never live on faith ----
+# The real probe and landing guard run here; git, the listener table and the served build are fakes.
+_ported = throwaway_dir("primaries-portonly-")
+HEAD_SHA, OLD_SHA = "9af573f000", "1705558"
+
+
+def served(sha, ports=frozenset({8449})):
+    return mock.patch.multiple(sp, listening_ports=lambda: set(ports), running_sha=lambda _p, _a: sha)
+
+
+def land_ported(behind: int, sha, ports=frozenset({8449})):
+    """`land_one` for a table naming a port and nothing else: (outcome, restarts, fast-forwards)."""
+    _REGISTRY.write_text("\n".join(("[portonly]", f'cwd_prefix = "{_ported.as_posix()}"', "webapp_port = 8449",
+                                    'api_version_path = "/api/version"', "")), encoding="utf-8")
+    table = {"cwd_prefix": str(_ported), "webapp_port": 8449, "api_version_path": "/api/version"}
+    rec, forwards, counts = Recorder(), [], iter([behind, 0])
+
+    def fake_git(_repo, *args, **_kw):
+        out = {"branch": "main", "rev-parse": HEAD_SHA}.get(args[0], "")
+        return SimpleNamespace(stdout=out, returncode=0)
+
+    def forward(*_a):
+        forwards.append(True)
+        return SimpleNamespace(ok=True, detail="")
+
+    with served(sha, ports), mock.patch.multiple(
+            pr.wcl, _is_primary_checkout_safe=lambda _r: True, _git=fake_git,
+            lock_dir_for=lambda _r: _ported / "no-lock", main_ref=lambda _r: "origin/main",
+            count_behind=lambda *_a, **_k: next(counts), guarded_fast_forward=forward,
+            untrack_report_lines=lambda _f: []):
+        got = pr.land_one("portonly", table, NEVER, "wave-1", restart=rec, head=lambda _r: HEAD_SHA)
+    return got, rec.calls, forwards
+
+
+check(pr.recipe_kind({"webapp_port": 8447}, NEVER) == pr.NO_RECIPE, "recipe_kind: a port with no tray_cmd is a service with no recipe")
+out, restarts, forwards = land_ported(1, OLD_SHA)
+check(not out.live and out.line == "PRIMARY=stale reason=no-restart-recipe" and not restarts and not forwards,
+      f"port only, listening, tree behind: stale, not landed ({out.line})")
+for sha, want, label in ((OLD_SHA, "PRIMARY=stale reason=", "an older served build is stale"),
+                         (None, "PRIMARY=unknown reason=", "an unreadable served build is unknown"),
+                         (HEAD_SHA[:7], "PRIMARY=live behind=0", "a served build at HEAD is live")):
+    out, restarts, _ = land_ported(0, sha)
+    check(out.line.startswith(want) and out.live == want.startswith("PRIMARY=live") and not restarts,
+          f"port only, level tree: {label} ({out.line})")
+out, _, forwards = land_ported(1, None, ports={1})
+check(out.live and forwards == [True], f"port only, nothing listening: landed and live ({out.line})")
+_REGISTRY.write_text("[global]\n", encoding="utf-8")
+
+# ---- an unreadable HEAD cannot show that nothing moved ----
+rec = Recorder()
+out = land("app", tbl(_ported), sp.SERVICE_LIVE, rec, head=lambda _r: None,
+           land=lambda *_a, **_k: (0, ["PRIMARY=live behind=0"]))
+check(not out.live and out.line.startswith("PRIMARY=unknown reason=") and not rec.calls,
+      f"unreadable HEAD with a live service: unknown, never live ({out.line})")
 
 _h.report_and_exit("test_vendored_primaries")

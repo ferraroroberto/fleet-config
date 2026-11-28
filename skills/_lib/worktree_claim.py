@@ -73,7 +73,7 @@ Subcommands:
       reported, not recovered.
 
       A fourth guard refuses a tree a **live process is serving**:
-      repos declaring `tray_cmd` in `hooks/projects.toml`
+      repos declaring `tray_cmd` or `webapp_port` in `hooks/projects.toml`
       run a long-lived server out of their checkout, and fast-forwarding one
       leaves static assets on disk ahead of the Python held in memory -- a UI
       served from two commits at once. `live_service_check` decides it,
@@ -83,7 +83,7 @@ Subcommands:
       from it = safely idle; unreadable table, or no port to probe = refuse,
       an unestablished fact is never a pass). There is no "landed anyway"
       variant: both landing and refusing need the same restart, and only
-      landing serves mixed-commit assets meanwhile. `fleet-config` declares no `tray_cmd` and still lands
+      landing serves mixed-commit assets meanwhile. `fleet-config` declares neither and still lands
       unconditionally -- landing it is exactly what makes a merge live through
       the `~/.claude` junctions.
 
