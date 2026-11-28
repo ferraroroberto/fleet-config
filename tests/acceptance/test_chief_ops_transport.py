@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO / "skills" / "_lib"))
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 import chief_ops as co  # noqa: E402
 from check_harness import CheckHarness  # noqa: E402
+from grokbot import switch as grok_switch  # noqa: E402
 
 # `stop` reads the chief plan; point it at an empty state dir so the live plan is never touched.
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="chief_transport_state_")
@@ -108,7 +109,9 @@ def _short_budget(*args, **kwargs):
 def run(*argv, budget=BUDGET):
     out, err = io.StringIO(), io.StringIO()
     _budget[0] = budget
+    # `board` also reports Grok Bot: read as off, so no live launcher request and no process probe.
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+            mock.patch.object(grok_switch, "read_switch", lambda: (grok_switch.OFF, "")), \
             mock.patch.object(co.launcher.urllib.request, "urlopen", _short_budget), \
             mock.patch.object(co.launcher, "REQUEST_TIMEOUT", BUDGET, create=True):
         code = co.main(list(argv))
