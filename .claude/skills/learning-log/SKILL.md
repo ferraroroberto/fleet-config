@@ -129,7 +129,7 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 - **Deterministic stats + LLM insight, not LLM stats:** counts/LOC must be exact and reproducible, so Python computes them from `gh` JSON; Sonnet agents do the judgement (patterns, lessons) a table can't. GitHub's per-repo Pulse/contributor stats aren't cross-fleet or per-work-type, so these tables are additive, not a duplicate.
 - **Ledger issue, not `docs/`:** global `CLAUDE.md` rule — durable knowledge lives in one canonical issue with a dated decision log. Issue body is the deduped durable archive + live horizon; comments are the week-by-week record (narrative + tables).
 - **Window anchored to `last-run-at`:** a missed/late run never drops a week — next run widens. First run with no ledger falls back to trailing 7 days.
-- **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…), issues by type label. Items with neither land in **Other** (known limitation; tighten with keyword heuristics in `gather.py` if it grows).
+- **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…); issues by type label, then audit category label, then title prefix. Items with none of these land in **Other**.
 - **Separate from `/system-map`** (cross-linked, not modified) and from fleet-config#95.
 
 ## Wiring the weekly schedule
