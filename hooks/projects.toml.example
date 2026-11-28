@@ -340,6 +340,7 @@ architecture_ignore = [
   "mass-html-to-markdown",
   "mcp-personal-onedrive",
   "pvgis",
+  "website",                # no card on the maps yet; named runs still reach it
   "email-archiver",         # retired: superseded by folder-explorer; local folder kept for hand deletion
 ]
 
