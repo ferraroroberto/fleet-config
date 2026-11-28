@@ -285,6 +285,8 @@ _CODEX_HOOK_WORK_BUDGET_SECONDS = 5.0
 # the report margin covers the job teardown and pipe drain (#1073).
 _SYNTHETIC_HANG_SECONDS = 60
 _HANG_REPORT_MARGIN_SECONDS = 5.0
+# How long a terminated process may take to finish exiting; far below the synthetic hang, so a survivor still shows.
+_EXIT_GRACE_SECONDS = 5.0
 # An injected start delay longer than the whole work budget: a check that still
 # charged the interpreter's start to the hook would time out on it.
 _SLOW_START_SECONDS = _CODEX_HOOK_WORK_BUDGET_SECONDS + 1.0
@@ -315,13 +317,21 @@ if _ready and not os.path.exists(_ready):
 
 
 def _pid_alive(pid: int) -> bool:
-    """Whether `pid` is still running (Windows: its handle is not yet signaled)."""
+    """Whether `pid` is still running `_EXIT_GRACE_SECONDS` from now.
+
+    Ending a job is asynchronous: its pipes close before the process handle is
+    signaled, so a zero-wait look right afterwards sees a dying process as alive.
+    """
     if sys.platform != "win32":
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        return True
+        deadline = time.monotonic() + _EXIT_GRACE_SECONDS
+        while True:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            if time.monotonic() >= deadline:
+                return True
+            time.sleep(0.05)
     import ctypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.restype = ctypes.c_void_p
@@ -329,7 +339,8 @@ def _pid_alive(pid: int) -> bool:
     if not handle:
         return False
     try:
-        return kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 0) != 0  # WAIT_OBJECT_0: exited
+        grace_ms = int(_EXIT_GRACE_SECONDS * 1000)
+        return kernel32.WaitForSingleObject(ctypes.c_void_p(handle), grace_ms) != 0  # WAIT_OBJECT_0: exited
     finally:
         kernel32.CloseHandle(ctypes.c_void_p(handle))
 _INTERPRETER_START_CAP_SECONDS = 60
